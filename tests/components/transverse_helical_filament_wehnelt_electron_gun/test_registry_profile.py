@@ -19,7 +19,7 @@ class RegistryProfileTests(unittest.TestCase):
         profile = execution["profiles"][0]
         self.assertEqual(profile["mode"], "build_only_smoke")
         self.assertEqual(profile["action"], "build")
-        self.assertEqual(profile["qualification_support"], ["none"])
+        self.assertNotIn("qualification_support", profile)
         self.assertEqual([step["step_id"] for step in profile["steps"]], ["commercial_build_only"])
         self.assertEqual(profile["steps"][0]["entrypoint"], "src/msplatform/workflows/resources/wehnelt_build_only.ps1")
         self.assertEqual(profile["supported_operating_points"][0]["mass"], {"value": ELECTRON_MASS_U, "unit": "Da"})

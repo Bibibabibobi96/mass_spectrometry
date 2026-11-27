@@ -220,6 +220,24 @@ function Publish-DependencyInventory {
   }
 }
 
+function Assert-WorkflowDependencyJsonUniqueKeys {
+  <# Reject ambiguous keys only for this named machine contract. #>
+  param([Parameter(Mandatory)][System.Text.Json.JsonElement]$Value)
+  if ($Value.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($property in $Value.EnumerateObject()) {
+      if (-not $seen.Add($property.Name)) {
+        throw "Workflow runtime dependency contract contains duplicate JSON key: $($property.Name)"
+      }
+      Assert-WorkflowDependencyJsonUniqueKeys -Value $property.Value
+    }
+  } elseif ($Value.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) {
+    foreach ($item in $Value.EnumerateArray()) {
+      Assert-WorkflowDependencyJsonUniqueKeys -Value $item
+    }
+  }
+}
+
 function Freeze-ConsumerDependencies {
   <# Root authors declare provider groups; expand once into the shared flat
      publication/copy contract still used by the existing family workflows. #>
@@ -233,7 +251,13 @@ function Freeze-ConsumerDependencies {
     [Parameter(Mandatory)][string]$Python,
     [string]$CorePackageRoot=''
   )
-  $contract = Get-Content -LiteralPath $ContractPath -Raw -Encoding UTF8 | ConvertFrom-Json -Depth 100
+  $contractText = Get-Content -LiteralPath $ContractPath -Raw -Encoding UTF8
+  $jsonOptions = [System.Text.Json.JsonDocumentOptions]::new()
+  $jsonOptions.MaxDepth = 100
+  $jsonDocument = [System.Text.Json.JsonDocument]::Parse([string]$contractText, $jsonOptions)
+  try { Assert-WorkflowDependencyJsonUniqueKeys -Value $jsonDocument.RootElement }
+  finally { $jsonDocument.Dispose() }
+  $contract = $contractText | ConvertFrom-Json -Depth 100
   if (@(Compare-Object @('schema_version','role','owner_id','consumer_ids','providers') @($contract.PSObject.Properties.Name)).Count -ne 0 -or
       $contract.schema_version -ne 3 -or $contract.role -cne 'workflow_runtime_dependencies' -or
       $contract.owner_id -cne $OwnerId) {

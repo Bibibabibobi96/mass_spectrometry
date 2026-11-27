@@ -33,18 +33,18 @@ sys.path.insert(0, str(install_root))
 from msplatform.workflows.oa_candidate import candidate_run_lifecycle as lifecycle
 from msplatform.workflows.oa_candidate import radial_compaction as radial
 from msplatform.workflows.oa_candidate import reference_analysis_core as reference
-from msplatform.workflows.oa_candidate import run_compensation as compensation
+from msplatform.workflows import reflectron_compensation as compensation
 from msplatform.workflows.oa_candidate import sync_geometry_contract as sync
 
-modules = (lifecycle, radial, reference, compensation, sync)
+modules = (lifecycle, radial, reference, sync)
 for module in modules:
     assert Path(module.__file__).resolve().is_relative_to(install_root)
     assert module.REPO_ROOT == install_root / "msplatform"
 assert sync.load_contract()["role"] == "oa_tof_resolved_contract_do_not_edit"
 assert reference.load_contract()[0]["schema_version"] == 3
 assert lifecycle.FORMAL_BASELINE_PATH.is_file()
-assert compensation.PROGRAM_PATH.is_file()
-assert (compensation.REPO_ROOT / compensation.AXIS_EXPORTER_SOURCE.removeprefix("src/msplatform/")).is_file()
+assert Path(compensation.__file__).resolve().is_relative_to(install_root)
+assert callable(compensation.run_compensation_study)
 assert radial.CONFIG_PATH.is_file()
 assert radial.PYTHON == Path(sys.executable).resolve()
 

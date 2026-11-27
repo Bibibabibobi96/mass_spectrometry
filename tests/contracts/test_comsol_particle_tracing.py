@@ -12,6 +12,7 @@ from msplatform.backends.comsol.assembly_particle_tracing import _basis_mesh_lim
 from msplatform.backends.comsol.assembly_field_export import _validate_field_solution_source, validate_grid
 from msplatform.backends.comsol.particle_data import read_observations
 from msplatform.physics import CONSTANTS
+from tests.contracts.test_support.species import fixture_ion_species, fixture_ion_species_from_amu
 from msplatform.results.particle_data import write_particle_data, read_particle_data, summarize_particle_data
 
 COLUMNS = ('particle_id','native_particle_index','instrument_time_us','x_mm','y_mm','z_mm',
@@ -154,7 +155,7 @@ class ComsolParticleTracingTests(unittest.TestCase):
                'clock_epoch_id': 'epoch', 'frame_id': 'world', 'instrument_time_us': 0.0,
                'mass_amu': 100.0, 'charge_state': 1, 'species_id': 'ion'}
         source = {'rows': [row], 'clock': {'clock_epoch_id': 'epoch', 'authority_sha256': 'A' * 64},
-                  'constants_version': CONSTANTS['version']}
+                  'constants_version': CONSTANTS['version'], 'species': fixture_ion_species_from_amu([row])}
         kwargs = dict(pulse_groups=[{'instance_id': 'oa', 'electrode_group_id': 'pulse'}],
                       drive={'on_us': 1.0, 'off_us': 2.0}, source=source,
                       numerics={'maximum_step_us': .01, 'relative_tolerance': 1e-6, 'absolute_tolerance': 1e-7},
@@ -167,6 +168,15 @@ class ComsolParticleTracingTests(unittest.TestCase):
                 plan = prepare_assembly_pulse(assembly, None, None, **kwargs)
             self.assertEqual(plan['background']['request']['group_voltages'][1]['voltage_v'], 200)
             self.assertEqual(plan['native']['background_solution_tag'], 'sol_off')
+            missing_species = {key: value for key, value in source.items() if key != 'species'}
+            with patch('msplatform.backends.comsol.assembly_particle_tracing._workpoint', side_effect=[off, on]), \
+                 self.assertRaisesRegex(ValueError, 'explicit species'):
+                prepare_assembly_pulse(assembly, None, None, **{**kwargs, 'source': missing_species})
+            wrong_species = copy.deepcopy(source)
+            wrong_species['species'][0]['mass_kg'] *= 2
+            with patch('msplatform.backends.comsol.assembly_particle_tracing._workpoint', side_effect=[off, on]), \
+                 self.assertRaisesRegex(ValueError, 'disagree with declared species'):
+                prepare_assembly_pulse(assembly, None, None, **{**kwargs, 'source': wrong_species})
             changed = copy.deepcopy(on)
             changed['request']['group_voltages'][1]['voltage_v'] = 0
             with patch('msplatform.backends.comsol.assembly_particle_tracing._workpoint', side_effect=[off, changed]), self.assertRaises(ValueError):
@@ -249,7 +259,7 @@ class ComsolParticleTracingTests(unittest.TestCase):
                 self.assertEqual(session.classify_file(target), 'required_evidence')
             write_particle_data(session.result_dir, hit, metadata={'schema_version': 2,
                 'initial_state_basis': 'native_birth_verified', 'frame_id': 'world',
-                'clock': {'basis': 'experiment_relative', 'unit': 's'}})
+                'clock': {'basis': 'experiment_relative', 'unit': 's'}, 'species': fixture_ion_species(source)})
             self.assertEqual(len(read_particle_data(session.result_dir)['events']), 1)
             for target in declared.values():
                 self.assertTrue(target.is_file())
@@ -262,7 +272,7 @@ class ComsolParticleTracingTests(unittest.TestCase):
             miss_dir = Path(directory) / 'miss'; miss_dir.mkdir()
             write_particle_data(miss_dir, miss, metadata={'schema_version': 2,
                 'initial_state_basis': 'native_birth_verified', 'frame_id': 'world',
-                'clock': {'basis': 'experiment_relative', 'unit': 's'}})
+                'clock': {'basis': 'experiment_relative', 'unit': 's'}, 'species': fixture_ion_species(source)})
             self.assertEqual(summarize_particle_data(read_particle_data(miss_dir))['detection_efficiency']['numerator_count'], 0)
             write('nan')
             missing = read_observations(path, **kwargs)
@@ -315,7 +325,7 @@ class ComsolParticleTracingTests(unittest.TestCase):
             self.assertEqual(disappeared.data_integrity['missing_terminal_particle_ids'], [9])
             write_particle_data(Path(directory), disappeared, metadata={'schema_version': 2,
                 'initial_state_basis': 'native_birth_verified', 'frame_id': 'world',
-                'clock': {'basis': 'experiment_relative', 'unit': 's'}})
+                'clock': {'basis': 'experiment_relative', 'unit': 's'}, 'species': fixture_ion_species(source)})
             self.assertEqual(summarize_particle_data(read_particle_data(Path(directory)))['census']['counts']['missing_record'], 1)
             write(1, x=1.1)
             with self.assertRaisesRegex(ValueError, 'original birth'):

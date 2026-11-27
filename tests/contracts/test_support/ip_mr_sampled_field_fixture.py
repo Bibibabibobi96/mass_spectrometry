@@ -149,7 +149,14 @@ def _fixture_geometry():
         'detector':_domain([[-26,25.5],[-87.5,-36.5],[94.5,97.5]],[.5]*3),
         'multipole':{'cell_mm_xyz':dict.fromkeys('xyz',.1)}}
     compiled=compile_complete_mr_geometry(assembly,numerics={'domains':domains})
-    mf.IpMrModelTests.setUpClass();drive=copy.deepcopy(mf.IpMrModelTests.drive)
+    from msplatform.io.file_identity import file_sha256
+    identity=dict(clock_epoch_id='instrument_clock_epoch_v1',authority_sha256=file_sha256(mf.ROOT/'src/msplatform/examples/instrument_epoch_v1.json'))
+    point=json.loads((mf.ROOT/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
+    drive=dict(clock=dict(identity,phase_reference_instrument_time_us=0.),
+        ip_schedule=dict(baseline=assembly.components_source['ion_processor']['baseline'],native_operating_point=point,clock=identity),
+        mr_authority=dict(source=dict(analyzer_electrode_voltages_v=list(range(1,21))),
+            candidate=dict(s1=31.,s2=32.,p1=41.,p2=42.),mirror_voltages_v=[11.,12.,13.,14.,15.],
+            detector_voltage_v=50.,mirror_shield_voltages_v=dict(positive_mirror_ground_shield=51.,negative_mirror_ground_shield=52.)))
     drive['groups']={'multipole':scientific_multipole_drive(compiled.components_resolved['multipole'],compiled.frontend_geometry['electrode_bindings']['multipole'])}
     model=compile_prepared_model(compiled,compiled.components_resolved,drive=drive,physics=RF_IP_PHYSICS)
     return assembly,compiled,model

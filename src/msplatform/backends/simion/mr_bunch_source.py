@@ -32,7 +32,7 @@ from msplatform.components.multi_reflection_tof.candidate_contract import (
     derive_two_zone_placement,
     load_contract,
 )
-from msplatform.backends.simion.mrtof_observations import read_scientific_events
+from msplatform.analysis.mr_observations import read_scientific_events
 
 
 _CLOCK_BASIS = "ion_time_of_flight_us_from_common_tob_zero_release"

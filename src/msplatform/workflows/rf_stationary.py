@@ -1,7 +1,6 @@
 """Installed RF stationary sample recipes over the public execution owner."""
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 import math
@@ -13,7 +12,7 @@ from msplatform.components.rf_multipole import stationary_field_sampling as samp
 from msplatform.execution.completion import no_particle_batch_completion_api
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.inputs import freeze_file
-from msplatform.execution.owner import resume_finalization, run_managed_stage
+from msplatform.execution.owner import run_managed_stage
 from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.execution.run_paths import project_run_path
 from msplatform.io.manifest_records import (
@@ -166,12 +165,59 @@ def execute_saved_comsol(session: Any, *, parent_manifest: Mapping[str, Any], mo
 
 
 def saved_comsol(*, parent_manifest: Path, sampling_plan: Path, budget: Path, run_id: str,
-                 source_id: str, context: ExecutionContext) -> dict[str, Any]:
-    parent, _, model, resolved = _parent_model(parent_manifest)
+                 source_id: str, context: ExecutionContext, artifact_store=None) -> dict[str, Any]:
+    from contextlib import ExitStack, nullcontext
+    from msplatform.execution.native_source_guard import guard_historical_run
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.io.file_identity import guarded_file_identity
+    parent_scope = current_managed_native_store()
+    if artifact_store is None and parent_scope is None:
+        raise ValueError('RF saved export requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent_scope['store']
+    if parent_scope is not None and parent_scope['store'] is not store:
+        raise ValueError('RF saved export must use the parent Store')
     resolved_budget, budget_record = _budget(budget, solver="comsol")
     plan_record = file_record(sampling_plan, "required_evidence")
+    manifest_record = file_record(parent_manifest, 'required_evidence')
+    with ExitStack() as guards:
+        for record in (budget_record, plan_record):
+            guards.enter_context(guarded_file_identity(Path(record['path']), expected_bytes=record['bytes'],
+                                                        expected_sha256=record['sha256']))
+        if _budget(budget, solver='comsol')[0] != resolved_budget:
+            raise ValueError('RF saved export budget changed during admission')
+        manifest_path = Path(manifest_record['path']).resolve(strict=True)
+        assets = set()
+        if manifest_path.is_relative_to(store.root / 'assets'):
+            parts = manifest_path.relative_to(store.root).parts
+            if len(parts) < 6 or parts[:2] != ('assets', 'native_stage'):
+                raise ValueError('RF saved source Store identity differs')
+            asset = parts[3]
+            asset_path = guards.enter_context(store.claim_verified(asset))
+            if asset_path != store.root.joinpath(*parts[:4]):
+                raise ValueError('RF saved source Store owner differs')
+            assets.add(asset)
+        source = guards.enter_context(guard_historical_run(manifest_record,
+            expected_project='rf_multipole_ion_optics', expected_mode='resolved_design_transport'))
+        parent, _, model, resolved = _parent_model(parent_manifest)
+        if source.output('results/finite_3d_transport.mph') != model:
+            raise ValueError('RF saved model identity differs')
+        if source.input('multipole_resolved_design') != resolved:
+            raise ValueError('RF saved resolved design identity differs')
+        if parent_scope is not None and parent_scope['retain_source_assets']:
+            parent_scope['required_source_assets'].update(assets)
+        scope = (standalone_native_store(store, task_key='rf-saved:' + run_id,
+            budget=resolved_budget['limits']['transient_run_directory_bytes'], required_assets=tuple(assets))
+            if parent_scope is None else nullcontext())
+        with scope:
+            return _saved_comsol_guarded(context=context, parent=parent, model=model, resolved=resolved,
+                resolved_budget=resolved_budget, budget_record=budget_record, plan_record=plan_record,
+                sampling_plan=sampling_plan, run_id=run_id, source_id=source_id)
+
+
+def _saved_comsol_guarded(*, context, parent, model, resolved, resolved_budget, budget_record,
+                           plan_record, sampling_plan, run_id, source_id):
     resolved_record = file_record(Path(resolved["path"]), "required_evidence")
-    result = run_managed_stage(context,
+    return run_managed_stage(context,
         descriptor=dict(project="rf_multipole_ion_optics", mode="rf_stationary_saved_export",
                         software=["COMSOL 6.4", "MATLAB R2025b", "Python 3.11"]),
         run_id=run_id, payload=dict(action="saved_comsol_stationary", source_id=source_id,
@@ -189,7 +235,6 @@ def saved_comsol(*, parent_manifest: Path, sampling_plan: Path, budget: Path, ru
         action_record=file_record(Path(__file__).resolve(), "required_evidence"),
         expected_relative_paths=("inputs/saved_stationary_export.m",), use_short_execution_path=True,
         completion_api=no_particle_batch_completion_api)
-    return result
 
 
 def _field_runtime(path: Path, budget: Mapping[str, Any]) -> dict[str, Any]:
@@ -245,9 +290,15 @@ def execute_comsol_fields(session: Any, *, runtime: Mapping[str, Any], science_t
 
 def solve_comsol(*, resolved_runtime: Path, preregistration: Path, science_task: Path,
                  sampling_plan: Path, budget: Path, run_id: str, source_id: str,
-                 context: ExecutionContext) -> dict[str, Any]:
+                 context: ExecutionContext, artifact_store=None) -> dict[str, Any]:
     from msplatform.backends.comsol import rf_stationary_field
     from msplatform.backends.comsol.resources import native_resource_path
+    from msplatform.execution.owner import current_managed_native_store
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ValueError('RF stationary solve requires an explicit ArtifactStore or protected parent scope')
+    if parent is not None and artifact_store is not None and parent['store'] is not artifact_store:
+        raise ValueError('RF stationary solve must use the parent Store')
     resolved_budget, budget_record = _budget(budget, solver="comsol")
     runtime = _field_runtime(resolved_runtime, resolved_budget)
     design = runtime["design_profile_resolution"]["resolved_design"]
@@ -275,7 +326,7 @@ def solve_comsol(*, resolved_runtime: Path, preregistration: Path, science_task:
     prereg_record = file_record(preregistration, "required_evidence")
     plan_record = file_record(sampling_plan, "required_evidence")
     runtime_record = file_record(resolved_runtime, "required_evidence")
-    result = run_managed_stage(context,
+    result = run_managed_stage(context, artifact_store=artifact_store,
         descriptor=dict(project="rf_multipole_ion_optics", mode="rf_stationary_field_solve",
                         software=["COMSOL 6.4", "MATLAB R2025b", "Python 3.11"]),
         run_id=run_id, payload=dict(action="solve_comsol_stationary_fields", source_id=source_id,
@@ -361,12 +412,57 @@ def execute_simion_samples(session: Any, *, request: Mapping[str, Any], limits: 
 
 
 def simion_samples(*, request_path: Path, budget: Path, run_id: str, source_id: str,
-                   context: ExecutionContext) -> dict[str, Any]:
+                   context: ExecutionContext, artifact_store=None) -> dict[str, Any]:
+    from contextlib import ExitStack, nullcontext
+    from msplatform.execution.native_source_guard import guard_historical_run
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.io.file_identity import guarded_file_identity
+    parent_scope = current_managed_native_store()
+    if artifact_store is None and parent_scope is None:
+        raise ValueError('RF SIMION sampling requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent_scope['store']
+    if parent_scope is not None and parent_scope['store'] is not store:
+        raise ValueError('RF SIMION sampling must use the parent Store')
     request = _simion_request(request_path)
     resolved_budget, budget_record = _budget(budget, solver="simion")
     producer = file_record(Path(request["producer_manifest"]), "required_evidence")
-    verify_record("SIMION stationary producer manifest", producer)
-    require_completed_terminal_publication(Path(request["producer_manifest"]))
+    with ExitStack() as guards:
+        manifest_path = Path(producer['path']).resolve(strict=True)
+        assets = set()
+        if manifest_path.is_relative_to(store.root / 'assets'):
+            parts = manifest_path.relative_to(store.root).parts
+            if len(parts) < 6 or parts[:2] != ('assets', 'native_stage'):
+                raise ValueError('RF SIMION source Store identity differs')
+            asset = parts[3]
+            asset_path = guards.enter_context(store.claim_verified(asset))
+            if asset_path != store.root.joinpath(*parts[:4]):
+                raise ValueError('RF SIMION source Store owner differs')
+            assets.add(asset)
+        source = guards.enter_context(guard_historical_run(producer,
+            expected_project='rf_multipole_ion_optics', expected_mode='resolved_design_transport'))
+        controller = Path(request['controller_pa']).resolve(strict=True)
+        if not controller.is_relative_to(source.root):
+            raise ValueError('RF SIMION controller is outside its producer')
+        source.output(controller.relative_to(source.root).as_posix())
+        for path in (request_path, budget, Path(request['resolved_design']), Path(request['sampling_plan'])):
+            record = file_record(path, 'required_evidence')
+            guards.enter_context(guarded_file_identity(Path(record['path']), expected_bytes=record['bytes'],
+                                                        expected_sha256=record['sha256']))
+        if _simion_request(request_path) != request or _budget(budget, solver='simion')[0] != resolved_budget:
+            raise ValueError('RF SIMION author inputs changed during admission')
+        if parent_scope is not None and parent_scope['retain_source_assets']:
+            parent_scope['required_source_assets'].update(assets)
+        scope = (standalone_native_store(store, task_key='rf-simion-samples:' + run_id,
+            budget=resolved_budget['limits']['transient_run_directory_bytes'], required_assets=tuple(assets))
+            if parent_scope is None else nullcontext())
+        with scope:
+            return _simion_samples_guarded(context=context, request=request, request_path=request_path,
+                producer=producer, resolved_budget=resolved_budget, budget_record=budget_record,
+                run_id=run_id, source_id=source_id)
+
+
+def _simion_samples_guarded(*, context, request, request_path, producer, resolved_budget,
+                             budget_record, run_id, source_id):
     authorities = [budget_record, file_record(request_path, "required_evidence"),
                    file_record(Path(sampling.__file__).resolve(), "required_evidence")]
     return run_managed_stage(context,
@@ -435,144 +531,18 @@ def validate_preregistration(document: Mapping[str, Any], *, solver: str, run_id
     return dict(document)
 
 
-def _context(arguments: argparse.Namespace, *, tools: Mapping[str, Path]) -> ExecutionContext:
+def _context(arguments: Any, *, tools: Mapping[str, Path]) -> ExecutionContext:
     return ExecutionContext(workspace=Path(arguments.workspace).absolute(),
         python_executable=Path(arguments.python).absolute(),
         powershell_executable=Path(arguments.powershell).absolute(), tools=tools,
         host_state_path=Path(arguments.host_state).absolute(), policy_path=Path(arguments.policy).absolute())
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    commands = parser.add_subparsers(dest="command", required=True)
-    generate = commands.add_parser("generate")
-    generate.add_argument("--resolved-design", type=Path, required=True)
-    generate.add_argument("--sampling-plan", type=Path, required=True)
-    generate.add_argument("--output", type=Path, required=True)
-    validate = commands.add_parser("validate")
-    validate.add_argument("--input", type=Path, required=True)
-    validate.add_argument("--output", type=Path, required=True)
-    validate.add_argument("--authority", type=Path)
-    authorize = commands.add_parser("authorize")
-    authorize.add_argument("--resolved-design", type=Path, required=True)
-    authorize.add_argument("--sampling-plan", type=Path, required=True)
-    authorize.add_argument("--points", type=Path, required=True)
-    authorize.add_argument("--source-id", required=True)
-    authorize.add_argument("--output", type=Path, required=True)
-    comparison = commands.add_parser("comparison-authority")
-    comparison.add_argument("--reference-authority", type=Path, required=True)
-    comparison.add_argument("--candidate-authority", type=Path, required=True)
-    comparison.add_argument("--coordinate-tolerance-mm", type=float, required=True)
-    comparison.add_argument("--output", type=Path, required=True)
-    compare = commands.add_parser("compare")
-    compare.add_argument("--reference", type=Path, required=True)
-    compare.add_argument("--candidate", type=Path, required=True)
-    compare.add_argument("--output", type=Path, required=True)
-    compare.add_argument("--comparison-authority", type=Path)
-    for name in ("solve-comsol", "saved-comsol", "simion-sample"):
-        command = commands.add_parser(name)
-        command.add_argument("--budget", type=Path, required=True)
-        command.add_argument("--run-id", required=True)
-        command.add_argument("--source-id", required=True)
-        command.add_argument("--workspace", type=Path, required=True)
-        command.add_argument("--python", type=Path, required=True)
-        command.add_argument("--powershell", type=Path, required=True)
-        command.add_argument("--host-state", type=Path, required=True)
-        command.add_argument("--policy", type=Path, required=True)
-        if name in {"solve-comsol", "saved-comsol"}:
-            if name == "solve-comsol":
-                command.add_argument("--resolved-runtime", type=Path, required=True)
-                command.add_argument("--preregistration", type=Path, required=True)
-                command.add_argument("--science-task", type=Path, required=True)
-            else:
-                command.add_argument("--parent-manifest", type=Path, required=True)
-            command.add_argument("--sampling-plan", type=Path, required=True)
-            command.add_argument("--comsol-launcher", type=Path, required=True)
-            command.add_argument("--matlab-root", type=Path, required=True)
-        else:
-            command.add_argument("--request", type=Path, required=True)
-            command.add_argument("--simion", type=Path, required=True)
-    resume = commands.add_parser("resume-finalization")
-    resume.add_argument("--result-path", type=Path, required=True)
-    resume.add_argument("--workspace", type=Path, required=True)
-    resume.add_argument("--python", type=Path, required=True)
-    resume.add_argument("--powershell", type=Path, required=True)
-    resume.add_argument("--host-state", type=Path, required=True)
-    resume.add_argument("--policy", type=Path, required=True)
-    return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    arguments = _build_parser().parse_args(argv)
-    if arguments.command == "generate":
-        rows = sampling.generate_stationary_field_sample_rows(
-            _json(arguments.resolved_design), _json(arguments.sampling_plan))
-        arguments.output.parent.mkdir(parents=True, exist_ok=True)
-        sampling.write_stationary_field_sample_csv(rows, arguments.output)
-        return 0
-    if arguments.command == "validate":
-        if arguments.authority is not None:
-            sampling.validate_stationary_output_authority(_json(arguments.authority), arguments.input)
-        _validation_document(arguments.authority, arguments.input, arguments.output) if arguments.authority else None
-        if arguments.authority is None:
-            records = sampling.load_stationary_field_output_csv(arguments.input)
-            write_json_atomic(arguments.output, dict(schema_version=1,
-                role="multipole_stationary_field_sample_validation", status="PASS",
-                field_cases=list(sampling.FIELD_CASES),
-                point_count=len({row.sample_id for row in records}), row_count=len(records)))
-        return 0
-    if arguments.command == "authorize":
-        with arguments.points.open(encoding="utf-8", newline="") as stream:
-            reader = csv.DictReader(stream)
-            if tuple(reader.fieldnames or ()) != sampling.SAMPLE_COLUMNS:
-                raise sampling.StationaryFieldContractError("stationary point columns differ")
-            points = list(reader)
-        authority = sampling.build_stationary_sampling_authority(
-            _json(arguments.resolved_design), _json(arguments.sampling_plan), points,
-            points_path=arguments.points, source_id=arguments.source_id)
-        write_json_atomic(arguments.output, authority)
-        return 0
-    if arguments.command == "comparison-authority":
-        authority = sampling.build_multipole_comparison_authority(
-            _json(arguments.reference_authority), _json(arguments.candidate_authority),
-            coordinate_tolerance_mm=arguments.coordinate_tolerance_mm)
-        write_json_atomic(arguments.output, authority)
-        return 0
-    if arguments.command == "compare":
-        if arguments.comparison_authority is not None:
-            _compare_generic(arguments)
-        else:
-            comparison = sampling.compare_stationary_field_outputs(
-                sampling.load_stationary_field_output_csv(arguments.reference),
-                sampling.load_stationary_field_output_csv(arguments.candidate))
-            write_json_atomic(arguments.output, comparison)
-        return 0
-    if arguments.command == "resume-finalization":
-        resume_finalization(_context(arguments, tools={}), arguments.result_path)
-        return 0
-    if arguments.command == "solve-comsol":
-        context = _context(arguments, tools=dict(comsol_launcher=arguments.comsol_launcher.absolute(),
-                                                 matlab_root=arguments.matlab_root.absolute()))
-        solve_comsol(resolved_runtime=arguments.resolved_runtime,
-            preregistration=arguments.preregistration, science_task=arguments.science_task,
-            sampling_plan=arguments.sampling_plan, budget=arguments.budget,
-            run_id=arguments.run_id, source_id=arguments.source_id, context=context)
-        return 0
-    if arguments.command == "saved-comsol":
-        context = _context(arguments, tools=dict(comsol_launcher=arguments.comsol_launcher.absolute(),
-                                                 matlab_root=arguments.matlab_root.absolute()))
-        saved_comsol(parent_manifest=arguments.parent_manifest, sampling_plan=arguments.sampling_plan,
-            budget=arguments.budget, run_id=arguments.run_id, source_id=arguments.source_id, context=context)
-        return 0
-    if arguments.command == "simion-sample":
-        context = _context(arguments, tools=dict(simion=arguments.simion.absolute()))
-        simion_samples(request_path=arguments.request, budget=arguments.budget,
-            run_id=arguments.run_id, source_id=arguments.source_id, context=context)
-        return 0
-    raise AssertionError(arguments.command)
 
 
-def _compare_generic(arguments: argparse.Namespace) -> None:
+def _compare_generic(arguments: Any) -> None:
     import pandas as pd
     from types import SimpleNamespace
     from msplatform.analysis.field_comparison import compare_static_field_samples, validate_static_comparison_authority
@@ -611,7 +581,3 @@ def _compare_generic(arguments: argparse.Namespace) -> None:
             coordinate_tolerance_mm=authority["coordinate_tolerance_mm"])
     write_json_atomic(arguments.output, dict(schema_version=1, role="multipole_static_field_comparison",
         status="DESCRIPTIVE_ONLY", field_cases=generic))
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

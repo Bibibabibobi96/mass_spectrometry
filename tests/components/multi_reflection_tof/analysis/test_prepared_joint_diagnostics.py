@@ -7,23 +7,28 @@ import json
 import math
 import os
 import re
-import shutil
 import sys
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from msplatform.execution.retention import file_record
-from msplatform.workflows.prepared_joint.source import (
-    materialize_measured_source, materialize_measured_source_slice,
-)
+from msplatform.contracts.particle_state import load_component_particle_state_csv
+from tests.contracts.test_support.historical_measured_fixture import captured_measured_fixture
 from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
 from msplatform.workflows.prepared_joint.diagnostics import main
 from msplatform.workflows.prepared_joint.diagnostics import (
-    _design_reference, _prism_rows, _prism_statistics, _save_figure, _snapshot_rows, analyze_prepared_joint_flight,
-    _trajectory_lifetimes, _validate_birth_clock_projection, build_prism_figure,
+    analyze_prepared_joint_flight,
 )
-from tests.components.multi_reflection_tof.analysis import test_measured_component_source as fixtures
+from functools import partial
+from msplatform.results.mr_joint_output import save_figure
+_save_figure = partial(save_figure, record_file=file_record)
+from msplatform.analysis.mr_trajectory_diagnostics import prism_statistics, prism_rows, build_prism_figure, trajectory_lifetimes, snapshot_rows
+from msplatform.results.historical_joint_source import iter_trajectory_rows, validate_birth_clock_projection, read_design_reference
+from msplatform.execution.retention import verify_record
+_design_reference = partial(read_design_reference, verify=verify_record)
 
 
 class PreparedJointDiagnosticsTests(unittest.TestCase):
@@ -79,7 +84,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                         _save_figure(figure, target, {})
                     self.assertEqual(list(directory.iterdir()), [])
                 else:
-                    with patch("msplatform.workflows.prepared_joint.diagnostics._write",
+                    with patch("msplatform.results.mr_joint_output._write",
                                side_effect=OSError("metadata failure")), \
                          self.assertRaisesRegex(OSError, "metadata failure"):
                         _save_figure(figure, target, {})
@@ -88,23 +93,35 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                 self.assertFalse(plt.fignum_exists(figure.number))
 
     def setUp(self) -> None:
-        self.fixture = fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
-        self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
-        self.root = self.fixture.root
-        producer = self.fixture.fixture
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.source = self.root / "measured_source"
+        captured_measured_fixture(self.source)
+        rows = load_component_particle_state_csv(self.source/'component_particle_state.csv').rows
+        # Synthetic log coordinates reproduce the inverse of the captured
+        # registered frame; no source producer or native flight is invoked.
+        rows = [dict(row, position_y_mm=row['position_y_mm']+225) for row in rows]
+        def write(path, value):
+            path.write_text(json.dumps(value)+'\n', encoding='utf-8')
+        producer = SimpleNamespace(rows=rows, _write=write)
+        self.fixture = SimpleNamespace(fixture=producer)
         (self.root / "simion").mkdir()
         for name in ("events.csv", "samples.csv"):
             (self.root / "simion" / name).write_text(
                 "particle_id,t_us,x_mm\n9,0,1\n9,21,2\n1,22,3\n", encoding="utf-8")
         self.manifest = self.root / "run_manifest.json"
         producer._write(self.manifest, {"inputs": {}, "outputs": [file_record(p) for p in (self.root / "simion").iterdir()]})
-        producer.receipt["inputs"]["run_manifest.json"] = file_record(self.manifest)
-        producer._write(producer.receipt_path, producer.receipt)
-        handoff = self.root / "diagnostic_handoff"
-        producer._prepare(handoff)
-        self.source = self.root / "measured_source"
-        materialize_measured_source(handoff / "handoff_receipt.json", self.source)
+        # Synthetic wrapper binds the synthetic upstream logs; it is not a
+        # captured producer manifest or evidence of a native run.
+        component = self.root/'synthetic_component.json'
+        producer._write(component, {'source_run':str(self.root), 'inputs':{'run_manifest.json':file_record(self.manifest)}})
+        handoff = self.root/'synthetic_handoff.json'
+        producer._write(handoff, {'inputs':{'component_receipt':file_record(component)}})
+        receipt_path = self.source/'source_receipt.json'
+        captured_receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
+        captured_receipt['inputs']['handoff_receipt'] = file_record(handoff)
+        producer._write(receipt_path, captured_receipt)
         policy = dict(schema_version=1, mode="fixed_interval", interval_us=.1,
                       retention_class="solver_review", reason="synthetic evidence test", output_budget_bytes=2000000)
         contract = self.root / "contract.json"
@@ -132,7 +149,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                     "mirror_ground_shields", "mirror_e_closures", "stripe_electrodes", "stripe_slot",
                     "central_ground_electrodes", "central_ground_slots", "prism_electrodes", "prism_ground_shields")}
         geometry["frame_id"] = "mr_frame.v2"
-        binding_mock = patch("msplatform.workflows.prepared_joint.diagnostics.load_binding",
+        binding_mock = patch("msplatform.workflows.historical_joint_analysis.load_binding",
                              return_value=dict(geometry=geometry, refinement_windows=[]))
         binding_mock.start()
         self.binding_mock = binding_mock
@@ -285,6 +302,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         self.assertEqual(loss_rows[2]["source_position_x_mm"], "")
         self.assertEqual(result["loss_acceptance"]["group_counts"],
                          {"detected": 1, "early_contact": 1, "not_transferred": 1})
+        verify_record("loss analysis producer", result["loss_acceptance"]["producer"])
         with (self.output / "prism_phase_space.csv").open(newline="") as stream:
             rows = list(csv.DictReader(stream))
         self.assertEqual({int(r["particle_id"]) for r in rows}, {1, 7})
@@ -412,8 +430,14 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         for ordinal, particle in enumerate((1, 7), 1):
             directory = self.root / f"batch_{ordinal}"
             directory.mkdir()
-            receipt = materialize_measured_source_slice(self.source, directory / "measured_source", ordinal, ordinal)
-            shutil.copyfile(directory / "measured_source/source.fly2", directory / "joint.fly2")
+            # Reader fixture only: these inert bytes are never sent to SIMION.
+            row = next(row for row in load_component_particle_state_csv(self.source/'component_particle_state.csv').rows
+                       if row['particle_id'] == particle)
+            offset = row['instrument_time_us'] - epoch
+            (directory/'joint.fly2').write_text(f'-- INERT TEST FIXTURE, never flown\ntob = {offset:.17g},\n', encoding='utf-8')
+            receipt = dict(schema_version=1, role='mrtof_measured_source_batch', count=1,
+                ordinal_min=ordinal, ordinal_max=ordinal, original_particle_ids=[particle],
+                solver_epoch_instrument_time_us=epoch, outputs={'source': file_record(directory/'joint.fly2')})
             receipt_path, log = directory / "batch_receipt.json", directory / "flight.log"
             receipt_path.write_text(json.dumps(receipt))
             lines = [re.sub(r"t_us=[^ ]+", f"t_us={epoch:.17g}", line)
@@ -421,7 +445,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                      for line in self.original_lines if f"ion={particle} " in line]
             log.write_text("\n".join(lines)+"\nstatus,Fly completed. 1 splats\n")
             if structured:
-                from msplatform.backends.simion.mrtof_observations import parse_events
+                from msplatform.analysis.mr_observations import parse_events
                 events = parse_events(log.read_text())
                 event_path, trajectory_path = directory / "events.csv", directory / "trajectory.csv"
                 columns = list(dict.fromkeys(key for event in events for key in event))
@@ -497,7 +521,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         states = {1: source}
         base = dict(kind="p2_low_field_crossing", ion=1, t_us=7501, x_mm=0, y_mm=0, z_mm=33,
                     vx_mm_us=0, vy_mm_us=1, vz_mm_us=-1, inside_aperture=0, direction_ok=0)
-        rows = _prism_rows([base, dict(base, t_us=7502)], states)
+        rows = prism_rows([base, dict(base, t_us=7502)], states)
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["signed_yz_angle_deg"], 135)
         self.assertEqual([r["first_recorded_crossing"] for r in rows], [1, 0])
@@ -508,7 +532,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         path.write_text("ion,phase,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n1,birth,9,0,0,0,1,0,0\n1,terminal,12,2,0,0,1,0,0\n", encoding="utf-8")
         lifetime = {1: {"birth": 10., "terminal": 12., "terminal_state": {key: float(key=="x_mm")*2 for key in ("x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")}}}
         times = [{"label": str(t), "instrument_time_us": t} for t in (9., 11., 13.)]
-        rows, gap = _snapshot_rows(path, lifetime, [{"particle_id": "1"}], {1: "loss"}, times)
+        rows, gap = snapshot_rows(iter_trajectory_rows(path), lifetime, [{"particle_id": "1"}], {1: "loss"}, times)
         self.assertEqual([r["state"] for r in rows], ["not_yet_handed_off", "alive", "loss"])
         self.assertEqual([r["x_mm"] for r in rows], ["", 1., 2.])
         self.assertEqual(gap, 2)
@@ -518,10 +542,10 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
         source = self.fixture.fixture.rows[0]
         base = dict(kind="p2_low_field_crossing", ion=1, t_us=7501, x_mm=0, y_mm=0, z_mm=33,
                     vx_mm_us=0, vy_mm_us=.01, vz_mm_us=-1, inside_aperture=1, direction_ok=0)
-        rows = _prism_rows([base, dict(base, ion=7, vy_mm_us=-.01)], {1: source, 7: source})
+        rows = prism_rows([base, dict(base, ion=7, vy_mm_us=-.01)], {1: source, 7: source})
         for row in rows:
             row.update(raw_signed_angle_difference_to_reference_deg="", positive_turn_y_difference_to_reference_mm="")
-        result = _prism_statistics(rows, {1, 7, 9})["p2_fixed_plane"]
+        result = prism_statistics(rows, {1, 7, 9})["p2_fixed_plane"]
         self.assertAlmostEqual(abs(result["signed_yz_circular_mean_deg"]), 180)
         self.assertEqual(result["nonpositive_vz_ids"], [1, 7])
         self.assertEqual(result["missing_mother_particle_ids"], [9])
@@ -550,7 +574,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                       "velocity_x_m_s": "1000", "velocity_y_m_s": "0", "velocity_z_m_s": "0"}}
         terminal = {1: {"t_us": 11., "x_mm": 3., "y_mm": 0., "z_mm": 0., "vx_mm_us": 1., "vy_mm_us": 0., "vz_mm_us": 0.}}
         with self.assertRaisesRegex(ValueError, "terminal differs"):
-            _trajectory_lifetimes(path, source, terminal)
+            trajectory_lifetimes(iter_trajectory_rows(path), source, terminal)
 
     def test_initialize_zero_clock_projects_only_birth_in_full_pipeline(self) -> None:
         epoch = self.prepared["solver_epoch_instrument_time_us"]
@@ -594,7 +618,7 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                          velocity_y_m_s="182.791088579899", velocity_z_m_s="-40130.961605510696")}
         raw_terminal = list(csv.DictReader(text.splitlines()))[-1]
         terminal = {1: {key: float(f"{float(raw_terminal[key]):.12g}") for key in ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")}}
-        result = _trajectory_lifetimes(path, source, terminal, initialization_epoch_us=7500.63364963072)
+        result = trajectory_lifetimes(iter_trajectory_rows(path), source, terminal, initialization_epoch_us=7500.63364963072)
         self.assertEqual(result[1]["birth"], 7500.63727401505)
         self.assertEqual(result[1]["raw_birth_time_us"], 7500.63364963072)
         self.assertTrue(result[1]["six_dimensional_state_exact"])
@@ -605,21 +629,21 @@ class PreparedJointDiagnosticsTests(unittest.TestCase):
                                  (text.replace("7500.7029782765412", "7500.634"), "precedes canonical")):
             path.write_text(changed, encoding="utf-8")
             with self.assertRaisesRegex(ValueError, message):
-                _trajectory_lifetimes(path, source, terminal, initialization_epoch_us=7500.63364963072)
+                trajectory_lifetimes(iter_trajectory_rows(path), source, terminal, initialization_epoch_us=7500.63364963072)
 
     def test_fly2_must_keep_real_non_simultaneous_birth_offsets(self) -> None:
         source_path = self.source / "source_receipt.json"
         source = json.loads(source_path.read_text())
         with (self.source / "component_particle_state.csv").open(newline="") as handle:
             states = {int(r["particle_id"]): r for r in csv.DictReader(handle)}
-        result = _validate_birth_clock_projection(source, states, self.source)
+        result = validate_birth_clock_projection(source, states, self.source)
         self.assertEqual(result["verified_particle_count"], 2)
         fly_path = self.source / "source.fly2"
         import re
         fly_path.write_text(re.sub(r"\btob = [^,]+,", "tob = 0,", fly_path.read_text()), encoding="utf-8")
         source["outputs"]["source"] = file_record(fly_path)
         with self.assertRaisesRegex(ValueError, "birth offset differs"):
-            _validate_birth_clock_projection(source, states, self.source)
+            validate_birth_clock_projection(source, states, self.source)
 
 
     def test_structured_recorded_pipeline_keeps_complete_source_and_declared_trajectory(self):

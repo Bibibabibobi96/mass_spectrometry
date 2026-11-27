@@ -1,4 +1,4 @@
-"""Split OA–TOF native collector keeps full mixed-mass mother identities."""
+"""Split OA鈥揟OF native collector keeps full mixed-mass mother identities."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import subprocess
@@ -102,6 +102,21 @@ class SplitTofTrackingTests(unittest.TestCase):
         numerics = dict(parent=dict(refine_convergence_v=dict(carrier_off=.01, pulse_delta=.01)))
         design = plan_solve_fields(model, numerics=dict(frontend_domains=numerics))['field_design']
         self.assertEqual(_bound_tracking_model(model, {}, doc['components_resolved']['tof'], geometry, design, flight), doc)
+        reference = doc['drive']['pulse']
+        discovery = {'phase': 'discovery', 'author': {'mode': 'discover',
+            'width_us': reference['width_us'],
+            'candidate_times_us': [reference['time_us'], reference['time_us'] + 1.]}}
+        pilot = dict(flight, pulse={'mode': 'held_off'})
+        self.assertEqual(_bound_tracking_model(model, {}, doc['components_resolved']['tof'],
+            geometry, design, pilot, discovery), doc)
+        with self.assertRaises(ValueError):
+            _bound_tracking_model(model, {}, doc['components_resolved']['tof'], geometry, design, pilot)
+        with self.assertRaises(ValueError):
+            _bound_tracking_model(model, {}, doc['components_resolved']['tof'], geometry, design,
+                pilot, dict(discovery, phase='selected'))
+        wrong = dict(discovery, author=dict(discovery['author'], width_us=reference['width_us'] + 1.))
+        with self.assertRaises(ValueError):
+            _bound_tracking_model(model, {}, doc['components_resolved']['tof'], geometry, design, pilot, wrong)
         _, config = _native_field_analyzer_config({}, design, geometry, doc['components_resolved']['tof'], model_document=doc)
         self.assertEqual(config['instance_roles']['detector'], 4)
         self.assertEqual(config['geometry']['detector_z_mm'], geometry['detector_active_face']['native']['center_mm'][2])
@@ -144,6 +159,80 @@ class SplitTofTrackingTests(unittest.TestCase):
                 dict(background=1,flight_tube=2,reflectron=3,accelerator=4,detector=5))
             self.assertIn('local single_flight_accelerator_instance_index=4', rendered['program'])
             self.assertIn('local single_flight_detector_instance_index=5', rendered['program'])
+            plan['observations']['field_intervention'] = {'id': 'ideal', 'selector': 'ideal:reflectron.ez'}
+            diagnostic = _render_tracking_controls(model, plan, field_design=design, stored_bank=field_bank(design,domains),
+                frontend_records=frontend, downstream_assets=downstream, downstream_receipt=record('audit.json'), native_sources=sources)
+            self.assertIn('ideal_reflectron_stage1_axial=true', diagnostic['program'])
+            self.assertIn('ideal_reflectron_stage2_axial=true', diagnostic['program'])
+            self.assertEqual(diagnostic['build_metadata']['field_intervention']['selector'], 'ideal:reflectron.ez')
+            # Run the generated callback with the actual analyzer/region code and
+            # controlled scalar samples. This is a Lua software test, not a Fly.
+            import re
+            lua = Path('C:/Program Files/SIMION-2020/lua.exe')
+            if not lua.is_file():
+                self.skipTest('standalone SIMION Lua unavailable')
+            harness = root / 'scalar_intervention_harness.lua'
+            harness.write_text(r"""
+segment={}
+simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+ion_number=1;ion_time_of_flight=0;ion_px_mm=0;ion_py_mm=0
+local slot=tonumber(arg[2]);ion_instance=slot
+simion.wb.instances[slot]={pa={dx_mm=2,dy_mm=3,dz_mm=4},scale=1}
+dofile(arg[1]);segment.test_setup()
+ion_pz_mm=segment.test_position();ion_dvoltsx_gu=2;ion_dvoltsy_gu=3;ion_dvoltsz_gu=4
+segment.efield_adjust()
+local expected,full=segment.test_expected(tonumber(arg[3]))
+assert(math.abs(ion_dvoltsx_gu-expected)<1e-12, tostring(ion_dvoltsx_gu)..' vs '..tostring(expected))
+assert(ion_dvoltsy_gu==(full and 0 or 3) and ion_dvoltsz_gu==(full and 0 or 4))
+print('SCALAR_INTERVENTION_CALLBACK=PASS')
+""", encoding='utf-8')
+            tail = r"""
+segment.test_setup=function()
+ single_flight_scalar=function() return 2,3,4 end
+ single_flight_analyzer=single_flight_analyzer_component.new(analyzer_config)
+ single_flight_pulse={is_active_at=function() return false end}
+end
+segment.test_position=function()
+ if tonumber(arg[3])==2 then return (analyzer_config.geometry.reflectron_midgrid_z_mm+analyzer_config.geometry.reflectron_backplate_z_mm)/2 end
+ return (analyzer_config.geometry.reflectron_entgrid_z_mm+analyzer_config.geometry.reflectron_midgrid_z_mm)/2
+end
+segment.test_expected=function(stage)
+ local m=analyzer_config.field_modes
+ local full=stage==1 and m.ideal_reflectron_stage1 or stage==2 and m.ideal_reflectron_stage2
+ if stage==1 and (m.ideal_reflectron_stage1_axial or full) then
+  return 2*analyzer_config.voltages.mid_v/(analyzer_config.geometry.reflectron_midgrid_z_mm-analyzer_config.geometry.reflectron_entgrid_z_mm),full
+ elseif stage==2 and (m.ideal_reflectron_stage2_axial or full) then
+  return 2*(analyzer_config.voltages.backplate_v-analyzer_config.voltages.mid_v)/(analyzer_config.geometry.reflectron_backplate_z_mm-analyzer_config.geometry.reflectron_midgrid_z_mm),full
+ end
+ return 2,false
+end
+"""
+            import copy
+            four_plan = copy.deepcopy(plan)
+            four_plan.pop('scalar_field_basis')
+            four_plan['flight']['detector_instance'] = 4
+            four_plan['observations'].pop('field_intervention')
+            four_base = _render_tracking_controls(model, four_plan, field_design=design, stored_bank=field_bank(design,domains),
+                frontend_records=frontend, downstream_assets=downstream, downstream_receipt=record('audit.json'), native_sources=sources)
+            four_plan['observations']['field_intervention'] = {'id': 'ideal', 'selector': 'ideal:reflectron.ez'}
+            four_ideal = _render_tracking_controls(model, four_plan, field_design=design, stored_bank=field_bank(design,domains),
+                frontend_records=frontend, downstream_assets=downstream, downstream_receipt=record('audit.json'), native_sources=sources)
+            plan['observations']['field_intervention'] = {'id': 'full', 'selector': 'ideal:reflectron.full'}
+            full = _render_tracking_controls(model, plan, field_design=design, stored_bank=field_bank(design,domains),
+                frontend_records=frontend, downstream_assets=downstream, downstream_receipt=record('audit.json'), native_sources=sources)
+            four_plan['observations']['field_intervention'] = {'id': 'full', 'selector': 'ideal:reflectron.full'}
+            four_full = _render_tracking_controls(model, four_plan, field_design=design, stored_bank=field_bank(design,domains),
+                frontend_records=frontend, downstream_assets=downstream, downstream_receipt=record('audit.json'), native_sources=sources)
+            for label, output, slot in (('real', rendered, 3), ('axial', diagnostic, 3), ('full', full, 3),
+                                         ('real', four_base, 2), ('axial', four_ideal, 2), ('full', four_full, 2)):
+                program_file = root / ('actual-scalar-' + str(slot) + '-' + label + '.lua')
+                config_line = next(line for line in output['program'].splitlines() if line.startswith('  local analyzer_config='))
+                program_file.write_text(re.sub(r'\badjustable\s+', '', output['program']) + '\n' + config_line + '\n' + tail, encoding='utf-8')
+                for stage in (1, 2):
+                    executed = subprocess.run([str(lua), str(harness), str(program_file), str(slot), str(stage)],
+                        cwd=root, capture_output=True, text=True, timeout=30, check=False)
+                    self.assertEqual(executed.returncode, 0, executed.stdout + executed.stderr)
+                    self.assertIn('SCALAR_INTERVENTION_CALLBACK=PASS', executed.stdout)
 
     def test_split_plan_requires_actual_detector_and_rejects_relaunch(self):
         from msplatform.assembly.handoff import HandoffResult

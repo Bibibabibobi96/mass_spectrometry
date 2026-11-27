@@ -2960,7 +2960,7 @@ zero unclassified; full language counts/filter remain in task evidence.
 
 `msplatform.workflows.prepared_joint.diagnostics` owns the existing recorded
 analysis, using canonical measured-population/loss policy and
-`backends.simion.mrtof_observations` event/trajectory adapters. Neutral scientific
+`analysis.mr_observations` event/trajectory adapters. Neutral scientific
 CSV and figure export each have one installed owner. All five replaced root
 implementations and their active CLI/freezer references are retired together.
 Native preparation/controller and remaining MR workflow migration stay open.

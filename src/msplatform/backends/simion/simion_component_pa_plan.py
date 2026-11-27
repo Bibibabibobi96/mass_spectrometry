@@ -16,7 +16,7 @@ from typing import Any, Iterable, Mapping
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.recorded_file_removal import write_json_atomic
-from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.pa_identity import canonical_pa_family_cache_key
 from msplatform.backends.simion.tof_geometry import (
     derive_simion_instances,
     resolve_physical_geometry,

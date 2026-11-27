@@ -14,7 +14,7 @@ from msplatform.contracts.machine_contracts import ContractError
 from msplatform.io.manifest_records import record_path
 from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.results.mr_batch_continuation import continuation_protection_projection
-from msplatform.backends.simion.native_completion import parse_fly_completed_line
+from msplatform.analysis.native_completion import parse_fly_completed_line
 from msplatform.execution.recovery import (
     WholeUnitReplayUnit,
     build_whole_unit_replay_plan,
@@ -134,7 +134,7 @@ def _complete_oa_batch(log: Path, count: int, scientific_event_output=None) -> b
                 if line.startswith("IOB_FLIGHT: PASS iob="):
                     sentinels += 1
     else:
-        from msplatform.backends.simion.mrtof_observations import read_scientific_events
+        from msplatform.analysis.mr_observations import read_scientific_events
         def observe(raw):
             nonlocal sentinels, last_line
             line = raw.rstrip("\r\n")
@@ -450,7 +450,7 @@ def _same_prepared_flight(parent: Path, current: Path) -> tuple[bool, dict[str, 
     if (not isinstance(old_peak, dict) or not isinstance(new_peak, dict)
             or old_peak.get("method_id") not in ("common_gaussian_kde_time_v1", "common_gaussian_kde_time_v2")):
         raise ContractError("prepared-joint peak analysis provenance is invalid")
-    from msplatform.workflows.prepared_joint.measured_population import validate_measured_peak_analysis_contract
+    from msplatform.results.historical_joint_source import validate_measured_peak_analysis_contract
     try:
         validate_measured_peak_analysis_contract(new_peak, record_path(records[1]).parent)
     except (AssertionError, OSError, ValueError, KeyError, TypeError) as exc:

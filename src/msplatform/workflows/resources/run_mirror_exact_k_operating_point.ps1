@@ -114,7 +114,7 @@ try {
     'src\msplatform\execution\resources\host_resource_policy.json',
     'src\msplatform\components\multi_reflection_tof\dual_stripe_l0.py',
     'src\msplatform\workflows\mr_design\dual_stripe_operating_seed.py',
-    'src\msplatform\components\multi_reflection_tof\drift_phase_contract.py',
+    'src\msplatform\contracts\drift_phase_contract.py',
     'src\msplatform\workflows\prepared_joint\joint_mirror_stripe_l0.py',
     'src\msplatform\components\multi_reflection_tof\mirror_candidate_receipt.py',
     'src\msplatform\workflows\mr_design\mirror_exact_k_operating_point.py',

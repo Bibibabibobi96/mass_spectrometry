@@ -421,7 +421,7 @@ class RuntimeReplayTests(unittest.TestCase):
         if executable is None:
             self.skipTest("Standalone Lua unavailable; set SIMION_LUA_EXE for replay contract test")
         config = {name: json.loads((PROJECT / "config" / f"{name}.json").read_text(encoding="utf-8"))
-                  for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point")}
+                  for name in ("baseline", "gas_environment", "numerics", "source", "acceptance", "native_operating_point")}
         if mode == "zero-alignment":
             config["baseline"]["electric"]["rf_quench_alignment"] = "next_cosine_zero"
         from msplatform.components.ion_processor.timing import derive_native_timing
@@ -443,13 +443,14 @@ class RuntimeReplayTests(unittest.TestCase):
         from msplatform.workflows.ion_processor.preparation import derive_numerical_boundaries
         config["numerical_boundaries"]=derive_numerical_boundaries(config["native_projection"])
         from msplatform.contracts.gas import BoxDomain
-        from msplatform.components.ion_processor.gas_regions import build_gas_field_spec
+        from msplatform.components.ion_processor.gas_regions import project_ip_baseline, resolve_ip_environment
         from msplatform.components.ion_processor.coordinates import transform_from_config
         from msplatform.gas.field import prepare_gas_field
         from msplatform.backends.simion.gas_runtime import compile_gas_runtime
         projection = config["native_projection"]
-        gas_spec = build_gas_field_spec(config["baseline"], domain=BoxDomain(
-            projection["origin_mm"], projection["maximum_mm"], (True,)*3, (True,)*3))
+        gas_spec = resolve_ip_environment(config["gas_environment"], config["baseline"], domain=BoxDomain(
+            projection["origin_mm"], projection["maximum_mm"], (True,)*3, (True,)*3)).fields[0]
+        config["baseline"] = project_ip_baseline(config["gas_environment"], config["baseline"])
         gas_lua = compile_gas_runtime(prepare_gas_field(gas_spec), placement=transform_from_config(config))
         config["gas_runtime"] = {"query_frame_id": transform_from_config(config).to_frame_id}
         with tempfile.TemporaryDirectory(prefix="ion_processor_replay_test_") as temporary:

@@ -13,7 +13,7 @@ from msplatform.components.rf_multipole import event_table
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.contracts.machine_contracts import ContractError
 from msplatform.io.file_identity import file_sha256
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface as build_assembly_interface
 from msplatform.components.rf_multipole.interface_geometry import transport_numerical_domain, transport_observations
 

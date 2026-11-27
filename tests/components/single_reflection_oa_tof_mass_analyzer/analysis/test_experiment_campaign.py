@@ -37,6 +37,8 @@ def authorized_campaign_fixture():
             / "reflectron_midgrid_structural_campaign.json"
         )
         request["status"] = "approved"
+        request["schema_version"] = 2
+        request.pop("evidence_level")
         request["approval"] = {
             "approved_by": "test_owner",
             "approved_on": "2026-07-31",
@@ -122,6 +124,8 @@ class ExperimentCampaignTests(unittest.TestCase):
                 shutil.copyfile(PROJECT_ROOT/record["path"], destination)
                 if record is document["base_request"]:
                     request = load_json(destination)
+                    request["schema_version"] = 2
+                    request.pop("evidence_level")
                     request.update(status="approved", approval=dict(approved_by="fixture", approved_on="2026-10-30"))
                     destination.write_text(json.dumps(request), encoding="utf-8")
                 if record is document["authorities"]["science_profile"]:
@@ -197,15 +201,15 @@ class ExperimentCampaignTests(unittest.TestCase):
         original = json.loads(before)
         rendered = sync.render_authority_document(DEFAULT_CAMPAIGN, sync.render_optimization_envelope())
         refreshed = json.loads(rendered)
-        self.assertEqual(refreshed["execution_profile"]["authority"]["sha256"],
-                         sha256(PROJECT_ROOT / "config/execution_profiles.json"))
+        self.assertEqual(refreshed["execution_profile"]["authority"],
+                         original["execution_profile"]["authority"])
         self.assertEqual({k: v for k, v in refreshed.items() if k != "execution_profile"},
                          {k: v for k, v in original.items() if k != "execution_profile"})
         self.assertEqual(refreshed["execution_profile"]["profile_id"], original["execution_profile"]["profile_id"])
         self.assertEqual(refreshed["execution_profile"]["capability_id"], original["execution_profile"]["capability_id"])
         self.assertEqual(refreshed["status"], "retired")
         self.assertFalse(refreshed["execution_authorized"])
-        self.assertEqual(rendered.encode("utf-8"), before, "checked-in author binding must be current and idempotent")
+        self.assertEqual(rendered.encode("utf-8"), before, "retired authority bytes must remain unchanged")
         self.assertEqual(DEFAULT_CAMPAIGN.read_bytes(), before)
         changed = copy.deepcopy(original)
         changed["execution_profile"]["authority"]["path"] = "config/unexpected_profiles.json"
@@ -424,17 +428,11 @@ class ExperimentCampaignTests(unittest.TestCase):
 
     def test_mass_spectrum_points_remain_one_joint_condition(self):
         mode = load_json(PROJECT_ROOT / "config" / "modes" / "mass_spectrum.json")
-        profile = next(
-            item
-            for item in load_json(PROJECT_ROOT / "config" / "execution_profiles.json")[
-                "profiles"
-            ]
-            if item["profile_id"] == "mass_spectrum_candidate"
-        )
+        profiles = load_json(PROJECT_ROOT / "config" / "execution_profiles.json")["profiles"]
         self.assertEqual(len(mode["species"]), 5)
         self.assertTrue(mode["particle_source"]["paired_initial_conditions_across_species"])
-        self.assertEqual(len([s for s in profile["steps"] if s["kind"] == "run"]), 1)
-        self.assertEqual(profile["supported_design_variables"], [])
+        self.assertNotIn("mass_spectrum_candidate", [item["profile_id"] for item in profiles])
+
 
 
 if __name__ == "__main__":

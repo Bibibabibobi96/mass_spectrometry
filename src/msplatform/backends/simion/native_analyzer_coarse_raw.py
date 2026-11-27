@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.pa_identity import canonical_pa_family_cache_key
 from msplatform.backends.simion.native_system_geometry import (
     build_analyzer_gem,
 )

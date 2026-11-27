@@ -23,7 +23,7 @@ from msplatform.components.multi_reflection_tof.mirror_l0 import MirrorL0Design
 from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.components.multi_reflection_tof.drift_phase_contract import (
+from msplatform.contracts.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 

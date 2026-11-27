@@ -2,6 +2,10 @@
 
 新公开链数值积分非相对论 Lorentz 方程，支持明确真空中静态均匀 E+B 和具名轴对齐平面。
 四份作者配置在[参考配方](../recipes/reference/uniform_e.toml)及其同目录；参考单元不是完整仪器。
+当前参考作者配方采用 schema3，显式 `species` 注册表分别声明 `species_id`、`species_kind`、
+质量和带符号电荷态；初态以 species_id 引用，解析后物理值必须与注册表一致。
+电子必须明确声明 `electron`、电荷态 −1，并使用版本化电子质量；负离子明确为 `ion`，不由电荷推断种类。
+参考示例的正离子、负离子和电子验证限于非相对论真空均匀场，不代表电子碰撞或原生求解器资格。
 参考 tracer 的时变场、碰撞、自洽、非参考几何由能力预检拒绝。选择 max_step 时须避免一步多次穿面；切触未保证检测。
 
 ## 安装与运行
@@ -54,7 +58,7 @@ C:\msplatform-env\Scripts\msplatform.exe results inspect <run_id> --artifact-roo
 ```
 
 `python -m msplatform` 使用相同入口。Python API 为 `msplatform.recipes.load_recipe`、
-`msplatform.tracing.trace_particles`、`msplatform.workflows.reference_tracing.run_recipe/inspect_results`。
+`msplatform.tracing.trace_particles`、`msplatform.workflows.tracing.run_recipe/inspect_results`。
 直接 tracer 消费已解析的 SI 科学数据；作者输入与身份由 load_recipe/validate_recipe 检查。
 `load_recipe(path)` 单次读取外部 TOML，返回对象的 `source_bytes` 保留该次不可变字节快照；
 run 使用同一快照解析、归档 `author.toml` 并计算 provenance 的 `author_sha256`。
@@ -78,6 +82,7 @@ run 使用同一快照解析、归档 `author.toml` 并计算 provenance 的 `au
 部署使用既有ExecutionContext/阶段策略/共享host调度；科学值来自唯一冻结Study。
 `validate` 返回 resolved与capabilities：implemented只说明编译路径，host_available只说明工具可用，
 native_verified=false不代表原生求解已验证。实际逐组合证据查[迁移记录](development/architecture-migration.md)。
+当前 SIMION 和 COMSOL 原生追踪预检拒绝 electron；正、负 ion 的真空预检并不赋予碰撞模型或仪器性能资格。
 
 软件路径包括SIMION→SIMION、COMSOL→COMSOL，以及显式COMSOL OFF/ON资产采样到SIMION。
 桥接必须声明原SIMION source-free FieldBundle作为碰撞载体及world/windows采样，
@@ -109,14 +114,52 @@ split原生SIMION运行由同一workflow将旧静态ground PA族转换为独立�
 部署stage policy须显式声明 `prepare_grounded_runtime_fields` 的预算与保留类别，科学配方不保存这些工程设置。
 该派生的小引用缓存由ArtifactStore管理，原始及派生PA分别由其既有原生owner管理删除。
 
+## 补偿作者来源
+
+补偿 Study 的 `model_input_sources.compensation_provenance` 可显式绑定相对 Study 路径与 SHA-256。
+该小文件冻结原 resolved Recipe、原模型、轴向响应样本、原场、完整拟合和新 drive 摘要；加载时保存原字节。
+消费前在同一 ArtifactStore 与执行 workspace 下保护实际样本和原场，重编原模型、重算拟合并核验新模型仅作声明的电极变化。
+同 Store 的必要来源资产绑定运行，外部来源仍由其原 owner 管理。新场阶段可在受管 owner 中使用已认证响应基
+组合新电压，再审计并发布与新模型绑定的完整 FieldBundle；该路径的软件测试不等于真实 SIMION 场或补偿准确度已验证。
+
+可在安装环境中以同一 Store 检查来源：
+
+```powershell
+python -m msplatform validate <recipe.toml> --artifact-root <store> --execution-environment <environment.json> --profile <profile> --workspace <workspace>
+```
+
+## 局部原出生研究
+
+原生 Study 版本2可在完整 parent 组件和连接之外显式给出 `local_scope`；装配仍保留被选区域与外部的边界关系。
+单 MR 的独立原出生路径要求显式 vacuum、观测面列表、真实 neutral sampled FieldBundle、
+`frozen_sampled_field` 数值标记及与该 Study 完全一致的模型和时钟。历史上游出口状态不自动成为新出生。
+公开准入会重新核对场的生产来源和几何；真实单 MR 场及商业求解器结果需单独验证。
+观测时间恰为出生时，记录使用原生 initialize 的实际六维状态；寿命内其他选定时间使用已接受步的插值，缺失或不完整记录不发布为完整结果。
+
+## 区域轴向场诊断
+
+SIMION split OA–TOF 的配方可以在 `[recording]` 明确声明单个
+`field_intervention = {id = "base", selector = "real"}`，或声明非空的
+`field_interventions = [{id = "base", selector = "real"}, {id = "drift", selector = "ideal:drift.ez"}]`。
+两者不可同时出现，case ID 必须唯一。selector 支持 `real` 和 `ideal:` 后以 `+` 组合的
+`accel.ez`、`drift.ez`、`stage1.ez`、`stage2.ez`、`reflectron.ez` 或 `all.ez`；
+不支持的分量会在运行前拒绝。COMSOL scalar-world 先应用完整采样场，再按所选区域替换轴向分量。轴向值取实际已编译 Study 的电压与几何，其他方向的场保留原求解值。
+
+case 集合使用同一个冻结原出生母群和场，分别保存完整 SI 结果与阶段回执；`inspect_results` 逐 case
+重读和核对统计及初态，返回 collection，而不会把相同粒子 ID 合并为一个母群。case 执行和统计的
+软件合同不等于商业求解器验证或数值精度认证。
+
 ## 结果与复用
 
 每个运行独立保留 resolved.json、provenance.json、execution.json、summary.json、run_manifest.json，
 以及 initial_states.parquet、terminal_states.parquet、events.parquet 和 trajectories.h5。
 frame 为显式实验坐标（参考 laboratory，x/y/z右手轴、原点由作者初态声明），时钟为实验相对秒。
 粒子 ID 为正 int64，物种、质量、电荷态、派生电荷与权重各自保存。未保存的任意时刻完整回放不作承诺。
-参考初态快照使用version1和 `unavailable_initial_snapshot`；原生已验证出生使用version2、
+当前参考初态快照使用结果 schema3 和 `unavailable_initial_snapshot`；原生已验证出生使用结果 schema2、
 `initial_state_basis=native_birth_verified` 与 `primary_birth`，两者的 parent_particle_id 均为空。
+两种新写结果均在各表及轨迹元数据中冻结相同的 Species 注册表，冷读时核对物种身份、质量和电荷。
+历史结果 schema1、没有注册表的旧 schema2 仅按原合同冷读，并明确报告 `species_status=kind_unrecorded`；
+不按质量、电荷或名称补造历史粒子种类。
 原生出生、原生观测初态和普通快照各自保留来源，不相互冒充；本轮没有次级生成能力。事件序号按粒子递增，并保存平面轴法向穿越方向，重复穿面分别记录。
 终态独立表达 physical_outcome 与 stop_reason；无法归属的 component/electrode/surface 是 null，
 attribution_status/method 显式不可用；原生码、实体ID和诊断不丢弃。取消未启动粒子没有捏造的物理终点。
@@ -132,3 +175,39 @@ attribution_status/method 显式不可用；原生码、实体ID和诊断不丢�
 缓存缺件重算完整受影响批；run 自含科学数据，所以合格缓存回收后仍可重读历史统计。
 `provenance.field.reused` 和 `provenance.batches[].reused` 报告实际命中，不能只看路径存在。
 缓存和存储限制见[ArtifactStore](ARTIFACT_STORE.md)，实际测试证据见[迁移记录](development/architecture-migration.md)。
+
+## 双锥 SDS 回调采样
+
+单双锥 Study 可显式选择 SIMION 原生场和 SDS 气体。气体请求冻结环境作者、已发布
+COMSOL `gas_field` 及 SDS 输入身份；运行准入时在来源保护下重读实际 CFD 数据并核对几何与环境。
+Study 必须明确源到器件的刚体变换、原出生母群、驱动、网格和物理数值；当前 SDS 支持显式正离子、
+零出生时间、原始编号和单位权重。
+
+`recording.mode = "actual_callback_samples"` 使用显式 `sample_interval_us` 与 `end_time_us`。
+保存的是求解器回调实际时刻；该间隔是后续调度参数，不保证均匀网格、严格最小间隔或命中指定时刻。
+没有请求探测面时，不从终态推断探测事件。当前公共链已通过真实 Store 与受管四阶段的惰性软件测试，
+其原生进程使用替身；这不是 SIMION/COMSOL 原生数值或仪器准确度验证。
+
+## 原生追踪的工程执行控制
+
+Python `run_recipe(..., tracking_execution={...})` 可显式提供 `unit_size`、
+`recovery_reference` 和 `dispatch_profiles`；这些是执行与恢复声明，不写入科学 Study。
+`recovery_reference` 是明确的历史轨迹 manifest 文件记录，运行时会在来源保护下验证；
+失败或中断 predecessor 的单位索引与所需记录须由封存停止证据保护；短进程 guard 和 RF→IP 公共 Store 惰性部分重放已验证；
+跨资产且缺独立来源保护的输入明确拒绝，商业原生重放未验证；
+单位划分保留原始粒子 ID 和完整母群，不把分批结果当作新出生。调度 profile 不改变科学缓存键；
+单位划分与恢复来源身份纳入追踪复用判断。当前仅支持单母群、非 discovery 的 SIMION 原生场链；
+参考、SDS、标量桥和多 case 等未接该控制的路径会提前拒绝。多单位碰撞的商业求解结果尚未验证。
+
+## 独立 OA 焦点研究
+
+原始焦点 campaign 可由 Study 的 `model_input_sources.oa_focus_campaign` 显式指定相对路径和 SHA-256；
+`oa_focus_campaign_birth_request` 只声明时钟、源组件、species ID、出生原点和权重，粒子 release_spec
+从同一冻结 campaign 解析。Study 仍须明确追踪截止与观察时间，旧 campaign 未给出这些值时不自动猜测。
+运行使用原 mirror-X、`surface=none` 的独立 OA 模型，分别记录 exit/focus 两面及实际终态；
+由明确的 SIMION 安装选取并冻结其 TestPlane 文件。最终 run 冻结原作者、组件合同、实际模型、
+本次原出生 packet、模型坐标出生行和认证面合同，供 `oa_focus_store_analysis.publish_focus_analysis`
+受保护冷读分析。
+
+公共 Store 与真实分析链已有3粒子惰性求解器测试；TestPlane和原生进程均为测试替身，
+且合成运动不满足原campaign能量验收。这不是商业 SIMION native 运行或物理准确度资格。

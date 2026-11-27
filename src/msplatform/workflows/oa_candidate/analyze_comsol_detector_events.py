@@ -16,7 +16,7 @@ from msplatform.workflows.oa_candidate.reference_analysis import (
 ROLE = "oatof_comsol_detector_events_analysis_request"
 
 
-from msplatform.workflows.oa_candidate.detector_request import load_request as _load_request
+from msplatform.results.historical_comsol_request import load_request as _load_request
 
 
 def analyze_request(request_path: Path) -> dict[str, Any]:

@@ -37,7 +37,7 @@ from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     theory_drift_y_mm,
     solve_native_stripe_spatial_shape_branch,
 )
-from msplatform.components.multi_reflection_tof.drift_phase_contract import (
+from msplatform.contracts.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from msplatform.components.multi_reflection_tof.resolved_geometry import (

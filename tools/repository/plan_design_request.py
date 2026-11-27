@@ -33,12 +33,12 @@ def build_plan(request_path: Path, registry_path: Path, run_id: str) -> tuple[di
     actions = [
         {"order": 1, "action": "freeze_request", "gate": "design_request_validation"},
         {"order": 2, "action": "resolve_project_contracts", "gate": "project_static"},
-        {"order": 3, "action": "execute_selected_mode", "gate": request["evidence_level"]},
+        {"order": 3, "action": "execute_selected_mode", "gate": "execution_profile"},
         {"order": 4, "action": "evaluate_objectives_and_constraints", "gate": "validation_report"},
         {"order": 5, "action": "package_requested_outputs", "gate": "manifest"},
     ]
     plan = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "solver_neutral_design_plan",
         "run_id": run_id,
         "request_id": request["request_id"],
@@ -46,7 +46,6 @@ def build_plan(request_path: Path, registry_path: Path, run_id: str) -> tuple[di
         "project_id": selected_project["project_id"],
         "capability_id": selected_capability["capability_id"],
         "mode": mode,
-        "requested_evidence_level": request["evidence_level"],
         "operating_points": request["operating_points"],
         "objectives": request["objectives"],
         "constraints": request["constraints"],
@@ -62,13 +61,11 @@ def build_plan(request_path: Path, registry_path: Path, run_id: str) -> tuple[di
         "project": selected_project["project_id"],
         "mode": mode,
         "capability_id": selected_capability["capability_id"],
-        "evidence_level": request["evidence_level"],
         "inputs": {
             "design_request": str(request_path),
             "project_registry": str(registry_path),
         },
         "required_outputs": request["required_outputs"],
-        "formal_gate_passed": False,
     }
     return plan, run_config
 

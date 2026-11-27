@@ -15,10 +15,9 @@ from msplatform.contracts.particle_physics import AMU_KG, kinetic_energy_ev
 from msplatform.io.strict_json import StrictJsonError
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.retention import file_record
-from tests.workflows.paired_accelerator import test_paired_accelerator_static_field_execute as static_tests
+from tests.workflows.paired_accelerator.test_support import paired_fixtures as runtime
 from msplatform.backends.comsol import paired_static_model as paired_accelerator_model
 from msplatform.backends.simion.source import GLOBAL_COLUMNS
-from msplatform.workflows.paired_accelerator_static_field import runtime
 from msplatform.workflows.paired_accelerator_pulse.prepare import prepare
 
 
@@ -27,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class PairedPulsePreparationTests(unittest.TestCase):
     def fixture(self, root: Path) -> tuple[Path, dict, Path, Path]:
-        static, _ = static_tests.PairedStaticExecutionTests().prepared(root)
+        static, _ = runtime.prepared(root)
         plan = runtime.prepare_run(static)
         model = static / "comsol/paired_accelerator_static.mph"
         model.write_bytes(b"INERT MODEL IDENTITY FIXTURE; NOT A COMSOL MODEL")

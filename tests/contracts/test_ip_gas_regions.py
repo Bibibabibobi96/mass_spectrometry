@@ -10,7 +10,7 @@ import unittest
 from tests.contracts.test_simion_prepared_model import LUA
 from msplatform.backends.simion.gas_runtime import compile_gas_runtime
 from msplatform.backends.simion.resources import native_resource_path
-from msplatform.components.ion_processor.gas_regions import build_gas_field_spec
+from msplatform.components.ion_processor.gas_regions import resolve_ip_environment
 from msplatform.components.ion_processor.native_geometry import native_projection
 from msplatform.contracts.gas import BoxDomain, GasState
 from msplatform.contracts.rigid_transform import RigidTransform
@@ -25,10 +25,13 @@ def inputs():
     return tuple(json.loads((directory / (name + ".json")).read_text(encoding="utf-8")) for name in ("baseline", "numerics"))
 
 
-def field_for(baseline, numerics):
+def field_for(baseline, numerics, author=None):
     projection = native_projection(baseline, numerics)
-    return prepare_gas_field(build_gas_field_spec(baseline, domain=BoxDomain(
-        projection["origin_mm"], projection["maximum_mm"], (True,)*3, (True,)*3)))
+    if author is None:
+        path = ROOT / "src/msplatform/components/ion_processor/config/gas_environment.json"
+        author = json.loads(path.read_text(encoding="utf-8"))
+    return prepare_gas_field(resolve_ip_environment(author, baseline, domain=BoxDomain(
+        projection["origin_mm"], projection["maximum_mm"], (True,)*3, (True,)*3)).fields[0])
 
 
 class IpGasRegionsTests(unittest.TestCase):
@@ -49,8 +52,9 @@ class IpGasRegionsTests(unittest.TestCase):
 
     def test_zero_pressure_is_explicit_control_not_missing_data(self):
         baseline, numerics = inputs()
-        baseline["gas"]["hp_pressure_pa"] = 0
-        field = field_for(baseline, numerics)
+        author = json.loads((ROOT / "src/msplatform/components/ion_processor/config/gas_environment.json").read_text(encoding="utf-8"))
+        author["regions"][0]["pressure_pa"] = 0
+        field = field_for(baseline, numerics, author)
         state = sample_gas(field, point(50, frame=field.spec.frame_id)).state
         self.assertEqual(state, GasState("vacuum", 0, 300, (0, 0, 0)))
         self.assertEqual(sample_gas(field, point(150, frame=field.spec.frame_id)).state.pressure_pa, .2)

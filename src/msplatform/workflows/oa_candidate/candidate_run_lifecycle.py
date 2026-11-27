@@ -357,8 +357,7 @@ def finalize_candidate_run(
         summary["scientific_result"]="not_evaluated_save_incomplete"
         summary["candidate_decision"]="no_candidate_decision"
         summary["failure_substage"]="gui_model_save"
-        summary["recovery_action"]=(f'"{runtime_plan["execution_source_closure"]["runtime"]["python_executable"]}" -m msplatform.workflows.oa_candidate.run_candidate '
-            f'--postprocess-from "{run_root}" --run-id <NEW_RUN_ID>')
+        summary["recovery_action"]="Use msplatform.workflows.historical_comsol_detector with explicit sealed sources and Store."
         summary["recovery_requirements"]="Only sufficient sealed CSV is eligible while model save completion is unknown; otherwise inspect original saved/recovery data. No implicit new solve."
     native_record = config.get("provenance", {}).get("comsol_native_completion")
     if native_record is not None:

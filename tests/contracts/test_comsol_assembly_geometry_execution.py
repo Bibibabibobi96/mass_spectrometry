@@ -31,14 +31,16 @@ class ComsolAssemblyGeometryExecutionTests(unittest.TestCase):
             launcher.write_bytes(b'fixture executable')
             context = SimpleNamespace(tools={'comsol_launcher': launcher, 'matlab_root': root})
             policy = {'limits': {'transient_run_directory_bytes': 1}, 'artifact_retention': {}}
+            store = object()
             with patch.object(subject, 'read_stage_policy', return_value=(policy, {'identity': 'policy'})), \
                  patch.object(subject, 'run_managed_stage', return_value={'manifest': {'identity': 'manifest'}}) as owner, \
                  patch.object(subject, 'open_artifact', return_value='opened') as reader:
                 output = subject.build_geometry(instrument, outer_box_mm={'min': [-1000]*3, 'max': [1000]*3},
-                    geometry_validation={'position_mm': 1e-6, 'normal_abs': 1e-9}, context=context)
+                    geometry_validation={'position_mm': 1e-6, 'normal_abs': 1e-9}, context=context, artifact_store=store)
             self.assertEqual(output, 'opened')
             self.assertEqual(instrument.composition_plan, before)
             call = owner.call_args.kwargs
+            self.assertIs(call['artifact_store'], store)
             self.assertEqual(call['expected_operation_ids'], ('build_geometry', 'reopen_geometry'))
             self.assertEqual(call['operation_dependencies'], {'reopen_geometry': ['build_geometry']})
             self.assertEqual(call['payload']['geometry_validation'], {'position_mm': 1e-6, 'normal_abs': 1e-9})

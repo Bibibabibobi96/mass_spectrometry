@@ -1,5 +1,15 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
+2026-11-27：paired OA 静态场改由已安装的
+`msplatform.workflows.paired_accelerator_static_field.store_workflow` 管理，旧静态场
+PowerShell 和私有事务 runtime 已退役。新入口支持新求解、同物理边界的成功保存模型原位
+采样、同点已完成样本读取，以及对 Store 已封存且经写入者和 host 完成证据验证的失败或中断
+prepared 模型建立新运行；原失败资产仍为失败。惰性软件测试覆盖 Store 持权、样本、
+模型和失败接续；没有在本次运行 COMSOL 或 SIMION，不能据此宣称商业求解通过。
+已验证的平面成功借用链保留原始来源身份；未提供可验证完成证据的旧失败/中断来源
+及无法认证的借用链明确拒绝；历史 235338
+失败 run 未因此改写或提升为成功。
+
 2026-11-26: The paired static-model reader recognizes the authenticated historical
 three-zone OA-only composition-plan 3 electrode layout alongside the current
 plan 5 layout. It compares ordered physical voltages and rejects incomplete,
@@ -8,7 +18,7 @@ unchanged. The 110745 source / 235338 static-field metadata preparation and the
 saved-model BVP reuse regression passed without running COMSOL or SIMION. This
 does not qualify a native solve or migrate other historical plan versions.
 
-The retired top-level project tree has no active implementations. Scientific contracts and current documentation belong to the installed component; `oa_candidate`, `oa_tof_design`, and the distinct `oa_formal` package own their respective workflows; COMSOL, SIMION, and SolidWorks resources belong to their installed backends/exporters. Tests and frozen witnesses live under `tests/components/single_reflection_oa_tof_mass_analyzer` and the workflow/assembly owners that actually exercise them. Scientific project IDs, historical artifact identities, v1 authority bytes, and Formal controls remain unchanged. New OA MATLAB runs, Formal paths, and scratch paths resolve under `artifacts/components/single_reflection_oa_tof_mass_analyzer`; explicit Assembly inputs use `artifacts/assemblies/<assembly_id>`. Historical manifests may still name their original `artifacts/projects/...` locations for read-only traceability, but current path resolution never falls back to that root. The active v2 authority record is refreshed only through `render_campaign_authorities`.
+The retired top-level project tree has no active implementations. Scientific contracts and current documentation belong to the installed component; the active component and public workflows own their respective scientific responsibilities; COMSOL, SIMION, and SolidWorks resources belong to their installed backends/exporters. Tests and frozen witnesses live under `tests/components/single_reflection_oa_tof_mass_analyzer` and the workflow/assembly owners that actually exercise them. Scientific project IDs, historical artifact identities, v1 authority bytes, and Formal controls remain unchanged. New OA MATLAB runs, Formal paths, and scratch paths resolve under `artifacts/components/single_reflection_oa_tof_mass_analyzer`; explicit Assembly inputs use `artifacts/assemblies/<assembly_id>`. Historical manifests may still name their original `artifacts/projects/...` locations for read-only traceability, but current path resolution never falls back to that root. The active v2 authority record is refreshed only through `render_campaign_authorities`.
 
 The OA MATLAB builders and candidate task now resolve only their installed/frozen backend and component roots; they no longer add retired `common`/`projects` directories. The SolidWorks MATLAB bridge passes its selected module root explicitly to an isolated Python process instead of modifying `PYTHONPATH`. R2025b previously passed all 16 artifact-context tests and all 19 path tests without starting COMSOL or SolidWorks; the isolated Python SolidWorks `--help` boundary also passed. These are path/software results, not native model, CAD or scientific qualification. For the current component/assembly artifact-root migration, R2025b passed all 18 artifact-context and seven CAD unit tests with zero failures or incomplete tests; development-standard and documentation-structure checks also passed. No model study, STEP export, or SolidWorks import was run.
 
@@ -250,9 +260,16 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](ANALYSIS.
 已闭合的提供者迁移、回归及失败链冻结在[文档收口记录](../../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261026__assembly-documentation-consolidation.md)，
 不把实现迁移、局部验证或旧运行自动提升为新整机资格。
 
-## 退役的 COMSOL composite retrace
+## 历史场理想化 sweep 分析
 
-`oatof_retrace.run_species_retrace` 和 `run_fixed_particle_retrace.m` 均在启动资源之前明确拒绝旧 composite 执行；首个拒绝后的不可达执行体已移除。前者仍保留 completion receipt 的验证与历史 species 单元认证，供已封存的 mass-spectrum 分析读取；MATLAB 文件作为既有冻结资源和拒绝边界保留。公共新运行使用 Study recipe；历史输入与结果不改写，此项软件清理不增加原生或科学资格。
+安装包的 `msplatform.workflows.historical_field_diagnostic.analyze_recorded_field_sweep` 接受成功封存的原 sweep `run_manifest.json`、显式 ArtifactStore 和预算。它在原 OS 只读持权下认证冻结 case、同一 ION 母群与各 case 日志，使用现有 detector census 分析并发布可重读结果；manifest、run_config 和消费记录原字节随新结果归档。失败或中断源不会被当作完整 sweep；0 hit 的不可用统计与无法从记录证明的原求解耗时保持 null。不启动商业软件、不重采样，不产生新科学资格。旧 normal sweep 向公共 Study 的迁移仍在进行中。
+
+## 历史质谱分析及旧执行退役
+
+历史成功封存的 v1 质量谱通过 `msplatform.workflows.historical_mass_analysis.analyze_recorded_mass_spectrum` 读取，来源在分析子进程与 Store 发布期间受只读持权保护；结果经 ArtifactStore 和既有 RunSession 发布。输入包括原 manifest、mode、resolved 几何、COMSOL CSV/报告/完成凭证和 SIMION CSV/summary；失败或未收尾记录拒绝。旧 mass study、COMSOL retrace 和 SIMION mixed-fly producer 已移除，当前不再提供旧 PowerShell 入口。软件分析成功不授予新的商业原生运行或科学资格。
+
+<details>
+<summary>旧 owner 历史记录（已退役，以下命令不可再作为当前入口）</summary>
 
 ## OA mass-spectrum 旧 owner 的历史说明
 
@@ -383,6 +400,9 @@ The Candidate native entry `run_oatof_model.m` and its contract-build task now h
 `msplatform.backends.comsol.matlab`. The project workflow, source closure, Formal selector and native test
 entry consume those same installed files; no second project copy remains. This ownership change does not
 rerun COMSOL or alter model physics, the five-species scientific failure or Formal qualification.
+
+
+</details>
 
 ## 当前状态
 
@@ -1231,61 +1251,21 @@ COMSOL／SIMION 阶段失效；编排入口的报告或收尾文字变化可复�
 
 ## 反射器补偿公开支路的所有者
 
-The axial response fit and Lua profile use
-`msplatform.backends.simion.optimize_reflectron_ring_voltages`. A new run that omits
-regularization reads the versioned authoring resource; an explicit value is frozen
-without that resource. `--resume-from` creates a new run, while fit and
-`--resume-finalization` consume their existing frozen plan.
-The original synthetic-basis JSON and Lua witnesses matched for omitted, zero,
-explicit-default and nondefault inputs. Focused and ordinary wheel/sdist-rebuilt
-installation checks passed. No new Refine, Fly or scientific qualification is implied.
+公共 `msplatform.workflows.reflectron_compensation` 接受经原owner保护的独立反射器响应，
+以显式正则化拟合固定端点环电压；新Study冻结原配方、轴样本、拟合与驱动身份，
+通过公共Recipe与ArtifactStore执行。三臂为原始场、补偿场与全矢量理想反射器；
+三者必须共享完整母群、坐标与时钟。无有效峰宽时返回不可用而不伪造增益。
+旧独立controller、PowerShell适配与拟合CLI不再是活动入口。
 
-The public downstream FieldBundle now also publishes ordered `reflectron.pa1…paN`
-response records under separate data keys. Their metadata binds response IDs,
-model identity, downstream spatial identity, grid and symmetry; the strict reader
-revalidates selected bytes and rejects missing/reordered/duplicate/tampered or
-wrong-model/grid responses. Tracking still requires `native_assets.reflectron.family=[]`
-and the detached operating PA. Cold and zero-native reuse preserve the basis;
-older bundles without it still reuse for tracking but refuse compensation-basis
-reading. One real public cold/reuse/legacy-reuse parent, eight worker tests plus
-one environment-independent skip, sixteen detached-tracking tests and two
-focused reader/worker tests passed with inert native leaves. Native/scientific
-acceptance remains open.
+独立Store中断恢复只对显式native stage调用现有owner；Store发布恢复按既有管理合同执行。
+合成轴样本、惰性进程与小网格导出只证明各自软件或机制范围，不能代替新三臂的真实SIMION验收。
+旧实现曾以版本化作者资源提供默认正则化，并对省略、零、默认值和非默认值比较合成拟合
+JSON/Lua；相关安装和软件夹具曾通过。旧公共响应适配曾完成37项controller与21项PowerShell
+惰性测试，以及冷读、复用、缺件和身份拒绝测试；这些是原实现的历史软件证据，不能证明新原生链。
+原记录也表明旧生产器拒绝重新打开已发布PA族；N100/N1000来源、批次身份与旧失败记录保持原意。
 
-Compensation now accepts `--response-basis-manifest` as an explicit public
-`fields` product for fitting only. Admission authenticates the bundled compiled
-model and its referenced prepared-model product, compares the public OA resolved
-physics with the source case, recomputes downstream spatial identity from the
-public raw assets/numerics/resources and selected executable, and derives the
-expected grid/symmetry from that model. The manifest/product, ordered responses
-and current axis-exporter identity enter the compensation plan; freezing repeats
-authentication and writes a separate response binding and ordered input copies.
-`export_specification` alone selects that frozen response root. Existing case,
-source, producer, flight identity, detached tracking, three arms and partition /
-finalization recovery are unchanged; omission retains the historical response
-root. Synthetic public and historical bases produced identical axis CSV, fit
-JSON and generated Lua bytes. Missing/reordered/tampered/wrong-model/grid bases
-refused before native work, and complete-unit public-basis reuse remained
-zero-native with unchanged parent bytes. All 37 compensation parents and 21
-PowerShell adapter parents passed without native solver execution. This is
-software/fixture evidence only, not a new field, flight or fitting qualification.
+以下是旧运行的历史事实，原输入、状态和证据未改写：
 
-保留已有三臂电压补偿研究。原`run_compensation.py`不再原位修改父case，也不再维护
-ThreadPoolExecutor、numpy分批或项目私有调度；实际求解参数与固定端点单调拟合保留。
-实际来源必须遵守公共standalone消费边界；已发布native family的完整copy不能证明关联解除。
-Program和
-拟合profile在Fly前冻结，三臂仅使用进程局部环境和既有adjustable开关，批次间不覆盖科学文件。
-正式首batch属于本次科学群，公共观测后保留；恢复沿公共whole-unit manifest核验与固定分区
-调度，分析失败不重飞。所有小科学输入和原始完成事实随新run发布，父run终态与bytes不改。
-
-默认N1000不变；显式N100消费父已封存ION；不能将结果升格为精度或性能资格。
-原standalone缓存缺失时，显式`--numerics-path`由既有producer在同一个新owner中准备实际四实例
-runtime，保留fractional ground语义。粗网格作者输入仅改变离散设置；真实几何/电压/原N100源不改。
-`SourceIonPath`经原verified-copy边界复制冻结ION，默认producer不传参数仍生成原源。
-父已发布native family不被vendor打开；旧逐PA copy、materialize receipt、重复IOB动作已删除。
-producer返回原生完成receipt和实际Program/ION/IOB绑定；补偿与candidate共同消费项目
-`native_stage_completion`窄适配，原始错误和receipt次错、未知writer继续保留，资源仍由公共owner释放。
-粗producer/三臂普通功能仍在验收；计划预算约309.4MiB不能冒充实测内存或精度资格。
 2026-10-30的N100粗网格运行`20261030_145031__sim__simion__compensation-coarse-n100`
 完成四实例场构建后，父适配误读继承资源退出的null结果，173.183秒以writer未知停止，未Fly；
 原记录和保护保留。`20261030_145701__sim__simion__compensation-coarse-n100-r2`越过该断点，
@@ -1356,6 +1336,13 @@ Candidate后处理CLI夹具按现有科学资源、提供者实现声明、公�
 
 ### 质量谱封存记录重分析
 
+新安装包提供 `msplatform.workflows.historical_mass_analysis.analyze_recorded_mass_spectrum`：调用方显式提供 ExecutionContext、历史 `run_manifest.json`、新 run ID、ArtifactStore 和预算。来源只读保护覆盖分析、原始数据 SHA 校验与 Store 发布；历史质量谱以结果模块解析并计算既有校准和峰形，不执行 COMSOL 求解或 SIMION 飞行。仅接受成功且完成发布的历史 v1 来源。旧 CLI、checkpoint 接续及旧最终化入口均已退役；证据原字节保留。深路径 observer 的软件回归记录在当前迁移日志中，不构成商业原生或整机资格。
+
+<details>
+<summary>旧重分析与原生生命周期历史记录（已退役）</summary>
+
+### 质量谱封存记录重分析
+
 `mass_spectrum_candidate -ReanalyzeOnly`使用显式`-SourceRunPath`和新的`-RunId`创建后继分析run；父run的输入、CSV、报告、配置、summary与manifest只读，不再执行原位预检或重新发布。其准入先核对实际消费的小记录和原容量owner的ready封存；checkpoint还须`-SourceStoppedReceiptPath`指向原owner已生成的停止receipt。只有运行中的interrupted标记、未知writer、writing范围、缺失或篡改记录均拒绝，并要求回原owner补齐收尾／封存，不由分析入口伪造停写证明。跨根来源沿公共SourceReferences绑定明确manifest与原owner，不猜父根。
 
 The installed spectrum records the actual Python version through the existing execution-context owner; its scientific workflow does not probe the host directly. API, CLI and saved JSON retain the same version value.
@@ -1380,6 +1367,9 @@ $PythonExe = (Get-Command python).Path
 正常五质量入口现在先建立现有公共容量会话和PowerShell run-artifact owner，再进入原生工作。每物种COMSOL调用保留 launcher completion、真实进程／host release、CSV与报告身份；`ResumeAfterComsol`只在原checkpoint、原容量会话仍active且Result明确确认所有writer已停止时，复用哈希核验成功的物种。未知writer／`inspect_writer_completion`在归档或重启任何物种前拒绝，旧run与已封存run不得重新打开或补造资格。混合物种SIMION保持原科学argv与母群，改由公共受观测进程边界执行。
 
 成功、科学失败和基础设施失败统一经公共finalizer发布；未知writer保留容量与运行保护。`-ResumeFinalization -RunId <id> [-ResultPath <原Result>]`同时覆盖正常与重分析owner，只补收尾，不新增原生工作。原CLI惰性原生回归保留正常argv／环境、认证复用、篡改拒绝、不完整物种重跑、失败终态、未知writer零重复启动与既有零原生重分析。独立审查发现的未知writer可重复启动缺口已补前置guard及Result／容量hold／run config字节不变回归，并复核关闭。修后完整14项原CLI／准入模块在627.963秒内全部通过，targeted未知writer与合法replay分别77.851／97.063秒通过；Ruff、PowerShell语法及diff检查通过。此软件迁移不授予新的COMSOL／SIMION、GUI、科学或Formal资格。
+
+
+</details>
 
 ### Candidate测试职责与分片边界
 
@@ -1667,3 +1657,52 @@ metadata, transforms, point statuses and coordinate tolerance. Its ordinary
 legacy comparison remains available and has not yet been retired.
 
 The internal three-zone OA uses canonical OA construction and side-wall opening validation. Its physical TOF opening may extend beyond the standalone first-gap study acceptance; provenance and actual mechanical dimensions remain explicit.
+
+
+## 组件几何验证职责
+
+纯几何推导由 `msplatform.components.single_reflection_oa_tof.geometry_derivation.verify_geometry_derivation`
+持有；`verify_geometry_contract.ps1` 直接调用该函数并保持既有公式与工程舍入。旧
+`prepare_formal_promotion` 只是自行授予总等级的transaction，已退役；历史已封存资产及身份不改。
+新正负例与输入不变验证3项通过（0.025秒），属于纯科学软件证据。
+
+
+## 历史失败 detector CSV 的独立读取
+
+原 `20261031_231000__sim__comsol__candidate-cold-recovery` 为 failed；其冻结 selection 指向
+原 failed producer `20261031_215019__sim__comsol__candidate-save-fault`。现通过两个历史
+停写 guard 验证精确来源，读取其原 100 行 CSV 与原保存 context，并以 Store 发布独立分析
+`b513ec359e714f5f91919359fe0ccf76`。原 context 声明母群 100；原 CSV 有 100 个不同 ID，
+73 条 detector_hit，7 条 freeze_without_approach_segment，20 条
+freeze_extrapolation_outside_interval。后两类共 27 条未确认探测，不能推断为物理丢失，
+不补造终态；原始 CSV 与 context 保存在新报告。新分析 PASS 只指观测数据分析，来源
+执行状态仍为 failed，不代表整机或求解通过。上述 CSV 报告未读取或重哈原 MPH，也未启动 COMSOL。
+旧独立 `--postprocess-from` CLI 及其旧 postprocess request/执行体已删除；已封存旧运行的
+finalization 恢复继续保留。旧 Candidate 全工作流内部的 COMSOL phase 复用调用仍待迁移，
+不能把独立入口删除描述成旧 Candidate 全部退役。
+随后为单独验证冷读取的原模型来源，按 guard 原位读取并核验一次 129857881-byte MPH，
+包括小证据与 SHA 校验共 0.460 秒；未复制、修改模型或启动 COMSOL。这仅证明来源文件身份。
+
+
+## 原生 detector 事件的独立峰形分析
+
+`msplatform.workflows.native_detector_analysis.publish_native_detector_peak` 消费受保护的
+COMSOL `trajectory_result`，从冻结 plan 确认 detector surface，并以每个已核验 native birth
+到 detector event 的相对时间计算飞行时间；它不把旧 CSV 的绝对时钟假称为同一时间基准。
+仅在 detector observation 完整时报告计数；有效零命中或少于三个事件时不计算峰形，
+而返回 unavailable。来源 Store native asset 被记录为必要依赖；外部来源明确标记为不归
+Store 管理。纯数学正反例 4 项和真实 Store 小型 SCI 惰性 fixture 2 项通过；这些测试
+未运行商业 COMSOL，不证明旧 Candidate 整体阶段已经迁移。`publish_public_run_detector_peak`
+读取最终 SCI run 的受保护 detector plan/contract；受控 Store fixture 经实际 plan 归档 helper
+发布后回收原 native cache，再对最终 run 冷读分析通过。多 batch 当前明确拒绝。
+
+
+## OA 与下游作者投影
+
+`project_split_component_requests` 从明确的三段 OA-TOF resolved geometry 与机械侧开口
+投影出 `orthogonal_accelerator` 和 `single_reflection_tof` 两份组件作者。既有冻结
+`oa_split_tof_native_small_v1` 的两份组件作者完整对照一致；侧开口缺失时拒绝，物理
+detector 半径修改只进入下游作者。该纯投影不构造 Study，不选择源、时钟、脉冲、位姿、
+数值或求解器；旧 Candidate 全控制器尚未因此退役。对应 Study 物理检查只验证两份
+组件作者及每个电极的开启工作点；off、pulse、clock、release、numerics 均明确未验证，
+不能将该检查当作原完整实验等价。3 项组件、工作点及物理更改测试通过。

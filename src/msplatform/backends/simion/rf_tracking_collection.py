@@ -5,7 +5,7 @@ import json
 import math
 from pathlib import Path
 from msplatform.contracts.particle_state import binary64_serialization_close
-from .native_completion import require_one_fly_completion
+from msplatform.analysis.native_completion import require_one_fly_completion
 
 
 

@@ -157,7 +157,7 @@ def require_tracking_executable_identity(plan, recovery, executable):
 
 def _validate_completed_unit(row, plan, unit):
     from .tracking_collection import collect_tracking_logs
-    from .native_completion import require_one_fly_completion
+    from msplatform.analysis.native_completion import require_one_fly_completion
     for key in ('stdout_record','process_record'):
         verify_record('completed tracking unit '+key,row[key])
     receipt = json.loads(Path(row['process_record']['path']).read_text(encoding='utf-8-sig'))

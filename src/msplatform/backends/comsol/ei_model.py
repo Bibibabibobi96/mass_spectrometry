@@ -17,7 +17,8 @@ NATIVE_MODEL = UnsolvedModelSpec(run_label="ei-model",
 
 
 def build_ei_model(baseline: Mapping[str, Any], modes: Mapping[str, Any], *, mode_id: str,
-                   context: ExecutionContext, evidence_particle_count: int | None = None) -> OpenedArtifact:
+                   context: ExecutionContext, evidence_particle_count: int | None = None,
+                   artifact_store=None) -> OpenedArtifact:
     """Save and independently reopen build-only geometry/mesh/physics/solver trees.
 
     Physical inputs and the numerical table remain caller-owned. This operation
@@ -26,7 +27,8 @@ def build_ei_model(baseline: Mapping[str, Any], modes: Mapping[str, Any], *, mod
     resolved = resolve_ei_build_request(baseline, modes, mode_id=mode_id,
                                       evidence_particle_count=evidence_particle_count)
     return build_unsolved_model(resolved, baseline, modes, action_name="build_ei_model",
-                                spec=NATIVE_MODEL, context=context)
+                                spec=NATIVE_MODEL, context=context,
+                                **({'artifact_store': artifact_store} if artifact_store is not None else {}))
 
 
 def resolve_ei_build_request(baseline: Mapping[str, Any], modes: Mapping[str, Any], *, mode_id: str,

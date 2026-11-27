@@ -65,7 +65,6 @@ class ExecutionCompilerTests(unittest.TestCase):
 
     def approved_functional_rf_request(self):
         request = self.approved_rf_request()
-        request["evidence_level"] = "plan"
         return request
 
     def functional_bindings(self):
@@ -172,39 +171,34 @@ class ExecutionCompilerTests(unittest.TestCase):
                         self.assertIn("native_corridor_bank_run_path", " ".join(needs_prepare["blockers"]))
                         self.assertFalse(needs_prepare["safe_to_execute"])
 
-    def test_legacy_qualification_intent_is_preserved_without_inferring_actions_from_plan_static(self):
+    def test_retired_qualification_plan_is_rejected_before_execution(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            request_path = root/"request.json"
+            request_path = root / "request.json"
             request_path.write_text(json.dumps(self.approved_functional_rf_request()))
             plan, _ = build_plan(request_path, self.registry, self.run_id)
-            plan_path = root/"plan.json"
-            actions = []
+            plan_path = root / "plan.json"
             for legacy in ("plan", "static", "candidate", "formal"):
                 plan["requested_evidence_level"] = legacy
                 plan_path.write_text(json.dumps(plan))
-                if legacy in ("candidate", "formal"):
-                    with patch("msplatform.workflows.rf_runtime_profiles.resolve_execution_binding", side_effect=AssertionError("unsupported qualification resolved scientific inputs")):
-                        result = compile_execution(plan_path, self.registry, self.functional_bindings())
-                else:
-                    result = compile_execution(plan_path, self.registry, self.functional_bindings())
-                if legacy in ("candidate", "formal"):
-                    self.assertEqual(result["status"], "NEEDS_IMPLEMENTATION")
-                    self.assertEqual(result["requested_qualification"], legacy)
-                    self.assertIn("Qualification is not supported: "+legacy, result["blockers"])
-                    self.assertFalse(result["safe_to_execute"])
-                else:
-                    self.assertEqual(result["status"], "EXECUTION_READY")
-                    actions.append((result["requested_action"], result["commands"]))
-                self.assertEqual(result["execution_status"], "not_started")
-                self.assertEqual(result["science_status"], "not_evaluated")
-            self.assertEqual(actions[0], actions[1])
-            explicit = compile_execution(plan_path, self.registry, self.functional_bindings(),
-                                         purpose="finite_transport", qualification="none")
-            self.assertEqual(explicit["status"], "EXECUTION_READY")
-            wrong = compile_execution(plan_path, self.registry, self.functional_bindings(),
-                                      purpose="model_tree_build", qualification="none")
-            self.assertEqual(wrong["status"], "NEEDS_IMPLEMENTATION")
+                with self.assertRaisesRegex(ValueError, "retired qualification"):
+                    compile_execution(plan_path, self.registry, self.functional_bindings())
+            del plan["requested_evidence_level"]
+            plan_path.write_text(json.dumps(plan))
+            result = compile_execution(plan_path, self.registry, self.functional_bindings(), purpose="finite_transport")
+            self.assertEqual(result["status"], "EXECUTION_READY")
+            self.assertNotIn("requested_qualification", result)
+            self.assertEqual(compile_execution(plan_path, self.registry, self.functional_bindings(), purpose="model_tree_build")["status"], "NEEDS_IMPLEMENTATION")
+
+    def test_cli_rejects_retired_qualification_and_old_saved_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "old.json"
+            path.write_text(json.dumps({"schema_version": 1, "role": "execution_dry_run",
+                                        "safe_to_execute": True}), encoding="utf-8")
+            for args in (("--qualification", "formal"), ("--execute-plan", str(path))):
+                result = subprocess.run([sys.executable, "-m", "tools.repository.compile_execution_plan", *args],
+                                        cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertNotEqual(result.returncode, 0)
 
     def test_capability_view_includes_components_and_assemblies_without_a_pseudo_project(self):
         from tools.repository.build_project_registry import query_capabilities
@@ -219,8 +213,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertEqual([row["owner_id"] for row in assemblies], ["instrument_assembly"])
         self.assertNotIn("instrument_assembly", projects)
         self.assertEqual({row["workflow_id"] for row in assemblies[0]["profiles"]},
-                         {"single_reflection_flight", "prepared_joint_flight", "ip_mr_chain", "oa_mr_flight",
-                          "multipole_ip_continuous", "rf_ip_mr_continuous"})
+                         {"oa_mr_flight"})
         with self.assertRaisesRegex(ValueError, "Unknown capability owner"):
             query_capabilities(load_json(self.registry), owner="missing")
 
@@ -720,7 +713,7 @@ if($LASTEXITCODE-ne0){throw 'planned interpreter failed'}
                 step_id="python_run", shell="python",
                 entrypoint="src/msplatform/workflows/fixture.py", arguments=[])]}]}
             contract.write_text(json.dumps(contract_document), encoding="utf-8")
-            python_plan = dict(role="execution_dry_run", status="EXECUTION_READY", safe_to_execute=True,
+            python_plan = dict(schema_version=2, role="execution_dry_run", status="EXECUTION_READY", safe_to_execute=True,
                 python_executable=str(Path(sys.executable).resolve()), project_id="fixture", profile_id="fixture",
                 execution_contract=dict(path=str(contract), sha256=hashlib.sha256(contract.read_bytes()).hexdigest().upper()),
                 planning_sources=[], binding_authorities=[], binding_sources=[], resolved_inputs=[], resolved_runtime=None,
@@ -759,7 +752,7 @@ $actual|ConvertTo-Json|Set-Content (Join-Path $PSScriptRoot 'actual.json')
             contract = project/"config/execution_profiles.json"
             contract.write_text(json.dumps(dict(profiles=[dict(profile_id="fixture", fixed_inputs=dict(science="config/science.json"),
                 steps=[dict(step_id="run", entrypoint="src/msplatform/components/fixture/run.ps1", shell="powershell", arguments=["-ResolvedInputsPath", "{resolved_inputs_path}"])])])))
-            plan = dict(role="execution_dry_run", status="EXECUTION_READY", safe_to_execute=True,
+            plan = dict(schema_version=2, role="execution_dry_run", status="EXECUTION_READY", safe_to_execute=True,
                 python_executable=str(Path(sys.executable).resolve()),
                 project_id="fixture", profile_id="fixture", execution_contract=file_record(contract),
                 resolved_inputs=[dict(file_record(original), name="science", relative_path="config/science.json", content=original.read_text())],
@@ -772,9 +765,11 @@ $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . $Helper
 Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
 """, encoding="utf-8")
-            for mode in ("success", "drift", "content", "entrypoint", "missing_python", "unavailable_python"):
+            for mode in ("success", "drift", "content", "entrypoint", "missing_python", "unavailable_python", "legacy_version", "legacy_grade"):
                 with self.subTest(mode=mode):
                     actual = copy.deepcopy(plan)
+                    if mode == "legacy_version": actual["schema_version"] = 1
+                    if mode == "legacy_grade": actual["requested_qualification"] = "candidate"
                     original.write_text('{"value":3}' if mode == "drift" else '{"value":2}')
                     if mode == "content": actual["resolved_inputs"][0]["content"] = '{"value":9}'
                     if mode == "entrypoint": actual["commands"][0]["entrypoint"] = str(root/"other.ps1")
@@ -855,8 +850,8 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                 if not profiles:
                     self.assertEqual(project, "apertured_tube_electron_impact_ion_source")
                 for profile in profiles or [dict(capability_id="electron_impact_ionization_feasibility", mode="build_only_smoke")]:
-                    plan = dict(role="solver_neutral_design_plan", request_status="approved", project_id=project, capability_id=profile["capability_id"],
-                        mode=profile["mode"], run_id=self.run_id, requested_evidence_level="plan", operating_points=[],
+                    plan = dict(schema_version=2, role="solver_neutral_design_plan", request_status="approved", project_id=project, capability_id=profile["capability_id"],
+                        mode=profile["mode"], run_id=self.run_id, operating_points=[],
                         objectives=[], design_variables=[], constraints=[], required_outputs=[],
                         provenance=dict(request=dict(path=str(request), sha256=sha256(request)),
                                         project_registry=dict(sha256=sha256(self.registry))))
@@ -896,7 +891,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         for level in ("static", "candidate", "formal"):
             request = self.ion_processor_request()
             request["evidence_level"] = level
-            with self.assertRaisesRegex(ValueError, "NEEDS_PROJECT_COMPLETION"):
+            with self.assertRaisesRegex(ValueError, "NEEDS_CLARIFICATION"):
                 self.compile_request(request)
         with self.assertRaisesRegex(ValueError, "Unexpected runtime bindings"):
             self.compile_request(self.ion_processor_request(), {"configuration_directory": "unregistered"})
@@ -944,13 +939,9 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         self.assertEqual(result["status"], "AWAITING_APPROVAL")
         self.assertFalse(result["safe_to_execute"])
 
-    def test_functional_profile_does_not_satisfy_candidate_scientific_request(self):
-        request = self.approved_rf_request()
-        self.assertEqual(request["evidence_level"], "candidate")
-        result = self.compile_request(request, self.functional_bindings(), qualification="candidate")
-        self.assertEqual(result["status"], "NEEDS_IMPLEMENTATION")
-        self.assertFalse(result["safe_to_execute"])
-        self.assertIn("Qualification is not supported: candidate", result["blockers"])
+    def test_old_qualification_argument_is_rejected(self):
+        with self.assertRaises(TypeError):
+            self.compile_request(self.approved_rf_request(), self.functional_bindings(), qualification="candidate")
 
     def test_functional_plan_requires_bound_runtime_and_rejects_free_source_override(self):
         request = self.approved_functional_rf_request()
@@ -1080,7 +1071,6 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         request = self.approved_rf_request()
         request["target"]["function"] = "mass_filtering"
         request["target"]["mode"] = "quadrupole_mass_filter_reference"
-        request["evidence_level"] = "static"
         request["objectives"] = request["objectives"][:1]
         request["design_variables"] = []
         request["required_outputs"] = ["simulation_results", "simion_model", "validation_report"]
@@ -1111,7 +1101,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         with self.assertRaisesRegex(ValueError, "cannot override plan context"):
             self.compile_request(request, {**bindings, "run_id": "forged"})
         request["evidence_level"] = "candidate"
-        with self.assertRaisesRegex(ValueError, "NEEDS_PROJECT_COMPLETION"):
+        with self.assertRaisesRegex(ValueError, "NEEDS_CLARIFICATION"):
             self.compile_request(request, bindings)
 
     def campaign_request(self, variant):
@@ -1141,7 +1131,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                 for command in result["commands"]:
                     self.assertFalse(any("{" in argument for argument in command["argv"]))
                 request["evidence_level"] = "candidate"
-                with self.assertRaisesRegex(ValueError, "NEEDS_PROJECT_COMPLETION"):
+                with self.assertRaisesRegex(ValueError, "NEEDS_CLARIFICATION"):
                     self.compile_request(request, bindings)
 
     def test_current_campaign_previews_with_the_project_relative_runner(self):
@@ -1214,11 +1204,11 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
 
     def test_example_rf_request_exposes_implementation_gaps(self):
         request = load_json(HERE / "fixtures" / "rf_quadrupole_transport.example.json")
-        result = self.compile_request(request, qualification="candidate")
+        result = self.compile_request(request)
         self.assertEqual(result["status"], "NEEDS_IMPLEMENTATION")
         self.assertTrue(any("operating points" in item for item in result["blockers"]))
         self.assertTrue(any("design variables" in item for item in result["blockers"]))
-        self.assertIn("Qualification is not supported: candidate", result["blockers"])
+        self.assertNotIn("requested_qualification", result)
 
     def test_oa_design_request_does_not_masquerade_as_fixed_validation(self):
         request = load_json(HERE / "fixtures" / "oa_tof_500da_r30000.example.json")
@@ -1410,7 +1400,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                 contract = project / "config/execution_profiles.json"
                 contract.write_text(json.dumps(dict(profiles=[dict(profile_id="fixture", steps=[dict(
                     step_id="run", shell="python", entrypoint="owner.py", arguments=[exit_code])])])), encoding="utf-8")
-                plan = dict(role="execution_dry_run", status="EXECUTION_READY", safe_to_execute=True,
+                plan = dict(schema_version=2, role="execution_dry_run", status="EXECUTION_READY", safe_to_execute=True,
                             python_executable=compiled["python_executable"], project_id="fixture", profile_id="fixture",
                             execution_contract=file_record(contract), planning_sources=[], binding_authorities=[],
                             binding_sources=[], resolved_inputs=[], resolved_runtime=None,

@@ -28,6 +28,14 @@ function segment.initialize()
   rf_emit_current('source_release','none')
   rf_births[ion_number]=true
   single_flight_reported[ion_number]={}
+  -- A requested sample exactly at birth comes from the actual initialize 6D,
+  -- never from an invented accepted-step interpolation.
+  for _,requested in ipairs(rf_observation_times) do
+    if requested==time then
+      rf_emit_current('shared','actual_birth')
+      single_flight_reported[ion_number][requested]=true
+    end
+  end
   rf_previous[ion_number]={t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm,instance=ion_instance}
 end
 if not rf_static_operating then

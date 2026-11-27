@@ -1186,7 +1186,8 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                 'test_two_prism_segmented_voltage_seed',
             ],
         }
-        cases = [dict(stage=stage, paths=[canonical + name + '.py'],
+        cases = [dict(stage=stage, paths=[('src/msplatform/contracts/drift_phase_contract.py'
+                      if name == 'drift_phase_contract' else canonical + name + '.py')],
                       modules=sorted(f"{MR}/analysis/{module}.py" for module in modules))
                  for name, modules in dependencies.items()]
         cases.append(dict(stage=stage, paths=[path for case in cases for path in case['paths']],
@@ -1221,6 +1222,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                 'test_prism_runner_contract_matrix', 'test_simion_candidate_reference',
             ],
             'simion_event_analysis': [
+                'test_scientific_event_io',
                 'test_simion_candidate_reference',
                 'test_simion_event_analysis',
             ],
@@ -1241,7 +1243,8 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             ],
         }
         prepared = {"joint_flight_preparation": "src/msplatform/workflows/prepared_joint/native_preparation.py",
-                    "simion_event_analysis": "src/msplatform/workflows/prepared_joint/event_analysis.py",
+                    "drift_phase_contract": "src/msplatform/contracts/drift_phase_contract.py",
+                    "simion_event_analysis": "src/msplatform/analysis/mr_event_analysis.py",
                     "two_prism_simion_trial": "src/msplatform/workflows/prepared_joint/prism_trial.py"}
         def source_path(name):
             if name in prepared:
@@ -2083,6 +2086,17 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
                 self.assertEqual(selection["OnlyTestModules"], only)
                 self.assertEqual(selection["Expanded"], expanded)
                 self.assertIn(test, selection["Modules"])
+
+    def test_native_completion_selects_parser_and_actual_consumers(self) -> None:
+        selected = self.selections(REPO_ROOT, [dict(
+            stage="simion_backend", paths=["src/msplatform/analysis/native_completion.py"]
+        )], owner_filter=True)[0]
+        self.assertIsNotNone(selected)
+        self.assertCountEqual(selected["Modules"], [
+            "tests/simion/test_native_completion.py",
+            "tests/components/multi_reflection_tof/analysis/test_mrtof_batch_flight.py",
+            "tests/contracts/test_simion_tracking_units.py",
+        ])
 
     def test_support_file_matches_exact_path(self) -> None:
         script = (

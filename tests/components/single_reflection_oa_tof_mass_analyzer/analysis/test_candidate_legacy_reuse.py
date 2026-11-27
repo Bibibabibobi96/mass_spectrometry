@@ -11,7 +11,7 @@ class CandidateLegacyBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             _,parent,_,_=postprocess_source_fixture(Path(temporary))
             before={path:path.read_bytes() for path in parent.rglob("*") if path.is_file()}
-            with self.assertRaisesRegex(ValueError,"necessary new native stage.*--postprocess-from"):
+            with self.assertRaisesRegex(ValueError,"necessary new native stage.*historical_comsol_detector"):
                 workflow._comsol_phase_sources(parent)
             self.assertEqual(before,{path:path.read_bytes() for path in before})
 

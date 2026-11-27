@@ -14,7 +14,7 @@ from msplatform.cli import main
 from msplatform.recipes import load_recipe
 from msplatform.workflows.native_tracing import preflight_native
 from msplatform.workflows.native_tracing import _native_reference
-from msplatform.workflows.reference_tracing import run_recipe
+from msplatform.workflows.tracing import run_recipe
 from msplatform.storage import ArtifactStore
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +22,28 @@ EXAMPLES = ROOT / "src/msplatform/examples"
 
 
 class NativeWorkflowTests(unittest.TestCase):
+    def test_scoped_mr_assembly_preserves_parent_boundary(self):
+        from msplatform.recipes.native import _assembly as recipe_assembly
+        from msplatform.workflows.native_tracing import _assembly as workflow_assembly
+        source = json.loads((ROOT / 'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
+        study = {'component_requests': source['component_requests'], 'recipe': source['recipe'],
+                 'local_scope': {'instance_ids': ['mrtof'], 'research_scope': 'local original-birth study',
+                                 'boundary_assumptions': 'explicit independent source and sampled field'}}
+        frozen = recipe_assembly(study)
+        actual = workflow_assembly({'study': {'document': study}})
+        self.assertEqual(frozen['composition_plan'], actual.composition_plan)
+        self.assertEqual(actual.composition_plan['scope']['instance_ids'], ['mrtof'])
+        self.assertEqual(actual.composition_plan['scope']['boundary_connection_ids'], ['ip_to_mr'])
+        self.assertEqual(actual.composition_plan['local_scope'], study['local_scope'])
+        document = dict(study, schema_version=2)
+        recipe = {'schema_version': 2, 'field_source': {'kind': 'simion_native'},
+                  'particle_tracer': 'simion', 'field_assembly_strategy': 'sampled_joint_field',
+                  'study': {'document': document}, 'gas_environment': {'status': 'vacuum'},
+                  'recording': {'plane_observations': []}, 'resource_snapshots': {}}
+        with patch('msplatform.workflows.native_tracing.validate_recipe', return_value=recipe):
+            with self.assertRaisesRegex(ValueError, 'sampled SIMION field'):
+                preflight_native(recipe)
+
     def test_native_reservation_counts_only_new_owned_work_growth(self):
         from msplatform.workflows.native_tracing import _growth_accountant
         with tempfile.TemporaryDirectory() as directory:
@@ -70,9 +92,10 @@ class NativeWorkflowTests(unittest.TestCase):
         opened = []
 
         @contextmanager
-        def guard(reference, *, expected_kind, expected_artifact_root):
+        def guard(reference, *, expected_kind, expected_artifact_root, artifact_store):
             opened.append(expected_kind)
             self.assertEqual(expected_kind, "geometry_artifact")
+            self.assertIs(artifact_store, store)
             yield artifact
 
         with tempfile.TemporaryDirectory() as directory:
@@ -87,6 +110,86 @@ class NativeWorkflowTests(unittest.TestCase):
                         self.assertEqual(receipt["reused"], expected_reuse)
             self.assertEqual(len(calls), 1)
             self.assertEqual(opened, ["geometry_artifact", "geometry_artifact"])
+
+    def test_missing_prepared_model_dependency_recomputes_only_its_stage(self):
+        missing = {"old-model": False}
+        geometry = SimpleNamespace(kind="geometry_artifact", reference={"manifest": {"path": "geometry"}, "product_id": "geometry"})
+        old = SimpleNamespace(kind="prepared_model", reference={"manifest": {"path": "old-model"}, "product_id": "model"})
+        new = SimpleNamespace(kind="prepared_model", reference={"manifest": {"path": "new-model"}, "product_id": "model"})
+        artifacts = {"geometry": geometry, "old-model": old, "new-model": new}
+        @contextmanager
+        def guard(reference, **kwargs):
+            name = reference["manifest"]["path"]
+            if missing.get(name, False):
+                raise ValueError("prepared geometry dependency missing")
+            yield artifacts[name]
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory) / "store")
+            calls = []
+            with patch("msplatform.execution.native_source_guard.guard_native_source", guard):
+                with ExitStack() as stack:
+                    for key, kind, result in (("g", "geometry_artifact", geometry), ("m", "prepared_model", old)):
+                        _native_reference(store, stack, key, lambda value=result: value, kind=kind,
+                            raw_root=Path(directory), claims=[], calls=calls, account=lambda _: None)
+                missing["old-model"] = True
+                with ExitStack() as stack:
+                    _, geometry_receipt = _native_reference(store, stack, "g", lambda: self.fail("geometry reused"),
+                        kind="geometry_artifact", raw_root=Path(directory), claims=[], calls=calls, account=lambda _: None)
+                    result, model_receipt = _native_reference(store, stack, "m", lambda: new,
+                        kind="prepared_model", raw_root=Path(directory), claims=[], calls=calls, account=lambda _: None)
+                self.assertTrue(geometry_receipt["reused"])
+                self.assertFalse(model_receipt["reused"])
+                self.assertIs(result, new)
+                self.assertEqual(calls, ["g", "m", "m"])
+
+    def test_discovery_author_compiles_pilot_without_selecting_a_time(self):
+        import re
+        from msplatform.workflows.native_tracing import compile_simion_model
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            name = 'oa_split_tof_native_small_v1'
+            study = json.loads((EXAMPLES / (name + '.json')).read_bytes())
+            study['drive']['pulse'] = {'mode': 'discover', 'width_us': 7.0, 'candidate_times_us': [10.0, 20.0]}
+            data = json.dumps(study).encode()
+            (root / (name + '.json')).write_bytes(data)
+            author = (EXAMPLES / (name + '.toml')).read_text(encoding='utf8')
+            author = re.sub(r'(?m)^sha256 = "[a-fA-F0-9]{64}"', 'sha256 = "' + hashlib.sha256(data).hexdigest() + '"', author, count=1)
+            path = root / (name + '.toml'); path.write_text(author, encoding='utf8')
+            recipe = load_recipe(path).to_dict()
+            model = compile_simion_model(recipe)
+            self.assertEqual(recipe['study']['document']['drive']['pulse']['mode'], 'discover')
+            self.assertEqual(model.document['drive']['pulse'], {'mode': 'timed', 'time_us': 10.0, 'width_us': 7.0})
+            self.assertTrue(preflight_native(recipe)['implemented'])
+            study['drive']['pulse']['candidate_times_us'] = [20.0, 10.0]
+            data = json.dumps(study).encode(); (root / (name + '.json')).write_bytes(data)
+            path.write_text(re.sub(r'(?m)^sha256 = "[a-fA-F0-9]{64}"', 'sha256 = "' + hashlib.sha256(data).hexdigest() + '"', author, count=1), encoding='utf8')
+            with self.assertRaisesRegex(ValueError, 'candidate times'):
+                load_recipe(path)
+
+    def test_author_field_intervention_reaches_public_planner(self):
+        from msplatform.workflows.native_tracing import _assembly, _flight_request, _realizations
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            name = "oa_split_tof_native_small_v1"
+            (root / (name + ".json")).write_bytes((EXAMPLES / (name + ".json")).read_bytes())
+            text = (EXAMPLES / (name + ".toml")).read_text(encoding="utf8")
+            text = text.replace("[gas_environment]", "field_intervention = {id = \"drift\", selector = \"ideal:drift.ez\"}\n\n[gas_environment]")
+            author = root / (name + ".toml")
+            author.write_text(text, encoding="utf8")
+            recipe = load_recipe(author).to_dict()
+            self.assertTrue(preflight_native(recipe)["implemented"])
+            particles = _realizations(recipe["study"]["document"]["release"])[0]
+            _, observations = _flight_request(recipe, _assembly(recipe), particles)
+            self.assertEqual(observations["field_intervention"], {"id": "drift", "selector": "ideal:drift.ez"})
+            author.write_text(text.replace("drift.ez", "drift.ex"), encoding="utf8")
+            with self.assertRaisesRegex(ValueError, "Ez only"):
+                load_recipe(author)
+            import tomllib
+            from msplatform.recipes.native import _options
+            scalar = tomllib.loads(text)
+            scalar['field_source']['kind'] = 'comsol_native'
+            scalar['field_assembly_strategy'] = 'sampled_joint_field'
+            _options(scalar)  # Actual scalar source admission is checked by its preflight.
 
     def test_mass_scan_author_and_native_only_controls_reach_real_planner(self):
         with tempfile.TemporaryDirectory() as directory:

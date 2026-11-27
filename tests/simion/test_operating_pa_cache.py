@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
-import stat
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -11,17 +10,12 @@ from unittest.mock import patch
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.backends.simion.operating_pa_cache import (
-    CacheDisposition,
     OperatingPACacheError,
     canonical_operating_pa_cache_key,
     content_identity_from_verified_record,
     linear_basis_operating_pa_group_identity,
-    materialize_operating_pa_cache,
     operating_pa_group_identity,
     operating_pa_member_identity,
-    probe_operating_pa_cache,
-    publish_operating_pa_cache,
-    validate_operating_pa_cache_generation,
 )
 
 
@@ -125,47 +119,6 @@ class OperatingPACacheTest(unittest.TestCase):
                 {"bytes": 1, "sha256": "A" * 64}, path=self.inputs / "missing.pa"
             )
 
-    def test_publish_hit_validate_read_only_and_materialize_group(self) -> None:
-        published = publish_operating_pa_cache(self.cache, self.identity, self.outputs)
-        self.assertEqual(published.disposition, CacheDisposition.PUBLISHED)
-        self.assertEqual(published.cache_key, canonical_operating_pa_cache_key(self.identity))
-        self.assertEqual(probe_operating_pa_cache(self.cache, self.identity).disposition, CacheDisposition.HIT)
-        manifest = validate_operating_pa_cache_generation(
-            published.generation_directory, expected_identity=self.identity
-        )
-        self.assertEqual([record["name"] for record in manifest["files"]], ["zone-a.pa", "zone-b.pa"])
-        self.assertEqual(
-            manifest["redundancy"],
-            {"algorithm": "none_reconstructible", "groups": []},
-        )
-        self.assertFalse(
-            (
-                published.generation_directory.parents[1]
-                / "recovery"
-                / published.generation_sha256
-            ).exists()
-        )
-        for name in ("zone-a.pa", "zone-b.pa", "cache_manifest.json"):
-            self.assertFalse((published.generation_directory / name).stat().st_mode & stat.S_IWUSR)
-        second = publish_operating_pa_cache(self.cache, self.identity, self.outputs)
-        self.assertEqual(second.disposition, CacheDisposition.HIT)
-        destination = self.root / "run" / "simion"
-        materialized = materialize_operating_pa_cache(
-            published.generation_directory, destination, expected_identity=self.identity
-        )
-        self.assertEqual(len(materialized.files), 2)
-        self.assertEqual(file_sha256(destination / "zone-a.pa"), file_sha256(self.outputs / "zone-a.pa"))
-        self.assertTrue((destination / "zone-a.pa").stat().st_mode & stat.S_IWUSR)
-
-    def test_corruption_and_identity_or_inventory_drift_fail_closed(self) -> None:
-        published = publish_operating_pa_cache(self.cache, self.identity, self.outputs)
-        payload = published.generation_directory / "zone-a.pa"
-        payload.chmod(payload.stat().st_mode | stat.S_IWUSR)
-        payload.write_bytes(b"corrupt")
-        self.assertEqual(probe_operating_pa_cache(self.cache, self.identity).disposition, CacheDisposition.CORRUPT)
-        with self.assertRaisesRegex(OperatingPACacheError, "refusing to overwrite corrupt"):
-            publish_operating_pa_cache(self.cache, self.identity, self.outputs)
-
     def test_invalid_member_contracts_fail_before_publication(self) -> None:
         changed = deepcopy(self.identity)
         changed["members"][0]["output_name"] = "nested/zone-a.pa"
@@ -175,9 +128,6 @@ class OperatingPACacheTest(unittest.TestCase):
         changed["members"][0]["responses"][0]["basis_normalization_v"] = 0.0
         with self.assertRaisesRegex(OperatingPACacheError, "nonzero"):
             canonical_operating_pa_cache_key(changed)
-        (self.outputs / "zone-b.pa").unlink()
-        with self.assertRaisesRegex(OperatingPACacheError, "incomplete"):
-            publish_operating_pa_cache(self.cache, self.identity, self.outputs)
 
     def test_family_forms_and_surface_metadata_are_rejected(self) -> None:
         for suffix in (".pa0", ".pa1", ".pa+", ".pa_"):
@@ -206,11 +156,6 @@ class OperatingPACacheTest(unittest.TestCase):
         with self.assertRaisesRegex(OperatingPACacheError, "fields differ|role or version differs"):
             canonical_operating_pa_cache_key(legacy)
 
-    def test_pointer_failure_never_exposes_partial_publication_as_a_hit(self) -> None:
-        with patch("msplatform.backends.simion.pa_family_cache._publish_pointer", side_effect=OSError("pointer failure")):
-            with self.assertRaisesRegex(OSError, "pointer failure"):
-                publish_operating_pa_cache(self.cache, self.identity, self.outputs)
-        self.assertEqual(probe_operating_pa_cache(self.cache, self.identity).disposition, CacheDisposition.MISS)
 
 
 if __name__ == "__main__":

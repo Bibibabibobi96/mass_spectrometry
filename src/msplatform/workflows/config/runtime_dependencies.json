@@ -6,8 +6,6 @@
     "prepared_joint",
     "accelerator_interface",
     "oa_mr",
-    "single_reflection_flight",
-    "paired_accelerator_static_field",
     "paired_accelerator_pulse"
   ],
   "providers": [
@@ -16,50 +14,19 @@
       "provider_project": "msplatform",
       "python_packages": [
         {
-          "source_repo_path": "src/msplatform/analysis",
+          "source_repo_path": "src/msplatform",
           "consumers": [
-            "accelerator_interface",
-            "oa_mr",
-            "prepared_joint"
-          ]
-        },
-        {
-          "source_repo_path": "src/msplatform/components/orthogonal_accelerator",
-          "consumers": [
-            "accelerator_interface",
-            "oa_mr",
-            "paired_accelerator_static_field",
             "prepared_joint",
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "source_repo_path": "src/msplatform/components/rf_multipole",
-          "consumers": [
             "accelerator_interface",
             "oa_mr",
-            "paired_accelerator_static_field",
-            "prepared_joint",
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "source_repo_path": "src/msplatform/workflows/resources",
-          "consumers": [
-            "accelerator_interface",
-            "paired_accelerator_static_field",
-            "single_reflection_flight"
+            "paired_accelerator_pulse"
+          ],
+          "resource_suffixes": [
+            ".schema.json"
           ]
         }
       ],
       "files": [
-        {
-          "id": "projects_single_reflection_oa_tof_mass_analyzer_comsol_oatof_build_grid_geometry_m",
-          "source_repo_path": "src/msplatform/backends/comsol/matlab/oatof_build_grid_geometry.m",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
         {
           "id": "accelerator_interface_projects_multi_reflection_tof_config_accelerator_component_request_n100_json",
           "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/accelerator_component_request_n100.json",
@@ -89,13 +56,6 @@
           ]
         },
         {
-          "id": "msplatform_workflows_engineering_budget_ps1",
-          "source_repo_path": "src/msplatform/workflows/resources/engineering_budget.ps1",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
           "id": "msplatform_workflows_prepared_joint_execute_ps1",
           "source_repo_path": "src/msplatform/workflows/resources/prepared_joint_execute.ps1",
           "consumers": [
@@ -118,24 +78,10 @@
           ]
         },
         {
-          "id": "msplatform_workflows_paired_accelerator_static_field_ps1",
-          "source_repo_path": "src/msplatform/workflows/resources/paired_accelerator_static_field.ps1",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "msplatform_workflows_paired_accelerator_pulse_ps1",
           "source_repo_path": "src/msplatform/workflows/resources/paired_accelerator_pulse.ps1",
           "consumers": [
             "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "single_reflection_flight_public_entry",
-          "source_repo_path": "src/msplatform/workflows/resources/single_reflection_flight.ps1",
-          "consumers": [
-            "single_reflection_flight"
           ]
         },
         {
@@ -161,7 +107,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -169,9 +114,7 @@
           "id": "msplatform_workflows_frontend_flight_support",
           "source_repo_path": "src/msplatform/workflows/resources/frontend_flight_support.ps1",
           "consumers": [
-            "single_reflection_flight",
-            "paired_accelerator_pulse",
-            "paired_accelerator_static_field"
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -232,13 +175,6 @@
           ]
         },
         {
-          "id": "msplatform_simion_export_paired_accelerator_field_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/export_paired_accelerator_field.lua",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "msplatform_simion_paired_accelerator_pulse_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/paired_accelerator_pulse.lua",
           "consumers": [
@@ -271,13 +207,6 @@
           ]
         },
         {
-          "id": "msplatform_simion_build_iob_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/build_iob.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
           "id": "msplatform_comsol_run_paired_accelerator_pulse_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/run_paired_accelerator_pulse.m",
           "consumers": [
@@ -299,48 +228,12 @@
           ]
         },
         {
-          "id": "msplatform_comsol_build_and_export_paired_accelerator_field_m",
-          "source_repo_path": "src/msplatform/backends/comsol/matlab/build_and_export_paired_accelerator_field.m",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "msplatform_comsol_oatof_build_accelerator_geometry_m",
-          "source_repo_path": "src/msplatform/backends/comsol/matlab/oatof_build_accelerator_geometry.m",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "msplatform_comsol_build_accelerator_grids_m",
-          "source_repo_path": "src/msplatform/backends/comsol/matlab/build_accelerator_grids.m",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "msplatform_comsol_build_sectioned_geometry_m",
-          "source_repo_path": "src/msplatform/backends/comsol/matlab/build_sectioned_geometry.m",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "msplatform_mr_scalar_field_adapter_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
           "consumers": [
             "prepared_joint",
             "accelerator_interface",
-            "oa_mr",
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_sfi_scalar_field_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/sfi_scalar_field.lua",
-          "consumers": [
-            "single_reflection_flight"
+            "oa_mr"
           ]
         },
         {
@@ -349,8 +242,6 @@
           "consumers": [
             "oa_mr",
             "prepared_joint",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -360,8 +251,7 @@
           "consumers": [
             "accelerator_interface",
             "prepared_joint",
-            "oa_mr",
-            "single_reflection_flight"
+            "oa_mr"
           ]
         },
         {
@@ -369,29 +259,7 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/5_instance_seed.iob",
           "consumers": [
             "accelerator_interface",
-            "prepared_joint",
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_oatof_flight_tube_ground_gem",
-          "source_repo_path": "src/msplatform/backends/simion/resources/oatof_flight_tube_ground.gem",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_oatof_detector_ground_gem",
-          "source_repo_path": "src/msplatform/backends/simion/resources/oatof_detector_ground.gem",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_oatof_reflectron_ideal_10_5_gem",
-          "source_repo_path": "src/msplatform/backends/simion/resources/oatof_reflectron_ideal_10_5.gem",
-          "consumers": [
-            "single_reflection_flight"
+            "prepared_joint"
           ]
         },
         {
@@ -401,8 +269,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -413,8 +279,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -425,8 +289,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -437,58 +299,7 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "msplatform_backends_simion_resources_gem2pa_geometry_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/gem2pa_geometry.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_backends_simion_resources_build_frontend_geometry_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/build_frontend_geometry.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_backends_simion_resources_build_geometry_iob_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/build_geometry_iob.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_backends_simion_resources_iob_core_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/iob_core.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_backends_simion_resources_build_flight_tube_variant_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/build_flight_tube_variant.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_backends_simion_resources_build_detector_variant_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/build_detector_variant.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_backends_simion_resources_build_reflectron_variant_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/build_reflectron_variant.lua",
-          "consumers": [
-            "single_reflection_flight"
           ]
         },
         {
@@ -498,8 +309,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -510,8 +319,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -522,46 +329,7 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "msplatform_simion_build_dirichlet_patch_operating_pa_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/build_dirichlet_patch_operating_pa.lua",
-          "consumers": [
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "msplatform_simion_export_detached_standalone_pa_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/export_detached_standalone_pa.lua",
-          "consumers": [
-            "single_reflection_flight",
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "msplatform_simion_export_standalone_pa_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/export_standalone_pa.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_simion_audit_frontend_working_fields_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/audit_frontend_working_fields.lua",
-          "consumers": [
-            "single_reflection_flight"
-          ]
-        },
-        {
-          "id": "msplatform_simion_audit_downstream_fields_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/audit_downstream_fields.lua",
-          "consumers": [
-            "single_reflection_flight"
           ]
         },
         {
@@ -571,23 +339,13 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "msplatform_rf_drive",
-          "source_repo_path": "src/msplatform/backends/simion/resources/rf_drive.lua",
-          "consumers": [
-            "single_reflection_flight"
           ]
         },
         {
           "id": "msplatform_voltage_waveforms",
           "source_repo_path": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "consumers": [
-            "single_reflection_flight",
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
@@ -598,15 +356,7 @@
           "id": "msplatform_single_flight_pulse_hook",
           "source_repo_path": "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua",
           "consumers": [
-            "single_reflection_flight",
             "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "msplatform_single_flight_frontend_hook",
-          "source_repo_path": "src/msplatform/backends/simion/resources/single_flight_frontend_hook.lua",
-          "consumers": [
-            "single_reflection_flight"
           ]
         },
         {
@@ -644,8 +394,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -656,16 +404,7 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
-          ]
-        },
-        {
-          "id": "assembly_projects_single_reflection_oa_tof_mass_analyzer_simion_workbench_candidates_oatof_analyzer_component_lua",
-          "source_repo_path": "src/msplatform/backends/simion/resources/oatof_analyzer_component.lua",
-          "consumers": [
-            "single_reflection_flight"
           ]
         },
         {
@@ -686,7 +425,6 @@
           "id": "common_comsol_livelink_environment_ps1",
           "source_repo_path": "src/msplatform/backends/comsol/launcher/livelink_environment.ps1",
           "consumers": [
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -694,7 +432,6 @@
           "id": "common_comsol_livelink_failure_classification_ps1",
           "source_repo_path": "src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1",
           "consumers": [
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -709,7 +446,6 @@
           "id": "common_comsol_resolve_comsol_64_ps1",
           "source_repo_path": "src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1",
           "consumers": [
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -717,7 +453,6 @@
           "id": "common_comsol_run_comsol_r2025b_ps1",
           "source_repo_path": "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
           "consumers": [
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -738,28 +473,12 @@
           ]
         },
         {
-          "id": "msplatform_comsol_add_comsol_size_feature_m",
-          "source_repo_path": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
-          "id": "msplatform_comsol_read_comsol_mesh_size_controls_m",
-          "source_repo_path": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
-          "consumers": [
-            "paired_accelerator_static_field"
-          ]
-        },
-        {
           "id": "common_paths_workspace_paths_ps1",
           "source_repo_path": "src/msplatform/execution/resources/workspace_paths.ps1",
           "consumers": [
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -770,8 +489,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -782,9 +499,7 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse",
-            "single_reflection_flight"
+            "paired_accelerator_pulse"
           ]
         },
         {
@@ -794,8 +509,6 @@
             "prepared_joint",
             "accelerator_interface",
             "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -815,8 +528,6 @@
             "oa_mr",
             "prepared_joint",
             "accelerator_interface",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
             "paired_accelerator_pulse"
           ]
         },
@@ -841,22 +552,6 @@
           "consumers": [
             "oa_mr",
             "prepared_joint"
-          ]
-        }
-      ],
-      "python_packages": [
-        {
-          "source_repo_path": "src/msplatform",
-          "consumers": [
-            "prepared_joint",
-            "accelerator_interface",
-            "oa_mr",
-            "single_reflection_flight",
-            "paired_accelerator_static_field",
-            "paired_accelerator_pulse"
-          ],
-          "resource_suffixes": [
-            ".schema.json"
           ]
         }
       ],

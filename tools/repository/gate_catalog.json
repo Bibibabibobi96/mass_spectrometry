@@ -2830,6 +2830,10 @@
         {
           "exact": "src/msplatform/backends/simion/resources/compose_standalone_pa.lua",
           "reason": "installed_standalone_pa_authority_changed"
+        },
+        {
+          "exact": "src/msplatform/analysis/native_completion.py",
+          "reason": "installed_native_completion_consumer_changed"
         }
       ],
       "command": {
@@ -2908,6 +2912,20 @@
               "tests/simion/test_managed_process_completion.py"
             ],
             "dependency_profile": "stdlib"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/native_completion.py",
+                "reason": "installed_native_completion_consumer_changed"
+              }
+            ],
+            "modules": [
+              "tests/simion/test_native_completion.py",
+              "tests/components/multi_reflection_tof/analysis/test_mrtof_batch_flight.py",
+              "tests/contracts/test_simion_tracking_units.py"
+            ],
+            "dependency_profile": "locked"
           },
           {
             "matches": [
@@ -3476,7 +3494,7 @@
           "reason": "installed_particle_batching_dependency_changed"
         },
         {
-          "exact": "src/msplatform/backends/simion/mrtof_observations.py",
+          "exact": "src/msplatform/analysis/mr_observations.py",
           "reason": "installed_mr_recorded_observations_changed"
         },
         {
@@ -4144,7 +4162,7 @@
           "reason": "installed_mr_bunch_source_changed"
         },
         {
-          "exact": "src/msplatform/workflows/prepared_joint/event_analysis.py",
+          "exact": "src/msplatform/analysis/mr_event_analysis.py",
           "reason": "installed_mr_event_analysis_changed"
         },
         {
@@ -4192,7 +4210,7 @@
           "reason": "installed_prepared_joint_analysis_changed"
         },
         {
-          "exact": "src/msplatform/backends/simion/mrtof_observations.py",
+          "exact": "src/msplatform/analysis/mr_observations.py",
           "reason": "installed_mr_recorded_observations_changed"
         },
         {
@@ -4224,7 +4242,7 @@
           "reason": "installed_mr_prism_phase_math_changed"
         },
         {
-          "exact": "src/msplatform/components/multi_reflection_tof/drift_phase_contract.py",
+          "exact": "src/msplatform/contracts/drift_phase_contract.py",
           "reason": "installed_mr_prism_phase_math_changed"
         },
         {
@@ -4734,7 +4752,7 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/components/multi_reflection_tof/drift_phase_contract.py",
+                "exact": "src/msplatform/contracts/drift_phase_contract.py",
                 "reason": "installed_mr_prism_phase_math_changed"
               }
             ],
@@ -4825,11 +4843,12 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/prepared_joint/event_analysis.py",
+                "exact": "src/msplatform/analysis/mr_event_analysis.py",
                 "reason": "mr_prism_phase_actual_consumer_changed"
               }
             ],
             "modules": [
+              "tests/components/multi_reflection_tof/analysis/test_scientific_event_io.py",
               "tests/components/multi_reflection_tof/analysis/test_simion_candidate_reference.py",
               "tests/components/multi_reflection_tof/analysis/test_simion_event_analysis.py"
             ],

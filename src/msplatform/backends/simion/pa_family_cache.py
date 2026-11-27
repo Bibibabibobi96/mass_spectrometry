@@ -64,39 +64,14 @@ PUBLICATION_ERROR_NAME = "publication_error.json"
 TRANSACTION_ROLE = "simion_pa_family_cache_transaction"
 VERIFICATION_EVIDENCE_ROLE = "simion_pa_family_verification"
 TRANSACTION_STATES = {"building", "prepared", "published", "retired"}
-CACHE_KEY_FIELDS = (
-    "geometry",
-    "gem",
-    "basis_namespace",
-    "mesh",
-    "grid_phase",
-    "surface",
-    "simion_identity",
-    "refine_policy",
-    "builder_identity",
-)
-WORKING_FIELD_CACHE_KEY_FIELDS = (
-    "geometry",
-    "gem",
-    "working_points",
-    "mesh",
-    "grid_phase",
-    "surface",
-    "boundary_policy",
-    "rf_reference_voltage_v",
-    "simion_identity",
-    "builder_identity",
-)
-NON_RF_WORKING_FIELD_CACHE_KEY_FIELDS = tuple(
-    field for field in WORKING_FIELD_CACHE_KEY_FIELDS if field != "rf_reference_voltage_v"
+from .pa_identity import (
+    CACHE_KEY_FIELDS as CACHE_KEY_FIELDS, WORKING_FIELD_CACHE_KEY_FIELDS as WORKING_FIELD_CACHE_KEY_FIELDS,
+    NON_RF_WORKING_FIELD_CACHE_KEY_FIELDS as NON_RF_WORKING_FIELD_CACHE_KEY_FIELDS,
+    PAFamilyCacheError, _canonical_identity, canonical_pa_family_cache_key,
 )
 SHA256 = re.compile(r"^[0-9A-F]{64}$")
 REDUNDANCY_CREATION_MAX_ATTEMPTS = 3
 NO_REDUNDANCY_ALGORITHM = "none_reconstructible"
-
-
-class PAFamilyCacheError(ValueError):
-    """Raised when a cache identity, inventory, or publication is invalid."""
 
 
 class CacheDisposition(str, Enum):
@@ -190,36 +165,6 @@ def _seal_generation_files(directory: Path, manifest: Mapping[str, Any]) -> None
     for record in manifest["files"]:
         _set_file_read_only(directory / record["name"])
     _set_file_read_only(directory / MANIFEST_NAME)
-
-
-def _canonical_identity(identity: Mapping[str, Any]) -> dict[str, Any]:
-    fields = next((candidate for candidate in (CACHE_KEY_FIELDS, WORKING_FIELD_CACHE_KEY_FIELDS, NON_RF_WORKING_FIELD_CACHE_KEY_FIELDS)
-                   if isinstance(identity, Mapping) and set(identity) == set(candidate)), None)
-    if fields is None:
-        raise PAFamilyCacheError(
-            "PA cache identity fields must be exactly the basis set (" + ", ".join(CACHE_KEY_FIELDS)
-            + ") or the working-field set (" + ", ".join(WORKING_FIELD_CACHE_KEY_FIELDS)
-            + ") with RF reference present only for an RF working field"
-        )
-    document = {field: identity[field] for field in fields}
-    if fields in (WORKING_FIELD_CACHE_KEY_FIELDS, NON_RF_WORKING_FIELD_CACHE_KEY_FIELDS):
-        points = document["working_points"]
-        has_rf = isinstance(points, list) and any(isinstance(point, dict) and point.get("kind") == "rf_reference"
-                                                  for point in points)
-        if has_rf != ("rf_reference_voltage_v" in document):
-            raise PAFamilyCacheError("PA cache identity fields must declare RF reference exactly when RF is consumed")
-    # canonical_json_sha256 supplies the finite-JSON, stable-serialization gate.
-    try:
-        canonical_json_sha256(document)
-    except ValueError as exc:
-        raise PAFamilyCacheError("PA cache identity is not canonical finite JSON") from exc
-    return document
-
-
-def canonical_pa_family_cache_key(identity: Mapping[str, Any]) -> str:
-    """Return the content key for all numerical and builder inputs to one PA family."""
-
-    return canonical_json_sha256(_canonical_identity(identity))
 
 
 def _safe_name(value: str) -> str:

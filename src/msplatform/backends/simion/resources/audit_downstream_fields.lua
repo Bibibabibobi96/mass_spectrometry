@@ -32,6 +32,17 @@ for _,asset in ipairs(spec.assets) do
       'native grounded family must have its single physical electrical group')
   end
   pa:close()
+  if asset.role=='reflectron' then
+    for _,path in ipairs(asset.response_paths) do
+      simion.pas:close()
+      local response=assert(simion.pas:open(path),'cannot reopen standalone response')
+      assert(response.potential_type=='electric','response must be electric')
+      assert(response.symmetry==asset.symmetry,'response symmetry differs')
+      assert(response.refinable==false,'response must be standalone and non-refinable')
+      for key,value in pairs(asset.grid) do close_enough(response[key],value,'response '..key) end
+      response:close()
+    end
+  end
   local values={}
   for _,key in ipairs({'nx','ny','nz','dx_mm','dy_mm','dz_mm'}) do
     values[#values+1]=string.format('%q:%.17g',key,asset.grid[key])

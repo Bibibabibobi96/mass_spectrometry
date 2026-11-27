@@ -132,7 +132,7 @@ class BatchingTests(unittest.TestCase):
         functional.write_json(parent/"run_config.json", dict(run_id=parent.name))
         records = [_canonical_retention.file_record(path) for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
         manifest = dict(run_config=_canonical_retention.file_record(parent/"run_config.json"), inputs={}, outputs=records)
-        functional.write_json(parent/"run_manifest.json", dict(role="simulation_run_manifest", project=functional.PROJECT,
+        functional.write_json(parent/"run_manifest.json", dict(schema_version=2, role="simulation_run_manifest", project=functional.PROJECT,
             mode="native_electrode_functional", run_id=parent.name, status="failed", **manifest))
         before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
         with patch.object(batching, "continuation_ancestry", return_value=[parent]), patch.object(batching, "_validate_continuation_science", return_value=(manifest, config)):
@@ -152,7 +152,7 @@ class BatchingTests(unittest.TestCase):
         inputs = {key: _canonical_retention.file_record(Path(value)) for key, value in config_record["inputs"].items()}
         outputs = [_canonical_retention.file_record(path) for path in self.run.rglob("*")
                    if path.is_file() and path.name not in {"run_manifest.json", "run_config.json"}]
-        child_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
+        child_manifest = dict(schema_version=2, role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
             run_id=self.run.name, status="failed", run_config=_canonical_retention.file_record(self.run/"run_config.json"),
             inputs=inputs, outputs=outputs)
         functional.write_json(self.run/"run_manifest.json", child_manifest)
@@ -198,7 +198,7 @@ class BatchingTests(unittest.TestCase):
         for name in ("events.csv", "samples.csv", "collision_rng_seeds.csv", "hs1_bound_parameters.csv", "extraction_steps.csv", "extraction_impulses.csv", "native_field_samples.csv"):
             (prior / "simion" / name).write_text("inert fixture\n", encoding="utf-8")
         files = [path for path in prior.rglob("*") if path.is_file() and path.name != "run_config.json"]
-        manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
+        manifest = dict(schema_version=2, role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
             run_id=prior.name, status="failed", run_config=_canonical_retention.file_record(prior / "run_config.json"),
             inputs={}, outputs=[_canonical_retention.file_record(path) for path in files])
         functional.write_json(prior / "run_manifest.json", manifest)
@@ -211,7 +211,7 @@ class BatchingTests(unittest.TestCase):
         self.assertFalse((self.run / "simion/events.csv").exists())
         self.assertEqual(before, {path: path.read_bytes() for path in prior.rglob("*") if path.is_file()})
         self.assertEqual(functional.read_json(self.run / "run_config.json")["parameters"]["continuation_predecessor"], str(prior))
-        child_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
+        child_manifest = dict(schema_version=2, role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
             run_id=self.run.name, status="failed", run_config=_canonical_retention.file_record(self.run / "run_config.json"),
             inputs={"continuation_plan": _canonical_retention.file_record(self.run / "inputs/simion_whole_unit_replay_plan.json"),
                     "continuation_predecessor_manifest": _canonical_retention.file_record(prior / "run_manifest.json")}, outputs=[])
@@ -224,7 +224,7 @@ class BatchingTests(unittest.TestCase):
         self.assertEqual(config["parameters"]["continuation_predecessor"], str(self.run))
         self.assertEqual(config["inputs"]["continuation_origin_manifest"], str(prior / "run_manifest.json"))
         self.assertEqual(ip_continuation.native_data_directory(grandchild), prior / "simion")
-        grandchild_manifest = dict(role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
+        grandchild_manifest = dict(schema_version=2, role="simulation_run_manifest", project=functional.PROJECT, mode="native_electrode_functional",
             run_id=grandchild.name, status="failed", run_config=_canonical_retention.file_record(grandchild / "run_config.json"),
             inputs={"continuation_plan": _canonical_retention.file_record(grandchild / "inputs/simion_whole_unit_replay_plan.json"),
                     "continuation_predecessor_manifest": _canonical_retention.file_record(self.run / "run_manifest.json"),
@@ -648,7 +648,7 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
         functional.write_json(parent/"run_config.json", dict(run_id=parent.name))
         records = [_canonical_retention.file_record(path) for path in parent.rglob("*") if path.is_file() and path.name != "run_config.json"]
         manifest = dict(run_config=_canonical_retention.file_record(parent/"run_config.json"), inputs={}, outputs=records)
-        functional.write_json(parent/"run_manifest.json", dict(role="simulation_run_manifest", project=functional.PROJECT,
+        functional.write_json(parent/"run_manifest.json", dict(schema_version=2, role="simulation_run_manifest", project=functional.PROJECT,
             mode="native_electrode_functional", run_id=parent.name, status="failed", **manifest))
         before = {path: path.read_bytes() for path in parent.rglob("*") if path.is_file()}
         for folder in self.run.glob("simion_batch_*"):

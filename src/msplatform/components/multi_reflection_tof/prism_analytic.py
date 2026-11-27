@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass
 import math
 from typing import Any
 
-from msplatform.components.multi_reflection_tof.drift_phase_contract import (
+from msplatform.contracts.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from msplatform.components.multi_reflection_tof.prism_l0 import (

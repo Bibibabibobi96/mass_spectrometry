@@ -226,7 +226,7 @@ def track_transport(
 ):
     """Fly verified run-owned fields; this function cannot build or Refine."""
     from pathlib import Path
-    from .native_completion import require_one_fly_completion
+    from msplatform.analysis.native_completion import require_one_fly_completion
     from .native_io import apply_native_io_mode
     from msplatform.contracts.rigid_transform import RigidTransform
 

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from msplatform.contracts.machine_contracts import CandidateContractError
 from msplatform.components.orthogonal_accelerator.accelerator_time_focus import (
     PhysicsContractError,
     accelerator_state,
@@ -25,10 +26,6 @@ from msplatform.components.orthogonal_accelerator.two_zone_geometry import (
     derive_uniform_ring_planes,
 )
 
-
-
-class CandidateContractError(ValueError):
-    """Raised when the prototype contract cannot describe a physical candidate."""
 
 
 def named_record(records: object, filename: str, label: str) -> dict[str, Any]:

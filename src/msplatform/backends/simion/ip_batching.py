@@ -26,7 +26,7 @@ from msplatform.execution.recorded_file_removal import write_json_atomic
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from msplatform.backends.simion.native_completion import require_one_fly_completion
+from msplatform.analysis.native_completion import require_one_fly_completion
 from msplatform.backends.simion.particle_batching import merge_rebased_particle_csvs
 from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import project_direct_velocity, render_standard_beams, render_source_states

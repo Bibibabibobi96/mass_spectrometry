@@ -12,9 +12,9 @@
 - 参数化几何Candidate门禁：`../simion/workbench/run_parameterized_geometry_smoke.ps1`
 - 径向压缩与环数补偿：`../workflows/radial_compaction/run_campaign.py`，合同为
   `../config/radial_compaction_campaign.json`
-- 反射器电压场补偿：`../workflows/reflectron_voltage_compensation/run_compensation.py`
+- 反射器电压场补偿：`msplatform.workflows.reflectron_compensation.run_compensation_study`（公共Recipe与Store；原生全链待验证）
 
-这两个历史Candidate入口对单个SIMION飞行只做耗时观测：600 s（电压补偿）或1800 s（径向紧凑化）越限
+历史入口对单个SIMION飞行只做耗时观测：600 s（旧电压补偿）或1800 s（径向紧凑化）越限
 发出一次警告，健康求解继续自然完成。它们不以墙钟时间终止SIMION；进程失败仍按非零退出失败闭合。
 - N=100源码构建与跟踪：沿[项目入口](../README.md#活动入口)的单个结构Candidate工作流，
   使用冻结编译器、非Formal模板及共享N=100 transport；旧独立包装已退役。
@@ -28,7 +28,7 @@
 当前项目处于`formal`。稳定清单绑定当前Formal SIMION交付包；重命名前和拆层前的Formal包只保留
 可追溯身份。Candidate仍必须使用独立、已登记的非Formal IOB/CON模板，不能读取旧Formal或archive资产。
 当前Formal是只读发布源：任何SIMION进程均不得以`formal/simion`为工作目录或直接打开其中IOB。
-活动入口先逐项验证Formal manifest，再通过`analysis/stage_formal_simion_runtime.py`复制到项目scratch，
+活动入口先逐项验证已发布资产清单，再通过 `msplatform.backends.simion.runtime_materialization.stage_verified_simion_runtime` 复制到项目 scratch，
 只运行该临时副本并在终止时清理；run以runtime receipt冻结实际消费的release与资产SHA。
 
 ## 几何与数值合同

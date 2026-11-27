@@ -29,14 +29,17 @@ class SplitScalarTrackingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'world background PA'):
                 _resolve_scalar_basis(SimpleNamespace(metadata={}), None, plan, selection)
 
-    def test_hook_installs_total_field_after_region_and_rejects_unimplemented_observation(self):
+    def test_hook_installs_total_field_before_region_and_rejects_unimplemented_observation(self):
         program = ('local single_flight_trace_path=1\n'
                    '    single_flight_frontend=single_flight_frontend_component.new()\n'
                    '  if instance==nil then return end\n'
+                   '  local state={z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,\n'
                    '  end\nend\nfunction segment.instance_adjust()')
         instrumented = _instrument_common_scalar(program, basis(), 'return function() end', 'return {}', False)
         self.assertIn('single_flight_scalar_module.new(single_flight_scalar_adapter,single_flight_pulse,', instrumented)
         self.assertIn('ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=single_flight_scalar(', instrumented)
+        self.assertLess(instrumented.index('ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=single_flight_scalar('),
+                        instrumented.index('  local state={z_mm=ion_pz_mm'))
         self.assertNotIn('single_flight_scalar_rf=', instrumented)
         with self.assertRaisesRegex(ValueError, 'observations'):
             _instrument_common_scalar(program, basis(), 'return function() end', 'return {}', True)

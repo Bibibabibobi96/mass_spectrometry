@@ -333,8 +333,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path)
     parser.add_argument("--run-id")
-    parser.add_argument("--postprocess-from", type=Path, metavar="PARENT_RUN",
-                        help="New read-only-parent COMSOL postprocessing child; no physical solve")
     parser.add_argument("--particle-source-seed", type=int)
     parser.add_argument("--science-root", type=Path,
                         help="Explicit OA-TOF science-data root; required for first preparation")
@@ -356,23 +354,6 @@ def main() -> None:
     parser.add_argument("--campaign-table", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--campaign-selection", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.postprocess_from is not None:
-        if args.run_id is None or any((args.request, args.particle_source_seed is not None, args.resume_finalization,
-                args.owner_result, args.simion_exe, args.reuse_parent, args.reuse_through, args.dry_run,
-                args.pa_handoff_output, args.pa_producer_handoff, args.campaign_table, args.campaign_selection,
-                args.solver_numerics_contract)):
-            parser.error("--postprocess-from requires new --run-id and rejects new execution/reuse/finalization options")
-        from msplatform.workflows.oa_candidate.run_candidate_workflow import run_candidate_postprocess
-        try:
-            if args.host_context is None or args.science_root is None:
-                parser.error("postprocessing requires --host-context and --science-root")
-            root, summary = run_candidate_postprocess(
-                args.postprocess_from, args.run_id, science_root=args.science_root,
-                host_context=load_json(args.host_context))
-        except (OSError, KeyError, ValueError, CandidateWorkflowError) as error:
-            raise SystemExit(f"OATOF_CANDIDATE=POSTPROCESS_FAILED ERROR={error}") from error
-        print(f"OATOF_CANDIDATE=POSTPROCESSED RUN_ROOT={root} SCOPE={summary['scope']}")
-        return
     if args.resume_finalization is not None:
         if any((args.request, args.run_id is not None, args.particle_source_seed is not None, args.simion_exe,
                 args.reuse_parent, args.reuse_through, args.dry_run, args.pa_handoff_output,

@@ -180,9 +180,9 @@ explicit. The downstream/prism selection passed 126 parents with 319 successes
 and one existing skip in 250.111 seconds. Segmented research remains bounded and
 is not relabeled as continuous original-birth production.
 Prepared-joint production responsibilities now have installed owners: native bunch serialization and event
-reading are in `msplatform.backends.simion.mr_bunch_source`; mixed IP assembly, joint L0 and event analysis
-are in `msplatform.workflows.prepared_joint`; source-control and plain-Lua process boundaries are in
-`msplatform.execution`. The integrations and project scripts remain research/CLI consumers. Architecture
+reading are in `msplatform.backends.simion.mr_bunch_source`; mixed IP assembly and joint L0 are in
+`msplatform.workflows.prepared_joint`; MR event analysis is in `msplatform.analysis.mr_event_analysis`;
+source-control and plain-Lua process boundaries are in `msplatform.execution`. The integrations and project scripts remain research/CLI consumers. Architecture
 and targeted consumer checks have passed; the complete integration suite passed 585 tests with four
 existing external-asset skips. Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in
 1790.246 seconds. Full MR, Changed and applicable native acceptance remain separately bounded and are
@@ -215,7 +215,7 @@ and raw candidate serialization now belong to the installed SIMION resource
 identity with no checkout fallback. MR retains its prism, mirror/counter and
 strict detector-contact rules. Rejected/unknown candidates preserve both original
 endpoint states and callback-entry splat, while true terminal 6D/time and the full
-cohort remain unchanged. `mrtof_observations.py` retains these raw rows separately
+cohort remain unchanged. `analysis/mr_observations.py` retains these raw rows separately
 from accepted science, and measured population classifies an unconfirmed
 detector-stop request as unknown, not detection. Plain-Lua and original-consumer
 regressions cover immediate/delayed stops, normal termination and contact; no new
@@ -286,7 +286,7 @@ controller-state夹具的两个配置读取显式使用UTF-8；campaign夹具经
 
 ## 科学核心 P1 接线
 
-`msplatform.workflows.prepared_joint.event_analysis` 直接调用 `msplatform.analysis.peak_metrics`；
+`msplatform.analysis.mr_event_analysis` 直接调用 `msplatform.analysis.peak_metrics`；
 回归在拒绝旧峰形桥导入时执行真实 KDE，保持原适配及拒绝行为。
 `config/ion_processor_dependency.json` 的 `state_schema` 指向唯一规范资源
 `src/msplatform/contracts/schemas`，不恢复旧目录资源副本。
@@ -334,7 +334,7 @@ native layout validation remains in the SIMION backend. Neither migration regist
 an empty MR provider or qualifies a new field/Fly.
 The ideal first-prism contract, hard-boundary prism mathematics and drift-phase
 contract are owned by the installed MR component modules `prism_l0`,
-`prism_analytic` and `drift_phase_contract`. Research consumers and source
+`prism_analytic` and `msplatform.contracts.drift_phase_contract`. Research consumers and source
 freezers select these sole implementations; the original reference-only,
 face-order, charge and return-phase restrictions remain unchanged.
 This ownership move does not qualify finite fields, native transport or full MR.
@@ -801,8 +801,9 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 
 `msplatform.workflows.prepared_joint.diagnostics analyze-joint` owns the complete recorded-data
 analysis CLI. `measured_population` closes the original source census and `loss_acceptance` supplies
-the existing diagnostics; the sole SIMION recorded-event/trajectory adapter is
-`msplatform.backends.simion.mrtof_observations`. CSV iteration and PNG/SVG export are installed neutral
+the existing diagnostics; the sole SIMION recorded-event/trajectory implementation is
+`msplatform.analysis.mr_observations`. The old backend path only reexports the five symbols still consumed by
+the in-flight `historical_joint_analysis` owner and retires with that import migration. CSV iteration and PNG/SVG export are installed neutral
 I/O. Their former project/common implementations and moved CLI operations are retired.
 
 Prepared-joint materialization, continuation, controller and research operations now live under
@@ -892,8 +893,9 @@ MR analytical and native-geometry callers now import the installed OA two-zone r
 
 `msplatform.workflows.prepared_joint.analysis_inputs.prepare_analysis_inputs` admits
 one explicit terminal prepared-joint source and freezes only its manifest and the
-author's analysis contract. It uses the existing canonical capacity ledger and
-manifest verification with the existing retention classifier; no new owner exists.
+author's analysis contract. The current historical guard verifies terminal and
+stopped-writer evidence and holds the original manifest/config read-only; no
+capacity ledger or second lifecycle owner participates.
 Original native logs, batch receipts, FLY2, preparation and protected source paths
 remain at their producer locations. Complete original-ID merge, mother/launched
 counts, clock epoch, ready owner and failed-analysis stage checks are unchanged.
@@ -1187,7 +1189,7 @@ flight, or physical match.
 
 The measured population, constructed centroid and scheduler ordinal slice are prepared
 by `msplatform.workflows.prepared_joint.source`; IP/MR source binding and connection
-policy are owned by `msplatform.workflows.prepared_joint.ip_mr_connection`. The
+policy are owned by `msplatform.assembly.ip_mr_connection`. The
 source runtime is an installed SIMION resource. The real accelerator-interface and
 prepared-joint consumers use these implementations; the remaining trial lifecycle
 continues in its original entry. This does not establish native flight or qualification.

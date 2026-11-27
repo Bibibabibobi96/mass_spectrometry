@@ -34,6 +34,31 @@ def inputs():
 
 
 class EiModelTests(unittest.TestCase):
+    def test_unsolved_model_never_falls_back_to_the_old_owner(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            launcher = root / 'launcher'
+            launcher.touch()
+            context = SimpleNamespace(tools={'comsol_launcher': launcher, 'matlab_root': root})
+            stage = {'limits': {}, 'artifact_retention': {}}
+            with patch.object(model_execution, 'read_stage_policy', return_value=(stage, {})), \
+                 patch.object(model_execution, 'run_managed_stage') as owner:
+                with self.assertRaisesRegex(ValueError, 'explicit ArtifactStore'):
+                    model_execution.build_unsolved_model({}, {}, {}, action_name='build_ei_model',
+                        spec=ei_model.NATIVE_MODEL, context=context)
+                owner.assert_not_called()
+
+    def test_public_models_forward_the_explicit_store(self):
+        store = object()
+        for module, operation, documents, options in (
+            (ei_model, ei_model.build_ei_model, inputs(), {}),
+            (wehnelt_model, wehnelt_model.build_wehnelt_model, wehnelt_inputs(), {'evidence_particle_count': 3}),
+        ):
+            with self.subTest(model=module.__name__), patch.object(module, 'build_unsolved_model') as owner:
+                operation(*documents, mode_id='build_only_smoke', context=None, artifact_store=store, **options)
+                self.assertIs(owner.call_args.kwargs['artifact_store'], store)
+
     def test_resolver_preserves_editable_physics_and_numerical_values(self):
         baseline, modes = inputs()
         baseline["electrodes_V"]["cathode"] -= 1
@@ -105,6 +130,7 @@ class EiModelTests(unittest.TestCase):
 
     @patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""})
     def test_public_operation_uses_real_owner_session_and_published_product(self):
+        from msplatform.storage.store import ArtifactStore
         # This inert owner fixture reserves its own small real payload; it does
         # not require the workstation production policy's 295-GiB free disk floor.
         owner_policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=64 / 1024)
@@ -127,6 +153,7 @@ class EiModelTests(unittest.TestCase):
                         powershell_executable=Path(shutil.which("pwsh")), tools=dict(comsol_launcher=Path(sys.executable), matlab_root=root),
                         host_state_path=root / "host.sqlite3", policy_path=resource_path("host_resource_policy.json"),
                         stage_policy_path=policy)
+                    store = ArtifactStore(root / 'model-store')
                     calls = []
                     def observed(_context, **kwargs):
                         calls.append(kwargs)
@@ -143,15 +170,15 @@ class EiModelTests(unittest.TestCase):
                          patch("msplatform.execution.run_session.run_observed_process", side_effect=observed):
                         if failure:
                             with self.assertRaisesRegex(ProcessExecutionError, "inert native failure"):
-                                operation(*documents, mode_id="build_only_smoke", context=context, **request_options)
-                            manifests = list(context.workspace.glob("artifacts/components/*/runs/*/run_manifest.json"))
+                                operation(*documents, mode_id="build_only_smoke", context=context, artifact_store=store, **request_options)
+                            manifests = list(store.root.glob("assets/native_stage/*/*/runs/*/run_manifest.json"))
                             self.assertEqual(len(manifests), 1)
                             manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
                             self.assertEqual(manifest["status"], "failed")
                             self.assertNotIn("products", manifest)
                             self.assertEqual(len(calls), 1)
                             continue
-                        product = operation(*documents, mode_id="build_only_smoke", context=context, **request_options)
+                        product = operation(*documents, mode_id="build_only_smoke", context=context, artifact_store=store, **request_options)
                     self.assertEqual(product.kind, "prepared_model")
                     self.assertEqual(product.data_path("model").read_bytes(), b"EXPLICIT_INERT_MPH_NOT_A_COMSOL_MODEL")
                     self.assertEqual(len(calls), 2)

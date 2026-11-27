@@ -1,12 +1,30 @@
-"""Historical IP ancestry requires an explicit read-only identity selection."""
+"""Historical identities are read as recorded, never enabled for new runs."""
+import copy
 import json
 from pathlib import Path
 import tempfile
 import unittest
+
+from msplatform.results.component_exit_history import validate_component_exit_binding
 from msplatform.results.ip_continuation import continuation_ancestry, continuation_protection_paths
 
 
 class HistoricalIpIdentityTests(unittest.TestCase):
+    def test_component_exit_accepts_exact_historical_and_current_identity(self):
+        record = dict(schema_version=2, role='ion_processor_component_exit_export', status='prepared',
+                      source_project='dual_pressure_rectilinear_ion_processor',
+                      source_instance_id='ip-1', target_instance_id='mr-1')
+        before = copy.deepcopy(record)
+        self.assertEqual(validate_component_exit_binding(record), ('ip-1', 'mr-1'))
+        self.assertEqual(record, before)
+        current = dict(record, source_project='ion_processor')
+        self.assertEqual(validate_component_exit_binding(current), ('ip-1', 'mr-1'))
+        for bad in (dict(record, source_project='unknown'), dict(record, schema_version=1),
+                    dict(record, role='other'), dict(record, schema_version=2.0),
+                    dict(record, target_instance_id='ip-1')):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate_component_exit_binding(bad)
+
     def test_ancestry_requires_explicit_history_selection(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp) / 'run-old'

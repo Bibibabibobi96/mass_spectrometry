@@ -6,7 +6,7 @@ import re
 import unittest
 
 from msplatform.workflows.mr_design.ip_prism_local_geometry import prepare_geometry
-from msplatform.workflows.prepared_joint.ion_processor_assembly import transform_shape
+from msplatform.components.ion_processor.assembly_geometry import transform_shape
 from msplatform.backends.simion.assembled_field_plan import _bounds
 from msplatform.backends.simion.ip_geometry import _assembled_primitive as _primitive
 from msplatform.components.ion_processor.convex_geometry import contains_shape

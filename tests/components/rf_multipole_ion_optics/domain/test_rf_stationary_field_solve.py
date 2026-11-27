@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,7 +14,8 @@ from unittest.mock import patch
 from msplatform.backends.comsol.resources import native_resource_path
 from msplatform.backends.comsol.rf_stationary_field import run_field_operations
 from msplatform.execution.completion import no_particle_batch_completion_api
-from msplatform.workflows.rf_stationary import _build_parser, _field_runtime, solve_comsol
+from msplatform.workflows.rf_stationary import _field_runtime, solve_comsol
+from msplatform.cli import _build_parser
 
 
 class _Session:
@@ -142,13 +146,15 @@ class RfStationaryFieldSolveTests(unittest.TestCase):
                 _field_runtime(path, {})
 
     def test_public_cli_and_installed_resources_expose_stage(self):
-        arguments = _build_parser().parse_args(["solve-comsol", "--budget", "budget.json",
+        arguments = _build_parser().parse_args(["rf-stationary", "solve-comsol", "--budget", "budget.json",
+            "--artifact-root", "store",
             "--run-id", "run", "--source-id", "source", "--workspace", ".", "--python", "python",
             "--powershell", "pwsh", "--host-state", "host", "--policy", "policy",
             "--resolved-runtime", "runtime.json", "--preregistration", "prereg.json",
             "--science-task", "science.m", "--sampling-plan", "plan.json",
             "--comsol-launcher", "comsol", "--matlab-root", "matlab"])
-        self.assertEqual(arguments.command, "solve-comsol")
+        self.assertEqual(arguments.command, "rf-stationary")
+        self.assertEqual(arguments.stationary_command, "solve-comsol")
         for name in ("read_rf_saved_stationary_solution.m", "export_comsol_stationary_field_samples.m"):
             self.assertTrue(native_resource_path(name).is_file())
 
@@ -180,6 +186,7 @@ class RfStationaryFieldSolveTests(unittest.TestCase):
             for name in ("budget.json", "prereg.json", "plan.json", "resolved.json"):
                 (root / name).write_text("{}", encoding="utf-8")
             calls = []
+            store = object()
             with (
                 patch("msplatform.workflows.rf_stationary._budget",
                       return_value=({"limits": {"transient_run_directory_bytes": 1}}, object())),
@@ -194,9 +201,58 @@ class RfStationaryFieldSolveTests(unittest.TestCase):
                 result = solve_comsol(resolved_runtime=root / "resolved.json",
                     preregistration=root / "prereg.json", science_task=science,
                     sampling_plan=root / "plan.json", budget=root / "budget.json",
-                    run_id="run", source_id="source", context=SimpleNamespace())
+                    run_id="run", source_id="source", context=SimpleNamespace(), artifact_store=store)
             self.assertEqual(result["status"], "success")
             self.assertEqual(calls[0]["completion_api"], no_particle_batch_completion_api)
+            self.assertIs(calls[0]["artifact_store"], store)
+
+    @unittest.skipUnless(os.name == 'nt' and os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'), 'shared Windows host ledger required')
+    def test_solve_uses_store_and_reopens_inert_result(self):
+        from tests.contracts.test_execution_runtime import NormalOwnerTests
+        from msplatform.io.manifest_records import file_record
+        from msplatform.storage.store import ArtifactStore
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            helper = NormalOwnerTests()
+            policy = root/'capacity.json'; policy.write_text(json.dumps(helper._policy()),encoding='utf-8')
+            context = replace(helper._context(root), capacity_policy_path=policy,
+                host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']))
+            context.workspace.mkdir(parents=True)
+            for name in ('budget.json','prereg.json','plan.json','resolved.json','science.m'):
+                (root/name).write_text('{}',encoding='utf-8')
+            store = ArtifactStore(root/'store')
+            runtime = {'design_profile_resolution':{'resolved_design':{'resolved_sha256':'A'*64},'profiles_path':str(root/'design.json')},
+                'particle_source':{'profile_id':'source','registry_path':str(root/'source.json')},
+                'runtime_profile_registry_path':str(root/'runtime.json'),'design_profile_id':'design','runtime_profile_id':'profile',
+                'solver_numerics':{'comsol':{'profile_id':'numerics'}},
+                'solver_numerics_registry_paths':{'comsol':str(root/'numerics.json')},'engineering_budget':{'path':str(root/'budget.json')}}
+            def inert(session, *, samples, **_):
+                for operation in ('solve_stationary_fields','verify_stationary_fields'):
+                    session.run_process(operation,executable=Path(sys.executable),arguments=['-c','pass'],
+                        role='GATE',stage='software_tests',limits=None)
+                samples.write_text('source identity preserved\n',encoding='utf-8')
+                (session.result_dir/'finite_3d_transport.mph').write_text('inert',encoding='utf-8')
+                verification=session.declare_file(session.result_dir/'verification.json','required_evidence')
+                verification.write_text('{}',encoding='utf-8')
+                return {'verification':verification,'solution_tags':['inert']}
+            def validate(_authority, _samples, output):
+                output.write_text('{}',encoding='utf-8')
+            with (patch('msplatform.workflows.rf_stationary._budget',return_value=({'limits':{'transient_run_directory_bytes':1048576}},file_record(root/'budget.json','required_evidence'))),
+                  patch('msplatform.workflows.rf_stationary._field_runtime',return_value=runtime),
+                  patch('msplatform.workflows.rf_stationary.sampling.generate_stationary_field_sample_rows',return_value=[]),
+                  patch('msplatform.workflows.rf_stationary.validate_preregistration',return_value={'field_sampling':{'expected_point_count':0}}),
+                  patch('msplatform.workflows.rf_stationary._points',return_value=(root/'plan.json',root/'plan.json')),
+                  patch('msplatform.workflows.rf_stationary._validation_document',side_effect=validate),
+                  patch('msplatform.backends.comsol.rf_stationary_field.run_field_operations',side_effect=inert)):
+                result=solve_comsol(resolved_runtime=root/'resolved.json',preregistration=root/'prereg.json',
+                    science_task=root/'science.m',sampling_plan=root/'plan.json',budget=root/'budget.json',
+                    run_id='20261127_120000__sim__comsol__rf-store-fixture',source_id='fixture',context=context,artifact_store=store)
+            manifest=Path(result['manifest']['path'])
+            self.assertTrue(manifest.is_relative_to(store.root))
+            document=json.loads(manifest.read_text(encoding='utf-8'))
+            self.assertEqual(document['status'],'success')
+            sample=next(record for record in document['outputs'] if Path(record['path']).name=='stationary_field_samples.csv')
+            self.assertEqual(Path(sample['path']).read_text(encoding='utf-8'),'source identity preserved\n')
 
     def test_installed_science_saves_only_its_field_only_branch(self):
         science = native_resource_path("solve_finite_3d_transport.m")

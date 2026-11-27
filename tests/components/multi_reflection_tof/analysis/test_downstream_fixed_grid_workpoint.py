@@ -10,8 +10,6 @@ from unittest.mock import patch
 import numpy as np
 
 from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
-    RESIDUAL_NAMES,
-    UNKNOWN_NAMES,
     _trial,
     _static_field_problem,
     _native_static_binding_problem,
@@ -20,9 +18,9 @@ from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
     _trajectory_physics_identity,
     assert_trial_matches_jacobian,
     audit,
-    resolve_numerics,
-    resolve_active_stripe_axes,
-    solve_linearized_step,
+)
+from msplatform.components.multi_reflection_tof.workpoint_math import (
+    RESIDUAL_NAMES, UNKNOWN_NAMES, solve_linearized_step, resolve_numerics, resolve_active_stripe_axes,
 )
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.comsol.static_field_binding import scalar_binding_problem
@@ -208,7 +206,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
 
     def test_sealed_native_history_validates_actual_multiwindow_ancestry(self):
         """Historical projection validates small identities, not retired PA bytes."""
-        from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
+        from msplatform.analysis.mr_observations import _collision_geometry_projection
         module = "msplatform.workflows.prepared_joint.fixed_grid_workpoint"
         cases = (([3, 3, 0], None), ([0], None), ([3, 3, 0], "unknown"),
                  ([3, 3, 0], "missing"), ([1, 3, 0], "self"), ([2, 1, 0], "cycle"),
@@ -1047,7 +1045,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
 
     def test_native_history_uses_bound_small_evidence_not_retired_payload(self):
         from msplatform.backends.comsol.static_field_binding import load_binding, verify_joint_asset_records
-        from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
+        from msplatform.analysis.mr_observations import _collision_geometry_projection
 
         baseline, _, _ = self._fixture()
         with tempfile.TemporaryDirectory() as temp:

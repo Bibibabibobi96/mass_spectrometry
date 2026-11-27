@@ -11,7 +11,7 @@ import sys
 import unittest
 
 from tests.workflows.single_reflection.test_single_reflection_geometry import candidate_300mm_fixture
-from msplatform.workflows.single_reflection_flight.pulse import ROLE, select_discovery_pulse
+from msplatform.analysis.pulse_selection import ROLE, select_discovery_pulse
 from msplatform.components.single_reflection_oa_tof.accelerator_geometry import resolve_accelerator_geometry
 
 
@@ -45,7 +45,7 @@ class NoLayout:
         if fullname == 'integrations.runtime.single_flight_layout':
             raise ImportError('unrelated instrument layout compiler entered pulse selection')
 sys.meta_path.insert(0, NoLayout())
-from msplatform.workflows.single_reflection_flight.pulse import select_discovery_pulse
+from msplatform.analysis.pulse_selection import select_discovery_pulse
 record = dict(path='fixture.json', bytes=1, sha256='A'*64)
 row = dict(particle_id=1, candidate_time_us=1., instrument_time_us=1.,
            x_mm=0., y_mm=0., z_mm=1., vx_mm_per_us=1., vy_mm_per_us=0., vz_mm_per_us=0.)

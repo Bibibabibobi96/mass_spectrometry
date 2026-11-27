@@ -33,6 +33,7 @@ param(
   [string]$NativeFieldRunPath='',
   [string]$ResultPath='',
   [string]$ArtifactRootPath='',
+  [string]$ArtifactStoreRoot='',
   [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$CampaignPath,
   [Parameter(Mandatory=$true,ParameterSetName='Campaign')][string]$ExperimentId,
   [Parameter(Mandatory=$true,ParameterSetName='Recovery')][switch]$ResumeFinalization
@@ -40,6 +41,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+if($StopStage-eq'field_solve'-and[string]::IsNullOrWhiteSpace($ArtifactStoreRoot)){
+  throw 'Stationary field sampling requires explicit ArtifactStoreRoot outside the source tree.'
+}
 $entryScriptHash=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
 $runTimer=[Diagnostics.Stopwatch]::StartNew();$phaseTimings=[ordered]@{};$phaseName='prepare';$phaseBoundary=0.0
 function Set-RfRunPhase([string]$Next){
@@ -1175,7 +1179,8 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     Push-Location $codeRoot
     try{
       $env:PYTHONPATH=(@(Get-RunPythonImportRoots -RepoRoot $codeRoot)-join[IO.Path]::PathSeparator)
-      & $python -m msplatform.workflows.rf_stationary simion-sample --request $sampleRequest --budget $engineeringBudget `
+      & $python -m msplatform rf-stationary simion-sample --request $sampleRequest --budget $engineeringBudget `
+        --artifact-root $ArtifactStoreRoot `
         --run-id $sampleRunId --source-id $RunId --workspace $workspaceRoot --python $python `
         --powershell (Get-Process -Id $PID).Path --host-state $hostState `
         --policy (Join-Path $codeRoot 'src/msplatform/execution/resources/host_resource_policy.json') --simion $simion

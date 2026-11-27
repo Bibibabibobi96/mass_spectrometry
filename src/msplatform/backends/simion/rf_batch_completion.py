@@ -7,7 +7,7 @@ import csv
 import json
 from pathlib import Path
 
-from msplatform.backends.simion.native_completion import require_one_fly_completion
+from msplatform.analysis.native_completion import require_one_fly_completion
 
 
 def validate_batch_completion(*, stdout: Path, state: Path, summary: Path,

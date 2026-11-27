@@ -17,7 +17,7 @@ from msplatform.backends import simion
 from msplatform.backends.simion import model as model_api, model_execution
 from msplatform.backends.simion.native_plans import plan_model_preparation
 from msplatform.backends.simion.resources import native_resource_path, structural_seed_path
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.execution.resources import resource_path
 from msplatform.io.manifest_records import file_record
 from msplatform import capabilities

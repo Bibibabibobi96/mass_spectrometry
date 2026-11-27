@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from msplatform.backends.simion.tracking_collection import read_native_events
 from msplatform.backends.simion.particle_data import adapt_native_results
+from tests.contracts.test_support.species import fixture_ion_species, fixture_ion_species_from_amu
 from msplatform.results.particle_data import read_particle_data, write_particle_data, summarize_particle_data
 from msplatform.physics import CONSTANTS
 
@@ -31,7 +32,7 @@ class SimionParticleDataTests(unittest.TestCase):
             identity = {key: record[key] for key in ('bytes', 'sha256')}
             session = SimpleNamespace(result_dir=root, context=SimpleNamespace(tools={'simion': str(executable)}),
                 declare_file=lambda path, role: path, canonical_path=lambda path: path)
-            plan = dict(expected_operation_ids=['track_fly'], rows=list(source.values()),
+            plan = dict(expected_operation_ids=['track_fly'], rows=list(source.values()), species=fixture_ion_species_from_amu(source.values()),
                 flight=dict(detector_instance=4), observations=dict(
                 observation_times_us=[1.5], plane_observations=[dict(observation_id='d',
                 source_instance_id='tof', surface_id='detector')]))
@@ -84,6 +85,51 @@ class SimionParticleDataTests(unittest.TestCase):
         bindings = dict(d=dict(component_id='tof', surface_id='detector', electrode_id=None, kind='detector'))
         return source, collection, bindings
 
+    def test_neutral_without_detector_keeps_unknown_terminal_and_real_samples(self):
+        # Synthetic native callback evidence; this is not a vendor Fly.
+        source, collection, _ = self.collected_fixture()
+        collection['canonical_events'] = []
+        collection.pop('plane_observations')
+        for outcome in collection['census']['terminal_taxonomy']['particle_outcomes']:
+            outcome['category'] = 'unknown_native_terminal'
+        result = adapt_native_results(source, collection, backend_version='fixture-version',
+            observation_bindings={}, observation_times_us=[1.5], constants=CONSTANTS,
+            detector_instance=None)
+        self.assertEqual(len(result.initial_states), 3)
+        self.assertEqual(len(result.terminal_states), 3)
+        self.assertFalse(result.events)
+        self.assertTrue(all(row['physical_outcome'] == 'unknown' for row in result.terminal_states))
+        from msplatform.backends.simion.tracking_execution import _publish_split_particle_data
+        from msplatform.io.manifest_records import file_record
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            binary = root / 'fixture.exe'; binary.write_bytes(b'fixture')
+            binary_record = file_record(binary, 'solver_native_binary')
+            identity = {key: binary_record[key] for key in ('bytes', 'sha256')}
+            session = SimpleNamespace(result_dir=root, context=SimpleNamespace(tools={'simion': str(binary)}),
+                declare_file=lambda path, role: path, canonical_path=lambda path: path)
+            plan = dict(expected_operation_ids=['track_fly'], rows=list(source.values()),
+                species=fixture_ion_species_from_amu(source.values()), flight=dict(tracking_kind='neutral_sampled'),
+                observations=dict(observation_times_us=[1.5], plane_observations=[]))
+            clock = dict(clock_epoch_id='epoch', authority_sha256='a'*64)
+            with patch('msplatform.backends.simion.tracking_execution.windows_binary_version', return_value='fixture-version'):
+                _, version = _publish_split_particle_data(session, plan, collection, dict(native_frame_id='world'),
+                    dict(drive=dict(clock=clock)), identity, {})
+            self.assertEqual(version, 'fixture-version')
+            self.assertEqual(len(read_particle_data(root/'particle_data')['initial_states']), 3)
+        broken = copy.deepcopy(collection)
+        broken['terminal_evidence']['particle_evidence'].pop()
+        with self.assertRaisesRegex(ValueError, 'identities must close'):
+            adapt_native_results(source, broken, backend_version='fixture-version',
+                observation_bindings={}, observation_times_us=[1.5], constants=CONSTANTS,
+                detector_instance=None)
+        broken = copy.deepcopy(collection)
+        broken['native_shared_states'].pop()
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            adapt_native_results(source, broken, backend_version='fixture-version',
+                observation_bindings={}, observation_times_us=[1.5], constants=CONSTANTS,
+                detector_instance=None)
+
     def test_actual_primary_birth_terminal_and_plane_cold_read(self):
         source, collection, bindings = self.collected_fixture()
         result = adapt_native_results(source, collection, backend_version='SIMION 8.2',
@@ -97,7 +143,7 @@ class SimionParticleDataTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             root = Path(folder)
             write_particle_data(root, result, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
-                frame_id='world', clock=dict(basis='experiment_relative', unit='s')))
+                frame_id='world', clock=dict(basis='experiment_relative', unit='s'), species=fixture_ion_species(result.initial_states)))
             data = read_particle_data(root)
             self.assertEqual(summarize_particle_data(data)['census']['counts']['detected'], 1)
             self.assertEqual(data['initial_states'][1]['weight'], 3.)

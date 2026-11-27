@@ -23,7 +23,6 @@ class AssemblyFinalizationRecoveryTests(unittest.TestCase):
         # without repeating that matrix for each identical owner invocation.
         cases = (("prepared_joint", "retention"), ("oa_mr", "publication"),
                  ("prepared_joint", "unknown"),
-                 ("paired_accelerator_static_field", "retention"),
                  ("paired_accelerator_pulse", "publication"))
         # Keep artifact roots and capacity ledgers private while amortizing only
         # preparation-host startup. Each original recovery CLI remains a new process.
@@ -59,7 +58,6 @@ class AssemblyFinalizationRecoveryTests(unittest.TestCase):
                 entrypoint = {
                     "prepared_joint": "prepared_joint_execute.ps1",
                     "oa_mr": "oa_mr.ps1",
-                    "paired_accelerator_static_field": "paired_accelerator_static_field.ps1",
                     "paired_accelerator_pulse": "paired_accelerator_pulse.ps1",
                 }[workflow]
                 cli = facade / "src/msplatform/workflows/resources" / entrypoint

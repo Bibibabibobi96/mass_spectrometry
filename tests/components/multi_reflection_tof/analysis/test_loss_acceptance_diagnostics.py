@@ -8,9 +8,15 @@ import unittest
 
 from matplotlib import pyplot as plt
 
-from msplatform.workflows.prepared_joint.loss_acceptance import (
-    STATE, _stages, build_loss_acceptance_figure, prepare_loss_rows, prepare_mirror_domain_rows, summarize_loss_acceptance,
-)
+from msplatform.analysis.mr_trajectory_diagnostics import recorded_stages, summarize_loss_acceptance
+from msplatform.analysis.mr_trajectory_diagnostics import STATE, build_loss_acceptance_figure, prepare_mirror_domain_rows, prepare_loss_rows as _prepare_loss_rows
+from msplatform.analysis.mr_observations import collision_diagnostics, _collision_geometry_projection
+from msplatform.results.historical_joint_source import iter_trajectory_rows
+
+
+def prepare_loss_rows(events, states, census, geometry):
+    return _prepare_loss_rows(events, states, census, collision_diagnostics(
+        events, _collision_geometry_projection(geometry)))
 
 
 def geometry():
@@ -99,8 +105,8 @@ class LossAcceptanceDiagnosticsTests(unittest.TestCase):
     def test_recorded_forward_negative_central_stage_is_not_clean_domain_acceptance(self):
         stage = "first_forward_negative_central_crossing"
         event = dict(kind="central_plane_directional", n=1, direction_z=-1, vy_mm_us=1, y_mm=500)
-        self.assertTrue(dict(_stages([event]))[stage])
-        self.assertFalse(dict(_stages([dict(event, vy_mm_us=-1)]))[stage])
+        self.assertTrue(dict(recorded_stages([event]))[stage])
+        self.assertFalse(dict(recorded_stages([dict(event, vy_mm_us=-1)]))[stage])
 
     def test_native_contact_and_noncontact_topology_keep_all_mother_ids(self):
         events = [terminal(1, -1), terminal(79, 4),
@@ -151,7 +157,7 @@ class LossAcceptanceDiagnosticsTests(unittest.TestCase):
                                          z_mm=z, vx_mm_us=.1, vy_mm_us=.2, vz_mm_us=40))
             binding = dict(geometry=geometry(), refinement_windows=[dict(name="fine_negative",
                 active_box_mm=[[-1, 1], [-10, 10], [-220, -90]])])
-            rows, crossings, metadata = prepare_mirror_domain_rows(path, binding, {1, 2},
+            rows, crossings, metadata = prepare_mirror_domain_rows(iter_trajectory_rows(path), binding, {1, 2},
                 {1: dict(t_us=5), 2: dict(t_us=5)})
             all_samples, first_pass, empty_all, empty_first = rows
             self.assertEqual(all_samples["sample_count"], 4)

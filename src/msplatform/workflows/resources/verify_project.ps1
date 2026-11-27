@@ -98,7 +98,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Quadrupole L0 reference gate failed.' }
 Push-Location $repoRoot
 try {
   & $python -m `
-    msplatform.workflows.rf_mass_filter.research `
+    msplatform rf-filter-research `
     --check-contract
 } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Quadrupole mass-filter L1 contract gate failed.' }

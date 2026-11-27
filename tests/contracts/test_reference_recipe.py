@@ -79,7 +79,7 @@ class ReferenceRecipeTests(unittest.TestCase):
         changes = [text.replace('time_dependence = "static"', 'time_dependence = "dynamic"'),
                    text.replace('status = "vacuum"', 'status = "gas"'),
                    text.replace('particle_tracer = "scipy_dop853"', 'particle_tracer = "unknown"'),
-                   text.replace('schema_version = 1', 'schema_version = 1\ntransport_mode = "segmented"'),
+                   text.replace('schema_version = 3', 'schema_version = 3\ntransport_mode = "segmented"'),
                    text.replace('mass_u = 100.0', 'mass_u = 100.0\nmass_kg = 1e-25')]
         for change in changes:
             with self.subTest(change=change), self.assertRaises(ValueError):

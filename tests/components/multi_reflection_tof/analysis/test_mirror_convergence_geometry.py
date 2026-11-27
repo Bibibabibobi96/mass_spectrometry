@@ -16,7 +16,7 @@ from msplatform.components.multi_reflection_tof.candidate_contract import (
 from msplatform.backends.simion.mr_geometry import (
     _mirror_lines, _mirror_ground_shield_lines,
 )
-from msplatform.backends.simion.mrtof_observations import collision_diagnostics
+from msplatform.analysis.mr_observations import collision_diagnostics
 
 
 PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/multi_reflection_tof"

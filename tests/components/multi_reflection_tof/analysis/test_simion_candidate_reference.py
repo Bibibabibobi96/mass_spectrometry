@@ -31,8 +31,8 @@ from msplatform.components.multi_reflection_tof.resolved_geometry import (
     geometry_receipt,
     resolve_geometry,
 )
-from msplatform.workflows.prepared_joint.event_analysis import summarize_events
-from msplatform.backends.simion.mrtof_observations import parse_events
+from msplatform.analysis.mr_event_analysis import summarize_events
+from msplatform.analysis.mr_observations import parse_events
 from tests.components.multi_reflection_tof.test_support.cad_pose_contract import (
     load_cad_pose_contract,
     project_to_source,

@@ -1,7 +1,7 @@
 """Retained SFI checkpoint statistics independent of withdrawn local frontend."""
 import unittest
 import pandas as pd
-from msplatform.workflows.single_reflection_flight.checkpoint_diagnostics import _checkpoint_distribution_summary
+from msplatform.analysis.flight_checkpoint_diagnostics import _checkpoint_distribution_summary
 
 
 class SingleReflectionCheckpointTests(unittest.TestCase):

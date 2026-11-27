@@ -16,12 +16,14 @@ MASS = 100 * 1.66053906660e-27
 
 
 def recipe(electric, magnetic, charge_state=1):
-    return {"schema_version": 1, "frame_id": "lab", "clock": {"basis": "experiment_relative", "unit": "s"},
+    return {"schema_version": 3, "frame_id": "lab", "clock": {"basis": "experiment_relative", "unit": "s"},
             "constants": dict(CONSTANTS),
             "gas_environment": GasEnvironment("vacuum").to_dict(),
             "field_source": {"kind": "uniform", "time_dependence": "static",
                              "electric_field_v_m": electric, "magnetic_field_t": magnetic},
             "particle_tracer": "scipy_dop853",
+            "species": [{"species_id": "ion", "species_kind": "ion", "mass_kg": MASS,
+                         "charge_state": charge_state, "charge_c": charge_state * E_CHARGE}],
             "initial_states": [{"particle_id": 17, "species_id": "ion", "position_m": [0.01, -0.002, 0.003],
                                 "velocity_m_s": [1e4, 1300., 200.], "time_s": 2e-7,
                                 "mass_kg": MASS, "charge_state": charge_state,

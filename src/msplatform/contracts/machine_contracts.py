@@ -22,6 +22,10 @@ class ContractError(ValueError):
     """Raised when a machine contract fails structural or semantic validation."""
 
 
+class CandidateContractError(ValueError):
+    """Raised when a prototype contract cannot describe a physical candidate."""
+
+
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 

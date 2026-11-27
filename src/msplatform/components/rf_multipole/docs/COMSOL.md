@@ -17,7 +17,7 @@
 | 四／六／八极无碰撞传输 | [原 CLI](../../../workflows/resources/run_finite_3d_transport.ps1) |
 | RF+DC质量过滤 | [原 CLI](../../../workflows/resources/run_mass_filter_comsol.ps1) |
 | release构造诊断 | 接口 CLI 的 `-ReleaseConstructionGate`；[安装任务](../../../backends/comsol/matlab/interface_readiness/run_release_construction_gate.m) |
-| 四、六、八极杆同源功能闭合 | [统一集成单反射工作流](../../../workflows/resources/single_reflection_flight.ps1) |
+| 四、六、八极杆同源功能闭合 | [公共 Recipe 与追踪合同](../../../../../docs/TRACING.md)；具体多极杆组合及后端需分别验证 |
 
 所有任务通过仓库统一MATLAB/COMSOL入口建立连接，不自行`mphstart`。版本、启动及
 `EXECUTION_ENVIRONMENT_BLOCKED`分类见[操作指南](../../../../../docs/OPERATIONS.md#工具链与执行入口)与

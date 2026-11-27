@@ -184,7 +184,7 @@ def compile_execution(
     plan_path: Path,
     registry_path: Path,
     bindings: dict[str, str] | None = None,
-    *, purpose: str | None = None, qualification: str | None = None,
+    *, purpose: str | None = None,
 ) -> dict[str, Any]:
     bindings = bindings or {}
     plan_path = plan_path.resolve()
@@ -192,8 +192,10 @@ def compile_execution(
     plan = load_json(plan_path)
     registry = load_json(registry_path)
     validate_schema(registry, "project_registry.schema.json")
-    if plan.get("role") != "solver_neutral_design_plan":
+    if plan.get("role") != "solver_neutral_design_plan" or plan.get("schema_version") != 2:
         raise ValueError("input is not a solver-neutral design plan")
+    if "requested_evidence_level" in plan:
+        raise ValueError("retired qualification grades cannot be used for new execution")
     if plan["provenance"]["request"]["sha256"] != sha256(Path(plan["provenance"]["request"]["path"])):
         raise ValueError("design request changed after planning; regenerate the design plan")
     if plan["provenance"]["project_registry"]["sha256"] != sha256(registry_path):
@@ -206,7 +208,7 @@ def compile_execution(
     execution_relative = project["contracts"]["execution"]
     if execution_relative is None:
         return {
-            "schema_version": 1, "role": "execution_dry_run", "status": "NEEDS_IMPLEMENTATION",
+            "schema_version": 2, "role": "execution_dry_run", "status": "NEEDS_IMPLEMENTATION",
             "safe_to_execute": False, "project_id": project["project_id"], "profile_id": None,
             "action": "preview", "execution_status": "not_started", "science_status": "not_evaluated",
             "blockers": ["Project has no execution profile contract"], "commands": []
@@ -220,22 +222,15 @@ def compile_execution(
                     item["capability_id"] == plan["capability_id"] and item["mode"] == plan["mode"]), None)
     if profile is None:
         return {
-            "schema_version": 1, "role": "execution_dry_run", "status": "NEEDS_IMPLEMENTATION",
+            "schema_version": 2, "role": "execution_dry_run", "status": "NEEDS_IMPLEMENTATION",
             "safe_to_execute": False, "project_id": project["project_id"], "profile_id": None,
             "action": "preview", "execution_status": "not_started", "science_status": "not_evaluated",
             "blockers": [f"No execution profile for {plan['capability_id']}/{plan['mode']}"], "commands": []
         }
 
-    # Candidate/Formal express a real qualification intent in existing requests.
-    # Plan/static never determine execution actions or native evidence.
-    if qualification is None:
-        legacy = plan.get("requested_evidence_level")
-        qualification = legacy if legacy in {"candidate", "formal"} else "none"
     implementation_blockers = []
     if purpose is not None and purpose != profile["purpose"]:
         implementation_blockers.append(f"Purpose is not supported: {purpose}")
-    if qualification not in profile["qualification_support"]:
-        implementation_blockers.append(f"Qualification is not supported: {qualification}")
     supported_points = {_operating_point_key(point) for point in profile["supported_operating_points"]}
     missing_points = [_operating_point_key(point) for point in plan["operating_points"] if _operating_point_key(point) not in supported_points]
     if missing_points:
@@ -254,12 +249,12 @@ def compile_execution(
     missing_outputs = sorted(set(plan["required_outputs"]) - set(profile["deliverable_outputs"]))
     if missing_outputs:
         implementation_blockers.append("Runner cannot deliver outputs: " + ", ".join(missing_outputs))
-    if (purpose is not None and purpose != profile["purpose"]) or qualification not in profile["qualification_support"]:
-        return dict(schema_version=1, role="execution_dry_run", status="NEEDS_IMPLEMENTATION",
+    if purpose is not None and purpose != profile["purpose"]:
+        return dict(schema_version=2, role="execution_dry_run", status="NEEDS_IMPLEMENTATION",
             safe_to_execute=False, project_id=project["project_id"], owner_kind="project",
             owner_id=project["project_id"], profile_id=profile["profile_id"], action="preview",
             purpose=profile["purpose"], requested_action=profile["action"], tools=profile["tools"],
-            model=profile["model"], requested_qualification=qualification,
+            model=profile["model"],
             execution_status="not_started", science_status="not_evaluated",
             blockers=implementation_blockers, limitations=profile["limitations"], commands=[])
     protected_bindings = {
@@ -375,7 +370,7 @@ def compile_execution(
     else:
         status = "EXECUTION_READY"
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "execution_dry_run",
         "python_executable": str(Path(sys.executable).resolve()),
         "status": status,
@@ -396,8 +391,7 @@ def compile_execution(
                                   sha256=plan["provenance"]["request"]["sha256"])],
         "action": "preview", "execution_status": "not_started", "science_status": "not_evaluated",
         "purpose": profile["purpose"], "requested_action": profile["action"], "tools": resolved_context.get("tools", profile["tools"]),
-        "model": profile["model"], "requested_qualification": qualification,
-        "legacy_requested_evidence_level": plan.get("requested_evidence_level"),
+        "model": profile["model"],
         "readiness_scope": "declared_profile_inputs__native_admission_and_scientific_acceptance_pending",
         "resolved_inputs": resolved_inputs,
         "resolved_runtime": resolved_context.get("resolved_runtime"),
@@ -414,8 +408,7 @@ def compile_execution(
 
 
 def compile_assembly_execution(owner: str, workflow_id: str, run_id: str,
-                                  bindings: dict[str, str], *, purpose: str | None = None,
-                                  qualification: str = "none") -> dict[str, Any]:
+                                  bindings: dict[str, str], *, purpose: str | None = None) -> dict[str, Any]:
     """Select one declared assembly owner entry; no component physics is synthesized."""
     validate_run_id(run_id)
     path = REPO_ROOT/"src/msplatform/workflows/config/assembly_registry.json"
@@ -428,9 +421,6 @@ def compile_assembly_execution(owner: str, workflow_id: str, run_id: str,
     if len(workflows) != 1:
         raise ValueError(f"Unknown Assembly workflow: {workflow_id}")
     workflow = workflows[0]
-    qualification = qualification or "none"
-    if qualification != "none":
-        raise ValueError("Assembly propagation does not grant a scientific qualification")
     if purpose is not None and purpose != workflow["purpose"]:
         raise ValueError(f"Purpose is not supported: {purpose}")
     optional = workflow.get("optional_arguments", {})
@@ -472,11 +462,10 @@ def compile_assembly_execution(owner: str, workflow_id: str, run_id: str,
     for key, values in optional.items():
         if key in bindings:
             arguments.extend(argument.format_map(context) for argument in values)
-    return dict(schema_version=1, role="execution_dry_run", python_executable=str(Path(sys.executable).resolve()), status=status,
+    return dict(schema_version=2, role="execution_dry_run", python_executable=str(Path(sys.executable).resolve()), status=status,
         safe_to_execute=status == "EXECUTION_READY", can_prepare_sources=status == "NEEDS_SOURCE_FREEZE",
         action="preview", execution_status="not_started", science_status="not_evaluated",
         purpose=workflow["purpose"], requested_action=workflow["action"], tools=workflow["tools"], model=workflow["model"],
-        requested_qualification=qualification,
         owner_kind="assembly", owner_id=owner, profile_id=workflow_id,
         **({'optional_bindings': {key: bindings[key] for key in optional if key in bindings}} if optional else {}),
         execution_contract=dict(path=str(path), sha256=sha256(path)),
@@ -518,7 +507,6 @@ def main() -> None:
     parser.add_argument("--workflow")
     parser.add_argument("--run-id")
     parser.add_argument("--purpose")
-    parser.add_argument("--qualification", choices=("none", "candidate", "formal"))
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--execute-plan", type=Path)
     args = parser.parse_args()
@@ -532,18 +520,20 @@ def main() -> None:
             if not args.owner or not args.run_id or args.design_plan or args.execute_plan:
                 parser.error("--workflow requires --owner and --run-id, without a project design plan")
             result = compile_assembly_execution(args.owner, args.workflow, args.run_id, parse_bindings(args.bind),
-                                                   purpose=args.purpose, qualification=args.qualification)
+                                                   purpose=args.purpose)
         elif args.execute_plan:
-            if args.design_plan or args.bind or args.execute or args.owner or args.run_id or args.purpose or args.qualification:
+            if args.design_plan or args.bind or args.execute or args.owner or args.run_id or args.purpose:
                 parser.error("--execute-plan consumes the frozen plan; omit design input and bindings")
             result = load_json(args.execute_plan)
+            if result.get("schema_version") != 2 or {"requested_qualification", "legacy_requested_evidence_level"} & result.keys():
+                raise ValueError("retired qualification grades cannot be used for new execution")
         else:
             if args.design_plan is None:
                 parser.error("design_plan or --list-capabilities or --execute-plan is required")
             if args.owner or args.run_id:
                 parser.error("a project design plan already fixes its owner and run identity")
             result = compile_execution(args.design_plan, args.registry, parse_bindings(args.bind),
-                                       purpose=args.purpose, qualification=args.qualification)
+                                       purpose=args.purpose)
     except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
         raise SystemExit(str(exc)) from exc
     rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"

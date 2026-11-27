@@ -130,7 +130,7 @@ source-audited live workflows, not frozen-code execution. Existing run roles and
 input bytes are unchanged; root workflow/controller closure remains separate P4 work.
 - `msplatform.analysis.peak_metrics`：KDE、直接FWHM和分辨率的唯一参考实现。
 - `reference_analysis.py`：CSV/XLSX/TRACE导入、Recording审计、source mapping、bootstrap和CLI。
-- `msplatform.workflows.single_reflection_mass_spectrum`：五质量标定、峰形与探测落点比较。
+- `msplatform.results.historical_mass_spectrum`：五质量标定、峰形与探测落点比较。
 - `compare_field_profiles.py`：同坐标轴场比较。
 - `msplatform.analysis.vector_field_samples`：同坐标三维场分量比较及静场样本校验。
 - `compare_particle_trajectories.py`：代表粒子轨迹和关键面到达时间。
@@ -177,7 +177,7 @@ workflow调用；保留依据是[预注册pilot合同](../docs/publication/paper
 不是已标定的m/z轴。通用输入只证明调用者提供了TOF，时钟资格标为`unspecified`；不从列名、
 名义质量或配对ID补造电荷、脉冲epoch或绝对标定资格。冻结`analysis_contract.json`与历史结果不改写。
 
-`msplatform.workflows.single_reflection_mass_spectrum`的`analysis_metadata`登记`sqrt_mz_affine_centroid_fit_v1`：
+`msplatform.results.historical_mass_spectrum`的`analysis_metadata`登记`sqrt_mz_affine_centroid_fit_v1`：
 每个求解器以同批物种平均TOF为自变量、`sqrt(m/z)`为响应做等物种权重的一次最小二乘拟合，
 即`sqrt(m/z)=a*tof_us+b`，随后映射同批粒子并报告同批质心残差。它不是独立标定集验证；
 `time_offset_us=-b/a`只是拟合零点，不能当作脉冲epoch。m/z图轴及偏差使用Th、密度使用1/Th，
@@ -205,6 +205,8 @@ ID解析统一在`msplatform.results.single_reflection_particle_table`：CSV仅�
 出生时钟整体平移及实际CLI JSON。
 
 ## 自动理想场比较
+
+旧的区域 Ez 方法诊断现由安装资源 `msplatform/workflows/resources/run_field_idealization_sweep.ps1` 承载，显式提供 `WorkspaceRoot`、`ArtifactRootPath` 和 `ScienceRoot`；`-ValidateConfigOnly` 只检查选择器，不启动 SIMION。选择器支持声明的区域 Ez，拒绝 Ex/Ey；此路径的原生飞行与新的公共生命周期接线尚未在本次迁移中验收，不能由配置检查推断成功。原正式资产与历史数据仍按原 manifest 认证。
 
 The three solver-free scientific roles use the sole installed
 `msplatform.workflows.oa_tof_design.source_comparison` entry. Select the scientific
@@ -337,15 +339,7 @@ configuration与reference；显式`--configuration`可以是同字节副本，�
 
 ## Formal与跨求解器
 
-从仓库根只读复核当前 Formal；同一入口的其他阶段含义见下文：
-
-```powershell
-.\src\msplatform\workflows\resources\run_formal_validation.ps1 -Phase Verify
-```
-
-`Validate`从成功的零物理变化候选冻结输入，以同一N=1000粒子表串行重算；`Publish`只接受晋升
-request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手改
-`formal_validation.json`。
+历史资产可通过 `msplatform.execution.owner.publish_historical_release_evidence` 以显式 manifest、项目和所需资产角色登记至 ArtifactStore；`read_historical_release_evidence` 重读并验证来源。该证据只记录历史身份，不授予新的科学资格，也不改写历史配置。几何合同与参考分析分别使用 `verify_geometry_contract.ps1` 和 `verify_reference_analysis.ps1`，后者需要显式指定工作区、资产根和科学项目根。
 
 跨求解器诊断入口为
 [`run_cross_solver_diagnostics.ps1`](../../../workflows/resources/run_cross_solver_diagnostics.ps1)。
@@ -367,42 +361,11 @@ request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手�
 
 ## 反射器电压补偿运行与恢复
 
-`msplatform/workflows/oa_candidate/run_compensation.py` 保留原场、补偿、理想反射器三臂；
-Python负责实际源/场输入、单调固定端点拟合、整批恢复投影和分析，私有PowerShell适配调用公共
-SIMION批次、资源及run发布owner。父case只读，所有可写PA/IOB/Program均属于新run。
-The canonical SIMION response-basis fit and Lua profile are provided by
-`msplatform.backends.simion.optimize_reflectron_ring_voltages`. Its versioned authoring
-resource preserves the original regularization default, without claiming optimality.
-Explicit input overrides it and the selected value enters the frozen plan. A new
-`--resume-from` run resolves and freezes that resource only when input is omitted;
-explicit values bypass it and existing reuse checks still reject incompatible flights.
-Fit and `--resume-finalization` consume the original plan without reading current defaults.
-`--particle-count`默认1000；显式100/5000仅消费父case已冻结的同N ION，不重新采样或编号。
+`msplatform.workflows.reflectron_compensation.run_compensation_study` 使用经过owner认证的
+独立响应轴样本，按显式正则化拟合并生成绑定来源的新Study，再调用公共Recipe运行。
+分析重读原场、补偿场及 `ideal:reflectron.full` 全矢量理想反射器三臂；模型、母群与时钟必须一致。
+不可用或不足的命中样本保留为不可计算，不作为求解成功的伪造证据。
 
-```powershell
-.\.venv\Scripts\python.exe -B -m msplatform.workflows.oa_candidate.run_compensation --case-dir <已发布case目录> --particle-count 100 --run-id <新的合法run_id>
-```
-
-源必须有终态manifest绑定的合同、同N源和verified canonical四实例runtime证据。
-实际缺批需要原生执行时，显式传`--numerics-path <作者solver_numerics.json>`；原producer仅支持
-N100/N1000。科学模式只读取父manifest绑定的`inputs.mode`，核对其与父resolved的身份；
-不从数值请求所在目录或当前Formal默认推定。几何、电压、源、坐标保持父定义，数值设置明确冻结，正式默认不改。
-原`build_formal_delivery.ps1`在同一新run、capacity/session和owner中，从公共standalone缓存建立
-新的可写私有runtime；缺少适用缓存才实际求场。模板IOB只作小结构输入，producer先建立本run场，
-随后重绑模板并原生验证；不先vendor打开模板中的父PA引用。
-新`SourceIonPath`只消费本run inputs内已冻结的原ION，经现有verified-copy边界验证复制，
-不调用源生成器、不重新采样或编号。默认producer调用未传此参数时仍保留原源生成。
-显式前驱的冻结闭包若含已由其manifest绑定的标准CPython3.11缓存，按同一绑定runtime、header及
-逐代码字段静态比对，在新run的`inputs/predecessor_source_closure/`派生独立证据；不执行父字节码，
-不修改父源码、缓存或manifest，不覆盖本次`inputs/code`。未知extra或证据不完整仍拒绝。
-已发布native `.paN` family即使完整复制也不构成安全运行来源；旧copy/materialize及额外IOB构建
-分支已删除。未提供显式重建输入时保持失败关闭，不自动重Refine、不用当前Formal替代。
-当前shield260原standalone cache已缺失；粗网格方案仅是功能候选，真实producer/三臂原生闭环尚待执行，
-不能把软件接线通过当作科学验收完成。恢复同一科学输入时加
-`--resume-from <显式父run_manifest.json>`和新的`--run-id`，保持已完成整批和原分区，
-只执行缺失单元；分析失败仍可复用完整Fly。完整合法父批次全部复用不物化PA、不重建IOB、不启动SIMION。
-原run仅收尾失败时，沿原CLI `--resume-finalization --run-id <原run_id>`读取run外小Result，
-不能把此动作当作新Fly或改变父终态。三臂执行完成与有无分辨率增益分别输出；该对照不是几何、
-网格、步长或分辨率资格认证。
-
-`native_stage_completion.append_native_stage_completion`将原项目receipt投影为现有公共owner的进程与释放事实，Candidate与补偿消费者共同使用；它不启动进程或创建资源账本。`candidate_source_closure.derive_candidate_source_closure`只在受保护的显式终态父证据充分时派生干净源码闭包，不执行或复制父缓存。
+指定native stage的收尾恢复可调用 `recover_compensation_stage`；它沿现有Store owner核验，
+不重新启动Fly。Store全局发布恢复仍遵循其现有管理合同。历史资产只读；此前粗网格三臂结果
+仅说明原冻结实现。新公共全链目前完成惰性软件验证，真实SIMION完整运行及数值资格未验证。

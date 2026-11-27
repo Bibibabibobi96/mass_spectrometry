@@ -87,12 +87,10 @@ HS1截面仍为未标定示例值。原解析规定电场已退役，活动生�
 再按实测CPU、内存和现有互斥策略派发剩余单元，不再强制单路恢复。未知writer仍保守处理，
 健康worker自然结束；该恢复不是原生积分checkpoint，不改变前驱终态。
 
-`accelerator_interface/execute.ps1 -FullJoint`的MP→IP分支可独立传
-`-IonProcessorContinuationPredecessorManifestPath <IP原manifest>`，同时提供新IP RunId及原已发布
-MP→IP准备RunId、未变请求和接收配置。复用前核验原准备包、源和冻结接收几何；IP入口继续核验
-冻结源、设计、驱动及数值。恢复后的新IP源生成新接口设计，不能直接套用绑定旧源的接口设计；
-下游完整批恢复仍使用独立的`-ContinuationPredecessorManifestPath`。失败报告提供实际阶段、owner路径
-及原始错误。软件恢复与并行回归不授予新的物理或科学资格。
+旧 `accelerator_interface/execute.ps1 -FullJoint` 的 MP→IP 分支及其准备 RunId 恢复参数已退役，
+不再启动跨组件重释放。独立 IP 仍可通过上述 `-ContinuationPredecessorManifestPath` 恢复自己的完整批次；
+历史 MP→IP 准备包只作为显式、只读的注入输入按原身份核验。当前跨组件追踪从公共 SimulationRecipe 的
+原始出生母群开始，保持原 ID、物种和实验时钟，不把旧出口状态重标为新源。
 
 上游注入的冻结准备按已声明资源集合去重，同一canonical clock schema只冻结一次，已有目标仍由公共freeze_file严格拒绝。保护接线夹具使用正式公共路径上下文和本次解释器，并保留成功、非零退出、已确认异常及未知writer的原停止事实与主／收尾错误断言；纯软件opaque seed不证明原生资产有效性。
 
@@ -166,14 +164,14 @@ for this migration does not add native impact or field qualification.
 An electrode may contain several solids; CSG pieces and PA labels do not redefine its physical identity. Retained projections use their actual geometry, without invented apertures, equipotential faces or clocks. An interface does not replace geometry and field verification.
 
 `msplatform.backends.simion.ip_exit`只读封存运行，发布公共canonical粒子状态、原ID、物种、实测6D、绝对时间和全母群census；
-新MP→IP准备结果的母群终态携带每ID相对权重，IP出口census同时保留未转交粒子的权重；历史记录缺少
+历史 MP→IP 准备记录的母群终态可携带每ID相对权重，IP出口census同时保留未转交粒子的权重；记录缺少
 母群权重时保留未知，不能把缺失权重当单位权重计算全链效率。转交分类复用公共`particle_census`。
 零出口发布`zero_exit`和完整母群census，不构造空粒子状态；下游应停止匹配和飞行并保留负结果。
 上游零出口导致的IP空接收run也输出同一零出口结论，不宣称IP已飞行；未转交ID不作为物理损失，
-注入源的原始`species_id`与权重随出口保留。新的准备run在终态manifest发布前不可作为有效交接。
+注入源的原始`species_id`与权重随出口保留。历史准备 run 只有在终态manifest已发布且来源完整时才可作为显式输入。
 IP源与批次源的6D及直接速度序列化投影使用公共`particle_source`，原坐标变换与原ID映射不变。
-已发布的MP→IP准备结果通过公共manifest引用核验准备run终态、原始输入包和上游manifest，
-IP冻结输入保留该引用；旧式未发布的准备包仍使用原生产者校验路径，不弱化原生完成与科学结果检查。
+已发布的历史 MP→IP 准备记录通过公共manifest引用核验准备run终态、原始输入包和上游manifest，
+IP冻结输入保留该引用；未发布的准备包仍按原记录边界拒绝，不弱化原生完成与科学结果检查。
 不重建速度、不执行求解。实例路由由冻结配方指定，测试粒子权重不表示实际电流。
 单位、父母群、边界事件与唯一时钟由接收方独立验收；实际端面与数值z=0观察面分别保留。
 

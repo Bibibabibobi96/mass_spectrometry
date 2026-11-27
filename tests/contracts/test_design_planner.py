@@ -23,7 +23,8 @@ class DesignPlannerTests(unittest.TestCase):
         self.assertEqual(plan["project_id"], "single_reflection_oa_tof_mass_analyzer")
         self.assertEqual(plan["capability_id"], "single_reflection_mass_analysis")
         self.assertEqual(plan["provenance"]["request"]["sha256"], sha256(self.request))
-        self.assertFalse(run_config["formal_gate_passed"])
+        self.assertNotIn("formal_gate_passed", run_config)
+        self.assertNotIn("requested_evidence_level", plan)
 
     def test_write_plan_creates_standard_role_files(self):
         with tempfile.TemporaryDirectory() as root:

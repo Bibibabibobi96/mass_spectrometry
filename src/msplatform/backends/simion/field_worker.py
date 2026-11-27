@@ -560,6 +560,249 @@ def execute_member(context: ExecutionContext, *, field_plan: dict, domain_id: st
             primary.add_note(f"Member receipt preservation failed: {secondary!r}")
 
 
+def _store_member_worker(context, request):
+    """Run one already-admitted Store cache member under its inherited host lease."""
+    parameters = request['parameters']
+    logs = Path(parameters['log_directory'])
+    logs.mkdir(parents=True, exist_ok=True)
+    receipt_path = Path(parameters['receipt_path'])
+    observations = []
+    report = dict(schema_version=1, role='simion_field_member_worker', status='failed',
+                  domain_id=parameters['domain_id'], member_id=parameters['member_id'],
+                  native_operations=observations, native_count=0, accounting_deferred=False)
+    primary = None
+    try:
+        inherited_host_token(context, required=True)
+        for record in request['immutable_records']:
+            verify_record('Store member input', record)
+        tool = parameters['tool_identity']
+        verify_record('member executable', dict(path=str(context.tools['simion']), exists=True,
+            bytes=tool['simion_identity']['executable_bytes'],
+            sha256=tool['simion_identity']['executable_sha256'], retention_role='required_evidence'))
+        resources = {name: Path(path) for name, path in parameters['resources'].items()}
+        for name in ('operating_builder', 'exporter'):
+            if file_sha256(resources[name]) != tool['builder_identity'][name]:
+                raise ValueError('Member builder source identity differs: ' + name)
+        if parameters['disposition'] == 'miss':
+            run_root = Path(parameters['run_directory'])
+            scratch = Path(parameters['scratch_directory'])
+            scratch.mkdir(parents=True, exist_ok=True)
+            native_plan, identity = plan_operating_member(parameters['field_plan'],
+                domain_id=parameters['domain_id'], member_id=parameters['member_id'],
+                tool_identity=tool, raw_geometry_record=parameters['raw_geometry_record'],
+                working_directory=scratch, payload_directory=scratch, resource_paths=resources,
+                published_parent=parameters.get('published_parent'))
+            if identity != parameters['identity']:
+                raise ValueError('Store member physical identity differs')
+            audit_plan = _audit_plan(parameters['field_plan'], parameters['domain_id'],
+                                     parameters['member_id'], identity, native_plan)
+            for path, text in native_plan.materializations.items():
+                Path(path).write_text(text, encoding='utf8', newline='\n')
+            raw = parameters['raw_geometry_record']
+            parent = parameters.get('published_parent')
+            source_records = [raw, *([parent['record']] if parent else [])]
+            for index, operation in enumerate(native_plan.operations):
+                operation_inputs = source_records if index == 0 else [
+                    *source_records, file_record(Path(native_plan.operations[index-1]['outputs'][0]),
+                                                  'solver_native_binary')]
+                _native_operation(context, operation, executable=context.tools['simion'],
+                    run_directory=run_root, directory=scratch, logs=logs, limits=parameters['limits'],
+                    observations=observations, allow_asynchronous_io=parameters.get('allow_asynchronous_io'),
+                    immutable_input_records=operation_inputs)
+            audit_path = Path(native_plan.operations[2]['outputs'][0])
+            audit = json.loads(audit_path.read_text(encoding='utf-8-sig'))
+            if audit.get('status') != 'pass':
+                raise ValueError('Native member audit did not pass')
+            audit.update(audit_input_sha256=audit_input_identity(audit_plan),
+                         audit_verifier_sha256=file_sha256(resources['verifier']))
+            write_json_atomic(audit_path, audit)
+            report.update(output_path=native_plan.operations[1]['outputs'][0], audit_path=str(audit_path))
+        elif parameters['disposition'] != 'hit':
+            raise ValueError('Store member disposition differs')
+        report['status'] = 'success'
+        return report
+    except BaseException as failure:
+        primary = failure
+        report['exception'] = dict(type=type(failure).__name__, message=str(failure))
+        raise
+    finally:
+        report['native_count'] = len(observations)
+        try:
+            write_json_atomic(receipt_path, report)
+        except BaseException as secondary:
+            if primary is None:
+                raise
+            primary.add_note(f'Store member receipt preservation failed: {secondary!r}')
+
+
+def _store_member_key(identity, raw_identity):
+    """Bind the actual raw PA bytes, not its temporary path, to the field solve."""
+    from msplatform.io.file_identity import canonical_json_sha256
+    return canonical_json_sha256(dict(schema_version=2, role='simion_pa_member_identity',
+                                      identity=identity, raw_geometry=raw_identity))
+
+
+def _store_cache_result(path, *, identity, key, filename, verifier, audit_identity, raw_identity):
+    """Validate immutable Store payload, identity and current physical audit."""
+    try:
+        payload = json.loads((path/'member.json').read_text(encoding='utf8'))
+        audit = json.loads((path/'audit.json').read_text(encoding='utf8'))
+        if (payload.get('schema_version') != 1 or payload.get('cache_key') != key
+                or payload.get('identity') != identity or payload.get('filename') != filename
+                or payload.get('raw_geometry') != raw_identity
+                or audit.get('status') != 'pass' or audit.get('audit_input_sha256') != audit_identity
+                or audit.get('audit_verifier_sha256') != file_sha256(verifier)):
+            return None
+        return dict(record=file_record(path/filename, 'solver_native_binary'),
+                    audit_record=file_record(path/'audit.json', 'required_evidence'))
+    except (ValueError, OSError, KeyError):
+        return None
+
+
+def _run_store_member(session, *, operation_id, parameters, limits):
+    """Use the existing parent Store, native controls and RunSession for a member."""
+    import shutil
+    from msplatform.execution.native_artifact_controls import current_native_artifact_scope, protect_native_controls
+    from msplatform.execution.owner import current_managed_native_store
+    from msplatform.execution.run_paths import project_run_path
+
+    scope, controls = current_managed_native_store(), current_native_artifact_scope()
+    if scope is None or controls is None or controls['store'] is not scope['store']:
+        raise ValueError('Store field member requires its protected parent scope')
+    store, lifetime = scope['store'], scope['lifetime']
+    parameters = copy.deepcopy(dict(parameters))
+    parameters.pop('cache_root', None)
+    if parameters.get('raw_geometry_record') is None:
+        raise ValueError('Store field member requires authenticated raw geometry')
+    resources = {name: Path(path) for name, path in parameters['resources'].items()}
+    identity = operating_member_identity(parameters['field_plan'], domain_id=parameters['domain_id'],
+        member_id=parameters['member_id'], tool_identity=parameters['tool_identity'],
+        published_parent=parameters.get('published_parent'))
+    raw_identity = {name: parameters['raw_geometry_record'][name] for name in ('bytes', 'sha256')}
+    key = _store_member_key(identity, raw_identity)
+    store_key = 'simion-pa-member-v2:' + key
+    filename = ('frontend' if parameters['domain_id'] == 'parent' else 'frontend_entrance_refinement') + '.' + parameters['member_id'] + '.pa'
+    logs = session.log_dir/operation_id
+    scratch = logs/'scratch'
+    scratch.mkdir(parents=True, exist_ok=True)
+    def project(record):
+        return dict(record, path=project_run_path(record['path'], str(session.artifact_run_dir), str(session.run_dir)))
+    raw = project(parameters['raw_geometry_record'])
+    parent = parameters.get('published_parent')
+    parent_claim_id = None
+    if parent is not None:
+        verify_record('Store parent member', parent['record'])
+        selected_parent = lifetime.enter_context(store.claim_key('simion-pa-member-v2:' + parent['cache_key']))
+        if selected_parent is None or Path(parent['record']['path']).resolve().parent != selected_parent[1].resolve():
+            raise ValueError('Store parent member is not the protected published asset')
+        parent_claim_id, parent_path = lifetime.enter_context(store.claim_token(selected_parent[0]))
+        if parent_path != selected_parent[1]:
+            raise ValueError('Store parent member claim differs')
+        parent_metadata = json.loads((parent_path/'member.json').read_text(encoding='utf8'))
+        parent_audit = json.loads((parent_path/'audit.json').read_text(encoding='utf8'))
+        if (parent_metadata.get('schema_version') != 1
+                or parent_metadata.get('cache_key') != parent['cache_key']
+                or _store_member_key(parent_metadata.get('identity'), parent_metadata.get('raw_geometry')) != parent['cache_key']
+                or parent_metadata.get('filename') != Path(parent['record']['path']).name
+                or parent_audit.get('status') != 'pass'
+                or parent_audit.get('audit_verifier_sha256') != file_sha256(resources['verifier'])):
+            raise ValueError('Store parent member identity or audit differs')
+        local_parent = scratch/Path(parent['record']['path']).name
+        shutil.copyfile(parent['record']['path'], local_parent)
+        parent = dict(parent, record=dict(parent['record'], path=str(local_parent)))
+        verify_record('private parent member', parent['record'])
+    projected_resources = {name: Path(project_run_path(str(path), str(session.artifact_run_dir), str(session.run_dir)))
+                           for name, path in resources.items()}
+    native_plan, actual_identity = plan_operating_member(parameters['field_plan'], domain_id=parameters['domain_id'],
+        member_id=parameters['member_id'], tool_identity=parameters['tool_identity'], raw_geometry_record=raw,
+        working_directory=scratch, payload_directory=scratch, resource_paths=projected_resources,
+        published_parent=parent)
+    if actual_identity != identity:
+        raise ValueError('Store member native identity differs')
+    audit_id = audit_input_identity(_audit_plan(parameters['field_plan'], parameters['domain_id'],
+                                                  parameters['member_id'], identity, native_plan))
+    hit = lifetime.enter_context(store.claim_key(store_key))
+    claim_id = None
+    if hit is not None:
+        asset_id, asset_path = hit
+        claim_id, protected_path = lifetime.enter_context(store.claim_token(asset_id))
+        if protected_path != asset_path:
+            raise ValueError('Store member claim path differs')
+        payload = _store_cache_result(asset_path, identity=identity, key=key, filename=filename,
+                                      verifier=resources['verifier'], audit_identity=audit_id, raw_identity=raw_identity)
+    else:
+        payload = None
+    disposition = 'hit' if payload is not None else 'miss'
+    receipt = session.declare_file(session.result_dir/(operation_id+'.json'), 'required_evidence')
+    request_path = session.declare_file(session.input_dir/(operation_id+'.json'), 'required_evidence')
+    context = {name: str(getattr(session.context, name)) for name in
+        ('workspace','python_executable','powershell_executable','host_state_path','policy_path','execution_root')}
+    context['tools'] = {name: str(path) for name,path in session.context.tools.items()}
+    worker_parameters = dict(parameters, identity=identity, disposition=disposition,
+        raw_geometry_record=raw, published_parent=parent, resources={k:str(v) for k,v in projected_resources.items()},
+        log_directory=str(logs), scratch_directory=str(scratch), run_directory=str(session.artifact_run_dir),
+        receipt_path=str(receipt), limits=dict(limits))
+    source_records = [parameters['raw_geometry_record'], *[file_record(path, 'required_evidence') for path in resources.values()]]
+    if parent is not None:
+        source_records.append(file_record(session.canonical_path(parent['record']['path']), 'solver_native_binary'))
+        session.declare_file(parent['record']['path'], 'solver_native_binary')
+    if payload is not None:
+        source_records.extend([payload['record'], payload['audit_record']])
+    write_json_atomic(request_path, dict(schema_version=1, transport='store_member_v1', context=context,
+        parameters=worker_parameters, immutable_records=source_records))
+    request_record = file_record(session.canonical_path(request_path), 'required_evidence')
+    session.add_input(operation_id+'_request', request_record)
+    try:
+        with protect_native_controls(store, run_id=controls['run_id'],
+                claim_ids=(*controls['claim_ids'], *([parent_claim_id] if parent_claim_id is not None else []),
+                           *([claim_id] if claim_id is not None else [])),
+                reservation_ids=controls['reservation_ids'], work_directory=controls['work_directory']):
+            session.run_process(operation_id, executable=session.context.python_executable,
+                arguments=['-I','-B','-X','utf8','-m',__name__,str(request_path)],
+                role='SIMION', stage='pa_refine', limits=limits,
+                immutable_input_records=[request_record, *source_records])
+        report = json.loads(Path(receipt).read_text(encoding='utf-8-sig'))
+        if report.get('request') != request_record:
+            raise ValueError('Store member receipt is not bound to the frozen request')
+        if report.get('status') != 'success':
+            raise ValueError('Store field member did not complete')
+        scope['account'](session._store_stage_directory)
+        if disposition == 'miss':
+            temporary = store.new_work()
+            try:
+                output = Path(report['output_path'])
+                shutil.copyfile(output, temporary/filename)
+                shutil.copyfile(report['audit_path'], temporary/'audit.json')
+                (temporary/'member.json').write_text(json.dumps(dict(schema_version=1, cache_key=key,
+                    identity=identity, filename=filename, raw_geometry=raw_identity), sort_keys=True)+'\n', encoding='utf8')
+                scope['account'](temporary)
+                asset_id, asset_path = lifetime.enter_context(store.put_asset_claimed('simion_pa_member',
+                    store_key, temporary))
+                payload = _store_cache_result(asset_path, identity=identity, key=key, filename=filename,
+                                              verifier=resources['verifier'], audit_identity=audit_id, raw_identity=raw_identity)
+                if payload is None:
+                    raise ValueError('New Store member audit or payload differs')
+                output.unlink()
+                working = scratch/'working.pa0'
+                if working.is_file():
+                    working.unlink()
+            except BaseException:
+                if temporary.exists():
+                    store.discard_work(temporary)
+                raise
+        report.update(cache_key=key, cache_disposition=disposition, generation_directory=str(asset_path),
+                      record=payload['record'], audit_record=payload['audit_record'],
+                      newly_accounted_cache_bytes=(sum(path.stat().st_size for path in asset_path.rglob('*')
+                                                       if path.is_file()) if disposition == 'miss' else 0))
+        write_json_atomic(receipt, report)
+        return report
+    finally:
+        for path in session.canonical_path(logs).rglob('*'):
+            if path.is_file():
+                session.declare_file(path, 'solver_native_binary' if path.suffix.lower() in {'.pa','.pa0'}
+                                     else 'required_evidence')
+
+
 def run_member(session, *, operation_id: str, parameters: Mapping[str, Any],
                limits: Mapping[str, Any]) -> dict:
     """Launch the actual member worker once, including on cache HIT.
@@ -570,6 +813,9 @@ def run_member(session, *, operation_id: str, parameters: Mapping[str, Any],
     """
     if operation_id not in session.expected_operation_ids or not operation_id.replace("_", "").isalnum():
         raise ValueError("Field worker requires its declared simple operation identity")
+    from msplatform.execution.owner import current_managed_native_store
+    if current_managed_native_store() is not None:
+        return _run_store_member(session, operation_id=operation_id, parameters=parameters, limits=limits)
     parameters = copy.deepcopy(dict(parameters))
     parameters["cache_root"] = str(parameters["cache_root"])
     parameters["resources"] = {name: str(path) for name, path in parameters["resources"].items()}
@@ -643,6 +889,34 @@ def main() -> None:
     request_path = Path(sys.argv[1]).resolve(strict=True)
     with guarded_file_identity(request_path) as identity:
         request = json.loads(request_path.read_text(encoding="utf-8-sig"))
+        if request.get('transport') == 'store_member_v1':
+            if set(request) != {'schema_version', 'transport', 'context', 'parameters', 'immutable_records'} or request['schema_version'] != 1:
+                raise ValueError('Store member request fields differ')
+            parameters = request['parameters']
+            run = Path(parameters['run_directory']).resolve(strict=True)
+            logs = Path(parameters['log_directory']).resolve()
+            scratch = Path(parameters['scratch_directory']).resolve()
+            receipt = Path(parameters['receipt_path']).resolve()
+            if (not request_path.is_relative_to(run/'inputs') or not logs.is_relative_to(run/'logs')
+                    or not scratch.is_relative_to(logs) or not receipt.is_relative_to(run/'results')):
+                raise ValueError('Store member paths escape the owning run')
+            primary = None
+            try:
+                _store_member_worker(ExecutionContext(**request['context']), request)
+            except BaseException as failure:
+                primary = failure
+                raise
+            finally:
+                try:
+                    report = json.loads(receipt.read_text(encoding='utf8'))
+                    report['request'] = dict(path=str(request_path), exists=True, bytes=identity.bytes_count,
+                        sha256=identity.sha256, retention_role='required_evidence')
+                    write_json_atomic(receipt, report)
+                except BaseException as secondary:
+                    if primary is None:
+                        raise
+                    primary.add_note(f'Store worker request binding failed: {secondary!r}')
+            return
         if (not {"schema_version", "context", "parameters"} <= set(request)
                 or set(request) - {"schema_version", "context", "parameters", "implementation_records"}
                 or request["schema_version"] != 1):

@@ -36,7 +36,7 @@ from msplatform.components.multi_reflection_tof.candidate_contract import (
 )
 from msplatform.components.multi_reflection_tof.operating_authority import load_object as _load_object
 from msplatform.workflows.prepared_joint.prism_trial import _bunch_center_source_state, _source_release_record
-from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
+from msplatform.analysis.mr_observations import _collision_geometry_projection
 from msplatform.backends.comsol.static_field_binding import (
     load_binding, _record, _validate_native_surface_absence, native_refine_numerics,
     validate_native_consumer_view, load_native_response_basis, native_binding_problem, scalar_binding_problem,

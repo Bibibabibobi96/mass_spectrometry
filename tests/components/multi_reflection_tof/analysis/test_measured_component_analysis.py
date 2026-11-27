@@ -5,13 +5,22 @@ import csv
 import json
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from msplatform.contracts.particle_state import write_component_particle_state_csv
+from msplatform.contracts.particle_state import load_component_particle_state_csv, write_component_particle_state_csv
 from msplatform.execution.retention import file_record
-from msplatform.workflows.prepared_joint.measured_population import _load_source, analyze_measured_component, _prepare_detector_peak, _save_detector_peak, validate_measured_peak_source_reference
-from msplatform.workflows.prepared_joint.source import materialize_measured_source
-from tests.components.multi_reflection_tof.analysis import test_measured_component_source as fixtures
+from msplatform.results.historical_joint_source import read_measured_source, validate_measured_peak_source_reference
+from msplatform.analysis.mr_population import prepare_detector_peak
+
+
+def _prepare_detector_peak(contract, base, receipt, states, detectors):
+    pulse = validate_measured_peak_source_reference(contract, base, receipt, states) if contract is not None else None
+    return prepare_detector_peak(contract, pulse, receipt, states, detectors)
+
+from msplatform.workflows.historical_joint_analysis import analyze_measured_component
+from msplatform.results.mr_peak_output import write_detector_peak
+from tests.contracts.test_support.historical_measured_fixture import captured_measured_fixture
 
 
 def _terminal(particle: int, code: int, time: float) -> str:
@@ -25,12 +34,11 @@ def _detector(particle: int, time: float) -> str:
 
 class MeasuredComponentAnalysisTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.fixture = fixtures.MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
-        self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
-        self.root = self.fixture.root
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
         self.source = self.root / "prepared_source"
-        materialize_measured_source(self.fixture.handoff, self.source)
+        captured_measured_fixture(self.source)
         self.log = self.root / "flight.log"
         self.output = self.root / "analysis"
         # Same individual downstream duration, different absolute arrivals.
@@ -62,7 +70,7 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
             return open_file(path, *args, **kwargs)
 
         with patch.object(Path, "open", track):
-            _, states, _, _ = _load_source(self.source / "source_receipt.json")
+            _, states, _, _ = read_measured_source(self.source / "source_receipt.json")
         self.assertEqual(len(reads), 1)
         self.assertIs(type(states[1]["mass_amu"]), float)
         self.assertIs(type(states[1]["charge_state"]), int)
@@ -95,7 +103,7 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(peak["time_equivalent_resolution"], expected["time_equivalent_resolution"], places=5)
         peak, spectra = _prepare_detector_peak(contract, self.root, source, states, detectors)
         self.output.mkdir()
-        _save_detector_peak(self.output, peak, spectra, states, detectors,
+        write_detector_peak(self.output, peak, spectra, states, detectors,
                             dict(counts=dict(detected=5, mother_source=8, downstream_released=6)))
         with (self.output / "detector_peak_spectrum.csv").open(newline="") as handle:
             self.assertEqual(len(list(csv.DictReader(handle))), 4001)
@@ -274,24 +282,21 @@ class MeasuredComponentAnalysisTests(unittest.TestCase):
         self.assertEqual(parsed[0]["status"], "rejected")
 
     def test_all_one_hundred_mother_ids_are_denominator(self) -> None:
-        fixture = self.fixture.fixture
         ids = [1, 7, *range(1000, 1095)]
-        rows = [fixture._row(particle) for particle in ids]
-        write_component_particle_state_csv(fixture.source, rows)
+        source = self.root / "source_100"
+        receipt = captured_measured_fixture(source)
+        seed = load_component_particle_state_csv(source / 'component_particle_state.csv').rows[0]
+        rows = [dict(seed, particle_id=particle) for particle in ids]
+        write_component_particle_state_csv(source / 'component_particle_state.csv', rows)
         lost = [24, 64, 80]
         lines = ["particle_id,transfer_status,terminal_reason,instrument_time_us,particle_birth_time_us,particle_age_us"]
         lines += [f"{row['particle_id']},transferred,downstream_domain_exit,{row['instrument_time_us']},0,{row['instrument_time_us']}" for row in rows]
         lines += [f"{particle},not_transferred,solver_stop,21,0,21" for particle in lost]
-        fixture.census.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        fixture.receipt.update(counts={"source": 100, "transferred": 97, "not_transferred": 3},
-                               transferred_particle_ids=ids, lost_particle_ids=lost)
-        fixture.receipt["outputs"] = {"component_states": fixture._identity(fixture.source),
-                                      "mother_census": fixture._identity(fixture.census)}
-        fixture._write(fixture.receipt_path, fixture.receipt)
-        handoff = self.root / "handoff_100"
-        fixture._prepare(handoff)
-        source = self.root / "source_100"
-        materialize_measured_source(handoff / "handoff_receipt.json", source)
+        (source/'source_census.csv').write_text("\n".join(lines) + "\n", encoding="utf-8")
+        receipt['counts'] = dict(source=100, transferred=97, not_transferred=3)
+        receipt['outputs']['component_particle_state'] = file_record(source/'component_particle_state.csv')
+        receipt['outputs']['source_census'] = file_record(source/'source_census.csv')
+        (source/'source_receipt.json').write_text(json.dumps(receipt), encoding='utf-8')
         events = []
         for index, row in enumerate(rows):
             particle = row["particle_id"]

@@ -43,7 +43,7 @@ from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME, require_comple
 from msplatform.execution.retention import file_record
 from msplatform.execution.host_resource_python import run_heavy_function, run_managed_python_process
 from msplatform.execution.recovery import WholeUnitReplayUnit, build_whole_unit_replay_plan
-from msplatform.backends.simion.native_completion import require_one_fly_completion
+from msplatform.analysis.native_completion import require_one_fly_completion
 from msplatform.execution.process_observation import run_observed_process
 from msplatform.execution.resource_profile import discover_case_resource_profiles
 from msplatform.execution.simion_dispatch import plan_simion_case_dispatch

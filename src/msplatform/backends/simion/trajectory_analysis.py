@@ -13,7 +13,7 @@ from msplatform.assembly.handoff import HandoffMother, _validate_mother
 from msplatform.contracts.clock import ClockIdentity, require_same_clock
 from msplatform.contracts.particle_state import validate_component_particle_state_rows
 from msplatform.results.artifacts import OpenedArtifact
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.backends.simion.source import execution_particle_ids
 
 

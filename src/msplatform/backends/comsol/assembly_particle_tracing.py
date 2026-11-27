@@ -174,14 +174,25 @@ def prepare_assembly_pulse(assembly: Assembly, background: OpenedArtifact, on: O
         raise ValueError('observation times must be finite and strictly increasing')
     # A producer must explicitly bind frozen scientific constants and actual
     # original-birth inputs before any native launcher can consume this plan.
-    if not isinstance(source, Mapping) or set(source) != {'rows', 'clock', 'constants_version'}:
-        raise ValueError('original source rows, clock and selected constants version required')
+    if not isinstance(source, Mapping) or set(source) != {'rows', 'clock', 'constants_version', 'species'}:
+        raise ValueError('original source rows, clock, explicit species and selected constants version required')
     if source['constants_version'] != CONSTANTS['version']:
         raise ValueError('only the explicitly selected public reference constants are supported')
     rows = validate_component_particle_state_rows(source['rows']).rows
     if not rows or any(row['state_event'] != 'source_birth' or row['parent_particle_id'] is not None for row in rows):
         raise ValueError('original primary birth rows are required')
     first = rows[0]
+    from msplatform.contracts.species import validate_species
+    if not isinstance(source['species'], list) or len(source['species']) != 1:
+        raise ValueError('COMSOL native batch requires exactly one explicit species')
+    species = validate_species(source['species'][0])
+    if species != source['species'][0]:
+        raise ValueError('COMSOL native species must be fully resolved')
+    if species['species_kind'] == 'electron':
+        raise ValueError('COMSOL native electron tracing is not yet validated')
+    if (species['species_id'], species['mass_kg'], species['charge_state']) != (
+            first['species_id'], float(first['mass_amu']) * CONSTANTS['atomic_mass_constant_kg'], first['charge_state']):
+        raise ValueError('COMSOL native source rows disagree with declared species')
     if (not isinstance(source['clock'], Mapping) or set(source['clock']) != {'clock_epoch_id', 'authority_sha256'}
             or any(row['clock_epoch_id'] != source['clock']['clock_epoch_id'] for row in rows)
             or any(row['frame_id'] != off['projection']['assembly_frame_id'] for row in rows)):
@@ -560,25 +571,9 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
         if 'STATUS=PASS' not in report.read_text(encoding='utf-8-sig'):
             raise ValueError('COMSOL particle launcher failed')
         native_facts = json.loads(facts.read_text(encoding='utf-8-sig'))
-        version = native_facts.get('comsol_version')
-        if (not isinstance(version, str) or not re.fullmatch(r'(?:COMSOL Multiphysics )?6\.4(?: \(Build: [0-9]+\))?', version) or native_facts.get('study_completed') is not True
-                or native_facts.get('particle_count') != len(initial)
-                or native_facts.get('stored_times_us') != plan['observation_times_us']
-                or native_facts.get('boundary_policy') != 'metal_and_outer_freeze_ideal_pass'):
-            raise ValueError('COMSOL native facts differ from the frozen plan or supported version')
+        from msplatform.backends.comsol.detector_facts import validate_comsol_particle_facts
+        version = validate_comsol_particle_facts(native_facts, plan, particle_count=len(initial))
         detector = plan.get('detector_active_face')
-        detector_faces = native_facts.get('detector_faces')
-        if detector is not None:
-            if (native_facts.get('detector_observation_native') is not True or
-                    not isinstance(detector_faces, (int, list)) or isinstance(detector_faces, bool)):
-                raise ValueError('native detector boundary evidence is missing')
-            if isinstance(detector_faces, int):
-                detector_faces = [detector_faces]
-            if (not detector_faces or any(type(face) is not int or face <= 0 for face in detector_faces)
-                    or len(set(detector_faces)) != len(detector_faces)):
-                raise ValueError('native detector boundary evidence is invalid')
-        elif native_facts.get('detector_observation_native') not in (None, False):
-            raise ValueError('native detector evidence has no frozen authored surface')
         result = read_observations(output, initial_states=initial, epoch_us=epoch_us,
             backend_version=_comsol_version_label(version), observation_times_us=plan['observation_times_us'],
             position_atol_m=position_atol_m, velocity_atol_m_s=velocity_atol_m_s,
@@ -586,7 +581,8 @@ def _execute_particle_trace(session: Any, *, background: OpenedArtifact, plan: d
         particle_paths = _declare_particle_outputs(session)
         write_particle_data(session.result_dir, result, metadata={'schema_version': 2,
             'initial_state_basis': 'native_birth_verified', 'frame_id': plan['background']['projection']['assembly_frame_id'],
-            'clock': {'basis': 'experiment_relative', 'unit': 's', **plan['source']['clock']}})
+            'clock': {'basis': 'experiment_relative', 'unit': 's', **plan['source']['clock']},
+            'species': plan['source']['species']})
         canonical = read_particle_data(session.result_dir)
         summary = session.declare_file(session.result_dir / 'particle_integrity.json', 'required_evidence')
         write_json_atomic(summary, {'execution_status': result.execution_status, 'data_integrity': result.data_integrity,

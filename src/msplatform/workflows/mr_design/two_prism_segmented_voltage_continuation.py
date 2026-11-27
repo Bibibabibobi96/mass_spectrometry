@@ -1050,7 +1050,7 @@ def main() -> None:
     from msplatform.workflows.mr_design.prism_mirror_transport import (
         TransportNumerics,
     )
-    from msplatform.workflows.prepared_joint.prism_operating_point import (
+    from msplatform.components.multi_reflection_tof.prism_workpoint_math import (
         natural_two_prism_scales,
     )
     from msplatform.workflows.mr_design.two_prism_segmented_coverage import (

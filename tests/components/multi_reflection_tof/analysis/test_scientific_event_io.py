@@ -1,5 +1,5 @@
 """Structured scientific output and explicit legacy adapters; no solver required."""
-from msplatform.backends.simion import mrtof_observations as _mrtof_observations
+from msplatform.analysis import mr_observations as _mrtof_observations
 import csv
 import hashlib
 import json
@@ -404,7 +404,7 @@ assert(#events==2 and events[2].kind=='terminal' and events[2].t_us==0.018 and e
                 self.assertEqual(Path(paths[2]).resolve().parent, folder.resolve())
 
     def test_unconfirmed_candidate_is_raw_evidence_not_accepted_detection(self):
-        from msplatform.workflows.prepared_joint.event_analysis import summarize_events
+        from msplatform.analysis.mr_event_analysis import summarize_events
         text = "\n".join((
             "MRTOF_EVENT observation_candidate ion=11 field=detector status=rejected "
             "reason=terminal_precedes_candidate_event native_splat=-1 t_us=7.5 "

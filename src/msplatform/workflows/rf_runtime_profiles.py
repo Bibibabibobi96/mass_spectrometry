@@ -373,7 +373,6 @@ def _resolve_execution_profile(
     if (
         capabilities[0]["function"] != "ion_transport"
         or profile["action"] != "run"
-        or profile["qualification_support"] != ["none"]
         or set(profile["required_bindings"]) != {"campaign_path", "experiment_id"}
         or solver not in profile["tools"]
         or not {"simulation_results", f"{solver}_model", "interface_state"}.issubset(profile["deliverable_outputs"])

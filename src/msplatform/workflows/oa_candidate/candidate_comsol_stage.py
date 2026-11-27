@@ -164,7 +164,7 @@ def _record_postprocess_exports(analysis_request: Path | None, root: Path, closu
     """Retain actual full-mother observations, independently of scientific acceptance."""
     import csv
     import json
-    from .detector_request import load_request
+    from msplatform.results.historical_comsol_request import load_request
     plan.setdefault("postprocess_evidence", {})
     writer_path = root / "logs/postprocess_export_writer.json"
     writer_path.write_text(json.dumps(plan["writer_completion"]), encoding="utf-8")

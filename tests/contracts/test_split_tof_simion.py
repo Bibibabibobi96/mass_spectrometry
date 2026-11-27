@@ -148,6 +148,7 @@ class SplitTofSimionTests(unittest.TestCase):
             from types import SimpleNamespace
             from unittest.mock import patch
             from msplatform.backends import simion
+            from msplatform.contracts.machine_contracts import ContractError
             from msplatform.io.manifest_records import file_record
             self.assertEqual(simion.compile_geometry(triple, numerics=numerics), triple_result)
             root = Path(directory)
@@ -162,7 +163,12 @@ class SplitTofSimionTests(unittest.TestCase):
             with patch("msplatform.execution.stage_policy.read_stage_policy", return_value=(stage, {})), \
                  patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {}}) as build_owner, \
                  patch("msplatform.results.artifacts.open_artifact", return_value="INERT_GEOMETRY"):
-                self.assertEqual(simion.build_geometry(triple_result, context=context), "INERT_GEOMETRY")
+                with self.assertRaisesRegex(ContractError, "requires an ArtifactStore"):
+                    simion.build_geometry(triple_result, context=context)
+                build_owner.assert_not_called()
+                store = object()
+                self.assertEqual(simion.build_geometry(triple_result, context=context, artifact_store=store), "INERT_GEOMETRY")
+            self.assertIs(build_owner.call_args.kwargs["artifact_store"], store)
             self.assertEqual(build_owner.call_args.kwargs["action"].keywords["seed_record"]["bytes"], SEED["bytes"])
             authored_drive = {"groups": drive["groups"], "pulse": drive["pulse"],
                               "clock": {"phase_reference_instrument_time_us": 0.},

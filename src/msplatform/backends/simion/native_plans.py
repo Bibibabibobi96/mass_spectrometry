@@ -492,6 +492,8 @@ def _plan_rf_geometry_build(compiled, root, seed_record, path_resource):
         grid = dict(domain['dimensions'], **{'d'+axis+'_mm': domain['cell_mm_xyz'][axis] for axis in 'xyz'})
         raw = root/'simion/geometry'/(name+'.pa#')
         surface, witnesses = raw.with_suffix('.pa-surf'), root/'results'/(name+'_surface.csv')
+        empty_surface = domain.get('symmetry') == 'mirror_x' and domain.get('surface') == 'none'
+        state = root/'results'/(name+'_surface_state.json')
         gem, audit = root/'inputs'/(name+'.gem'), root/'inputs'/(name+'_build.lua')
         materializations[str(gem)] = compiled.frontend_gems[name]
         samples = geometry['raw_physical_samples'][name]
@@ -499,15 +501,20 @@ def _plan_rf_geometry_build(compiled, root, seed_record, path_resource):
             raise ValueError('RF geometry requires physical metal and vacuum witnesses')
         materializations[str(audit)] = 'return '+lua_value(dict(schema_version=1,
             role='simion_frontend_raw_geometry', domain_id=name, gem=str(gem), output=str(raw), grid=grid,
-            physical_samples=samples, fractional_surface=str(surface), surface_witnesses=str(witnesses)))+'\n'
-        operations.append(_operation('geometry_'+name,'prepare',
+            physical_samples=samples, fractional_surface=str(surface), surface_witnesses=str(witnesses),
+            **({'surface_state': str(state), 'mirror_x': True} if empty_surface else {})))+'\n'
+        operation = _operation('geometry_'+name,'prepare',
             ['lua',str(native_resource_path('build_frontend_geometry.lua')),str(audit)],
-            [str(raw),str(surface),str(witnesses)],'BUILD_GEOMETRY=PASS ROLE='+name))
+            [str(raw),str(witnesses),str(state)] if empty_surface else [str(raw),str(surface),str(witnesses)],'BUILD_GEOMETRY=PASS ROLE='+name)
+        if empty_surface:
+            operation['optional_surface'] = str(surface)
+        operations.append(operation)
         transform = poses[name]
         rotation = transform['rotation']
         placement = rigid_iob_placement(transform, origin_mm=[domain['instance_origin_mm'][axis] for axis in 'xyz'])
         instances.append(dict(role=name, instance_index=index, priority_number=index, path=str(raw),
             fractional_surface=str(surface), surface_witnesses=str(witnesses),grid=grid,
+            **({'surface_state': str(state)} if empty_surface else {}),
             physical_samples=samples, rotation=rotation,
             placement=placement))
     control = root/'inputs/no_particles.fly2'
@@ -556,7 +563,7 @@ def plan_model_preparation(model, *, geometry_assets: Mapping[str, dict], run_di
         domain = operation.get('asset_id',operation['operation_id'].removeprefix('geometry_'))
         rows = geometry_assets[domain]
         expected_keys = ({'raw_record', 'surface_records', 'witness_record'} if independent_component else {'raw_record', 'surface_records'})
-        stateful = 'state_record' in rows and compiled.frontend_geometry.get('role') in {'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
+        stateful = 'state_record' in rows and (compiled.frontend_geometry.get('role') in {'simion_ip_mr_complete_geometry', 'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'} or (compiled.frontend_geometry.get('role') == 'simion_independent_oa_geometry' and compiled.frontend_geometry['numerical_domains'][domain].get('surface') == 'none'))
         if set(rows) != (expected_keys | {'state_record'} if stateful else expected_keys):
             raise ValueError('model geometry requires explicit raw and surface records')
         if stateful:
@@ -846,9 +853,16 @@ def _plan_downstream_solve_with_assets(compiled: CompiledSimionGeometry, *, raw_
             operations.append(_operation("export_reflectron","prepare",
                 ["lua",str(exporter),str(raw.with_suffix(".pa0")),str(operating)],
                 [str(operating)],"STANDALONE_PA_EXPORT=PASS"))
+            response_paths = []
+            for response_id, source_path in enumerate(family[2:], 1):
+                target = root / ("reflectron_response_" + str(response_id) + ".pa")
+                operations.append(_operation("export_reflectron_response_" + str(response_id), "prepare",
+                    ["lua", str(exporter), source_path, str(target)],
+                    [str(target)], "STANDALONE_PA_EXPORT=PASS"))
+                response_paths.append(str(target))
             voltage_key = "electrodes_v" if compiled.frontend_geometry.get("role") == "simion_split_oa_tof_geometry" else "electrodes_V"
             g,v=contract["geometry_mm"],contract[voltage_key]
-            asset.update(carrier_path=str(operating),family_paths=[],response_paths=family[2:],
+            asset.update(carrier_path=str(operating),family_paths=[],response_paths=response_paths,
                 endpoint_samples=[dict(x=0,voltage=0),
                 dict(x=round(g["L_stage1"]/cells[0]),voltage=v["midgrid"]),
                 dict(x=math.ceil(g["L_reflectron"]/cells[0]),voltage=v["backplate"])])

@@ -32,65 +32,22 @@ def load(path: Path) -> dict:
 
 class DependencyTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_single_reflection_field_plan_uses_only_frozen_module_and_lua_resources(self) -> None:
-        from tests.workflows.single_reflection.test_single_reflection_field_stage import prepared
-        from msplatform.workflows.single_reflection_flight.field_plan import build_field_plan
-
+    def test_retired_single_reflection_dependency_consumer_is_not_frozen(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "study").mkdir()
-            run, _ = prepared(root / "study", entrance_refinement=True)
-            expected = build_field_plan(run / "inputs", Path(sys.executable))
-            destination = root / "snapshot_inputs"
-            script = root / "freeze.ps1"
+            output = root / 'inputs'
+            script = root / 'retired-consumer.ps1'
             script.write_text("""param($Repo,$Destination,$Python)
+$ErrorActionPreference='Stop'
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
 $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
-""", encoding="utf-8")
-            frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script),
-                                    str(REPO_ROOT), str(destination), sys.executable], cwd=root,
-                                    capture_output=True, text=True, encoding="utf-8", timeout=120)
-            self.assertEqual(frozen.returncode, 0, frozen.stdout + frozen.stderr)
-            snapshot = destination / "runtime_snapshot"
-            module = "src/msplatform/workflows/single_reflection_flight/field_plan.py"
-            resources = ["src/msplatform/backends/simion/resources/" + name for name in
-                         ("build_dirichlet_patch_operating_pa.lua", "export_detached_standalone_pa.lua")]
-            self.assertFalse((snapshot / "integrations/workflows/single_reflection_flight/field_plan.py").exists())
-            selected = load(destination / "code_inventory.json")["dependencies"]
-            for relative in [module, *resources]:
-                self.assertEqual(sum(row["source_repo_path"] == relative for row in selected), 1)
-            for relative in [module, *resources]:
-                self.assertEqual((snapshot / relative).read_bytes(), (REPO_ROOT / relative).read_bytes())
-            code = """import sys,json
-from pathlib import Path
-sys.path[:0]=json.loads(sys.argv[1])
-from msplatform.workflows.single_reflection_flight import field_plan
-from msplatform.backends.simion import resources
-root=Path.cwd().resolve()
-assert Path(field_plan.__file__).resolve().is_relative_to(root)
-assert Path(resources.__file__).resolve().is_relative_to(root)
-print(json.dumps(field_plan.build_field_plan(Path(sys.argv[2]),Path(sys.argv[3]))))
-"""
-            command = [sys.executable, "-I", "-B", "-c", code,
-                       json.dumps(python_import_roots(snapshot)), str(run / "inputs"), sys.executable]
-            def cold():
-                return subprocess.run(command, cwd=snapshot, capture_output=True, text=True,
-                                      encoding="utf-8", timeout=60)
-            result = cold()
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(json.loads(result.stdout), expected)
-            self.assertEqual([d["domain_id"] for d in expected["domains"]], ["parent", "entrance_refinement"])
-            for relative in [module, *resources]:
-                with self.subTest(missing=relative):
-                    target = snapshot / relative
-                    original = target.read_bytes()
-                    target.unlink()
-                    try:
-                        missing = cold()
-                        self.assertNotEqual(missing.returncode, 0, missing.stdout)
-                        self.assertIn(target.stem, missing.stderr)
-                    finally:
-                        target.write_bytes(original)
+""", encoding='utf-8')
+            result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-File', str(script),
+                str(REPO_ROOT), str(output), sys.executable], cwd=root,
+                capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Unregistered or invalid runtime dependency consumer', result.stdout + result.stderr)
+            self.assertFalse(output.exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_python_package_freezer_requires_internal_production_source_with_resources(self) -> None:
@@ -226,7 +183,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}
             freeze_script.write_text("""param($Repo,$Destination,$Python)
 $ErrorActionPreference='Stop'
 . (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
-$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId single_reflection_flight
+$null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId oa_mr
 """, encoding="utf-8", newline="\n")
             environment = dict(os.environ, PYTHONPATH="", PYTHONNOUSERSITE="1",
                                SIMULATION_PYTHON_EXE=sys.executable,
@@ -341,7 +298,6 @@ print('FROZEN_SRC_CORE=PASS')
             snapshot = inputs / "runtime_snapshot"
             required_companions = {
                 "src/msplatform/workflows/resources/prepared_joint_execute.ps1",
-                "src/msplatform/workflows/resources/multipole_ip.ps1",
                 "src/msplatform/workflows/resources/ip_functional.ps1",
                 "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
                 "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1",
@@ -357,118 +313,48 @@ print('FROZEN_SRC_CORE=PASS')
             code = '''
 from pathlib import Path
 from msplatform.workflows.accelerator_interface import prepare
-from msplatform.workflows.multipole_ip import prepare as handoff
-from msplatform.contracts.machine_contracts import ContractError
+from msplatform.recipes import native as native_recipe
 from msplatform.workflows.ion_processor import functional
 from msplatform.workflows.ion_processor import preparation
 import tempfile
 root = Path.cwd().resolve()
-for module in (prepare, functional, handoff, preparation):
+for module in (prepare, functional, native_recipe, preparation):
     Path(module.__file__).resolve().relative_to(root)
-handoff.SCHEMA.resolve().relative_to(root)
 assert callable(preparation.validate_configs)
-with tempfile.TemporaryDirectory() as request_directory:
-    invalid = Path(request_directory) / "request.json"
-    invalid.write_text("{}", encoding="utf-8")
-    try:
-        handoff.load_request(invalid)
-    except ContractError as error:
-        assert "required" in str(error), str(error)
-    else:
-        raise AssertionError("frozen request schema must reject missing fields")
+assert callable(native_recipe.resolve_native)
+assert not (root / 'src/msplatform/workflows/multipole_ip/prepare.py').exists()
 '''
             result = subprocess.run([sys.executable, "-B", "-s", "-c", code], cwd=snapshot,
                 env=snapshot_environment(snapshot),
                 capture_output=True, text=True, encoding="utf-8", errors="backslashreplace", timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_expanded_package_report_module_preserves_frozen_fly_reuse(self) -> None:
-        from tests.workflows.single_reflection.test_single_reflection_continuation import SingleReflectionContinuationTests
-        from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation
-
-        fixture = SingleReflectionContinuationTests("run")
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
+    def test_tracking_reuse_ignores_unrelated_report_but_binds_actual_collector(self) -> None:
+        from msplatform.backends.simion.tracking_units import tracking_applicability
+        from tests.contracts.test_simion_tracking_execution import TrackingExecutionPlanTests
+        case = TrackingExecutionPlanTests()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        plan = case.plan(unit_size=27)
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            author = root / "author"
-            # The isolated author is the actual provider closure, not a stub
-            # enumerator or an import fallback to the checkout.
-            from msplatform.execution.inputs import enumerate_python_sources
-            contract = load(INVENTORY)
-            paths = {row["source_repo_path"] for group in contract["providers"] for row in group["files"]}
-            for group in contract["providers"]:
-                if group["python_packages"] or group["python_modules"]:
-                    package_roots = [row["source_repo_path"] for row in group["python_packages"]]
-                    # Consumer-specific declarations may name a singleton that
-                    # another consumer obtains through the whole package.
-                    # The union author closure copies that module only once.
-                    module_paths = [row["source_repo_path"] for row in group["python_modules"]
-                                    if not any(Path(row["source_repo_path"]).is_relative_to(package)
-                                               for package in package_roots)]
-                    paths.update(enumerate_python_sources(REPO_ROOT,
-                        package_roots=package_roots, module_paths=module_paths))
-                    for row in group["python_packages"]:
-                        if row.get("resource_suffixes"):
-                            paths.update(enumerate_python_sources(REPO_ROOT,
-                                package_roots=[row["source_repo_path"]], resource_suffixes=row["resource_suffixes"]))
-            paths.update({"src/msplatform/workflows/config/assembly_registry.json", "src/msplatform/workflows/config/runtime_dependencies.json",
-                          "src/msplatform/execution/resources/dependencies.ps1"})
-            for relative in paths:
-                destination = author / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                if relative.endswith(".pa0") and "iob_seed_placeholder_" in relative:
-                    destination.write_bytes(b"INERT_TEST_SEED_NOT_A_PA\n")
-                else:
-                    shutil.copyfile(REPO_ROOT / relative, destination)
-
-            def freeze(name):
-                output = root / name
-                script = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{author / 'src/msplatform/workflows/config/runtime_dependencies.json'}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId single_reflection_flight"
-                result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
-                    cwd=author, capture_output=True, text=True, encoding="utf-8", timeout=120)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                return output / "runtime_snapshot"
-
-            fixture.snapshot = freeze("first")
-            event_module = "src/msplatform/components/rf_multipole/event_table.py"
-            self.assertEqual(sum(row["source_repo_path"] == event_module
-                                 for row in load(root / "first/code_inventory.json")["dependencies"]), 1)
-            current = fixture._current_workbench()
-            parent = fixture._parent(current)
-            parent_before = {path.relative_to(parent): path.read_bytes()
-                             for path in parent.rglob("*") if path.is_file()}
-            report = author / "src/msplatform/workflows/single_reflection_flight/package_report_only.py"
-            report.write_text("TITLE = 'shipment provenance only'\n", encoding="utf-8")
-            fixture.snapshot = freeze("report")
-            inventory = load(root / "report/code_inventory.json")["dependencies"]
-            self.assertIn("python:" + report.relative_to(author).as_posix(), {row["id"] for row in inventory})
-            # Rebuild only small inert preparation records, never a native IOB.
-            shutil.rmtree(fixture.run / "simion/full_instrument")
-            current = fixture._current_workbench()
-            result = prepare_phase_continuation(fixture.preparation, current, fixture.run, "baseline")
-            self.assertEqual([row["action"] for row in result["plan"]["units"]], ["reuse", "reuse"])
-            self.assertEqual({path.relative_to(parent): path.read_bytes()
-                              for path in parent.rglob("*") if path.is_file()}, parent_before)
-            shutil.rmtree(fixture.run / "inputs/continuation")
-            # An actual numerical Program source change is still a dependency.
-            generator = fixture.snapshot / "src/msplatform/backends/simion/resources/single_flight_pulse_hook.lua"
-            self.assertTrue(generator.is_file())
-            generator.write_text(generator.read_text() + "\n-- changed numerical Program implementation\n", encoding="utf-8")
-            shutil.rmtree(fixture.run / "simion/full_instrument")
-            current = fixture._current_workbench()
-            with self.assertRaisesRegex(ValueError, "Program"):
-                prepare_phase_continuation(fixture.preparation, current, fixture.run, "baseline")
-            self.assertEqual({path.relative_to(parent): path.read_bytes()
-                              for path in parent.rglob("*") if path.is_file()}, parent_before)
+            unrelated = Path(directory) / 'report_only.py'
+            unrelated.write_text('value = 1\n', encoding='utf-8')
+            before = tracking_applicability(plan)
+            unrelated.write_text('value = 2\n', encoding='utf-8')
+            self.assertEqual(tracking_applicability(plan), before)
+            original = Path.read_bytes
+            def changed_collector(path):
+                data = original(path)
+                return data + b'\n# changed collector\n' if path.name == 'tracking_collection.py' else data
+            with mock.patch.object(Path, 'read_bytes', new=changed_collector):
+                self.assertNotEqual(tracking_applicability(plan), before)
 
     def test_shared_dependency_fixture_expands_retained_consumers_without_large_seeds(self) -> None:
         from tests.workflows.single_reflection.test_support.single_reflection_execute_fixture import declared_dependency_paths
         contract = load(INVENTORY)
         originals = {path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json')}
         self.assertTrue(originals)
-        for consumer in ('prepared_joint', 'multipole_ip'):
+        for consumer in ('prepared_joint',):
             with self.subTest(consumer=consumer):
                 paths = declared_dependency_paths(REPO_ROOT, contract, consumer)
                 self.assertIn('src/msplatform/execution/inputs.py', paths)
@@ -483,10 +369,25 @@ with tempfile.TemporaryDirectory() as request_directory:
                    for group in load(INVENTORY)["providers"] for item in group["files"]}
         self.assertEqual(entries["src/msplatform/workflows/resources/run_artifact_workflow.ps1"],
                          {"prepared_joint", "accelerator_interface", "oa_mr",
-                          "paired_accelerator_static_field", "paired_accelerator_pulse",
-                          "single_reflection_flight"})
+                          "paired_accelerator_pulse"})
         self.assertNotIn("common/resource_budget_support.ps1", entries)
         self.assertNotIn("common/host_execution_lease.ps1", entries)
+
+    def test_paired_static_store_owns_its_real_resource_closure(self) -> None:
+        from msplatform.backends.comsol.resources import native_resource_path as comsol_resource
+        from msplatform.backends.simion.resources import native_resource_path as simion_resource
+        from msplatform.workflows.paired_accelerator_static_field.store_workflow import _MATLAB, _SIMION
+        contract = load(INVENTORY)
+        self.assertNotIn('paired_accelerator_static_field', contract['consumer_ids'])
+        for provider in contract['providers']:
+            for item in (*provider.get('python_packages', []), *provider.get('files', [])):
+                self.assertNotIn('paired_accelerator_static_field', item['consumers'])
+        self.assertEqual(len(_MATLAB), 7)
+        self.assertEqual(set(_SIMION), {'builder', 'exporter', 'sampler'})
+        for name in _MATLAB:
+            self.assertTrue(comsol_resource(name).is_file(), name)
+        for name in _SIMION.values():
+            self.assertTrue(simion_resource(name).is_file(), name)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
     def test_prepared_joint_loads_shared_mr_continuation_guard_from_snapshot(self) -> None:
@@ -508,33 +409,30 @@ with tempfile.TemporaryDirectory() as request_directory:
                 cwd=snapshot,env=environment,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
-    def test_single_reflection_workflow_imports_form_a_dag(self) -> None:
-        """Include deferred imports; they must not hide a reverse ownership edge."""
-        paths = {"msplatform.workflows.single_reflection_flight.runtime":
-                 REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/runtime.py"}
-        paths["msplatform.workflows.single_reflection_flight.downstream_fields"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/downstream_fields.py"
-        paths["msplatform.workflows.single_reflection_flight.pulse"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/pulse.py"
-        paths["msplatform.workflows.single_reflection_flight.prepare"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/prepare.py"
-        paths["msplatform.workflows.single_reflection_flight.collect"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/collect.py"
-        paths["msplatform.workflows.single_reflection_flight.field_evidence"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/field_evidence.py"
-        paths["msplatform.backends.simion.tracking_collection"] = REPO_ROOT/"src/msplatform/backends/simion/tracking_collection.py"
-        paths["msplatform.results.single_reflection_continuation"] = REPO_ROOT/"src/msplatform/results/single_reflection_continuation.py"
-        paths["msplatform.workflows.single_reflection_flight.continuation"] = REPO_ROOT/"src/msplatform/workflows/single_reflection_flight/continuation.py"
-        for suffix in ('frontend_fields', 'field_plan'):
-            paths['msplatform.workflows.single_reflection_flight.' + suffix] = (
-                REPO_ROOT / 'src/msplatform/workflows/single_reflection_flight' / (suffix + '.py'))
-        for suffix in ('field_worker', 'native_plans'):
-            paths['msplatform.backends.simion.' + suffix] = (
-                REPO_ROOT / 'src/msplatform/backends/simion' / (suffix + '.py'))
+    def test_current_field_and_tracking_owners_form_a_dag(self) -> None:
+        """Include deferred and relative imports among actual current owners."""
+        import importlib.util
+        names = ('field_identity', 'field_bank', 'field_execution', 'native_plans',
+                 'tracking_units', 'tracking_execution', 'tracking_collection', 'particle_data')
+        paths = {'msplatform.backends.simion.' + name:
+                 REPO_ROOT / 'src/msplatform/backends/simion' / (name + '.py') for name in names}
+        paths['msplatform.results.particle_data'] = REPO_ROOT / 'src/msplatform/results/particle_data.py'
         graph = {}
         for name, source in paths.items():
-            graph[name] = {
-                node.module for node in ast.walk(ast.parse(source.read_text(encoding="utf-8")))
-                if isinstance(node, ast.ImportFrom) and node.module in paths
-            }
+            graph[name] = set()
+            for node in ast.walk(ast.parse(source.read_text(encoding='utf-8'))):
+                if isinstance(node, ast.ImportFrom):
+                    module = (importlib.util.resolve_name('.' * node.level + (node.module or ''),
+                              name.rpartition('.')[0]) if node.level else node.module)
+                    candidates = [module, *(module + '.' + alias.name for alias in node.names)] if module else []
+                elif isinstance(node, ast.Import):
+                    candidates = [alias.name for alias in node.names]
+                else:
+                    continue
+                graph[name].update(candidate for candidate in candidates if candidate in paths and candidate != name)
 
         def visit(name: str, chain: tuple[str, ...]) -> None:
-            self.assertNotIn(name, chain, " -> ".join((*chain, name)))
+            self.assertNotIn(name, chain, ' -> '.join((*chain, name)))
             for dependency in graph[name]:
                 visit(dependency, (*chain, name))
 

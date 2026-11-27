@@ -39,8 +39,39 @@ def _stationary_save_optimization(runtime: Mapping[str, Any]) -> str:
 
 
 def solve_stationary(model: Mapping[str, Any] | OpenedArtifact, *, solver_numerics: Mapping[str, Any],
-                     context: ExecutionContext, request: Mapping[str, Any] | None = None) -> OpenedArtifact:
+                     context: ExecutionContext, request: Mapping[str, Any] | None = None,
+                     artifact_store=None) -> OpenedArtifact:
     """Solve a prepared model or a new voltage workpoint on a saved solution."""
+    from contextlib import nullcontext
+    from uuid import uuid4
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.execution.stage_policy import read_stage_policy
+    from msplatform.contracts.machine_contracts import ContractError
+    if solver_numerics != {'kind': 'comsol_stationary_default'}:
+        raise ValueError('explicit comsol_stationary_default solver numerics required')
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ContractError('COMSOL stationary solve requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent['store']
+    if parent is not None and parent['store'] is not store:
+        raise ContractError('COMSOL stationary solve must use the parent Store')
+    reference = model.reference if isinstance(model, OpenedArtifact) else model
+    kind = 'field_solution' if request is not None else 'prepared_model'
+    source_assets = set()
+    with guard_native_source(reference, expected_kind=kind,
+                             expected_artifact_root=context.workspace / 'artifacts', artifact_store=store,
+                             asset_ids=source_assets) as source:
+        stage, authority = read_stage_policy(context, 'solve_assembly_stationary', required_roles=('solver_native_binary',))
+        scope = (standalone_native_store(store, task_key='standalone-field:' + uuid4().hex,
+                    budget=stage['limits']['transient_run_directory_bytes'], required_assets=tuple(sorted(source_assets)))
+                 if parent is None else nullcontext())
+        with scope:
+            return _solve_stationary_guarded(source, solver_numerics=solver_numerics, context=context,
+                                             request=request, stage=stage, authority=authority)
+
+
+def _solve_stationary_guarded(source, *, solver_numerics, context, request, stage, authority):
     from datetime import datetime
     from functools import partial
     from pathlib import Path
@@ -50,14 +81,12 @@ def solve_stationary(model: Mapping[str, Any] | OpenedArtifact, *, solver_numeri
     from msplatform.contracts.machine_contracts import ContractError
     from msplatform.execution.completion import no_particle_batch_completion_api
     from msplatform.execution.owner import run_managed_stage
-    from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.io.manifest_records import file_record
     from msplatform.results.artifacts import open_artifact
 
     if solver_numerics != {'kind': 'comsol_stationary_default'}:
         raise ValueError('explicit comsol_stationary_default solver numerics required')
     reuse = request is not None
-    source = open_artifact(model, expected_kind='field_solution' if reuse else 'prepared_model')
     from msplatform.backends.comsol.assembly_native_scope import require_supported_artifact
     require_supported_artifact(source)
     metadata = source.metadata
@@ -87,7 +116,6 @@ def solve_stationary(model: Mapping[str, Any] | OpenedArtifact, *, solver_numeri
         path = context.tools.get(name)
         if path is None or not (path.is_dir() if name == 'matlab_root' else path.is_file()):
             raise ContractError('COMSOL stationary solve requires explicit tool: ' + name)
-    stage, authority = read_stage_policy(context, 'solve_assembly_stationary', required_roles=('solver_native_binary',))
     save_optimization = _stationary_save_optimization(stage.get('runtime', {}))
     result = run_managed_stage(context,
         descriptor=dict(project='instrument_assembly', mode='stationary_workpoint', software=['COMSOL', 'MATLAB']),
@@ -125,6 +153,18 @@ def execute_stationary(session: RunSession, *, source: OpenedArtifact, manifest_
     if reuse:
         verify_record('upstream prepared manifest', upstream_record)
         session.add_input('upstream_prepared_manifest', upstream_record)
+    def freeze_manifest(record, name):
+        from pathlib import Path
+        target = session.declare_file(session.input_dir / 'source_manifests' / (name + '.json'), 'required_evidence')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        freeze_file(Path(record['path']), target)
+        frozen = file_record(target, 'required_evidence')
+        if any(frozen[key] != record[key] for key in ('bytes', 'sha256')):
+            raise ValueError('stationary source manifest copy differs')
+        session.add_input('frozen_' + name, frozen)
+        return frozen
+    frozen_parent = freeze_manifest(manifest_record, 'parent')
+    frozen_prepared = freeze_manifest(upstream_record, 'prepared') if reuse else frozen_parent
     frozen, paths, frozen_records = [], {}, {}
     model_path = source.data_path('model')
     model_record = dict(source.data_records['model'], path=str(model_path))
@@ -224,15 +264,16 @@ def execute_stationary(session: RunSession, *, source: OpenedArtifact, manifest_
                     raise ValueError('stationary solution cold readback differs')
             reports[operation] = report
         records = dict(model=saved[0], solver_numerics=numeric_record,
-                       prepared_manifest=upstream_record if reuse else manifest_record,
-                       **({'parent_field_manifest': manifest_record} if reuse else {}),
+                       prepared_manifest=frozen_prepared,
+                       **({'parent_field_manifest': frozen_parent} if reuse else {}),
                        **{name: frozen_records[name] for name in
                           ('request', 'projection', 'descriptor', 'geometry_validation', 'reopen_geometry')},
                        **{name: file_record(path, 'required_evidence') for name, path in reports.items()})
         outputs = [output, raw_output, *reports.values()]
         metadata = dict(backend='comsol', scope='single_stationary_workpoint', field_status='solved',
                         source_status='not_requested', scientific_qualification='not_granted',
-                        native_reopen_verified=True, solution=first['solution'], mph_save_optimization=save_optimization)
+                        native_reopen_verified=True, solution=first['solution'], mph_save_optimization=save_optimization,
+                        stationary_source={'reference': source.reference, 'kind': source.kind})
         return dict(status='success', summary=metadata, output_paths=[str(path) for path in outputs],
             required_output_paths=[str(path) for path in outputs], retention_preserve_paths=[],
             manifest_extra_fields=dict(products=dict(solution=dict(schema_version=1, kind='field_solution',
@@ -297,8 +338,40 @@ def _check_stationary_report(row: Mapping[str, Any], *, mode: str, projection: M
 
 
 def recover_stationary(failed_manifest: Mapping[str, Any], *, selected_output: Mapping[str, Any],
-                       context: ExecutionContext) -> OpenedArtifact:
+                       context: ExecutionContext, artifact_store=None) -> OpenedArtifact:
     """Cold-verify an explicit failed producer's saved solution, without Compute."""
+    from contextlib import nullcontext
+    from uuid import uuid4
+    from msplatform.execution.native_source_guard import guard_failed_store_evidence, guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.execution.stage_policy import read_stage_policy
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ValueError('COMSOL recovery requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent['store']
+    if parent is not None and parent['store'] is not store:
+        raise ValueError('COMSOL recovery must use the parent Store')
+    with guard_failed_store_evidence(store, failed_manifest, selected_output) as failed:
+        inputs = failed['inputs']
+        reuse = 'source_field_manifest' in inputs
+        if reuse == ('prepared_model_manifest' in inputs):
+            raise ValueError('failed source must have exactly one supported source role')
+        reference = {'manifest': inputs['source_field_manifest' if reuse else 'prepared_model_manifest'],
+                     'product_id': 'solution' if reuse else 'model'}
+        source_assets = set()
+        with guard_native_source(reference, expected_kind='field_solution' if reuse else 'prepared_model',
+                                 expected_artifact_root=context.workspace / 'artifacts', artifact_store=store,
+                                 asset_ids=source_assets):
+            stage, authority = read_stage_policy(context, 'recover_assembly_stationary', required_roles=('solver_native_binary',))
+            scope = (standalone_native_store(store, task_key='standalone-recovery:' + uuid4().hex,
+                        budget=stage['limits']['transient_run_directory_bytes'], required_assets=tuple(sorted(source_assets)))
+                     if parent is None else nullcontext())
+            with scope:
+                return _recover_stationary_guarded(failed_manifest, selected_output=selected_output,
+                                                    context=context, stage=stage, authority=authority)
+
+
+def _recover_stationary_guarded(failed_manifest, *, selected_output, context, stage, authority):
     import json
     from datetime import datetime
     from functools import partial
@@ -306,7 +379,6 @@ def recover_stationary(failed_manifest: Mapping[str, Any], *, selected_output: M
     from uuid import uuid4
     from msplatform.execution.completion import no_particle_batch_completion_api
     from msplatform.execution.owner import run_managed_stage
-    from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.io.manifest_records import file_record, record_path, verify_record, require_completed_terminal_publication
     from msplatform.results.artifacts import open_artifact
     verify_record('failed manifest', failed_manifest)
@@ -404,7 +476,6 @@ def recover_stationary(failed_manifest: Mapping[str, Any], *, selected_output: M
         path = context.tools.get(name)
         if path is None or not (path.is_dir() if name == 'matlab_root' else path.is_file()):
             raise ValueError('COMSOL stationary recovery requires explicit tool: ' + name)
-    stage, authority = read_stage_policy(context, 'recover_assembly_stationary', required_roles=('solver_native_binary',))
     result = run_managed_stage(context, descriptor=dict(project='instrument_assembly', mode='stationary_recovery', software=['COMSOL', 'MATLAB']),
         run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__analysis__comsol__stationary-recovery-' + uuid4().hex[:12],
         payload=dict(action='recover_assembly_stationary', stage_policy=stage), committed_new_bytes=stage['limits']['transient_run_directory_bytes'],
@@ -430,6 +501,17 @@ def _execute_recovery(session, *, source, failed_manifest, selected_output, nume
     if reuse:
         verify_record('upstream prepared manifest', upstream_record)
         session.add_input('upstream_prepared_manifest', upstream_record)
+    def freeze_source_manifest(record, name):
+        target = session.declare_file(session.input_dir / 'source_manifests' / (name + '.json'), 'required_evidence')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        freeze_file(record_path(record), target)
+        frozen_record = file_record(target, 'required_evidence')
+        if any(frozen_record[key] != record[key] for key in ('bytes', 'sha256')):
+            raise ValueError('recovery source manifest copy differs')
+        session.add_input('frozen_' + name, frozen_record)
+        return frozen_record
+    local_source = freeze_source_manifest(source_manifest, 'parent')
+    local_prepared = freeze_source_manifest(upstream_record, 'prepared') if reuse else local_source
     selected_path = record_path(selected_output)
     numerics_path = session.declare_file(session.input_dir / 'solver-numerics.json', 'required_evidence')
     freeze_file(record_path(numeric_record), numerics_path)
@@ -499,6 +581,6 @@ def _execute_recovery(session, *, source, failed_manifest, selected_output, nume
     if reuse:
         _check_mesh_identity(row, first=computed)
         _check_workpoint_voltages(row, old_request=old_request, request=json.loads(paths['request'].read_text(encoding='utf-8-sig')))
-    data = dict(model=selected_output, solver_numerics=frozen_numeric, prepared_manifest=upstream_record if reuse else source_manifest, **({'parent_field_manifest': source_manifest} if reuse else {}), **{name: records[name] for name in ('request','projection','descriptor','geometry_validation','reopen_geometry')}, reopen_solution=file_record(report,'required_evidence'))
-    metadata = dict(backend='comsol', scope='single_stationary_workpoint', field_status='solved', source_status='not_requested', scientific_qualification='not_granted', native_reopen_verified=True, recovery_compute_calls=0, solution=row['solution'])
+    data = dict(model=selected_output, solver_numerics=frozen_numeric, prepared_manifest=local_prepared, **({'parent_field_manifest': local_source} if reuse else {}), **{name: records[name] for name in ('request','projection','descriptor','geometry_validation','reopen_geometry')}, reopen_solution=file_record(report,'required_evidence'))
+    metadata = dict(backend='comsol', scope='single_stationary_workpoint', field_status='solved', source_status='not_requested', scientific_qualification='not_granted', native_reopen_verified=True, recovery_compute_calls=0, solution=row['solution'], stationary_source={'reference': source.reference, 'kind': source.kind}, failed_source={'manifest': failed_manifest, 'selected_output': selected_output})
     return dict(status='success', summary=metadata, output_paths=[str(report)], required_output_paths=[str(report)], retention_preserve_paths=[], manifest_extra_fields=dict(products=dict(solution=dict(schema_version=1, kind='field_solution', status='complete', metadata=metadata, data=data))))

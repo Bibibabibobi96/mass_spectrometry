@@ -11,8 +11,6 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else {
   throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'
 }
@@ -33,11 +31,6 @@ if ($ParticleCsv) {
   $arguments += @('--particle-csv', $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ParticleCsv))
 }
 if ($AllowIncompleteCensus) { $arguments += '--allow-incomplete-census' }
-Push-Location -LiteralPath $repoRoot
-try {
-  $summaryJson = & $python @arguments
-  if ($LASTEXITCODE -ne 0) { throw 'Python SIMION log analysis failed.' }
-} finally {
-  Pop-Location
-}
+$summaryJson = & $python @arguments
+if ($LASTEXITCODE -ne 0) { throw 'Python SIMION log analysis failed.' }
 $summaryJson | ConvertFrom-Json

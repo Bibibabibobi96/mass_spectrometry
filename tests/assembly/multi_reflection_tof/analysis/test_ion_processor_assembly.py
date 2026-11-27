@@ -13,12 +13,12 @@ from unittest.mock import patch
 
 from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
-from msplatform.workflows.accelerator_interface import geometry as assembly_geometry
+from msplatform.backends.simion import ip_mr_geometry as assembly_geometry
 from msplatform.components.ion_processor.native_geometry import native_projection
-from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
-from msplatform.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
+from msplatform.assembly.ip_mr_connection import resolve_ip_mr_connection
+from msplatform.backends.simion.ip_mr_geometry import prepare_ion_processor_assembly
 from msplatform.backends.simion import assembled_field_plan as assembly
-from msplatform.workflows.prepared_joint import ion_processor_assembly as assembly_workflow
+from msplatform.components.ion_processor import assembly_geometry as assembly_workflow
 from msplatform.components.multi_reflection_tof.resolved_geometry import resolve_geometry
 from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
 
@@ -183,7 +183,10 @@ class AssemblyTests(unittest.TestCase):
         baseline = json.loads(Path(report["source_config_paths"]["baseline"]).read_text())
         point = json.loads(Path(report["source_config_paths"]["native_operating_point"]).read_text())
         self.assertEqual(baseline["electric"]["lift_v"], point["lift_v"])
-        self.assertEqual(baseline["gas"], self.source["baseline"]["gas"])
+        from msplatform.components.ion_processor.gas_regions import project_ip_baseline
+        author = json.loads((IP_CONFIG / "gas_environment.json").read_text(encoding="utf-8"))
+        self.assertEqual(project_ip_baseline(author, baseline)["gas"],
+                         project_ip_baseline(author, self.source["baseline"])["gas"])
         self.assertEqual(json.loads(Path(report["source_config_paths"]["source"]).read_text()), self.source["source"])
         text = Path(report["parent_gem_path"]).read_text()
         self.assertIn("cylinder3d(", text)
@@ -233,6 +236,7 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / "source.json").read_text()), original)
         from msplatform.components.ion_processor.timing import derive_native_timing
         from msplatform.workflows.ion_processor.preparation import validate_configs
+        config["gas_environment"] = json.loads((IP_CONFIG / "gas_environment.json").read_text(encoding="utf-8"))
         config["source_profile"] = "functional"
         config["native_timing"] = derive_native_timing(config["baseline"])
         validate_configs(config)
@@ -256,6 +260,7 @@ class AssemblyTests(unittest.TestCase):
                           for name, path in report["source_config_paths"].items()}
                 from msplatform.components.ion_processor.timing import derive_native_timing
                 from msplatform.workflows.ion_processor.preparation import validate_configs
+                config["gas_environment"] = json.loads((IP_CONFIG / "gas_environment.json").read_text(encoding="utf-8"))
                 config["source_profile"] = "functional"
                 config["native_timing"] = derive_native_timing(config["baseline"])
                 validate_configs(config)

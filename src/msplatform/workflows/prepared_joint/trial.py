@@ -14,9 +14,9 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
 from msplatform.backends.comsol.static_field_binding import load_binding, native_response_operator
-from msplatform.backends.simion.native_completion import parse_fly_completed_line
+from msplatform.analysis.native_completion import parse_fly_completed_line
 from msplatform.io.scientific_csv import iter_csv_rows
-from msplatform.backends.simion.mrtof_observations import read_scientific_events
+from msplatform.analysis.mr_observations import read_scientific_events
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -170,7 +170,7 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     import csv
     import math
     from msplatform.contracts.particle_physics import kinetic_energy_ev
-    from msplatform.backends.simion.mrtof_observations import read_scientific_events
+    from msplatform.analysis.mr_observations import read_scientific_events
     from msplatform.workflows.prepared_joint.prism_handoff import (
         ProjectPhaseSpaceState, observation_from_simion_events, prism_handoff_residuals,
     )

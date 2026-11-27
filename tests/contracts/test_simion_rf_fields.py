@@ -14,7 +14,7 @@ from unittest.mock import patch
 from tests.contracts.test_simion_rf_prepared_model import rf_inputs, clock_reference, assets_at
 from tests.contracts.test_simion_model_execution import _InertModelSession, _inert_small_materialization
 from msplatform.backends.simion import model as model_api, rf_field_execution as rf, field_execution, field_closure
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.execution.terminal_publication import publish_terminal_state
 from msplatform.io.manifest_records import file_record
 from msplatform.results.artifacts import open_artifact

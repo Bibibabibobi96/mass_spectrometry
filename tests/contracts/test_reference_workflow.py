@@ -15,7 +15,7 @@ from msplatform.recipes import load_recipe
 from msplatform.results.particle_data import read_particle_data, summarize_particle_data, write_particle_data
 from msplatform.storage import ArtifactStore
 from msplatform.tracing import trace_particles
-from msplatform.workflows.reference_tracing import inspect_results, run_recipe
+from msplatform.workflows.tracing import inspect_results, run_recipe
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "recipes/reference/uniform_e.toml"
@@ -147,7 +147,7 @@ class ReferenceWorkflowTests(unittest.TestCase):
             run, work = store.begin_run()
             result = trace_particles(load_recipe(SOURCE).to_dict())
             recipe = load_recipe(SOURCE).to_dict()
-            write_particle_data(work, result, metadata={"frame_id": recipe["frame_id"], "clock": recipe["clock"]})
+            write_particle_data(work, result, metadata={"schema_version": 3, "frame_id": recipe["frame_id"], "clock": recipe["clock"], "species": recipe["species"]})
             execution_path = work / "execution.json"
             old_execution = json.loads(execution_path.read_text(encoding="utf-8"))
             del old_execution["data_integrity"]["detector_observation"]
@@ -172,7 +172,7 @@ class ReferenceWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             with self.assertRaisesRegex(ValueError, "silent data loss"):
-                write_particle_data(base, result, metadata={"frame_id": recipe["frame_id"], "clock": recipe["clock"]})
+                write_particle_data(base, result, metadata={"schema_version": 3, "frame_id": recipe["frame_id"], "clock": recipe["clock"], "species": recipe["species"]})
             run = run_recipe(SOURCE, artifact_root=base / "store")
             path = Path(run["run_path"]) / "summary.json"
             path.write_text(json.dumps({}), encoding="utf-8")

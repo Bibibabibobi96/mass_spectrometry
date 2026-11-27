@@ -16,19 +16,11 @@ from typing import Any, Mapping, Sequence
 
 from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.backends.simion.resources import native_resource_path
-from msplatform.backends.simion.pa_family_cache import (
-    CacheDisposition,
-    CacheProbe,
-    CachePublication,
-    MaterializedFamily,
-    PAFamilyCacheError,
-    canonical_pa_family_cache_key,
-    ensure_pa_family_cache,
-    materialize_pa_family_cache,
-    probe_pa_family_cache,
-    publish_pa_family_cache,
-    validate_pa_family_cache_generation,
-)
+from contextlib import ExitStack
+import json
+from msplatform.backends.simion.pa_identity import PAFamilyCacheError, canonical_pa_family_cache_key
+from msplatform.io.file_identity import guarded_file_identity
+
 
 
 SCHEMA_VERSION = 2
@@ -334,97 +326,101 @@ def _filenames(identity: Mapping[str, object]) -> tuple[str, ...]:
     return tuple(str(member["output_name"]) for member in canonical["members"])
 
 
-def probe_operating_pa_cache(cache_root: str | Path, identity: Mapping[str, object]) -> CacheProbe:
-    """Return hit/miss/corrupt after full manifest and payload validation."""
+def compose_operating_pa_group(members: Sequence[Mapping[str, object]], *, pa_format_version: int,
+                               source_records: Sequence[Mapping[str, object]]) -> dict[str, Any]:
+    """Compose or claim an exact operating group under the caller's Store stage.
 
-    return probe_pa_family_cache(cache_root, _backend_identity(identity), expected_filenames=_filenames(identity))
-
-
-def ensure_operating_pa_cache(
-    cache_root: str | Path,
-    identity: Mapping[str, object],
-    *,
-    lock_timeout_s: float = 30.0,
-) -> CacheProbe:
-    """Return a usable operating-PA cache state, repairing one v2 member."""
-
-    try:
-        return ensure_pa_family_cache(
-            cache_root,
-            _backend_identity(identity),
-            expected_filenames=_filenames(identity),
-            lock_timeout_s=lock_timeout_s,
-        )
-    except PAFamilyCacheError as exc:
-        raise OperatingPACacheError(str(exc)) from exc
-
-
-def validate_operating_pa_cache_generation(
-    generation_directory: str | Path, *, expected_identity: Mapping[str, object] | None = None,
-) -> dict[str, Any]:
-    """Fail closed unless a generation is an exact operating-PA group."""
-
-    expected_key = canonical_operating_pa_cache_key(expected_identity) if expected_identity is not None else None
-    expected_names = _filenames(expected_identity) if expected_identity is not None else None
-    try:
-        manifest = validate_pa_family_cache_generation(
-            generation_directory, expected_cache_key=expected_key, expected_filenames=expected_names,
-        )
-    except PAFamilyCacheError as exc:
-        raise OperatingPACacheError(str(exc)) from exc
-    embedded = manifest.get("identity", {}).get("geometry", {}).get("operating_identity")
-    canonical_embedded = canonical_operating_pa_identity(embedded)
-    if expected_identity is not None and canonical_embedded != canonical_operating_pa_identity(expected_identity):
-        raise OperatingPACacheError("operating PA generation identity differs from expected identity")
-    return manifest
-
-
-def publish_operating_pa_cache(
-    cache_root: str | Path, identity: Mapping[str, object], source_directory: str | Path, *,
-    lock_timeout_s: float = 30.0,
-) -> CachePublication:
-    """Atomically publish a complete, read-only group of standalone operating PAs."""
-
-    canonical = canonical_operating_pa_identity(identity)
-    try:
-        return publish_pa_family_cache(
-            cache_root, _backend_identity(canonical), source_directory, _filenames(canonical),
-            lock_timeout_s=lock_timeout_s,
-            recovery_policy="none",
-        )
-    except PAFamilyCacheError as exc:
-        raise OperatingPACacheError(str(exc)) from exc
-
-
-def materialize_operating_pa_cache(
-    generation_directory: str | Path, destination_directory: str | Path, *,
-    expected_identity: Mapping[str, object] | None = None,
-) -> MaterializedFamily:
-    """Copy a validated group to a writable private run directory."""
-
-    try:
-        if expected_identity is None:
-            manifest = validate_operating_pa_cache_generation(generation_directory)
-            names = tuple(record["name"] for record in manifest["files"])
-        else:
-            names = _filenames(expected_identity)
-        result = materialize_pa_family_cache(
-            generation_directory, destination_directory, expected_filenames=names
-        )
-        validate_operating_pa_cache_generation(
-            result.source_generation_directory, expected_identity=expected_identity
-        )
-        return result
-    except PAFamilyCacheError as exc:
-        raise OperatingPACacheError(str(exc)) from exc
+    Each member specifies output_name, base_pa, responses, and the target
+    voltage vector. Source bytes are verified and OS-held during composition;
+    existing Store claims live through the parent stage and its publication.
+    """
+    from msplatform.backends.simion import standalone_pa_composition as composer
+    from msplatform.execution.owner import current_managed_native_store
+    scope = current_managed_native_store()
+    if scope is None:
+        raise ValueError('operating PA composition requires the existing managed Store scope')
+    if isinstance(members, (str, bytes)) or not isinstance(members, Sequence) or not members:
+        raise ValueError('operating PA members are required')
+    expected_fields = {'output_name', 'base_pa', 'responses', 'target_voltage_vector_v'}
+    if any(not isinstance(row, Mapping) or set(row) != expected_fields for row in members):
+        raise ValueError('operating PA member input fields differ')
+    descriptions = [operating_pa_member_identity(str(row['output_name']), row['base_pa'],
+                    row['responses'], row['target_voltage_vector_v']) for row in members]
+    identity = linear_basis_operating_pa_group_identity(descriptions, pa_format_version=pa_format_version,
+                                                         implementation_path=Path(composer.__file__))
+    key = canonical_operating_pa_cache_key(identity)
+    from msplatform.io.manifest_records import verify_record
+    if isinstance(source_records, (str, bytes)) or not isinstance(source_records, Sequence):
+        raise ValueError('manifest-bound source records are required')
+    source_by_path = {}
+    for row in source_records:
+        if not isinstance(row, Mapping):
+            raise ValueError('manifest-bound source record is invalid')
+        verify_record('operating PA bound source', dict(row))
+        path = Path(row['path']).resolve(strict=True)
+        identity_pair = (row['bytes'], str(row['sha256']).upper())
+        if path in source_by_path and source_by_path[path] != identity_pair:
+            raise ValueError('operating PA source records conflict')
+        source_by_path[path] = identity_pair
+    expected_sources = {}
+    for member, description in zip(members, descriptions, strict=True):
+        expected_sources[Path(member['base_pa']).resolve()] = (description['base_pa']['bytes'], description['base_pa']['sha256'])
+        for source, bound in zip(member['responses'], description['responses'], strict=True):
+            expected_sources[Path(source['path']).resolve()] = (bound['content']['bytes'], bound['content']['sha256'])
+    if source_by_path != expected_sources:
+        raise ValueError('operating PA inputs do not match their manifest-bound source records')
+    store, lifetime = scope['store'], scope['lifetime']
+    with ExitStack() as source_guards:
+        for member, description in zip(members, descriptions, strict=True):
+            source_guards.enter_context(guarded_file_identity(Path(member['base_pa']),
+                expected_bytes=description['base_pa']['bytes'], expected_sha256=description['base_pa']['sha256']))
+            for source, bound in zip(member['responses'], description['responses'], strict=True):
+                source_guards.enter_context(guarded_file_identity(Path(source['path']),
+                    expected_bytes=bound['content']['bytes'], expected_sha256=bound['content']['sha256']))
+        candidate = lifetime.enter_context(store.claim_key('simion-operating-group-v2:' + key))
+        if candidate is not None:
+            asset_id, directory = candidate
+            metadata = directory/'operating_identity.json'
+            try:
+                valid = json.loads(metadata.read_text(encoding='utf8')) == identity
+                valid = valid and all((directory/name).is_file() for name in _filenames(identity))
+            except (OSError, ValueError):
+                valid = False
+            if valid:
+                token, protected = lifetime.enter_context(store.claim_token(asset_id))
+                if protected != directory:
+                    raise ValueError('operating PA Store claim differs')
+                scope['produced'].append(asset_id)
+                return dict(cache_key=key, cache_disposition='hit', asset_id=asset_id,
+                            claim_id=token, directory=str(directory), identity=identity)
+        work = store.new_work()
+        try:
+            for member in members:
+                responses = [(Path(row['path']), float(row['applied_voltage_delta_v']) /
+                              float(row['basis_normalization_v'])) for row in member['responses']]
+                composer.compose_standalone_pa(Path(member['base_pa']), work/str(member['output_name']), responses)
+                scope['account'](work)
+            (work/'operating_identity.json').write_text(json.dumps(identity, sort_keys=True, allow_nan=False)+'\n', encoding='utf8')
+            scope['account'](work)
+            asset_id, directory = lifetime.enter_context(store.put_asset_claimed(
+                'simion_operating_group', 'simion-operating-group-v2:' + key, work))
+            token, protected = lifetime.enter_context(store.claim_token(asset_id))
+            if protected != directory:
+                raise ValueError('operating PA Store claim differs')
+            scope['produced'].append(asset_id)
+            return dict(cache_key=key, cache_disposition='miss', asset_id=asset_id,
+                        claim_id=token, directory=str(directory), identity=identity)
+        except BaseException:
+            if work.exists():
+                store.discard_work(work)
+            raise
 
 
 __all__ = [
-    "CacheDisposition", "LINEAR_BASIS_ALGORITHM_FORMAT_VERSION", "LINEAR_BASIS_ALGORITHM_ID",
-    "OperatingPACacheError", "canonical_operating_pa_cache_key",
-    "canonical_operating_pa_identity", "content_identity_from_verified_record",
-    "ensure_operating_pa_cache", "file_content_identity", "materialize_operating_pa_cache",
-    "linear_basis_operating_pa_group_identity", "operating_pa_group_identity",
-    "operating_pa_member_identity", "probe_operating_pa_cache", "publish_operating_pa_cache",
-    "validate_operating_pa_cache_generation",
+    'LINEAR_BASIS_ALGORITHM_FORMAT_VERSION', 'LINEAR_BASIS_ALGORITHM_ID',
+    'OperatingPACacheError', 'canonical_operating_pa_cache_key',
+    'canonical_operating_pa_identity', 'compose_operating_pa_group',
+    'content_identity_from_verified_record', 'file_content_identity',
+    'linear_basis_operating_pa_group_identity', 'operating_pa_group_identity',
+    'operating_pa_member_identity',
 ]

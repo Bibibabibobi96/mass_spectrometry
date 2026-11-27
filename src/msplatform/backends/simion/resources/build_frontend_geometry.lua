@@ -42,6 +42,9 @@ if spec.electrode_witness_ids then
   assert(remaining==0,'raw geometry has no integer witness for a declared electrode')
   print(string.format('GEOMETRY_NAMESPACE_SCAN=PASS NODES=%d CPU_SECONDS=%.17g',scanned,os.clock()-started))
 end
+if spec.mirror_x then
+  assert(pa.symmetry=='3dplanar[x]' and pa.mirror_x and not pa.mirror_y and not pa.mirror_z,'OA mirror axes differ')
+end
 for _,sample in ipairs(samples) do
   local potential,metal=pa:point(unpack(sample.gu))
   local expected=sample.metal~=false

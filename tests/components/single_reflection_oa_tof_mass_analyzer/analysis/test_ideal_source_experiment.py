@@ -46,7 +46,7 @@ class IdealExperimentTests(unittest.TestCase):
         validate_schema(profiles, "execution_profiles.schema.json")
         profile = next(p for p in profiles["profiles"] if p["profile_id"] == "ideal_source_comparison")
         self.assertEqual(profile["action"], "analyze")
-        self.assertEqual(profile["qualification_support"], ["none"])
+        self.assertNotIn("qualification_support", profile)
         self.assertEqual(profile["tools"], ["python"])
         self.assertEqual(profile["required_bindings"],
                          ["particle_source_seed", "workspace", "execution_environment", "environment_profile"])

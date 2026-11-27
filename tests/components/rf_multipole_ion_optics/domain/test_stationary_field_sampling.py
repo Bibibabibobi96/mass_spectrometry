@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+from contextlib import redirect_stderr
+import io
 import json
 import math
 import tempfile
@@ -19,7 +21,11 @@ from msplatform.components.rf_multipole.stationary_field_sampling import (
     validate_stationary_bvp,
     validate_stationary_output_authority,
 )
-from msplatform.workflows.rf_stationary import main
+from msplatform.cli import main as _public_main
+
+
+def main(argv):
+    return _public_main(["rf-stationary", *argv])
 
 
 def _resolved_design() -> dict[str, Any]:
@@ -232,9 +238,12 @@ class StationaryFieldSamplingTest(unittest.TestCase):
         self.assertEqual(result["field_cases"]["differential"]["paired_valid_count"],len(points))
         candidate["bvp_by_case"]["static"]["exterior"]="ground"
         candidate_path.write_text(json.dumps(candidate),encoding="utf-8")
-        with self.assertRaisesRegex(StationaryFieldContractError,"bvp_by_case"):
+        errors = io.StringIO()
+        with redirect_stderr(errors), self.assertRaises(SystemExit) as rejected:
             main(["comparison-authority","--reference-authority",str(authority_path),
                 "--candidate-authority",str(candidate_path),"--coordinate-tolerance-mm","0","--output",str(comparison_authority)])
+        self.assertEqual(rejected.exception.code, 2)
+        self.assertIn("bvp_by_case", errors.getvalue())
         rows[0]["x_mm"]="12345"
         tampered=self._write_rows("tampered.csv",rows)
         with self.assertRaisesRegex(StationaryFieldContractError,"identity|coordinates"):

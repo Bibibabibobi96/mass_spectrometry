@@ -633,7 +633,7 @@ Refine、Fast Adjust 或保存 PA；装载后还核对碰撞 PA 仍是原来唯�
 控制／日志目录并核对永久PA绑定；未变大PA继续只读复用，不因GUI装载而复制或重新求场。
 
 ```powershell
-.\.venv\Scripts\python.exe -m msplatform.workflows.mr_design.simion_event_analysis `
+.\.venv\Scripts\python.exe -m msplatform.analysis.mr_event_analysis `
   '<run>/stdout.log' '<run>/event_analysis.json' `
   --input-manifest '<run>/simion/prototype_input_manifest.json' `
   --source-key mirror_internal_diagnostic_bunch_fly2

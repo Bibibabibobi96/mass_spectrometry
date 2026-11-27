@@ -37,7 +37,7 @@ from msplatform.workflows.mr_design.prism_mirror_transport import (
 from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.workflows.prepared_joint.prism_operating_point import (
+from msplatform.components.multi_reflection_tof.prism_workpoint_math import (
     RESIDUAL_NAMES,
     natural_two_prism_scales,
 )

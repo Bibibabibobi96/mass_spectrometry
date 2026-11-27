@@ -12,8 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from msplatform.analysis.peak_metrics import AnalysisSettings
-from msplatform.workflows.prepared_joint.event_analysis import peak_time_metrics
+from msplatform.analysis.peak_metrics import AnalysisSettings, peak_time_metrics
 from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
@@ -500,7 +499,7 @@ def _first_batch_fixture(root: Path) -> tuple[Path, Path]:
 
 class SourceZEnergyTimingDiagnosticTests(unittest.TestCase):
     def test_multiple_slow_energy_responses_reuse_triplets_without_legacy_changes(self) -> None:
-        from msplatform.backends.simion.mrtof_observations import parse_events
+        from msplatform.analysis.mr_observations import parse_events
 
         with tempfile.TemporaryDirectory() as directory:
             run = _fixture(Path(directory), detector_hit_ids={1, 2, 3, 4})

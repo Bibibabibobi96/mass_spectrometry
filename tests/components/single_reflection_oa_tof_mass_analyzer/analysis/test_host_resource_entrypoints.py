@@ -28,7 +28,7 @@ def _entry_relative(relative: str) -> str:
 
 LEASE_STUB = """
 function Enter-HostExecutionLease {
-  param($Role, $RunId, $Stage)
+  param($Role, $RunId, $Stage, $StatePath)
   Write-Host "TEST_LEASE_ENTER=$Role"
   Write-Host "TEST_LEASE_STAGE=$Stage"
   $inherited = $env:OA_TEST_PARENT_HEAVY -eq '1'
@@ -141,13 +141,13 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
                 MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/"host.sqlite3"))
             science = root / "science"
             (science / "config").mkdir(parents=True)
-            if installed == "src/msplatform/backends/simion/resources/run_parameterized_geometry_smoke.ps1" or installed == "src/msplatform/workflows/resources/run_formal_validation.ps1":
+            if installed == "src/msplatform/backends/simion/resources/run_parameterized_geometry_smoke.ps1":
                 arguments = ["-WorkspaceRoot", str(root), "-ArtifactRootPath", str(root / "artifacts"),
                              "-ScienceRoot", str(science), *arguments]
             elif installed == "src/msplatform/backends/simion/resources/run_ideal_field_diagnostic.ps1":
                 arguments = ["-WorkspaceRoot", str(root), "-ArtifactRootPath", str(root / "artifacts"), *arguments]
-            elif installed == "src/msplatform/workflows/resources/run_mass_spectrum_candidate.ps1":
-                arguments = ["-Workspace", str(root), "-ArtifactRootPath", str(root / "artifacts"),
+            elif installed == "src/msplatform/workflows/resources/run_field_idealization_sweep.ps1":
+                arguments = ["-WorkspaceRoot", str(root), "-ArtifactRootPath", str(root / "artifacts"),
                              "-ScienceRoot", str(science), *arguments]
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(target), *arguments],
@@ -190,16 +190,10 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
         self.assertEqual(output.count("TEST_LEASE_EXIT=SIMION"), 1, output)
 
     def test_retired_and_active_flight_entrypoints_preserve_lease_boundaries(self) -> None:
-        formal_output = self.run_failure(
-            "workflows/formal_reference/run_formal_validation.ps1", [],
-            expect_lease_release=False,
-        )
-        self.assertIn("composite validation execution is retired", formal_output)
-        self.assertNotIn("TEST_LEASE_", formal_output)
         cases = (
             ("simion/workbench/run_ideal_field_diagnostic.ps1", ["-AnalyzeOnly", "-SourceRunPath", "fixture-source"], "GATE"),
-            ("tests/simion/run_field_idealization_sweep.ps1", [], "SIMION"),
-            ("tests/simion/run_field_idealization_sweep.ps1", ["-ValidateConfigOnly"], "GATE"),
+            ("workflows/field_idealization/run_field_idealization_sweep.ps1", [], "SIMION"),
+            ("workflows/field_idealization/run_field_idealization_sweep.ps1", ["-ValidateConfigOnly"], "GATE"),
         )
         for relative, arguments, role in cases:
             for nested in (False, True):
@@ -366,7 +360,7 @@ foreach($nested in @($false,$true)) {
 }
 'HANDOFF=PASS'
 """
-        for relative in ("verify_project.ps1", "workflows/formal_reference/run_formal_validation.ps1"):
+        for relative in ("verify_project.ps1",):
             with self.subTest(entry=relative):
                 result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
                                         cwd=PROJECT, env=dict(os.environ, OA_TEST_ENTRY=str(PROJECT.parents[3] / _entry_relative(relative))),
@@ -377,8 +371,7 @@ foreach($nested in @($false,$true)) {
     def test_direct_flights_have_stage_boundaries_and_builder_marks_real_refine(self) -> None:
         for relative in ("simion/workbench/run_parameterized_geometry_smoke.ps1",
                          "simion/workbench/run_ideal_field_diagnostic.ps1",
-                         "tests/simion/run_field_idealization_sweep.ps1",
-                         "workflows/formal_reference/run_formal_validation.ps1"):
+                         "workflows/field_idealization/run_field_idealization_sweep.ps1"):
             with self.subTest(entry=relative):
                 source = (PROJECT.parents[3] / _entry_relative(relative)).read_text(encoding="utf-8")
                 flight = source.index("= Start-Process -FilePath $SimionExe")

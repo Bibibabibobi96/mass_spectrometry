@@ -1,7 +1,7 @@
 # 双压力区矩形射频离子处理器历史索引
 
 返回[项目入口](../../../../src/msplatform/components/ion_processor/README.md)；当前结论、资格与开放任务见[PROJECT](../../../../src/msplatform/components/ion_processor/docs/PROJECT.md)。
-路径迁移：`projects/ion_processor/docs/history/` → `docs/history/projects/dual_pressure_rectilinear_ion_processor/`；冻结正文保持原字节。
+路径迁移：`projects/dual_pressure_rectilinear_ion_processor/docs/history/` → `docs/history/projects/dual_pressure_rectilinear_ion_processor/`；冻结正文保持原字节。
 本页是可更新导航。以下记录按归档时点解释，不作为当前运行指令；各档案正文及证据身份保持冻结。
 
 ## 归档记录

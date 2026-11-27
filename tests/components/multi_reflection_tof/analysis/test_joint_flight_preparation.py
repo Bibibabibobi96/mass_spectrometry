@@ -26,7 +26,7 @@ PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/multi
 class JointPreparationTests(unittest.TestCase):
     def test_provider_voltage_projection_freezes_injected_public_waveforms(self):
         from tests.components.ion_processor.test_functional import load_config
-        from msplatform.workflows.prepared_joint.native_preparation import project_provider_voltages
+        from msplatform.backends.simion.provider_voltage_projection import project_provider_voltages
         REPO = PROJECT.parents[3]
         lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
         if not Path(lua).is_file():
@@ -215,7 +215,7 @@ print('CANONICAL_INNER_SOURCE_REOPEN=PASS')
     def test_reference_json_binds_real_compiler_and_derives_timeout_without_lua_numerics(self):
         import copy
         from msplatform.backends.simion.prototype_materialization import _full_path_timeout_us
-        from msplatform.components.multi_reflection_tof.drift_phase_contract import OPPOSITE_MIRROR_TURN
+        from msplatform.contracts.drift_phase_contract import OPPOSITE_MIRROR_TURN
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             reference = root / "reference"
@@ -408,127 +408,6 @@ print('OA_BUILDER_MOCK=PASS')
                     self.assertIn(expected_error, result.stderr)
 
 
-    def test_final_sidecar_preserves_verified_source_field_voltages_and_unqualified_energy(self):
-        from msplatform.workflows.accelerator_interface.prepare import bind_joint_workbench
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            design, fields, actual = [root / name for name in ("design", "fields", "actual")]
-            for folder in (design / "results/joint_flight", design / "inputs", fields / "results", actual / "inputs"):
-                folder.mkdir(parents=True)
-            (design / "run_manifest.json").write_text("{}")
-            def write(path, value):
-                path.write_text(json.dumps(value), encoding="utf-8")
-            configs = {name: {"identity": name} for name in
-                       ("baseline", "native_operating_point", "numerics", "source", "coordinate_transform")}
-            configs["source"]["species"] = dict(mass_amu=524, charge_state=1)
-            paths = {}
-            for name, value in configs.items():
-                path = design / "inputs" / (name + ".json")
-                write(path, value)
-                paths[name] = str(path)
-            geometry_path = design / "inputs/geometry.json"
-            write(geometry_path, {"ion_processor": "new_geometry"})
-            write(actual / "inputs/resolved_model.json", configs)
-            materialization = design / "inputs/reference_materialization.json"
-            write(materialization, {"physical_diagnostic": "retained"})
-            write(design / "results/joint_flight/joint_preparation_receipt.json", {
-                "reference_materialization": file_record(materialization),
-                "numerics": dict(trajectory_quality=3, maximum_step_us=.004,full_path_timeout_us=100),
-                "assembly": {"source_config_paths": paths, "assembly_geometry_path": str(geometry_path)}})
-            reference_point = dict(mirror_voltages_v=[0., -10., 20., 30., 50.],
-                                   stripe_biases_v=[-4., 0.], prism_voltages_v=[100., -100.],
-                                   nonaccelerator_scale=1., source_clock_marker=7500.6370908093995)
-            (design / "inputs/reference_operating_point.lua").write_text(
-                "return " + _lua(reference_point), encoding="utf-8")
-            write(fields / "results/field_binding.json", {"new": "binding"})
-            component = root / "component.json"
-            write(component, {"source_run": str(actual)})
-            handoff = root / "handoff.json"
-            write(handoff, {"connection": {"fixture": "verified"}, "inputs": {"component_receipt": file_record(component)}})
-            comparison = dict(role="mrtof_measured_exit_energy_comparison", centroid_match_accepted=None,
-                              inputs={"component_receipt": file_record(component)})
-            grid = dict(origin_mm=[0, -242, -425], pitch_mm=[.5, 1, 1], dimensions=[326, 801, 851])
-            roles = ("global_fallback", "native_corridor", "ion_processor_collision", "detector")
-            binding = dict(accelerator_provider="ion_processor",
-                           instances=[dict(role=role, pa_path=str(fields / (role + ".pa")),
-                                           origin_mm=[0, index, 0]) for index, role in enumerate(roles)],
-                           geometry={"ion_processor": "new_geometry"}, grid=grid,
-                           sources={"scalar_pa": str(fields / "parent.pa")},
-                           authority={"analyzer_electrode_voltages_v": [
-                               *reference_point["mirror_voltages_v"], *reference_point["mirror_voltages_v"],
-                               -27., -27., 0., 0., 0., 343., -186., 0., 0., 0.]},
-                           refinement_windows=[dict(grid=grid, sources={"scalar_pa": str(fields / "ip_local.pa")},
-                                                    name="ion_processor_local", active_box_mm=[[-1, 1], [-200, -30], [0, 14]])])
-            # Admission/scope rejection is covered by the integration owner tests.
-            verified = dict(design=json.loads((design / "results/joint_flight/joint_preparation_receipt.json").read_text()),
-                design_path=design / "results/joint_flight/joint_preparation_receipt.json", design_manifest={},
-                binding=binding, binding_path=fields / "results/field_binding.json",
-                actual_path=actual / "inputs/resolved_model.json", connection={"fixture": "verified"})
-            def source_projection(_handoff, output):
-                output.mkdir()
-                for name in ("source_runtime.lua", "source.fly2"):
-                    (output / name).write_text("-- new measured source", encoding="utf-8")
-                return {"counts": {"source": 100, "transferred": 97, "not_transferred": 3}}
-            with patch("msplatform.workflows.accelerator_interface.prepare.verified_reference",
-                       side_effect=lambda run, relative, **kwargs: run / relative), patch(
-                    "msplatform.workflows.accelerator_interface.prepare.verified_preparation_reference", side_effect=lambda run, relative, **kwargs: run / relative), patch(
-                    "msplatform.backends.comsol.static_field_binding.load_binding", return_value=binding), patch(
-                    "msplatform.workflows.prepared_joint.source.materialize_measured_source",
-                    side_effect=source_projection), patch(
-                    "msplatform.workflows.accelerator_interface.prepare.prepare_interface_field_audit",
-                    return_value={"mock": "separately_tested_audit_compiler"}):
-                result = bind_joint_workbench(design_run=design, field_run=fields, source_run=actual,
-                                              handoff_receipt=handoff, energy_comparison=comparison,
-                                              output_directory=root / "bound", _verified_inputs=verified)
-                self.assertEqual(result["energy_target_acceptance"], "not_declared")
-                self.assertFalse(result["six_dimensional_match_qualified"])
-                self.assertFalse(result["time_focus_qualified"])
-                self.assertFalse(result["joint_simulation_executed"])
-                self.assertEqual(result["workbench_build_contract"]["paths"], [item["pa_path"] for item in binding["instances"]])
-                sidecar = (root / "bound/runtime/joint.operating_point.lua").read_text()
-                self.assertIn("field_assembly_verified=true", sidecar)
-                self.assertIn("measured_source_matches_workpoint=true", sidecar)
-                self.assertIn("ip_local.pa", sidecar)
-                with self.subTest(verification="plain_lua_voltage_projection"):
-                    lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'
-                    if not Path(lua).is_file():
-                        self.skipTest('plain Lua unavailable; Python preparation assertions remain active')
-                    check = root / "check_finalized_voltages.lua"
-                    check.write_text("""local t=dofile(arg[1])
-local map=dofile(arg[2])
-local actual=map.physical_voltages(t.mirror_voltages_v,t.stripe_biases_v,t.prism_voltages_v,
-  {0,0,0},{0},t.nonaccelerator_scale).analyser
-assert(#t.static_field.analyzer_voltages_v==20)
-for i=1,20 do assert((actual[i] or 0)==t.static_field.analyzer_voltages_v[i],
-  'finalized sidecar differs from field at electrode '..i) end
-assert(t.stripe_biases_v[1]==-27 and t.prism_voltages_v[1]==343)
-assert(t.source_clock_marker==7500.6370908093995)
-print('FINALIZED_FIELD_VOLTAGES=PASS')
-""", encoding="utf-8")
-                    evaluated = subprocess.run([lua, str(check), str(root / "bound/runtime/joint.operating_point.lua"),
-                                               str(PROJECT.parents[3] / "src/msplatform/backends/simion/resources/candidate_voltage_map.lua")],
-                                              cwd=root, capture_output=True, text=True, timeout=30)
-                    self.assertEqual(evaluated.returncode, 0, evaluated.stdout + evaluated.stderr)
-                    self.assertIn('FINALIZED_FIELD_VOLTAGES=PASS', evaluated.stdout)
-                self.assertEqual(result["measured_source"]["counts"],
-                                 {"source": 100, "transferred": 97, "not_transferred": 3})
-                original_fields = json.loads(json.dumps(binding))
-                binding["source_descriptor_path"] = str(fields/"inputs/source_binding.json")
-                binding["collision_overlay"] = dict(schema_version=1,role="mrtof_analyzer_collision_overlay",
-                    patch_plan_path=str(fields/"inputs/patch_plan.json"),box_mm=[0,-4,-100,2,0,-92],
-                    pitch_mm=[.05,.05,.05],dimensions=[41,81,161],priority_probes=[])
-                binding["instances"].append(dict(role="analyzer_collision_patch",pa_path=str(fields/"patch.pa"),origin_mm=[0,-4,-100]))
-                patched = bind_joint_workbench(design_run=design,field_run=fields,source_run=actual,
-                    handoff_receipt=handoff,energy_comparison=comparison,output_directory=root/"bound_five", _verified_inputs=verified)
-                self.assertIn("5_instance_seed.iob",patched["workbench_build_contract"]["seed"])
-                self.assertEqual(patched["workbench_build_contract"]["paths"][:4],result["workbench_build_contract"]["paths"])
-                self.assertIn("analyzer_collision_patch",(root/"bound_five/runtime/joint.priority.lua").read_text())
-                self.assertIn("collision_overlay",(root/"bound_five/runtime/joint.operating_point.lua").read_text())
-                self.assertIn(str(fields/"patch.pa"),patched["guard_paths"])
-                self.assertIn(str(fields/"ip_local.pa"),patched["guard_paths"])
-                for key in ("authority","geometry","grid","sources","refinement_windows"):
-                    self.assertEqual(binding[key],original_fields[key])
-                binding.clear();binding.update(original_fields)
 
     def test_interface_audit_consumes_sealed_inputs_and_outputs_and_rejects_conflicts(self):
         """Manifest placement does not change control identity or PA size policy."""

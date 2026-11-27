@@ -22,7 +22,7 @@ from msplatform.backends.simion.mr_geometry import (
     _polygon_bands,
     validate_generation_grid_pitch,
 )
-from msplatform.backends.simion.mrtof_observations import _polygon_contains, _strict_polygon_hole
+from msplatform.analysis.mr_observations import _polygon_contains, _strict_polygon_hole
 from msplatform.backends.simion.oa_compiler import compile_independent_accelerators
 from msplatform.backends.simion.rf_compiler import compile_independent_multipoles
 from msplatform.backends.simion.physical_samples import box_sample, sample_node

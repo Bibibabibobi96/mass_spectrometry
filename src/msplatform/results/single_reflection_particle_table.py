@@ -119,8 +119,11 @@ def normalize_particle_table(
     detector_center_y_mm: float,
     column_overrides: dict[str, str] | None = None,
     declared_event: str | None = None,
+    *, minimum_detected: int = 3,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Normalize one already-read source, keeping exact IDs aligned to its rows."""
+    if type(minimum_detected) is not int or minimum_detected < 0:
+        raise ValueError("minimum_detected must be a nonnegative integer")
     if source.empty:
         raise ValueError("Input table is empty")
 
@@ -219,8 +222,9 @@ def normalize_particle_table(
             raise ValueError("Declared event conflicts with values in the event column")
 
     detected = normalized.loc[normalized["hit"]].copy()
-    if len(detected) < 3:
-        raise ValueError("Fewer than three detected particles")
+    if len(detected) < minimum_detected:
+        count = "three" if minimum_detected == 3 else str(minimum_detected)
+        raise ValueError(f"Fewer than {count} detected particles")
     if bool(detected["tof_us"].isna().any()) or bool(
         (~np.isfinite(detected["tof_us"])).any()
     ):
@@ -253,3 +257,21 @@ def normalize_particle_table(
         "source_columns": [str(column) for column in source.columns],
     }
     return detected.reset_index(drop=True), metadata
+
+
+def read_particle_table(
+    path: Path, detector_center_x_mm: float, detector_center_y_mm: float,
+    column_overrides: dict[str, str] | None = None, declared_event: str | None = None,
+    *, minimum_detected: int = 3,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Read and normalize a historical COMSOL or SIMION particle export."""
+    path = path.resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    source, source_format = read_source_table(path, (column_overrides or {}).get("particle_id"))
+    if source.empty:
+        raise ValueError(f"Input table is empty: {path}")
+    return normalize_particle_table(
+        source, source_format, detector_center_x_mm, detector_center_y_mm,
+        column_overrides, declared_event, minimum_detected=minimum_detected,
+    )

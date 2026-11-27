@@ -6,7 +6,9 @@ an executable replacement for the existing OA-specific MR flight adapter.
 """
 from __future__ import annotations
 
-from msplatform.workflows.prepared_joint import ip_mr_connection
+from msplatform.assembly.ip_mr_connection import resolve_ip_mr_transform as _resolve_ip_mr_transform
+from msplatform.assembly import ip_mr_connection
+from msplatform.results.component_exit_history import validate_component_exit_binding
 
 import csv
 import json
@@ -25,7 +27,7 @@ from msplatform.contracts.particle_state import (
 )
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform, relative_transform
+from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -96,7 +98,7 @@ def _exit_distributions(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def _reference_exit(reference_mr_run: Path) -> tuple[float, dict[str, Any], dict[str, Any]]:
     # Reuse the existing exact manifest projection; no PA payload is consumed.
     from msplatform.workflows.prepared_joint.preparation import verified_reference
-    from msplatform.backends.simion.mrtof_observations import parse_events
+    from msplatform.analysis.mr_observations import parse_events
     provider_path = verified_reference(reference_mr_run, "simion/accelerator_provider_runtime_receipt.json")
     source_path = verified_reference(reference_mr_run, "simion/bunch_source_receipt.json")
     log_path = verified_reference(reference_mr_run, "logs/native_two_prism_flight.log")
@@ -141,16 +143,6 @@ def _reference_exit(reference_mr_run: Path) -> tuple[float, dict[str, Any], dict
     return target, reference, identities
 
 
-def resolve_ip_mr_transform(plan: dict[str, Any], connection: dict[str, Any]) -> RigidTransform:
-    """Return the supported native-IP to provider-local MR registration."""
-    poses = {item["instance_id"]: RigidTransform.from_contract(item["transform"])
-             for item in plan["recipe"]["instances"]}
-    relative = relative_transform(poses[connection["upstream"]["instance_id"]],
-                                  poses[connection["downstream"]["instance_id"]])
-    if relative.rotation != ((0, 0, -1), (1, 0, 0), (0, -1, 0)):
-        raise ValueError("IP/MR preparation requires the supported native orientation relative to MR")
-    return relative
-
 
 def compare_measured_exit_energy(component_receipt_path: Path, reference_mr_run: Path) -> dict[str, Any]:
     """Compare a new measured IP exit to frozen MR target and actual OA cohort.
@@ -161,7 +153,7 @@ def compare_measured_exit_energy(component_receipt_path: Path, reference_mr_run:
     PASS. This function reads only manifest/receipt-bound light evidence.
     """
     component = _read(component_receipt_path)
-    ip_mr_connection.validate_component_exit_binding(component)
+    validate_component_exit_binding(component)
     for record in component["inputs"].values():
         _bound_file(record, component_receipt_path.parent)
     state_path = _bound_file(component["outputs"]["component_states"], component_receipt_path.parent)
@@ -246,7 +238,7 @@ def resolve_matching_request(
     schema_path = matching_request_schema_path()
     Draft202012Validator(_read(schema_path)).validate(request)
     exported = _read(component_receipt)
-    ip_mr_connection.validate_component_exit_binding(exported)
+    validate_component_exit_binding(exported)
     bound_inputs = {name: _bound_file(identity, component_receipt.parent)
                     for name, identity in exported["inputs"].items()}
     trajectory = _read(trajectory_contract)
@@ -333,7 +325,7 @@ def prepare_handoff(matching: dict[str, Any], composition_plan: dict[str, Any],
         raise ValueError(f"Refusing to overwrite preparation directory: {output_directory}")
     if composition_plan != matching["resolved"]["composition_plan"]:
         raise ValueError("mechanical composition differs from the frozen actual scope")
-    native_pose = resolve_ip_mr_transform(composition_plan, matching["connection"])
+    native_pose = _resolve_ip_mr_transform(composition_plan, matching["connection"])
     if native_pose.to_frame_id != matching["resolved"]["target"]["frame_id"]:
         raise ValueError("MR local source frame differs from the frozen trajectory frame")
     transform = matching["source_pose"].inverse().then(native_pose)

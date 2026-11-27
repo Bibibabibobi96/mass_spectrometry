@@ -16,7 +16,7 @@ from typing import Any, Mapping
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.resources import native_resource_path
-from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache_key
+from msplatform.backends.simion.pa_identity import canonical_pa_family_cache_key
 from msplatform.backends.simion.standalone_pa_response_set import (
     ResponseExport,
     select_standalone_pa_records,

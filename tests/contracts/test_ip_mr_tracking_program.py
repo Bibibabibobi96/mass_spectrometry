@@ -1,5 +1,6 @@
 """IP–MR generated callback software tests with inert PA and HS1 doubles."""
 import copy
+import json
 import os
 import shutil
 from pathlib import Path
@@ -13,6 +14,20 @@ from msplatform.backends.simion.resources import native_resource_path
 
 from msplatform.backends.simion import rf_tracking_program as renderer
 LUA = Path(os.environ.get('SIMION_LUA_EXE') or shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe')
+
+
+def fixture_hs1_identity(document):
+    """Real gas projection for a software-only inert HS1 callback fixture."""
+    from msplatform.components.ion_processor.gas_regions import project_ip_baseline, resolve_ip_environment
+    from msplatform.contracts.gas import BoxDomain
+    root = Path(__file__).resolve().parents[2]
+    author = json.loads((root / 'src/msplatform/components/ion_processor/config/gas_environment.json').read_text(encoding='utf8'))
+    baseline = document['drive']['ip_schedule']['baseline']
+    domain = BoxDomain((-1000., -1000., -1000.), (1000., 1000., 1000.), (True, True, True), (True, True, True))
+    environment = resolve_ip_environment(author, baseline, domain=domain).to_dict()
+    return dict(environment_instance_id='ion_processor', gas_environment=environment,
+                native_gas_view=project_ip_baseline(author, baseline)['gas'],
+                numerics=dict(seed=40, hs1_steps_per_mfp=20))
 
 
 class IpMrProgramTests(unittest.TestCase):
@@ -53,6 +68,7 @@ class IpMrProgramTests(unittest.TestCase):
         plan=dict(flight=dict(tracking_kind='ip_mr',maximum_step_us=.001,rf_steps_per_period=80,
                              trajectory_quality=17,grouped=0),rows=[row],absolute_deadlines_us_by_particle_id={7:204.},
             hs1=hs1,observations=dict(plane_observations=[]),propagation=dict(consumed_plane_events=[],stop=None))
+        plan['hs1_identity'] = fixture_hs1_identity(document)
         resources={name:native_resource_path(name).read_text(encoding='utf8') for name in
             ('scalar_field_adapter.lua','generic_scalar_field.lua','rf_ip_tracking_hs1.lua')}
         resources['rf_ip_tracking_hs1.lua']=resources['rf_ip_tracking_hs1.lua'].replace('adjustable ','')
@@ -85,6 +101,19 @@ class IpMrProgramTests(unittest.TestCase):
                     scalar_bindings=bindings,slot_domains=[*names,None])
             result=renderer.render_rf_controls(self.model,plan,assets={},native_sources=resources,
                 scalar_bindings=bindings,slot_domains=[*names,None])
+            for mutation in ('missing_identity', 'wrong_instance', 'wrong_view', 'wrong_environment'):
+                invalid_plan = copy.deepcopy(plan)
+                if mutation == 'missing_identity':
+                    del invalid_plan['hs1_identity']
+                elif mutation == 'wrong_instance':
+                    invalid_plan['hs1_identity']['environment_instance_id'] = 'other'
+                elif mutation == 'wrong_view':
+                    invalid_plan['hs1_identity']['native_gas_view']['mass_amu'] *= 2
+                else:
+                    invalid_plan['hs1_identity']['gas_environment']['species_data'][0]['mass_amu'] *= 2
+                with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                    renderer.render_rf_controls(self.model, invalid_plan, assets={}, native_sources=resources,
+                        scalar_bindings=bindings, slot_domains=[*names,None])
             self.assertEqual((bindings,plan,names),before)
             self.assertEqual(len(result['immutable_input_records']),(17 if 'rf_reference' in bindings['bases'] else 16)*9)
             self.assertIn('ip_mr_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,single_flight_instrument_time_us())',result['program'])
@@ -149,6 +178,8 @@ for i=3,BG_INDEX do simion.wb.instances[i]=simion.wb.instances[2] end
 '''
             suffix = r'''
 segment.initialize_run();assert(init_count==1 and seeds[#seeds]==40)
+assert(_gas_mass_amu==EXPECTED_GAS.mass_amu and _temperature_k==EXPECTED_GAS.temperature_k)
+assert(_sigma_m2==EXPECTED_GAS.cross_section_m2 and _mean_free_path_mm==EXPECTED_GAS.mean_free_path_mm)
 ion_instance=BG_INDEX;segment.fast_adjust();ion_instance=1
 segment.initialize();segment.tstep_adjust();segment.tstep_adjust()
 assert(init_count==2 and seeds[#seeds]==46)
@@ -218,6 +249,7 @@ for _,edge in ipairs(points) do
  end
 end
 '''
+            suffix='local EXPECTED_GAS='+lua_value(plan['hs1_identity']['native_gas_view'])+'\n'+suffix
             suffix=suffix.replace('EXPECTED_SUPPORTS',str(17 if 'rf_reference' in bindings['bases'] else 16)).replace('RF_PRESENT','true' if 'rf_reference' in bindings['bases'] else 'false').replace('BG_INDEX',str(len(names)+1))
             prefix=prefix.replace('BG_INDEX',str(len(names)+1))
             script=root/'check.lua';script.write_text(prefix+result['program']+suffix,encoding='utf8')

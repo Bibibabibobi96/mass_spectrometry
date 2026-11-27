@@ -968,7 +968,7 @@ $hostRuntimeSourcePaths=@(
   'config/project_registry.json',
   'src/msplatform/execution/resources/host_execution_lease.ps1','src/msplatform/execution/host_resource_scheduler.py',
   'src/msplatform/execution/resources/host_resource_policy.json','src/msplatform/execution/resources/require_powershell7.ps1','src/msplatform/execution/resources/resource_process_support.ps1')
-$analysisSourcePaths=@('src/msplatform/analysis/particle_census.py','src/msplatform/backends/simion/native_completion.py')
+$analysisSourcePaths=@('src/msplatform/analysis/particle_census.py','src/msplatform/analysis/native_completion.py','src/msplatform/backends/simion/native_completion.py')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('src/msplatform','src/msplatform/components/rf_multipole/config','src/msplatform/components/rf_multipole/variants') `
   -Extensions @('.py','.json','.ps1','.m','.lua')

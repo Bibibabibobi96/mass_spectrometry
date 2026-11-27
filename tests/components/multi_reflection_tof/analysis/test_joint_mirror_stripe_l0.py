@@ -10,7 +10,6 @@ from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     JointL0Trial,
     StripeHardBoundary,
     adiabatic_fast_phase_oscillation_count,
-    classify_constraint_system,
     coupled_normalized_period_slope_at_energy,
     coupled_reduced_period_mm_per_sqrt_v,
     derive_coupled_drift_state,
@@ -28,6 +27,7 @@ from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     stripes_from_contract,
     time_platform_derivative_residuals,
 )
+from msplatform.components.multi_reflection_tof.constraint_classification import classify_constraint_system
 from msplatform.components.multi_reflection_tof.mirror_l0 import (
     MirrorL0Design,
     reduced_period,

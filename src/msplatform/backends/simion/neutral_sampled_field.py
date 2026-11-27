@@ -72,7 +72,8 @@ def _resolve_neutral_sampled_inputs(model_reference: Mapping[str, Any], *, selec
         if len(plan['tasks'])+1 not in STRUCTURAL_SEEDS:
             raise ValueError('no registered sampled-field structural seed for domain count plus background')
     binding=admit_linear_samples(model_reference=model_reference,assembly=assembly,geometry_artifact=selection['geometry_artifact'],operator=selection['operator'],samples=selection['samples'],refinement_windows=selection.get('refinement_windows'))
-    references=[source.artifact.reference['manifest'],geometry_ref['manifest'],binding['geometry_reference']['manifest']]
+    products=[source.artifact.reference,geometry_ref,binding['geometry_reference']]
+    references=[row['manifest'] for row in products]
     _,projection_product,projection_path=_small_product(binding['geometry_reference'],'geometry_artifact',('projection',))
     projection_record=projection_product['data']['projection']
     guards=[dict(request,path=str(request_path)),binding['geometry_execution_request'],dict(projection_record,path=str(record_path(projection_record,base_dir=projection_path.parent))),plan['compiled_geometry_record'],plan['geometry_completion_record']]
@@ -82,8 +83,10 @@ def _resolve_neutral_sampled_inputs(model_reference: Mapping[str, Any], *, selec
     for task in plan['tasks']:guards.extend(task['source_records'].values())
     for row in binding['bases'].values():
         for level in [row,*row.get('refinement_windows',[])]:
-            references.extend((level['reference']['manifest'],level['field_solution_reference']['manifest']))
-            if level.get('original_samples_reference') is not None: references.append(level['original_samples_reference']['manifest'])
+            level_products=[level['reference'],level['field_solution_reference']]
+            if level.get('original_samples_reference') is not None: level_products.append(level['original_samples_reference'])
+            products.extend(level_products)
+            references.extend(row['manifest'] for row in level_products)
             guards.extend(level['records'].values())
             for ref,kind,names in ((level['reference'],'scalar_field_samples',('projection','grid','request','geometry_validation','reopen_geometry','reopen_solution','report','field_solution_manifest')),(level['field_solution_reference'],'field_solution',('request','projection','geometry_validation','reopen_geometry','reopen_solution'))):
                 _,product,path=_small_product(ref,kind,names)
@@ -98,8 +101,54 @@ def _resolve_neutral_sampled_inputs(model_reference: Mapping[str, Any], *, selec
             result[key]=dict(row)
         return list(result.values())
     return dict(model=source.model,prepared_source=source.artifact.reference,prepared_records=prepared,geometry_plan=plan,binding=binding,
-                source_references=[dict(manifest_record=row) for row in unique(references)],immutable_input_records=unique(guards),
+                source_references=[dict(manifest_record=row) for row in unique(references)],protected_products=products,immutable_input_records=unique(guards),
                 expected_operation_ids=tuple(name for index in range(1,len(plan['tasks'])+1) for name in (f'collision_build_{index:02d}',f'collision_verify_{index:02d}')) + ('background_build','background_verify','collision_iob_build','collision_iob_verify'))
+
+
+def protect_neutral_records(session, products, records):
+    """Hold only records bound to the actual authenticated source products."""
+    from msplatform.execution.owner import current_managed_native_store
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.io.file_identity import guarded_file_identity
+    from .model_execution import _protected_source
+
+    scope = current_managed_native_store()
+    if scope is None:
+        for reference in products:
+            _protected_source(session, reference['manifest'])
+        _protected_source(session, products[0]['manifest'], required_paths=[row['path'] for row in records])
+        return
+    manifests = {}
+    for reference in products:
+        path = Path(reference['manifest']['path']).resolve()
+        key = (str(path), reference['product_id'])
+        if key in manifests:
+            continue
+        manifest = _read(path)
+        kind = manifest['products'][reference['product_id']]['kind']
+        scope['lifetime'].enter_context(guard_native_source(reference, expected_kind=kind,
+            expected_artifact_root=session.context.workspace / 'artifacts', artifact_store=scope['store']))
+        manifests[key] = manifest
+    bound = {}
+    for (name, product_id), manifest in manifests.items():
+        reference = next(row for row in products if str(Path(row['manifest']['path']).resolve()) == name and row['product_id'] == product_id)
+        bound.setdefault(name, set()).add((reference['manifest']['bytes'],str(reference['manifest']['sha256']).upper()))
+        base = Path(name).parent
+        for item in [*manifest.get('inputs', {}).values(), *manifest.get('outputs', [])]:
+            if isinstance(item, Mapping) and {'path','bytes','sha256'} <= set(item):
+                path = str(record_path(item, base_dir=base).resolve())
+                bound.setdefault(path, set()).add((item['bytes'],str(item['sha256']).upper()))
+    held = {}
+    for row in records:
+        path = Path(row['path']).resolve(strict=True)
+        identity = (row['bytes'],str(row['sha256']).upper())
+        if identity not in bound.get(str(path), set()):
+            raise ValueError('neutral source record is not bound by an authenticated source manifest')
+        if path in held and held[path] != identity:
+            raise ValueError('neutral source has conflicting record identities')
+        if path not in held:
+            scope['lifetime'].enter_context(guarded_file_identity(path,expected_bytes=identity[0],expected_sha256=identity[1]))
+            held[path] = identity
 
 
 def neutral_source_paths(model_value: Any) -> dict[str, Path]:
@@ -129,15 +178,13 @@ def execute_neutral_sampled_fields(session: RunSession, *, model_reference: Mapp
     from msplatform.io.manifest_records import file_record
     from .ip_mr_collision_lineage import collision_conversion_result
     from .model import require_prepared_model, model_geometry
-    from .model_execution import _protected_source
     from .native_io import apply_native_io_mode
     from .resources import native_resource_path, structural_seed_path
     from .source import lua_value
     plan=prepare_neutral_sampled_inputs(model_reference,selection=selection,output_directory=session.artifact_run_dir/'simion/collision')
     ids=plan['expected_operation_ids']
     if session.expected_operation_ids!=ids:raise ValueError('neutral sampled action operation graph differs')
-    for ref in plan['source_references']:_protected_source(session,ref['manifest_record'])
-    _protected_source(session,plan['prepared_source']['manifest'],required_paths=[r['path'] for r in plan['immutable_input_records']])
+    protect_neutral_records(session,plan['protected_products'],plan['immutable_input_records'])
     session.add_inputs(('neutral_source_'+str(i),r) for i,r in enumerate(plan['immutable_input_records'],1))
     def owned(path,role):
         path=Path(path)
@@ -170,6 +217,18 @@ def execute_neutral_sampled_fields(session: RunSession, *, model_reference: Mapp
         ordinal=ids.index(operation)+1;log=session.canonical_path(session.log_dir/f'operation_{ordinal:04d}.stdout.log')
         if marker.encode('ascii') not in log.read_bytes():raise ValueError('neutral native completion marker missing: '+operation)
         return file_record(log,'required_evidence')
+    # Publish model and clock as this stage's exact small frozen copies. The
+    # original product remains guarded and defines their provenance.
+    prepared_copies = {}
+    for name, original in plan['prepared_records'].items():
+        target = owned(session.input_dir / 'prepared' / Path(original['path']).name, 'required_evidence')
+        copied = freeze_file(Path(original['path']), target, retention_role='required_evidence')
+        copied.pop('source_path', None)
+        if any(copied[key] != original[key] for key in ('bytes', 'sha256')):
+            raise ValueError('neutral prepared source copy differs: ' + name)
+        session.add_input('prepared_' + name, copied)
+        prepared_copies[name] = copied
+    plan['prepared_records'] = prepared_copies
     if plan['model'].document['geometry']['frontend_geometry'].get('role') == 'simion_neutral_multi_domain_collision_geometry':
         return _execute_neutral_multi(session,plan=plan,owned=owned,project=project,run=run,frozen=frozen)
     task=plan['geometry_plan']['tasks'][0];target=owned(Path(task['output_path']),'solver_native_binary');side=owned(target.with_suffix('.pa-surf'),'solver_native_binary')

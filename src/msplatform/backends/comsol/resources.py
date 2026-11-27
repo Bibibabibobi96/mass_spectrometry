@@ -48,6 +48,9 @@ NATIVE_RESOURCES = frozenset({
     "run_paired_accelerator_pulse.m", "oatof_read_cartesian_release.m", "oatof_cpt_solver_policy.m",
     "load_oatof_contract.m", "oatof_paths.m", "configure_oatof_segmented_output.m",
     "oatof_extract_detector_arrivals.m", "oatof_detector_arrival_reducer.m",
+    "reextract_oatof_saved_solution.m", "oatof_postprocess_saved_solution.m",
+    "oatof_export_detector_events.m", "oatof_particle_plot_view.m",
+    "oatof_create_result_nodes.m", "oatof_validate_candidate_solution.m",
     "workspace_paths.m", "resolve_path_identity.m",
 })
 

@@ -1,0 +1,137 @@
+{
+  "role": "mr_local_neutral_witness_software_fixture",
+  "provenance": "deterministic member-bounds search; every point independently rechecked by canonical member query",
+  "pitch_mm": 0.5,
+  "domain": {
+    "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+    "minimum_mm": [
+      -70,
+      -150,
+      -330
+    ],
+    "maximum_mm": [
+      70,
+      465,
+      330
+    ]
+  },
+  "boundary": "native_zero_neumann",
+  "points_mm": {
+    "positive_mirror_layer_1": [
+      -31,
+      121,
+      127.5
+    ],
+    "negative_mirror_layer_1": [
+      25.5,
+      1,
+      -157
+    ],
+    "positive_mirror_layer_2": [
+      -43,
+      207.5,
+      209.5
+    ],
+    "negative_mirror_layer_2": [
+      20.5,
+      225,
+      -212.5
+    ],
+    "positive_mirror_layer_3": [
+      -38.5,
+      -34,
+      252
+    ],
+    "negative_mirror_layer_3": [
+      -18.5,
+      415.5,
+      -250.5
+    ],
+    "positive_mirror_layer_4": [
+      18.5,
+      -7.5,
+      276.5
+    ],
+    "negative_mirror_layer_4": [
+      49.5,
+      214.5,
+      -285
+    ],
+    "positive_mirror_layer_5": [
+      3.5,
+      -98.5,
+      324
+    ],
+    "negative_mirror_layer_5": [
+      29,
+      348,
+      -324.5
+    ],
+    "positive_mirror_ground_shield": [
+      26.5,
+      332.5,
+      105.5
+    ],
+    "negative_mirror_ground_shield": [
+      -28,
+      -32.5,
+      -106
+    ],
+    "positive_stripe_set_1": [
+      -2.5,
+      -0.5,
+      88
+    ],
+    "negative_stripe_set_1": [
+      -1.5,
+      -1,
+      -91.5
+    ],
+    "positive_stripe_set_2": [
+      -6,
+      141.5,
+      44
+    ],
+    "negative_stripe_set_2": [
+      -8,
+      -1.5,
+      -54
+    ],
+    "central_ground": [
+      5.5,
+      -1,
+      22.5
+    ],
+    "accelerator_exit_prism": [
+      -7,
+      -58.5,
+      -55.5
+    ],
+    "central_ground_left_prism": [
+      5,
+      -16,
+      1
+    ],
+    "accelerator_exit_prism_shield": [
+      -8.5,
+      -44.5,
+      -50
+    ],
+    "central_ground_left_prism_shield": [
+      -9.5,
+      -12.5,
+      -93.5
+    ],
+    "detector": [
+      23,
+      -39,
+      95.5
+    ]
+  },
+  "void_mm": [
+    -70,
+    -150,
+    -330
+  ],
+  "qualification": "software witness only; no field or solver accuracy claim"
+}

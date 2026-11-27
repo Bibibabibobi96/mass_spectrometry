@@ -1201,7 +1201,7 @@ try{
     $failureStage='extract_trajectory'
     $trajectorySamples=Join-Path $resultDir 'trajectory_samples.csv'
     $trajectorySampleReceipt=Join-Path $resultDir 'trajectory_samples_receipt.json'
-    Invoke-ProjectPython -Arguments @('-m','msplatform.backends.simion.mrtof_observations','extract-trajectory','--log',$rawLog,'--output',$trajectorySamples,'--receipt',$trajectorySampleReceipt)
+    Invoke-ProjectPython -Arguments @('-m','msplatform.analysis.mr_observations','extract-trajectory','--log',$rawLog,'--output',$trajectorySamples,'--receipt',$trajectorySampleReceipt)
   }
   $failureStage='analyze_trial'
   $analysisArguments=@('-m','msplatform.workflows.prepared_joint.prism_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)

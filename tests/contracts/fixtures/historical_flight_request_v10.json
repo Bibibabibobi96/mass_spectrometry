@@ -1,0 +1,101 @@
+{
+  "schema_version": 10,
+  "pulse_voltage_policy_id": "all_accelerator_electrodes_zero_before_pulse_v1",
+  "numerics": {
+    "boundary_policy": "native_zero_neumann",
+    "rf_reference_voltage_v": 10000.0,
+    "frontend_domains": {
+      "parent": {
+        "cell_mm_xyz": {
+          "x": 0.3,
+          "y": 0.25,
+          "z": 0.1
+        },
+        "pa_bounds_mm": {
+          "x_min": -300.0,
+          "x_max": 60.0,
+          "y_min": -80.0,
+          "y_max": 80.0,
+          "z_min": -382.74261546154855,
+          "z_max": -32.74261546154855
+        },
+        "refine_convergence_v": {
+          "carrier_off": 0.001,
+          "rf_reference": 0.002,
+          "pulse_delta": 0.003
+        }
+      }
+    }
+  },
+  "role": "instrument_assembly_single_reflection_preparation_request",
+  "composition_plan": {
+    "path": "parent_plan.json",
+    "exists": true,
+    "bytes": 10692,
+    "sha256": "811E550832B61F80AA43B74F25DCB1ECC0FE166377CD9BDF571D9BADD11E0EC0"
+  },
+  "providers": {
+    "instances": {
+      "multipole": {
+        "resolved_design": {
+          "path": "multipole.json",
+          "exists": true,
+          "bytes": 20564,
+          "sha256": "E5A0D8DFBEC0CABE23EE3E0CC23018113F893D95B2725FA6877C37ADEC98E64B"
+        },
+        "electrode_bindings": {
+          "rod_group_1": 17,
+          "rod_group_2": 23
+        }
+      },
+      "oatof": {
+        "resolved_design": {
+          "path": "oatof.json",
+          "exists": true,
+          "bytes": 13446,
+          "sha256": "5838F88DA5AB062E282A4641D20671B7FBFC266E44AC2D2670791E090A413861"
+        },
+        "electrode_bindings": {
+          "grounded_shield": 31,
+          "repeller": 47,
+          "intermediate_grid_1": 53,
+          "intermediate_grid_2": 59,
+          "exit_grid": 61,
+          "ring_0001": 67
+        },
+        "geometry": {
+          "accelerator_variant": "three_zone_square"
+        }
+      }
+    }
+  },
+  "source": {
+    "kind": "recorded_birth",
+    "instance_id": "multipole",
+    "frame_id": "multipole.cartesian.z_axis.v1",
+    "particle_source": {
+      "path": "source.csv",
+      "exists": true,
+      "bytes": 9876,
+      "sha256": "CB62E2322BFE733B165D69D8E1A533702B908A4ABCD6755A7CCAB477F8F0D769"
+    },
+    "metadata": {
+      "path": "metadata.json",
+      "exists": true,
+      "bytes": 773,
+      "sha256": "50BD2DDFD33917A5B8E26DABA5AAEA9C3969D2F29FD2CDD30CE448BBD3D2912B"
+    },
+    "clock_authority": {
+      "path": "clock.json",
+      "exists": true,
+      "bytes": 618,
+      "sha256": "F3B1AD1BD48AE603722D9C855ED058DEFF4E5E5BA2374CE26F68FEF1DB629EE1"
+    },
+    "instrument_epoch": {
+      "path": "epoch.json",
+      "exists": true,
+      "bytes": 29,
+      "sha256": "47D6E08ADE4DC5BC5A6EB8213C649C17240A37A4773D9568FC949A7BFEABC7DE"
+    }
+  }
+}

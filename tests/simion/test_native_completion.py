@@ -2,9 +2,11 @@ import unittest
 import tempfile
 from pathlib import Path
 
+from msplatform.analysis.native_completion import (
+    FlyCompletion, parse_fly_completed_line, require_one_fly_completion,
+)
 from msplatform.backends.simion.native_completion import (
-    FlyCompletion, has_recoverable_batch_completion, parse_fly_completed_line,
-    recoverable_batch_logs, require_one_fly_completion,
+    has_recoverable_batch_completion, recoverable_batch_logs,
 )
 
 

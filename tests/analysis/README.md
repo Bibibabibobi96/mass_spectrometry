@@ -6,6 +6,9 @@
 峰形算法与完整母群计数的规范实现和安装 API 分别为 `msplatform.analysis.peak_metrics`、
 `msplatform.analysis.particle_census`。峰形与census旧桥均已退役；其他仓库分析工具按本页导航使用。
 迁移责任与退役期限见[公共入口](../../docs/REPOSITORY_OPERATIONS.md#科学核心发行与旧入口)。
+MR Candidate 事件完整性、冻结源解析及 `analyze_log` CLI 由 `msplatform.analysis.mr_event_analysis`
+唯一实现；事件／轨迹读取、碰撞与相空间诊断归 `msplatform.analysis.mr_observations`，相位返回合同归
+`msplatform.contracts.drift_phase_contract`。原 workflow/component 实现已退役，科学判据与输出字段不变。
 纵向拟合由`msplatform.analysis.longitudinal_fit`提供，单反射接受域分析与发布器直接消费／冻结该实现；旧公共副本已退役。
 实际占据率脉冲选择由`msplatform.analysis.pulse_selection`提供；它按已声明候选的可支持母群、
 集中度与时间排序，不读取轨迹文件、不利用未来检测结果，也不替代调用方的生命周期和几何校验。

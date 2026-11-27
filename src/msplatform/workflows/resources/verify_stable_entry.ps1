@@ -1,5 +1,8 @@
 # Formal SIMION stable-entry gate (production workflow asset).
 param(
+  [Parameter(Mandatory = $true)][string]$WorkspaceRoot,
+  [Parameter(Mandatory = $true)][string]$ArtifactRootPath,
+  [Parameter(Mandatory = $true)][string]$ScienceRoot,
   [string]$ManifestPath = '',
   [string]$EntryId = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
@@ -9,12 +12,13 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'src/msplatform/components/single_reflection_oa_tof'
-$workspaceRoot = Split-Path -Parent $repoRoot
+$repoRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+$projectRoot = (Resolve-Path -LiteralPath $ScienceRoot).Path
+$artifactRootPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRootPath)
+$packageRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } elseif ($env:SIMULATION_PYTHON_EXE) { [IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE) } else { throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required' }
-. (Join-Path $repoRoot 'src/msplatform/execution/resources/workspace_paths.ps1')
-. (Join-Path $projectRoot 'oatof_lifecycle_preflight.ps1')
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
+. (Join-Path $packageRoot 'workflows/resources/oatof_lifecycle_preflight.ps1')
 if (-not $ManifestPath) {
   $ManifestPath = Join-Path $projectRoot 'config\simion_stable_entry.json'
 }
@@ -78,7 +82,7 @@ foreach ($expected in $expectedRoles.GetEnumerator()) {
   }
 }
 
-$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot (Join-Path $workspaceRoot 'artifacts') -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
+$artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactRootPath -OwnerKind component -OwnerId single_reflection_oa_tof_mass_analyzer -Python $python
 $formalRoot = Join-Path $artifactRoot $stable.artifact_workspace_relative.Replace('/', '\')
 $formalManifestPath = Assert-FileRecord $formalRoot `
   $entry.manifests.formal_asset_manifest 'Formal asset manifest binding' 'relative_path'
@@ -172,7 +176,7 @@ foreach ($required in $expectedRoles.GetEnumerator()) {
   }
 }
 
-$runtimeVerifier = Join-Path $repoRoot 'src/msplatform/backends/simion/resources/verify_iob_runtime_contract.ps1'
+$runtimeVerifier = Join-Path $packageRoot 'backends/simion/resources/verify_iob_runtime_contract.ps1'
 if (-not $SkipRuntime) {
   $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__stable-entry-runtime'
   $runtimeRoot = Join-Path $artifactRoot "scratch\$runtimeTaskId"

@@ -21,7 +21,7 @@ from msplatform.backends.simion.mr_geometry import (
 )
 from msplatform.backends.simion.ip_geometry import _assembled_primitive as _primitive
 from msplatform.backends.simion.assembled_field_plan import _bounds
-from msplatform.workflows.prepared_joint.ion_processor_assembly import _finite
+from msplatform.assembly.geometry_primitives import _finite
 
 
 def _projected_near_z(parts: list, y_mm: float) -> float:

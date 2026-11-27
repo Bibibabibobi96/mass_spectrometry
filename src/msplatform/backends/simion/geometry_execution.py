@@ -43,7 +43,10 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
     names = GEOMETRY_RESOURCES[:4] if independent_rf else GEOMETRY_RESOURCES
     sources = {name: native_resource_path(name) for name in names}
     sources["native_run_path.lua"] = resource_path("native_run_path.lua")
-    if compiled.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}:
+    mirrored_oa = (compiled.frontend_geometry.get("role") == "simion_independent_oa_geometry" and
+                   any(d.get("symmetry") == "mirror_x" and d.get("surface") == "none"
+                       for d in compiled.frontend_geometry["numerical_domains"].values()))
+    if mirrored_oa or compiled.frontend_geometry.get("role") in {"simion_ip_mr_complete_geometry", "simion_neutral_world_collision_geometry", "simion_neutral_multi_domain_collision_geometry"}:
         from . import native_surface_state
         actual = file_record(Path(native_surface_state.__file__).resolve(), "required_evidence")
         if surface_validator_record is None or any(actual[key] != surface_validator_record[key] for key in ("path", "bytes", "sha256")):
@@ -180,6 +183,8 @@ def execute_geometry(session: RunSession, *, compiled: CompiledSimionGeometry,
             native_grid=dict(zip(('nx','ny','nz'),grid,strict=True), **dict(zip(('dx_mm','dy_mm','dz_mm'),pitch,strict=True)))
             if surface.exists() and not surface.is_file():raise ValueError('fractional companion is not a file')
             mode=validate_native_surface_state(state,grid=native_grid,surface_present=surface.is_file())
+            if mirrored_oa and mode != 'empty':
+                raise ValueError('mirror OA surface=none requires a verified empty native surface')
             if mode=='present':
                 if surface.stat().st_size<=0: raise ValueError('fractional surface companion empty')
                 outputs.append(surface)

@@ -7,7 +7,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 
-from msplatform.backends.simion.mrtof_observations import extract_trajectory_samples
+from msplatform.analysis.mr_observations import extract_trajectory_samples
 
 from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 from msplatform.backends.simion.resources import native_resource_path

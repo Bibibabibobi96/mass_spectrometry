@@ -15,8 +15,6 @@ from msplatform.workflows.oa_candidate import run_candidate_workflow as candidat
 from msplatform.workflows.oa_candidate.run_candidate_workflow import CandidateWorkflowError, run_candidate_workflow
 from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.candidate_fixtures import CandidateFixtures, PROJECT_ROOT, REPO_ROOT
 from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_candidate_workflow import (
-    cold_export_failed_child_fixture,
-    postprocess_public_entry,
     postprocess_source_fixture,
 )
 
@@ -335,35 +333,6 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
             print('PRODUCER_MODEL_READS='+json.dumps({'guard_and_two_receipts':1,'including_terminal_manifest':len(reads)}),flush=True)
             self.assertEqual(len(reads),2,'one producer identity plus the independent terminal manifest boundary')
 
-    def test_normal_failed_export_parent_uses_original_cli_csv_only_without_model(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            artifact,science,parent,_=cold_export_failed_child_fixture(root,normal_phase=True)
-            # The already exported data, original contract and source are enough.
-            # Removing only this explicit opaque fixture model happens before
-            # the parent byte snapshot; no production run or solver is touched.
-            (science/'comsol/model.mph').unlink()
-            before={path:path.read_bytes() for owner in (science,parent) for path in owner.rglob('*') if path.is_file()}
-            invoke=postprocess_public_entry(root,artifact)
-            child_id='20261031_205001__analysis__python__normal-export-csv'
-            result=invoke(['--postprocess-from',str(parent),'--run-id',child_id])
-            child=artifact/'components'/"single_reflection_oa_tof_mass_analyzer"/'runs'/child_id
-            completion_path=child/'results/execution_completion.json'
-            diagnostic=completion_path.read_text(encoding='utf-8') if completion_path.exists() else 'completion absent'
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr+diagnostic)
-            request=load_json(child/'inputs/execution_request.json')
-            self.assertEqual(request['repository_root'],str(root/'author'))
-            startup=load_json(child/'logs/capacity_session.json')['startup_gate']
-            self.assertEqual(startup['minimum_free_bytes'],0)
-            self.assertEqual(startup['required_free_bytes'],67108864)
-            summary=load_json(child/'summary.json')
-            self.assertEqual(summary['evidence']['native_launch_count'],0)
-            self.assertFalse(list(child.rglob('*.mph')))
-            completion=(child/'results/execution_completion.json').read_bytes()
-            recovered=invoke(['--resume-finalization',str(child)])
-            self.assertEqual(recovered.returncode,0,recovered.stdout+recovered.stderr)
-            self.assertEqual(completion,(child/'results/execution_completion.json').read_bytes())
-            self.assertEqual(before,{path:path.read_bytes() for path in before})
 
 
     def test_report_and_cleanup_do_not_change_native_but_field_and_task_inputs_do(self):
@@ -457,67 +426,6 @@ class CandidateCausalPhaseTests(CandidateFixtures, unittest.TestCase):
                 self.assertIn('-RunDir',actual[0])
 
 
-    def test_actual_formal_consumer_preserves_per_stage_cross_root_proofs_and_rejects_owner_swap(self):
-        from msplatform.execution.retention import file_record
-        with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary);inputs=root/'formal/inputs';inputs.mkdir(parents=True)
-            candidate=root/'candidate';candidate.mkdir()
-            config={'inputs':{},'provenance':{'stage_reuse':{}}}
-            original_paths=[];model=None
-            for index,stage_id in enumerate(('comsol_candidate','simion_candidate')):
-                owner=root/f'root{index}'/'artifacts/components/p/runs'/f'20261031_22000{index}__sim__cross__owner'
-                owner.mkdir(parents=True)
-                manifest=owner/'run_manifest.json';manifest.write_text(json.dumps({'run_id':owner.name,'owner':index}),encoding='utf-8')
-                source=owner/'same.dat';source.write_bytes(b'original-model' if index==0 else b'original-simion')
-                if index==0:model=source
-                proof=candidate/f'{stage_id}.json'
-                proof.write_text(json.dumps({'parent_run_id':owner.name,'parent_manifest':file_record(manifest),
-                    'reused_stages':[{'stage_id':'comsol_native' if index==0 else stage_id,
-                        'outputs':{'model':file_record(source)}}]}),encoding='utf-8')
-                name=f'stage_reuse_{stage_id}_provenance'
-                config['inputs'][name]=str(proof)
-                config['inputs'][f'stage_reuse_{stage_id}_source_manifest']=str(manifest)
-                config['provenance']['stage_reuse'][stage_id]=file_record(proof)
-                original_paths.extend((manifest,source,proof))
-            config_path=candidate/'run_config.json';config_path.write_text(json.dumps(config),encoding='utf-8')
-            before={path:path.read_bytes() for path in original_paths}
-            script=root/'formal_probe.ps1'
-            text=r"""$ErrorActionPreference='Stop'
-. '@@SUPPORT@@'
-$source=Get-Content -Raw -LiteralPath '@@FORMAL@@'
-$first=$source.IndexOf('$reuseInputs = [ordered]@{}')
-$last=$source.IndexOf('$candidateSimion = Join-Path',$first)
-if($first-lt0-or$last-le$first){throw 'Formal consumer boundary missing'}
-$consumer=[ScriptBlock]::Create($source.Substring($first,$last-$first))
-$candidateConfig=Get-Content -Raw '@@CONFIG@@'|ConvertFrom-Json
-$comsolStage=@([pscustomobject]@{execution='reused'})
-$candidateRoot='@@CANDIDATE@@';$candidateMphSource='@@MODEL@@'
-$inputDir='@@INPUTS@@'
-& $consumer
-$swap=Get-Content -Raw '@@CONFIG@@'|ConvertFrom-Json
-$swap.inputs.stage_reuse_comsol_candidate_source_manifest=$swap.inputs.stage_reuse_simion_candidate_source_manifest
-$candidateConfig=$swap
-$rejected=$false;$reason=$null
-try{& $consumer}catch{$rejected=$true;$reason=$_.Exception.Message}
-[ordered]@{rejected=$rejected;reason=$reason;copied=@(Get-ChildItem -LiteralPath $inputDir -File|Select-Object -ExpandProperty Name)}|ConvertTo-Json -Depth 8 -Compress
-"""
-            values={'SUPPORT':str(REPO_ROOT/'src/msplatform/execution/resources/run_artifact_support.ps1'),
-                'FORMAL':str(PROJECT_ROOT.parents[1]/'workflows/resources/run_formal_validation.ps1'),
-                'CONFIG':str(config_path),'CANDIDATE':str(candidate),'MODEL':str(model),'INPUTS':str(inputs)}
-            for key,value in values.items():text=text.replace('@@'+key+'@@',value.replace("'","''"))
-            script.write_text(text,encoding='utf-8',newline='\n')
-            result=subprocess.run(['pwsh','-NoProfile','-NonInteractive','-File',str(script)],cwd=REPO_ROOT,
-                capture_output=True,text=True,encoding='utf-8',timeout=60)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            observed=json.loads(result.stdout.strip().splitlines()[-1])
-            self.assertTrue(observed['rejected'])
-            self.assertIn('original owner',observed['reason'])
-            self.assertIn('candidate_stage_reuse_comsol_candidate_source_manifest.json',observed['copied'])
-            self.assertIn('candidate_stage_reuse_simion_candidate_source_manifest.json',observed['copied'])
-            self.assertEqual(before,{path:path.read_bytes() for path in before})
-
-
-
     def test_same_size_gui_save_failure_is_unknown_and_does_not_publish_native(self):
         from types import SimpleNamespace
         from msplatform.workflows.oa_candidate import candidate_comsol_stage as adapter
@@ -543,7 +451,7 @@ try{& $consumer}catch{$rejected=$true;$reason=$_.Exception.Message}
             self.assertEqual(summary['scientific_result'],'not_evaluated_save_incomplete')
             self.assertEqual(summary['candidate_decision'],'no_candidate_decision')
             self.assertEqual(summary['failure_substage'],'gui_model_save')
-            self.assertIn('--postprocess-from',summary['recovery_action'])
+            self.assertIn('msplatform.workflows.historical_comsol_detector',summary['recovery_action'])
             self.assertFalse((parent/'stage_receipts/comsol_native.json').exists())
             self.assertNotIn('comsol_native',[row['stage_id'] for row in summary['stages']])
             self.assertIn('MODEL_SAVE_COMPLETION_UNKNOWN',' '.join(getattr(failed.exception,'__notes__',[])))

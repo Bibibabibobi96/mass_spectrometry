@@ -2551,7 +2551,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
 
     def test_installed_mr_phase_public_plan_preserves_core_and_full_integration(self):
         request, _ = self.plan('-ChangedPath',
-            'src/msplatform/components/multi_reflection_tof/drift_phase_contract.py')
+            'src/msplatform/contracts/drift_phase_contract.py')
         rows = [row for row in request['stages']
                 if row['name'] == 'multi_reflection_tof_static']
         self.assertEqual(len(rows), 1)

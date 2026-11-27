@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/single_reflection_flight_request_v13.schema.json",
+  "title": "Plan6 split OA\u2013TOF original recorded birth preparation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "fields_reference",
+    "source",
+    "propagation",
+    "numerics"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 13
+    },
+    "role": {
+      "const": "split_oa_tof_recorded_birth_preparation_request"
+    },
+    "fields_reference": {
+      "type": "object",
+      "required": [
+        "manifest",
+        "product_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "manifest": {
+          "$ref": "#/$defs/record"
+        },
+        "product_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "instance_id",
+        "frame_id",
+        "species_id",
+        "particle_ids",
+        "particle_source",
+        "metadata",
+        "clock_authority",
+        "instrument_epoch",
+        "instrument_origin_us",
+        "species_kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "recorded_birth"
+        },
+        "instance_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frame_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "species_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instrument_origin_us": {
+          "type": "number"
+        },
+        "particle_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          }
+        },
+        "particle_source": {
+          "$ref": "#/$defs/record"
+        },
+        "metadata": {
+          "$ref": "#/$defs/record"
+        },
+        "clock_authority": {
+          "$ref": "#/$defs/record"
+        },
+        "instrument_epoch": {
+          "$ref": "#/$defs/record"
+        },
+        "species_kind": {
+          "enum": [
+            "ion",
+            "electron"
+          ]
+        }
+      }
+    },
+    "propagation": {
+      "type": "object"
+    },
+    "numerics": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "required": [
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

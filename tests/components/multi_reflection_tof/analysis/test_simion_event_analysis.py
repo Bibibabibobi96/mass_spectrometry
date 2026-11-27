@@ -15,8 +15,9 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.backends.simion.prototype_materialization import _particle_source_record
-from msplatform.workflows.prepared_joint.event_analysis import SOURCE_COUNT_KEYS, _mirrored_branch_turn_diagnostics, analyze_log, histogram_half_height_bin_span, load_particle_source, summarize_events, peak_time_metrics
-from msplatform.backends.simion.mrtof_observations import collision_diagnostics, parse_events
+from msplatform.analysis.peak_metrics import histogram_half_height_bin_span, peak_time_metrics
+from msplatform.analysis.mr_event_analysis import SOURCE_COUNT_KEYS, _mirrored_branch_turn_diagnostics, analyze_log, load_particle_source, summarize_events
+from msplatform.analysis.mr_observations import collision_diagnostics, parse_events
 from msplatform.backends.simion.resources import native_resource_path
 
 
@@ -1150,7 +1151,7 @@ scientific_events:close()
                                           ("status,Fly completed.\n", 1), ("", 1)):
                 log.write_text(event + suffix, encoding="utf-8")
                 result = subprocess.run([sys.executable, "-m",
-                    "msplatform.workflows.prepared_joint.event_analysis",
+                    "msplatform.analysis.mr_event_analysis",
                     str(log), str(output), "--input-manifest", str(manifest), "--source-key", "center_fly2"],
                     cwd=REPOSITORY_ROOT, capture_output=True, text=True,
                     timeout=30, check=False)

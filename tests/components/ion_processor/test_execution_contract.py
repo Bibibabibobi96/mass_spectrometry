@@ -19,12 +19,12 @@ class ExecutionContractTests(unittest.TestCase):
     def test_registered_mode_matches_actual_source_and_retains_prototype_scope(self) -> None:
         descriptor = read("config/project.json")
         validate_descriptor(descriptor, PROJECT / "config/project.json", PROJECT.parents[3])
-        self.assertEqual(descriptor["lifecycle_status"], "prototype")
+        self.assertNotIn("lifecycle_status", descriptor)
         profile, = read(descriptor["contracts"]["execution"])["profiles"]
         mode = read(f"config/modes/{profile['mode']}.json")
         source = read(mode["inputs"]["source"])
         self.assertEqual(profile["action"], "run")
-        self.assertEqual(profile["qualification_support"], ["none"])
+        self.assertNotIn("qualification_support", profile)
         self.assertEqual(profile["supported_operating_points"], [{
             "mass": {"value": source["species"]["mass_amu"], "unit": "Da"},
             "charge_state": source["species"]["charge_state"],

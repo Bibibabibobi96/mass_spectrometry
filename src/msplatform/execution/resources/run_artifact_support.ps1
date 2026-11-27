@@ -60,6 +60,9 @@ function Invoke-CompiledExecutionPlan {
   [CmdletBinding()]
   param([Parameter(Mandatory)][string]$PlanPath,[Parameter(Mandatory)][string]$RepoRoot,[switch]$PrepareUnfrozenSources)
   $plan=Get-Content -LiteralPath $PlanPath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable -Depth 100
+  if($plan.schema_version-ne 2-or$plan.ContainsKey('requested_qualification')-or$plan.ContainsKey('legacy_requested_evidence_level')){
+    throw 'Retired qualification grades cannot be used for new execution.'
+  }
   if($plan.role-ne'execution_dry_run'-or(-not$plan.safe_to_execute-and
       -not($PrepareUnfrozenSources-and$plan.status-eq'NEEDS_SOURCE_FREEZE'-and$plan.can_prepare_sources))){throw 'Compiled execution plan is not ready or its source is not frozen.'}
   $repository=[IO.Path]::GetFullPath($RepoRoot)

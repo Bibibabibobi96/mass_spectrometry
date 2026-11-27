@@ -244,7 +244,7 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
 
         functional = profiles["quadrupole_transport_runtime_functional"]
         self.assertEqual(functional["action"], "run")
-        self.assertEqual(functional["qualification_support"], ["none"])
+        self.assertNotIn("qualification_support", functional)
         self.assertEqual(
             functional["required_bindings"],
             ["runtime_profile_id", "evidence_contract_path"],

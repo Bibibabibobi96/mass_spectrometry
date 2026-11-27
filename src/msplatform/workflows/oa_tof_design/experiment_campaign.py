@@ -155,7 +155,6 @@ def _request_contract(
     if (
         target.get("preferred_project_id") != PROJECT_ID
         or target.get("mode") != "design_candidate"
-        or request.get("evidence_level") != "candidate"
     ):
         raise ValueError("campaign base request is not an oa-TOF design Candidate request")
     if request["design_variables"] != [item["variable_id"] for item in axes.values()]:

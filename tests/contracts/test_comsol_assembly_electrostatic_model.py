@@ -96,8 +96,8 @@ class ExplicitRequestTests(unittest.TestCase):
             context=SimpleNamespace(tools={'comsol_launcher':executable,'matlab_root':matlab})
             stage={'limits':{'transient_run_directory_bytes':123},'artifact_retention':{}}
             final=object()
-            with patch.object(mod,'open_artifact',side_effect=[source,final]), patch.object(mod,'read_stage_policy',return_value=(stage,{})), patch.object(mod,'file_record',return_value={}), patch.object(mod,'run_managed_stage',return_value={'manifest':{'path':'result.json'}}) as owner:
-                result=mod.prepare_model({},request=request,context=context)
+            with patch.object(mod,'open_artifact',return_value=final), patch.object(mod,'read_stage_policy',return_value=(stage,{})), patch.object(mod,'file_record',return_value={}), patch.object(mod,'run_managed_stage',return_value={'manifest':{'path':'result.json'}}) as owner:
+                result=mod._prepare_model_guarded(source,request=request,context=context,stage=stage,authority={})
             self.assertIs(result,final)
             args=owner.call_args.kwargs
             self.assertEqual(args['expected_operation_ids'],('build_model','reopen_model'))
@@ -130,7 +130,8 @@ class ExplicitRequestTests(unittest.TestCase):
                     path=root/'original'/(name+('.mph' if name=='model' else '.json'))
                     path.write_text(json.dumps(baseline) if name=='reopen_geometry' else 'fixture',encoding='utf8')
                     original[name]=path
-                source=SimpleNamespace(data_path=lambda name: original[name], data_records={name:file_record(path,'solver_native_binary' if name=='model' else 'required_evidence') for name,path in original.items()}, data_locations=original,reference={'manifest':{'path':str(root/'source-manifest.json')}})
+                manifest_path=root/'source-manifest.json'; manifest_path.write_text('{}',encoding='utf-8')
+                source=SimpleNamespace(data_path=lambda name: original[name], data_records={name:file_record(path,'solver_native_binary' if name=='model' else 'required_evidence') for name,path in original.items()}, data_locations=original,manifest_location=manifest_path,reference={'manifest':file_record(manifest_path,'required_evidence')})
                 context=SimpleNamespace(workspace=root,python_executable=root/'python',powershell_executable=root/'pwsh',host_state_path=root/'state',policy_path=root/'policy',tools={'comsol_launcher':root/'comsol','matlab_root':root})
                 added={}
                 session=SimpleNamespace(expected_operation_ids=('build_model','reopen_model'),input_dir=root/'inputs',result_dir=root/'results',log_dir=root/'logs',run_dir=root,context=context,run_id='inert',declare_file=lambda path,role:path,add_input=lambda name,record:added.update({name:record}))

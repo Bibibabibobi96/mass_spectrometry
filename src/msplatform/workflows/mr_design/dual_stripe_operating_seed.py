@@ -29,7 +29,7 @@ from scipy.optimize import least_squares
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from msplatform.components.multi_reflection_tof.drift_phase_contract import (
+from msplatform.contracts.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from msplatform.workflows.mr_design import analyze_native_dual_stripe_l0
@@ -42,10 +42,10 @@ from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     project_y_from_theory_drift_mm,
     theory_drift_y_mm,
 )
+from msplatform.components.multi_reflection_tof.constraint_classification import classify_constraint_system
 from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     JointL0Trial,
     StripeHardBoundary,
-    classify_constraint_system,
     coupled_normalized_period_slope_at_energy,
     coupled_reduced_period_mm_per_sqrt_v,
     derive_coupled_drift_state,

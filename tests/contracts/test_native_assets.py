@@ -143,6 +143,24 @@ class NativeAssetsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 freeze_field_source(source, root/'author.toml')
 
+    def test_neutral_sampled_manifest_can_only_freeze_as_a_source_reference(self):
+        from msplatform.recipes.native_assets import freeze_collision_reference, validate_collision_reference
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            document = collision_manifest()
+            document['products']['fields']['metadata']['field_representation'] = 'neutral_sampled_basis_with_collision_geometry'
+            payload = json.dumps(document).encode()
+            (root / 'collision.json').write_bytes(payload)
+            frozen = freeze_collision_reference({'path': 'collision.json', 'product_id': 'fields',
+                'sha256': hashlib.sha256(payload).hexdigest()}, root / 'author.toml')
+            self.assertEqual(validate_collision_reference(frozen), frozen)
+            document['products']['fields']['metadata']['source_status'] = 'sampled'
+            payload = json.dumps(document).encode()
+            (root / 'collision.json').write_bytes(payload)
+            with self.assertRaisesRegex(ValueError, 'source-independent'):
+                freeze_collision_reference({'path': 'collision.json', 'product_id': 'fields',
+                    'sha256': hashlib.sha256(payload).hexdigest()}, root / 'author.toml')
+
     def test_collision_recursion_and_invalid_sampling_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

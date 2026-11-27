@@ -13,7 +13,6 @@ REPO = Path(__file__).resolve().parents[2]
 ENTRIES = {
     "candidate": "backends/simion/resources/register_candidate_layout_template.ps1",
     "multipole_template": "workflows/resources/register_simion_layout_template.ps1",
-    "compensation": "workflows/resources/execute_oatof_compensation.ps1",
     "cross_solver": "workflows/resources/compare_cross_solver.ps1",
     "responses": "workflows/resources/compare_responses.ps1",
 }
@@ -111,17 +110,10 @@ class InstalledResourceEntrypointTests(unittest.TestCase):
                 )
                 self.assert_boundary(result, "INSTALLED_COMPARISON_SUPPORT")
 
-    def test_compensation_loads_installed_owner_before_science(self) -> None:
-        owner = self.package / "workflows/resources/run_artifact_workflow.ps1"
-        owner.write_text("throw 'INSTALLED_COMPENSATION_OWNER'\n", encoding="utf-8")
-        result = self.invoke(
-            "compensation",
-            [
-                "-CaseDirectory", "unused", "-SimionExe", "unused",
-                "-ArtifactRootPath", str(self.artifacts),
-            ],
-        )
-        self.assert_boundary(result, "INSTALLED_COMPENSATION_OWNER")
+    def test_compensation_uses_public_workflow_without_retired_powershell_entry(self) -> None:
+        self.assertFalse((self.package / "workflows/resources/execute_oatof_compensation.ps1").exists())
+        self.assertTrue((self.package / "workflows/reflectron_compensation.py").is_file())
+        self.assertTrue((self.package / "analysis/reflectron_voltage_fit.py").is_file())
 
     def test_freezer_copies_actual_installed_sources(self) -> None:
         code_root = self.root / "frozen-installed"

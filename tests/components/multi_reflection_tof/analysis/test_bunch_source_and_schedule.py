@@ -28,7 +28,7 @@ from msplatform.components.multi_reflection_tof.candidate_contract import (
     derive_two_zone_placement,
     load_contract,
 )
-from msplatform.backends.simion.mrtof_observations import parse_events
+from msplatform.analysis.mr_observations import parse_events
 
 
 def _states(count: int, mother: int = 1000):

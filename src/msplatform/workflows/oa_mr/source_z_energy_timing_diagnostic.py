@@ -33,10 +33,10 @@ from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 from msplatform.components.multi_reflection_tof.native_field_science import _te1_reference
-from msplatform.workflows.prepared_joint.event_analysis import histogram_half_height_bin_span, peak_time_metrics
-from msplatform.backends.simion.mrtof_observations import collision_diagnostics, read_scientific_events
+from msplatform.analysis.peak_metrics import histogram_half_height_bin_span, peak_time_metrics
+from msplatform.analysis.mr_observations import collision_diagnostics, read_scientific_events
 from msplatform.workflows.prepared_joint.prism_trial import _resolve_trial_geometry
-from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
+from msplatform.analysis.mr_observations import _collision_geometry_projection
 
 
 _PROJECT = "multi_reflection_tof"
@@ -2615,7 +2615,7 @@ def candidate_policy(request: dict[str, Any]) -> dict[str, Any]:
     if action == "focus_configuration":
         return candidate_focus_configuration(request["radius_mm"], request["minimum_resolution"])
     if action == "center_feedback":
-        from msplatform.workflows.prepared_joint.controller_state import center_residual_gate
+        from msplatform.components.multi_reflection_tof.workpoint_controller_state import center_residual_gate
         result = center_residual_gate(request["status"], request["names"], request["residuals"], request["tolerances"])
         if request.get("focus") is not None:
             result["focus"] = candidate_focus_decision(**request["focus"], center=result["passed"])

@@ -5090,13 +5090,14 @@ print('INSTALLED_SCALAR_ADAPTER_TRANSPORT=PASS')
 import unittest as prism_unittest
 from msplatform.components.multi_reflection_tof import prism_l0 as prism_l0_api
 from msplatform.components.multi_reflection_tof import prism_analytic as prism_analytic_api
-from msplatform.components.multi_reflection_tof import drift_phase_contract as prism_phase_api
+from msplatform.contracts import drift_phase_contract as prism_phase_api
 from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError as prism_contract_error
 prism_fixture=fixture['mr_prism_phase']
 prism_purelib=pathlib.Path(sysconfig.get_paths()['purelib']).resolve()
 for prism_name,prism_module in (('prism_l0',prism_l0_api),('prism_analytic',prism_analytic_api),('drift_phase_contract',prism_phase_api)):
     prism_path=pathlib.Path(prism_module.__file__).resolve()
-    assert prism_path==prism_purelib/'msplatform/components/multi_reflection_tof'/(prism_name+'.py')
+    prism_package='msplatform/contracts' if prism_name=='drift_phase_contract' else 'msplatform/components/multi_reflection_tof'
+    assert prism_path==prism_purelib/prism_package/(prism_name+'.py')
     prism_content=prism_path.read_bytes()
     assert len(prism_content)==prism_fixture['sources'][prism_name]['bytes']
     assert hashlib.sha256(prism_content).hexdigest()==prism_fixture['sources'][prism_name]['sha256']
@@ -6148,7 +6149,8 @@ class InstalledScientificCoreTests(unittest.TestCase):
         assert prism_trace.status == 'transmitted'
         prism_sources = {}
         for prism_name in ('prism_l0', 'prism_analytic', 'drift_phase_contract'):
-            prism_content = (REPO_ROOT/'src/msplatform/components/multi_reflection_tof'/(prism_name+'.py')).read_bytes()
+            prism_root = REPO_ROOT/'src/msplatform/contracts' if prism_name == 'drift_phase_contract' else REPO_ROOT/'src/msplatform/components/multi_reflection_tof'
+            prism_content = (prism_root/(prism_name+'.py')).read_bytes()
             prism_sources[prism_name] = dict(bytes=len(prism_content),sha256=hashlib.sha256(prism_content).hexdigest())
         return dict(contract=prism_contract,sources=prism_sources,
                     analytic=dict(triangle=[[0.,0.],[1.,0.],[0.,1.]],

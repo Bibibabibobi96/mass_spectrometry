@@ -262,7 +262,15 @@ paired-static 的实际 workflow、模型/样本来源、PA身份、投影与Sto
 
 `prepared_joint.analysis_inputs` 不再读取 `execution.capacity_ledger` 或 `capacity_ledger_lifecycle`；现有 `guard_historical_measured_flight` 在准入、校验和冻结期间持原 manifest/config 的只读 OS 保护，并核 execution request、completion、终态和停止 writer。原科学ID、路径、完整 original-ID merge、母群数量和失败阶段检查保留，不读取/哈希大型原始 log/FLY2，也不创建第二 owner。
 
-直接准入3父测试在精确索引全部通过，覆盖成功/失败、错误 owner、不完整 merge、未停止 writer、缺件与同长度篡改；安装探针直接段/CLI4场景和真实 PowerShell 公共消费者十场景均通过。原迁移页之外，MR PROJECT 的旧 canonical ledger 描述已改为当前历史 guard。最终普通发行、完整 Repository 和真实大载荷/native仍待同 SHA 验收。
+直接准入3父测试在精确索引全部通过，覆盖成功/失败、错误 owner、不完整 merge、未停止 writer、缺件与同长度篡改；安装探针直接段/CLI4场景和真实 PowerShell 公共消费者十场景均通过。原迁移页之外，MR PROJECT 的旧 canonical ledger 描述已改为当前历史 guard。最终普通发行、完整 Repository 和真实大载荷/native仍待同 SHA 验收。该主题提交/普通 push 为 `1e88f65f`；CLOC 2.10 `065d4863→1e88f65f` PASS：total code +350、production +274、tests +76，unclassified=0，完整口径在外部 `prepared-admission-1e88f65f-cloc.log`。
+
+### MR 事件/观察/相位职责退出旧容器（候选）
+
+`prepared_joint.event_analysis` 的实际事件完整性、冻结源解析和 CLI 已唯一迁至 `analysis.mr_event_analysis`；MR observation 读取/碰撞/相空间归 `analysis.mr_observations`，原生完成解析归 `analysis.native_completion`，相位科学合同归 `contracts.drift_phase_contract`，中立多边形判定归 Assembly。`CandidateContractError` 的唯一定义归公共机器合同，原组件导入与公共导入保持同一个类型对象，无第二实现。
+
+旧 `prepared_joint/event_analysis.py`、旧组件 drift 模块和只剩重导出的 backend observation 模块均删除，无别名或 lazy-import 豁免。实际 Python/PowerShell、冻结资源、测试与文档同步；catalog 对 `native_completion` 同时选择自身和实际批次/tracking 消费者，新增正反路由用例，不以空选择通过。
+
+原直接分析/CLI 180测试、生产消费者174测试通过；其他相关套件78（1既有skip）、116（14 skip）、26测试均通过，科学边界16/16 PASS。公共选择器在完整 Git 元数据下67父测试／322回执全PASS，Changed 合同109父测试／460回执全PASS。共享测试仍报告旧 gas 字段、Prepared AST和 host-context 等其他在途欠项，不能写成全仓通过；普通双安装、Repository 和商业 native 留待最终同 SHA。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 

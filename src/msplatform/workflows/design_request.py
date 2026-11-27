@@ -11,11 +11,6 @@ from typing import Any
 from msplatform.contracts.machine_contracts import ContractError, load_json, validate_schema
 
 
-MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}
-EVIDENCE = {"plan": 0, "static": 1, "candidate": 2, "formal": 3}
-FORMAL_OUTPUTS = {"comsol_model", "simion_model", "cad"}
-
-
 def _result(status: str, request: dict[str, Any] | None, messages: list[str],
             project: dict[str, Any] | None = None,
             capability: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -59,9 +54,6 @@ def validate_request(request: dict[str, Any], registry: dict[str, Any]) -> dict[
             date.fromisoformat(request["approval"]["approved_on"])
         except ValueError:
             return _result("NEEDS_CLARIFICATION", request, ["approval.approved_on must be an ISO calendar date"])
-    if request["status"] != "approved" and request["evidence_level"] == "formal":
-        return _result("NEEDS_CLARIFICATION", request, ["Formal evidence requires an approved request"])
-
     objective_errors = []
     for objective in request["objectives"]:
         operator, value = objective["operator"], objective["value"]
@@ -127,7 +119,10 @@ def validate_request(request: dict[str, Any], registry: dict[str, Any]) -> dict[
         selections = [(project, capability) for project, capability in selections if mode in capability["modes"]]
         if not selections:
             return _result("NEEDS_PROJECT_COMPLETION", request, [f"Mode is not implemented for the selected structure: {mode}"])
-    selections.sort(key=lambda item: (MATURITY[item[1]["status"]], item[0]["project_id"]), reverse=True)
+    if len(selections) != 1:
+        return _result("NEEDS_CLARIFICATION", request, [
+            "Multiple capabilities match; select a project, structure and mode explicitly"
+        ])
     project, capability = selections[0]
 
     missing_metrics = sorted({o["metric"] for o in request["objectives"]} - set(capability["metrics"]))
@@ -137,13 +132,6 @@ def validate_request(request: dict[str, Any], registry: dict[str, Any]) -> dict[
         messages.append("Unsupported metrics: " + ", ".join(missing_metrics))
     if missing_variables:
         messages.append("Unsupported design variables: " + ", ".join(missing_variables))
-    required_rank = EVIDENCE[request["evidence_level"]]
-    if MATURITY[capability["status"]] < required_rank:
-        messages.append(f"Capability maturity {capability['status']} is below requested {request['evidence_level']}")
-    if request["evidence_level"] == "formal":
-        unavailable = sorted(set(request["required_outputs"]) & FORMAL_OUTPUTS - set(project["formal_assets"]["types"]))
-        if unavailable:
-            messages.append("Formal asset types unavailable: " + ", ".join(unavailable))
     if messages:
         return _result("NEEDS_PROJECT_COMPLETION", request, messages, project, capability)
     return _result("READY", request, ["Request is structurally and semantically ready"], project, capability)

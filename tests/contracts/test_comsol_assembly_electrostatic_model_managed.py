@@ -18,6 +18,7 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.execution.processes import ProcessExecutionError
 from msplatform.io.manifest_records import file_record
 from msplatform.results.artifacts import open_artifact
+from msplatform.storage.store import ArtifactStore
 
 PROJECTION = {'electrode_groups': [{'instance_id': 'rf', 'electrode_group_id': 'drive'}]}
 BASELINE = {'group_keys': ['rf/drive'], 'group_faces': [[2, 3]], 'vacuum_domains': [1], 'outer_faces': [4, 5]}
@@ -46,6 +47,7 @@ class ManagedSyntheticModelTests(unittest.TestCase):
                 cap.write_text(json.dumps(helper._policy()), encoding='utf-8')
                 context = replace(helper._context(root), capacity_policy_path=cap, host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']), tools={'comsol_launcher': Path(sys.executable), 'matlab_root': root})
                 context.workspace.mkdir(parents=True)
+                store = ArtifactStore(root / 'model-store')
                 policy = root / 'stages.json'
                 limits = {'wall_clock_seconds': 120, 'transient_run_directory_bytes': 64 * 1024**2, 'process_tree_working_set_bytes': 1024**3, 'minimum_system_available_memory_bytes': 1, 'compact_final_retained_bytes': 64 * 1024**2, 'automatic_retry_count': 0}
                 retention = {'policy_version': 1, 'class': 'solver_review', 'reason': 'synthetic managed COMSOL transport test'}
@@ -80,14 +82,15 @@ class ManagedSyntheticModelTests(unittest.TestCase):
                 with (patch.object(subject, 'freeze_native_sources', side_effect=sources),
                       patch.object(RunSession, 'run_process', new=inert_transport)):
                     if case == 'success':
-                        product = subject.prepare_model(geometry, request=REQUEST, context=context)
+                        product = subject.prepare_model(geometry, request=REQUEST, context=context, artifact_store=store)
                         self.assertEqual(product.metadata['field_status'], 'not_solved')
                         self.assertIn('geometry_validation', product.data_records)
                         self.assertIn('reopen_geometry', product.data_records)
                         self.assertEqual(json.loads(product.data_path('reopen_geometry').read_text(encoding='utf-8')), BASELINE)
                         self.assertEqual(product.data_path('geometry_validation').read_text(encoding='utf-8'), '{}')
                         self.assertFalse((product.manifest_location.parent / 'inputs/geometry/model.mph').exists())
-                        self.assertEqual(product.data_records['geometry_manifest'], geometry.reference['manifest'])
+                        self.assertEqual(product.data_records['geometry_manifest']['sha256'], geometry.reference['manifest']['sha256'])
+                        self.assertEqual(product.metadata['geometry_source_reference'], geometry.reference)
                         self.assertNotIn(geometry.data_path('model').resolve(), [p.resolve() for p in product.data_locations.values()])
                         self.assertEqual(product.data_path('model').read_bytes(), b'SYNTHETIC_NOT_A_COMSOL_MODEL')
                         manifest = json.loads(product.manifest_location.read_text(encoding='utf-8-sig'))
@@ -95,9 +98,9 @@ class ManagedSyntheticModelTests(unittest.TestCase):
                         self.assertEqual([x['operation_id'] for x in completion['writer_completion']['operations']], ['build_model', 'reopen_model'])
                     else:
                         with self.assertRaises(ProcessExecutionError if case == 'process_failure' else (AssertionError, ProcessExecutionError)) as caught:
-                            subject.prepare_model(geometry, request=REQUEST, context=context)
+                            subject.prepare_model(geometry, request=REQUEST, context=context, artifact_store=store)
                         self.assertRegex(str(caught.exception), '23' if case == 'process_failure' else '(?i)(changed|immutable|denied|access|exit)')
-                        manifests = list((context.workspace / 'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-model*/run_manifest.json'))
+                        manifests = list(store.root.glob('assets/native_stage/*/*/runs/*assembly-model*/run_manifest.json'))
                         self.assertEqual(len(manifests), 1)
                         manifest = json.loads(manifests[0].read_text(encoding='utf-8-sig'))
                         self.assertEqual(manifest['status'], 'failed')

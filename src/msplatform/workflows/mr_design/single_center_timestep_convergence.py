@@ -12,7 +12,7 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.backends.simion.mrtof_observations import parse_events
+from msplatform.analysis.mr_observations import parse_events
 
 _PROJECT = "multi_reflection_tof"
 _MODE = "finite_3d_two_prism_voltage_trial"

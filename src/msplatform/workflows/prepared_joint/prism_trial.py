@@ -8,7 +8,7 @@ in +project-y; the accelerator field supplies the fast -project-z energy.
 """
 from __future__ import annotations
 from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
-from msplatform.backends.simion import mrtof_observations as _mrtof_observations
+from msplatform.analysis import mr_observations as _mrtof_observations
 
 import argparse
 import copy
@@ -38,7 +38,7 @@ from msplatform.components.orthogonal_accelerator.focus_theory import (
     _component_energy_per_charge_v,
     _target_axial_energy_per_charge_v,
 )
-from msplatform.components.multi_reflection_tof.drift_phase_contract import (
+from msplatform.contracts.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from msplatform.backends.simion.mr_bunch_source import (
@@ -80,9 +80,7 @@ from msplatform.components.multi_reflection_tof.operating_authority import (
     fixed_mirror_stripe_source_state as _fixed_mirror_stripe_source_state,
     vector as _vector,
 )
-from msplatform.workflows.prepared_joint.event_analysis import (
-    summarize_events,
-)
+from msplatform.analysis.mr_event_analysis import summarize_events
 from msplatform.workflows.prepared_joint.prism_handoff import (
     ProjectPhaseSpaceState,
     observation_from_simion_events,
@@ -2280,7 +2278,7 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         raise CandidateContractError(
             "active MR-TOF Candidate observation forbids all P1/P2 voltage switching"
         )
-    from msplatform.backends.simion.mrtof_observations import read_scientific_events
+    from msplatform.analysis.mr_observations import read_scientific_events
     science = _load(scientific_event_receipt)["scientific_event_output"] if scientific_event_receipt is not None else trial.get("scientific_event_output")
     events, native_completions, _log_identity = read_scientific_events(log_path, scientific_event_output=science)
     if any(event["kind"] == "prism_voltage_switch" for event in events):

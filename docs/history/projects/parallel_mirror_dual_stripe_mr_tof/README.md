@@ -2,7 +2,7 @@
 
 返回[项目入口](../../../../src/msplatform/components/multi_reflection_tof/README.md)；当前结论、资格与开放任务见[PROJECT](../../../../src/msplatform/components/multi_reflection_tof/docs/PROJECT.md)。
 本页是可更新导航。以下记录按归档时点解释，不作为当前运行指令；各档案正文及证据身份保持冻结。
-原路径`projects/multi_reflection_tof/docs/history/`已迁至`docs/history/projects/parallel_mirror_dual_stripe_mr_tof/`。
+原路径`projects/parallel_mirror_dual_stripe_mr_tof/docs/history/`已迁至`docs/history/projects/parallel_mirror_dual_stripe_mr_tof/`。
 历史记录中的`simion/README.md`是当时路径；当前实施说明已迁至[docs/SIMION.md](../../../../src/msplatform/components/multi_reflection_tof/docs/SIMION.md)。
 
 ## 归档记录

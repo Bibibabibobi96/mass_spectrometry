@@ -156,7 +156,7 @@ def read_gas_model(reference: Mapping[str, Any], expected_contracts: Mapping[str
             or operation.get("resource_release_id") not in released
         ):
             raise ValueError("Gas model has an unknown native writer or unconfirmed release")
-    for name in ("science", "numerics", "geometry"):
+    for name in ("science", "numerics", "geometry", "environment", "species_data", "constants_data", "transport_data"):
         expected = expected_contracts[name]
         if not any(
             isinstance(record, dict)

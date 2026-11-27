@@ -13,8 +13,7 @@ import copy
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from msplatform.execution.retention import file_record
 from msplatform.contracts.rigid_transform import RigidTransform
-from msplatform.workflows.accelerator_interface import geometry
-from tests.workflows.multipole_ip import test_multipole_ip_prepare as multipole_tests
+from msplatform.backends.simion import ip_mr_geometry as geometry
 from tests.assembly.multi_reflection_tof.analysis import test_ion_processor_assembly as assembly_tests
 
 
@@ -57,54 +56,17 @@ class AcceleratorGeometryTests(unittest.TestCase):
             self.assertEqual(parent, original)
             self.assertEqual(moved["recipe"], recipe)
 
-    def test_one_three_component_parent_drives_both_local_preparations(self):
-        multipole = multipole_tests.MultipoleIPPreparationTests('test_one_pose_preserves_sparse_ids_species_birth_arrival_and_unknown_terminal')
-        multipole.setUp()
-        self.addCleanup(multipole.doCleanups)
-        multipole.execute()
-        source_run = multipole.run
-        self.fixture.prepare()
-        expected_gems = {name: (self.fixture.root / 'output' / name).read_bytes() for name in (
-            'parent/assembly.gem', 'collision.gem', 'ion_processor_seed/processor.gem', 'detector.gem')}
-        joint = assembly_tests.AssemblyTests('test_seed_target_geometry_and_oa_removed')
-        joint.setUp()
-        self.addCleanup(joint.doCleanups)
-        parent = copy.deepcopy(joint.request['composition_plan'])
-        ip, mr = parent['recipe']['instances']
-        old_ip = ip['instance_id']
-        ip['instance_id'] = 'ion_processor'
-        self.assertEqual(parent['components'][old_ip], multipole.parent['components']['ion_processor'])
-        guide = copy.deepcopy(multipole.parent['recipe']['instances'][0])
-        guide['transform'] = RigidTransform.from_contract(guide['transform']).then(
-            RigidTransform.from_contract(ip['transform'])).to_contract()
-        recipe = parent['recipe']
-        recipe['recipe_id'] = 'multipole_ip_mr_shared_parent'
-        recipe['instances'] = [guide, ip, mr]
-        recipe['connections'][0]['upstream']['instance_id'] = 'ion_processor'
-        recipe['connections'].append(copy.deepcopy(multipole.parent['recipe']['connections'][0]))
-        full = compile_assembly_layout(recipe, dict(
-            multipole=multipole.parent['components']['multipole'],
-            ion_processor=parent['components'][old_ip],
-            **{mr['instance_id']: parent['components'][mr['instance_id']]}))
-        multipole.parent = full
-        multipole.request['local_scope'] = dict(instance_ids=['multipole', 'ion_processor'],
-            research_scope='upstream measured state handoff', boundary_assumptions='MR excluded from IP-native injection')
-        multipole.run = multipole.root / 'three_component_parent'
-        (multipole.run / 'inputs').mkdir(parents=True)
-        multipole.execute()
-        for name in ('source_states.csv', 'mother_fates.csv', 'mother_census.json'):
-            self.assertEqual((multipole.run / 'results/multipole_ip' / name).read_bytes(),
-                             (source_run / 'results/multipole_ip' / name).read_bytes())
-        for name in ('clock_authority.json', 'instrument_epoch.json'):
-            self.assertEqual((multipole.run / 'inputs' / name).read_bytes(), (source_run / 'inputs' / name).read_bytes())
-        joint.request['composition_plan'] = derive_assembly_scope(full, local_scope=dict(
-            instance_ids=['ion_processor', mr['instance_id']], research_scope='downstream joint field',
-            boundary_assumptions='upstream recorded source; multipole metal excluded from this numerical domain'))
-        joint.prepare()
-        for name, expected in expected_gems.items():
-            self.assertEqual((joint.root / 'output' / name).read_bytes(), expected)
-        self.assertEqual(joint.request['composition_plan']['recipe'], full['recipe'])
-        self.assertEqual(json.loads((multipole.run / 'inputs/parent_composition_plan.json').read_text()), full)
+    def test_three_component_parent_preserves_explicit_downstream_scope(self):
+        from tests.contracts.test_support.ip_mr_sampled_field_fixture import _fixture_geometry
+        assembly, compiled, _ = _fixture_geometry()
+        full = assembly.composition_plan
+        self.assertEqual(set(full['scope']['instance_ids']), {'multipole', 'ion_processor', 'mrtof'})
+        local = derive_assembly_scope(full, local_scope=dict(
+            instance_ids=['ion_processor', 'mrtof'], research_scope='downstream joint field',
+            boundary_assumptions='upstream metal excluded from this numerical domain'))
+        self.assertEqual(set(local['scope']['instance_ids']), {'ion_processor', 'mrtof'})
+        self.assertEqual(local['recipe'], full['recipe'])
+        self.assertEqual(compiled.frontend_geometry['composition_plan'], full)
 
     def test_other_port_and_electrical_group_drift_are_rejected(self):
         original = copy.deepcopy(self.fixture.request['composition_plan'])
@@ -147,7 +109,7 @@ class AcceleratorGeometryTests(unittest.TestCase):
                     reference = actual
                 self.assertEqual(actual, reference)
                 if count > 2:
-                    from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
+                    from msplatform.assembly.ip_mr_connection import resolve_ip_mr_connection
                     with self.assertRaisesRegex(ValueError, 'selected scope'):
                         resolve_ip_mr_connection(parent)
 
@@ -283,8 +245,8 @@ from pathlib import Path
 from unittest.mock import patch
 roots = list(map(Path, json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))))
 sys.path[:0] = list(map(str, roots))
-from msplatform.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
-from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
+from msplatform.backends.simion.ip_mr_geometry import prepare_ion_processor_assembly
+from msplatform.assembly.ip_mr_connection import resolve_ip_mr_connection
 from msplatform.components.multi_reflection_tof import assembly_interface
 assert Path(assembly_interface.__file__).resolve().is_relative_to(Path.cwd() / "src")
 paths = list(map(Path, sys.argv[2:5]))

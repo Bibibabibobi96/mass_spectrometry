@@ -1,6 +1,5 @@
 """Focused published-product tests of explicit SFI scalar refinement."""
 import copy,json,subprocess,unittest
-from unittest.mock import patch
 from pathlib import Path
 from tests.contracts import test_sfi_scalar_binding as admission
 from msplatform.backends.simion.sfi_scalar_binding import resolve_sfi_scalar_basis
@@ -78,10 +77,7 @@ bad=true; local ok,err=pcall(sample,.25,.25,.25); assert(not ok and string.find(
             self.resolve_windows(bad)
 
 class RefinementOwnerTests(unittest.TestCase):
-    def test_historical_window_basis_rejects_tracking_before_owner(self):
-        import tempfile
-        from tests.contracts.test_sfi_recorded_birth_entry import historical_fixture
-        from msplatform.workflows.single_reflection_flight.recorded_birth import track_recorded_birth
+    def test_historical_window_basis_revalidates_immutable_samples(self):
         case=RefinementBindingTests(methodName='runTest');case.setUp();self.addCleanup(case.doCleanups)
         levels={name:case.sample_level('retired-window-'+name,ref) for name,ref in case.sample_refs.items()}
         windows=[dict(name='first',active_box_mm=[[0.,.5]]*3,samples=levels),
@@ -89,22 +85,6 @@ class RefinementOwnerTests(unittest.TestCase):
         admitted=case.resolve_windows(windows)
         for basis in admitted['bases'].values():
             self.assertEqual([row['name'] for row in basis['refinement_windows']],['first','repeat_first'])
-        with tempfile.TemporaryDirectory() as directory:
-            selected,receipt,_=historical_fixture(Path(directory))
-            selected['scalar_field_basis']=dict(geometry_artifact=case.geometry_ref,samples=case.sample_refs,
-                                                refinement_windows=windows)
-            with patch('msplatform.execution.owner.run_managed_stage') as owner:
-                for recovery in (None,{'path':str(Path(directory)/'unused-recovery.json')}):
-                    with self.assertRaisesRegex(ValueError,'legacy composite.*read-only'):
-                        track_recorded_birth(**selected,recovery_reference=recovery)
-                    owner.assert_not_called()
-                source=Path(receipt['input_records']['particle_source']['path']);original=source.read_bytes()
-                try:
-                    source.write_bytes(original+b'\n')
-                    with self.assertRaisesRegex(AssertionError,'byte count changed'):
-                        track_recorded_birth(**selected)
-                    owner.assert_not_called()
-                finally:source.write_bytes(original)
         item=open_artifact(levels['carrier'],expected_kind='scalar_field_samples')
         path=item.data_path('field_v');original=path.read_bytes()
         try:

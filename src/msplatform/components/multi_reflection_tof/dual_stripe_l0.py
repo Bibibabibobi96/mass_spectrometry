@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 from scipy.special import roots_legendre
 
-from msplatform.components.multi_reflection_tof.drift_phase_contract import (
+from msplatform.contracts.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from msplatform.components.multi_reflection_tof.resolved_geometry import (compile_dual_stripe_width_evaluator, dual_stripe_total_path_scale, dual_stripe_width_at_y_mm)

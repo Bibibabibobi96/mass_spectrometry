@@ -58,7 +58,8 @@ def resolve_geometry_request(assembly: Assembly, *, outer_box_mm: Mapping[str, S
 
 
 def build_geometry(assembly: Assembly, *, outer_box_mm: Mapping[str, Sequence[float]],
-                   geometry_validation: Mapping[str, float], context: ExecutionContext) -> OpenedArtifact:
+                   geometry_validation: Mapping[str, float], context: ExecutionContext,
+                   artifact_store=None) -> OpenedArtifact:
     """Build and cold-reopen native geometry without physics or mesh.
 
     Outer-box coordinates and position sanity are in mm; normal sanity is
@@ -75,6 +76,10 @@ def build_geometry(assembly: Assembly, *, outer_box_mm: Mapping[str, Sequence[fl
     stage, authority = read_stage_policy(context, 'build_comsol_geometry', required_roles=('solver_native_binary',))
     if stage.get('runtime'):
         raise ContractError('COMSOL geometry has no additional runtime overrides')
+    if artifact_store is None:
+        from msplatform.execution.owner import current_managed_native_store
+        if current_managed_native_store() is None:
+            raise ContractError('COMSOL geometry requires an explicit ArtifactStore or protected parent scope')
     result = run_managed_stage(context,
         descriptor=dict(project='instrument_assembly', mode='geometry_only', software=['COMSOL', 'MATLAB']),
         run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__build__comsol__geometry-' + uuid4().hex[:12],
@@ -85,7 +90,7 @@ def build_geometry(assembly: Assembly, *, outer_box_mm: Mapping[str, Sequence[fl
         operation_dependencies={'reopen_geometry': ['build_geometry']},
         action=partial(execute_geometry, projection=projection, validation=validation, limits=stage['limits']),
         action_record=file_record(Path(__file__).resolve(), 'required_evidence'), use_short_execution_path=True,
-        completion_api=no_particle_batch_completion_api)
+        completion_api=no_particle_batch_completion_api, **({'artifact_store': artifact_store} if artifact_store is not None else {}))
     return open_artifact({'manifest': result['manifest'], 'product_id': 'geometry'}, expected_kind='geometry_artifact')
 
 

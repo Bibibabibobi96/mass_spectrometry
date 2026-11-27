@@ -1,7 +1,7 @@
 from __future__ import annotations
 from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import geometry_authority
 from msplatform.components.orthogonal_accelerator.two_zone_geometry import load_geometry_profile
-from msplatform.backends.simion import mrtof_observations as _mrtof_observations
+from msplatform.analysis import mr_observations as _mrtof_observations
 
 import hashlib
 import json
@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from msplatform.backends.simion.native_completion import parse_fly_completed_line
+from msplatform.analysis.native_completion import parse_fly_completed_line
 from msplatform.backends.simion.resources import native_resource_path
 
 
@@ -29,7 +29,7 @@ def mock_recorded_scientific_events(events):
                      if (value := parse_fly_completed_line(line)) is not None]
         return events, completed, hashlib.sha256(data).hexdigest()
     return patch(
-        "msplatform.backends.simion.mrtof_observations.read_scientific_events",
+        "msplatform.analysis.mr_observations.read_scientific_events",
         side_effect=read,
     )
 
@@ -38,7 +38,7 @@ from msplatform.workflows.prepared_joint import prism_trial as two_prism_simion_
 from msplatform.backends.simion.mr_bunch_source import (
     materialize_bunch_source,
 )
-from msplatform.backends.simion.mrtof_observations import parse_events
+from msplatform.analysis.mr_observations import parse_events
 from msplatform.workflows.prepared_joint.prism_trial import (
     _accelerator_energy_binding,
     _accelerator_geometric_exit_reference,
@@ -203,7 +203,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
              patch(module + "._mirror_regions", return_value={"negative": [-300., -100.], "positive": [100., 300.]}), \
              patch(module + "._accelerator_geometric_exit_reference", autospec=True, return_value=None) as exit_reference, \
              patch(module + "._scalar_field_lua_fields", return_value=""), \
-             patch("msplatform.backends.simion.mrtof_observations._collision_geometry_projection", return_value={}):
+             patch("msplatform.analysis.mr_observations._collision_geometry_projection", return_value={}):
             result = two_prism_simion_trial.materialize_trial(
                 contract_path=paths["contract"], accelerator_geometry_contract_path=paths["contract"],
                 trajectory_contract_path=paths["trajectory"], reviewed_contract_path=paths["contract"],

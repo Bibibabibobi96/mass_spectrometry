@@ -35,7 +35,7 @@ class UnsolvedModelSpec:
 
 def build_unsolved_model(resolved: dict, baseline: Mapping[str, Any], modes: Mapping[str, Any], *,
                          action_name: str, spec: UnsolvedModelSpec,
-                         context: ExecutionContext) -> OpenedArtifact:
+                         context: ExecutionContext, artifact_store=None) -> OpenedArtifact:
     """Use the existing owner for actual model creation and separate cold verification."""
     for name in ("comsol_launcher", "matlab_root"):
         path = context.tools.get(name)
@@ -44,6 +44,10 @@ def build_unsolved_model(resolved: dict, baseline: Mapping[str, Any], modes: Map
     stage, authority = read_stage_policy(context, action_name, required_roles=("solver_native_binary",))
     if stage.get("runtime", {}):
         raise ContractError(action_name + " has no additional runtime overrides")
+    if artifact_store is None:
+        from msplatform.execution.owner import current_managed_native_store
+        if current_managed_native_store() is None:
+            raise ContractError('COMSOL model requires an explicit ArtifactStore or protected parent scope')
     result = run_managed_stage(context,
         descriptor=dict(project=resolved["project_id"], mode="prepared_model", software=["COMSOL", "MATLAB"]),
         run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__build__comsol__" + spec.run_label + "-" + uuid4().hex[:12],
@@ -55,7 +59,8 @@ def build_unsolved_model(resolved: dict, baseline: Mapping[str, Any], modes: Map
         operation_dependencies={"verify_model": ["build_model"]},
         action=partial(execute_unsolved_model, resolved=resolved, limits=stage["limits"], spec=spec),
         action_record=file_record(Path(__file__).resolve(), "required_evidence"),
-        use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
+        use_short_execution_path=True, completion_api=no_particle_batch_completion_api,
+        **({'artifact_store': artifact_store} if artifact_store is not None else {}))
     return open_artifact({"manifest": result["manifest"], "product_id": "model"}, expected_kind="prepared_model")
 
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from numbers import Integral, Real
+import math
+from statistics import mean
 from typing import Any
 
 import numpy as np
@@ -842,3 +844,170 @@ def bootstrap_resolution_difference(
         "absolute_resolution_difference_pct_median": float(percentiles[1]),
         "absolute_resolution_difference_pct_p97p5": float(percentiles[2]),
     }
+
+
+def histogram_half_height_bin_span(
+    values: list[float], *, unit: str,
+) -> tuple[float | None, dict[str, Any]]:
+    """Return the outer occupied half-height-bin span, never an interpolated FWHM.
+
+    Preserve the auxiliary sqrt(N) histogram: disconnected qualifying bins are
+    enclosed by one span. This coarse descriptive statistic has no detector
+    resolution interpretation; all input observations remain in the histogram.
+    """
+    if any(isinstance(value, bool) or not math.isfinite(value) for value in values):
+        raise ValueError("histogram samples must be finite real values")
+    count = len(values)
+    metadata = {
+        "schema_version": 1, "method_id": "sqrt_count_histogram_half_height_bin_span_v1",
+        "status": "unavailable_fewer_than_eight_samples", "sample_count": count,
+        "unit": unit, "bin_count": None, "bin_width": None,
+        "sample_minimum": min(values) if values else None,
+        "sample_maximum": max(values) if values else None,
+        "settings": {
+            "minimum_sample_count": 8, "bin_count_rule": "max(8,min(128,floor(sqrt(N))))",
+            "range": "sample_minimum_to_maximum", "maximum_endpoint": "last_bin",
+            "threshold_fraction": 0.5,
+            "span": "outer_edges_of_first_and_last_bins_at_or_above_half_maximum",
+        },
+        "detector_resolution_claim_allowed": False,
+        "scientific_qualification": "descriptive_only",
+    }
+    if count < 8:
+        return None, metadata
+    low, high = min(values), max(values)
+    bin_count = max(8, min(128, int(math.sqrt(count))))
+    metadata["bin_count"] = bin_count
+    if not high > low:
+        metadata.update(status="zero_variance", bin_width=0.0)
+        return 0.0, metadata
+    width = (high - low) / bin_count
+    counts = [0] * bin_count
+    for value in values:
+        counts[min(bin_count - 1, int((value - low) / width))] += 1
+    half = max(counts) / 2.0
+    occupied = [index for index, count in enumerate(counts) if count >= half]
+    metadata.update(status="computed", bin_width=width)
+    return width * (occupied[-1] - occupied[0] + 1), metadata
+
+
+
+def unavailable_peak_metadata(
+    sample_count: int, status: str, *, method_id: str | None = None,
+    settings: dict[str, Any] | None = None,
+    time_reference: dict[str, Any] | None = None,
+    weights: list[float] | None = None,
+) -> dict[str, Any]:
+    """Describe observed inputs without inventing an unavailable peak or clock.
+
+    None weights explicitly mean the native unit-weight source. Measured callers
+    supply their canonical per-ID weights, even when no peak was requested.
+    """
+    if weights is None:
+        weight_sum, effective_count, equal = float(sample_count), float(sample_count), True
+    else:
+        if len(weights) != sample_count or any(
+            isinstance(value, bool) or not math.isfinite(value) or value <= 0 for value in weights
+        ):
+            raise ValueError("peak input weights must be positive finite values matching the observations")
+        weight_sum = math.fsum(weights)
+        if not math.isfinite(weight_sum):
+            raise ValueError("peak input weight sum must be finite")
+        equal = not weights or all(value == weights[0] for value in weights)
+        scale = max(weights, default=1.0)
+        scaled = [value / scale for value in weights]
+        effective_count = (math.fsum(scaled)**2 / math.fsum(value*value for value in scaled)
+                           if scaled else 0.0)
+    return {
+        "schema_version": 1, "method_id": method_id, "status": status,
+        "scientific_qualification": "not_assessed", "mass_axis": None,
+        "sample_count": sample_count, "weight_sum": weight_sum,
+        "effective_sample_count": effective_count, "sample_sigma_ddof": 1,
+        "weight_policy": ("equal_positive_relative_weights" if equal
+                          else "nonuniform_positive_relative_weights__kde_unsupported"),
+        "settings": settings,
+        "units": {"tof": "us", "time_width": "ns", "time_density": "1/us"},
+        "time_reference": time_reference or {"kind": "unspecified", "clock_qualification": "unspecified"},
+    }
+
+
+
+def peak_time_metrics(
+    times_us: list[float], *, mass_th: float | None,
+    analysis_contract: dict[str, Any] | None, cohort_role: str | None,
+    charge_state: float | None = None,
+) -> dict[str, Any]:
+    """Adapt the common KDE for a complete volume cohort; never filter hits."""
+    result = {
+        "method_id": (analysis_contract or {}).get("method_id"),
+        "status": "unavailable_missing_analysis_contract",
+        "fwhm": None, "mean": mean(times_us) if times_us else None,
+        "mass_resolution_t_over_2fwhm": None, "time_equivalent_resolution": None,
+        "significant_time_kde_modes": None,
+        "analysis_contract": analysis_contract,
+    }
+    result["analysis_metadata"] = unavailable_peak_metadata(len(times_us), result["status"])
+    if analysis_contract is None:
+        return result
+    method = analysis_contract.get("method_id")
+    if method != "common_gaussian_kde_time_v2":
+        if cohort_role != "formal_volume":
+            # A diagnostic cohort does not request KDE. Retain its declared
+            # contract as provenance without interpreting an unsupported method.
+            result["status"] = "unavailable_controlled_or_unclassified_cohort"
+            result["analysis_metadata"]["status"] = result["status"]
+            return result
+        raise ValueError("unsupported peak analysis method")
+
+    if (analysis_contract.get("resolution_definition") != "mean_tof_us/(2*direct_fwhm_tof_us)"
+            or analysis_contract.get("time_basis") != "instrument_arrival_us_from_common_zero_birth"
+            or set(analysis_contract["settings"]) != set(AnalysisSettings.__dataclass_fields__)):
+        raise ValueError("peak analysis requires explicit settings and supported time/resolution definitions")
+    settings = AnalysisSettings(**analysis_contract["settings"])
+    result["settings"] = settings.to_dict()
+    result["analysis_metadata"] = unavailable_peak_metadata(
+        len(times_us), result["status"], method_id=method, settings=settings.to_dict(),
+        time_reference={"kind": "common_zero_birth", "reference_time_us": 0.0,
+                        "clock_qualification": "declared_by_analysis_contract"},
+    )
+    if cohort_role != "formal_volume":
+        result["status"] = "unavailable_controlled_or_unclassified_cohort"
+        result["analysis_metadata"]["status"] = result["status"]
+        return result
+    if any(not math.isfinite(value) or value <= 0 for value in times_us):
+        raise ValueError("peak TOFs must be finite positive instrument arrival times")
+    if len(times_us) < 3:
+        result["status"] = "unavailable_fewer_than_three_hits"
+        result["analysis_metadata"]["status"] = result["status"]
+        return result
+    if min(times_us) == max(times_us):
+        result["status"] = "unavailable_zero_variance"
+        result["analysis_metadata"]["status"] = result["status"]
+        return result
+    metrics, _ = compute_time_peak_metrics(times_us, settings)
+    metadata = metrics["analysis_metadata"]
+    metadata["time_reference"] = {
+        "kind": "common_zero_birth", "reference_time_us": 0.0,
+        "clock_qualification": "declared_by_analysis_contract",
+    }
+    # Legacy mass_th has conflicting historical mass/m/z names. Only the
+    # frozen +1 case is numerically unambiguous; never alter solver inputs.
+    compatible = (charge_state == 1 and not isinstance(charge_state, bool)
+                  and mass_th is not None and math.isfinite(mass_th) and mass_th > 0)
+    result.update(
+        analysis_metadata=metadata,
+        significant_time_kde_modes=metrics["significant_time_kde_modes"],
+        species={"mass_amu": mass_th if compatible else None,
+                 "charge_state": charge_state,
+                 "mass_to_charge_Th": mass_th if compatible else None,
+                 "source_field": "mass_th",
+                 "status": ("legacy_plus_one_numerical_equivalence" if compatible
+                            else "unavailable_ambiguous_legacy_mass_th")},
+    )
+    result.update(
+        status="evaluated", fwhm=metrics["direct_fwhm_tof_ns"] / 1000.0,
+        mean=metrics["mean_tof_us"],
+        mass_resolution_t_over_2fwhm=metrics["time_equivalent_resolution"],
+        time_equivalent_resolution=metrics["time_equivalent_resolution"],
+    )
+    return result

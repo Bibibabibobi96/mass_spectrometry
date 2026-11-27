@@ -55,14 +55,37 @@ def validate_request(projection: Mapping[str, Any], request: Mapping[str, Any]) 
         mesh=dict(global_automatic_level=level,electrode_hmax_mm=_finite(mesh['electrode_hmax_mm'],'electrode hmax',positive=True)), study=dict(kind='stationary'))
 
 
-def prepare_model(geometry: Any, *, request: Mapping[str, Any], context: Any) -> Any:
+def prepare_model(geometry: Any, *, request: Mapping[str, Any], context: Any, artifact_store=None) -> Any:
     """Publish an independently reopenable unsolved model from a verified geometry.
 
-    The geometry source is protected by the existing source-capacity reference and,
-    during the only operation that reads its MPH, the process immutable-file guard.
+    The geometry source is held throughout preparation, including native reads.
     All scientific and numerical choices must be supplied explicitly by the caller.
     """
-    source=open_artifact(geometry,expected_kind='geometry_artifact')
+    from contextlib import nullcontext
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.results.artifacts import OpenedArtifact
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ContractError('COMSOL model preparation requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent['store']
+    if parent is not None and parent['store'] is not store:
+        raise ContractError('COMSOL model preparation must use the parent Store')
+    reference = geometry.reference if isinstance(geometry, OpenedArtifact) else geometry
+    source_assets = set()
+    with guard_native_source(reference, expected_kind='geometry_artifact',
+                             expected_artifact_root=context.workspace / 'artifacts', artifact_store=store,
+                             asset_ids=source_assets) as source:
+        stage, authority = read_stage_policy(context,'prepare_assembly_electrostatic_model',required_roles=('solver_native_binary',))
+        if stage.get('runtime'):raise ContractError('COMSOL model has no runtime overrides')
+        scope = (standalone_native_store(store, task_key='standalone-model:' + uuid4().hex,
+                    budget=stage['limits']['transient_run_directory_bytes'], required_assets=tuple(sorted(source_assets)))
+                 if parent is None else nullcontext())
+        with scope:
+            return _prepare_model_guarded(source, request=request, context=context, stage=stage, authority=authority)
+
+
+def _prepare_model_guarded(source, *, request, context, stage, authority):
     from msplatform.backends.comsol.assembly_native_scope import require_supported_artifact
     require_supported_artifact(source)
     if source.metadata.get('backend')!='comsol' or source.metadata.get('scope')!='geometry_only' or source.metadata.get('native_reopen_verified') is not True:raise ContractError('verified COMSOL geometry-only source required')
@@ -71,8 +94,6 @@ def prepare_model(geometry: Any, *, request: Mapping[str, Any], context: Any) ->
     for name in ('comsol_launcher','matlab_root'):
         path=context.tools.get(name)
         if path is None or not (path.is_dir() if name=='matlab_root' else path.is_file()):raise ContractError('COMSOL model requires explicit available tool: '+name)
-    stage,authority=read_stage_policy(context,'prepare_assembly_electrostatic_model',required_roles=('solver_native_binary',))
-    if stage.get('runtime'):raise ContractError('COMSOL model has no runtime overrides')
     result=run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='prepared_model',software=['COMSOL','MATLAB']),
         run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__build__comsol__assembly-model-'+uuid4().hex[:12],
         payload=dict(action='prepare_assembly_electrostatic_model',request=resolved,stage_policy=stage),
@@ -100,6 +121,13 @@ def execute_model(session, *, source, projection, request, limits):
     if session.expected_operation_ids!=('build_model','reopen_model'):raise ValueError('unsolved model requires build and cold reopen')
     launcher,sources=freeze_native_sources(session,_NATIVE_SOURCES); frozen={};paths={}
     session.add_input('geometry_manifest',source.reference['manifest'])
+    frozen_manifest = session.declare_file(session.input_dir / 'geometry' / 'source_run_manifest.json', 'required_evidence')
+    frozen_manifest.parent.mkdir(parents=True, exist_ok=True)
+    freeze_file(source.manifest_location, frozen_manifest)
+    frozen_manifest_record = file_record(frozen_manifest, 'required_evidence')
+    if any(frozen_manifest_record[key] != source.reference['manifest'][key] for key in ('bytes', 'sha256')):
+        raise ValueError('geometry manifest copy identity differs')
+    session.add_input('frozen_geometry_manifest', frozen_manifest_record)
     source_model=dict(source.data_records['model'],path=str(source.data_locations['model']))
     session.add_input('geometry_model',source_model);paths['model']=source.data_locations['model']
     for name in ('projection','geometry_validation','descriptor','build_geometry','reopen_geometry'):
@@ -139,6 +167,6 @@ def execute_model(session, *, source, projection, request, limits):
             for key in ('group_keys','group_faces','vacuum_domains','outer_faces'):
                 if row[key]!=first[key]:raise ValueError('COMSOL model cold readback differs: '+key)
         reports[operation]=report
-    records=dict(model=persisted[0],request=contract_record,geometry_manifest=source.reference['manifest'],projection=frozen['projection'],descriptor=frozen['descriptor'],geometry_validation=frozen['geometry_validation'],reopen_geometry=frozen['reopen_geometry'],**{name:file_record(path,'required_evidence') for name,path in reports.items()})
+    records=dict(model=persisted[0],request=contract_record,geometry_manifest=frozen_manifest_record,projection=frozen['projection'],descriptor=frozen['descriptor'],geometry_validation=frozen['geometry_validation'],reopen_geometry=frozen['reopen_geometry'],**{name:file_record(path,'required_evidence') for name,path in reports.items()})
     outputs=[output,*reports.values()]
-    return dict(status='success',summary=dict(backend='comsol',scope='assembly_electrostatic_unsolved',field_status='not_solved',source_status='not_requested',scientific_qualification='not_granted',compute_calls_requested=0),output_paths=[str(p) for p in outputs],required_output_paths=[str(p) for p in outputs],retention_preserve_paths=[],manifest_extra_fields=dict(products=dict(model=dict(schema_version=1,kind='prepared_model',status='complete',metadata=dict(backend='comsol',scope='assembly_electrostatic_unsolved',field_status='not_solved',source_status='not_requested',native_reopen_verified=True,compute_calls_requested=0),data=records))))
+    return dict(status='success',summary=dict(backend='comsol',scope='assembly_electrostatic_unsolved',field_status='not_solved',source_status='not_requested',scientific_qualification='not_granted',compute_calls_requested=0),output_paths=[str(p) for p in outputs],required_output_paths=[str(p) for p in outputs],retention_preserve_paths=[],manifest_extra_fields=dict(products=dict(model=dict(schema_version=1,kind='prepared_model',status='complete',metadata=dict(backend='comsol',scope='assembly_electrostatic_unsolved',field_status='not_solved',source_status='not_requested',native_reopen_verified=True,compute_calls_requested=0,geometry_source_reference=source.reference),data=records))))

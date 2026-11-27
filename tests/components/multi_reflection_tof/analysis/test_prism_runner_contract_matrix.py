@@ -280,7 +280,8 @@ ConvertTo-Json -InputObject @($reports) -Depth 8 -Compress
                         self.assertEqual(frozen.read_bytes(), source.read_bytes())
                         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), row["sha256"].lower())
                     for name in (("prism_l0", "prism_analytic", "drift_phase_contract") if report["runner"].startswith("run_two_prism_segmented_") else ("drift_phase_contract",)):
-                        selected = "src\\msplatform\\components\\multi_reflection_tof\\" + name + ".py"
+                        owner = "src\\msplatform\\contracts\\" if name == "drift_phase_contract" else "src\\msplatform\\components\\multi_reflection_tof\\"
+                        selected = owner + name + ".py"
                         self.assertEqual(paths.count(selected), 1)
 
 

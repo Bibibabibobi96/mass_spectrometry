@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from tests.contracts import test_joint_ip_model as joint_ip_fixture
 from tests.contracts import test_simion_tracking_execution as tracking_fixture
+from tests.contracts.test_ip_mr_tracking_program import fixture_hs1_identity
 from tests.contracts.test_simion_native_plans import LUA
 from msplatform.backends.simion.model import compile_prepared_model, RF_IP_PHYSICS
 from msplatform.backends.simion.rf_tracking_program import render_rf_controls
@@ -32,6 +33,7 @@ class RfIpProgramTests(unittest.TestCase):
         plan['hs1']={'vendor_path':str((ROOT/'inert_hs1.lua').resolve()),'bath_path':str((ROOT/'inert_bath.lua').resolve()),
             'outer_path':str((ROOT/'inert_outer.lua').resolve()),'query_frame_id':model.document['native_frame_id'],
             'numerics':{'seed':40,'hs1_steps_per_mfp':20}}
+        plan['hs1_identity'] = fixture_hs1_identity(model.document)
         value=render_rf_controls(model,plan,assets=assets,native_sources=resources)
         self.assertIn('joint_hs1.install',value['program']);self.assertIn('simion.import',value['program'])
         self.assertIn('single_flight_canonical_particle_id',value['program']);self.assertIn('rf_instance_domains={"parent"}',value['program'])

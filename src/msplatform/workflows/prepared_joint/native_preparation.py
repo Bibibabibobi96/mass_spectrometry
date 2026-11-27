@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import math
-import copy
 import csv
 from pathlib import Path
 import re
@@ -18,7 +17,6 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
 from msplatform.workflows.prepared_joint.preparation import verified_reference
-from msplatform.backends.simion.resources import native_resource_path
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -432,14 +430,8 @@ def summarize_event_field_audit(directory: Path) -> dict:
                 raise ValueError("nonfinite actual event phi/E")
             samples[row["sample_id"]] = values
         raw_records.append(file_record(path))
-    if set(samples) != {point["sample_id"] for point in request["points"]}:
-        raise ValueError("actual event field population does not close")
-    ledger = [dict(point,**samples[point["sample_id"]],
-        k_over_q_plus_phi_v=point["kinetic_energy_per_charge_ev"]+samples[point["sample_id"]]["phi_v"])
-        for point in request["points"]]
-    baseline = ledger[0]["k_over_q_plus_phi_v"]
-    for row in ledger:
-        row["delta_h_from_source_centroid_v"] = row["k_over_q_plus_phi_v"]-baseline
+    from msplatform.analysis.event_energy import sampled_event_energy
+    ledger, baseline = sampled_event_energy(request['points'], samples)
     result = dict(schema_version=1,role="mrtof_actual_probe_event_energy_field_audit",status="reported",
         energy_acceptance="not_declared",tolerance=None,physical_matching_qualified=False,
         potential_authority="actual_materialized_scalar_native_PA__scalar_adapter_raw_sample",
@@ -487,7 +479,7 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
 def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contract: dict[str, Any]) -> dict[str, Any]:
     """Bind only original field geometry/voltage/grid authors; never open old PA."""
     from msplatform.components.multi_reflection_tof.candidate_contract import resolve_trajectory_profile
-    from msplatform.components.multi_reflection_tof.drift_phase_contract import resolve_drift_phase_contract
+    from msplatform.contracts.drift_phase_contract import resolve_drift_phase_contract
     from msplatform.backends.simion.prototype_materialization import _full_path_timeout_us
 
     materialization_path = verified_reference(reference_run, "results/two_prism_trial_materialization.json")
@@ -550,40 +542,3 @@ def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contra
         windows.append(frozen_window)
     frozen["refinement_windows"] = windows
     return frozen
-
-
-def project_provider_voltages(source: dict, request: dict, inputs: Path, lua_executable: Path) -> dict:
-    """Evaluate the sole provider Lua schedule with RF=0; no field or flight API."""
-    from msplatform.workflows.prepared_joint.ion_processor_assembly import derive_lift_seed
-    if lua_executable.name.lower() not in {"lua", "lua.exe", "lua5.1", "lua5.1.exe"} or not lua_executable.is_file():
-        raise ValueError("an explicit plain Lua interpreter is required; no SIMION solver fallback")
-    baseline, point = copy.deepcopy(source["baseline"]), copy.deepcopy(source["native_operating_point"])
-    point["lift_v"] = derive_lift_seed(source, request)
-    baseline["electric"]["lift_v"] = point["lift_v"]
-    dependency = _read(inputs / "accelerator_dependency.json")
-    if dependency["provider_voltage_schedule"] != "src/msplatform/backends/simion/resources/native_drive.lua":
-        raise ValueError("provider voltage schedule must belong to the selected IP component")
-    schedule = freeze_file(native_resource_path("native_drive.lua"),
-                           inputs / "provider_native_drive.lua")
-    if dependency["provider_voltage_waveforms"] != "src/msplatform/backends/simion/resources/voltage_waveforms.lua":
-        raise ValueError("provider voltage waveforms must be the declared common module")
-    waveforms = freeze_file(native_resource_path("voltage_waveforms.lua"), inputs / "provider_voltage_waveforms.lua")
-    when = max(baseline["schedule"]["lift_end_us"], source["native_timing"]["pulse_start_us"])
-    config = dict(baseline=baseline, native_operating_point=point, native_timing=source["native_timing"])
-    program = inputs / "provider_voltage_evaluation.lua"
-    program.write_text("local waveforms=assert(loadfile(" + _lua(waveforms["path"]) + "))()\n"
-                       "local d=assert(loadfile(" + _lua(schedule["path"]) + "))(waveforms)\n"
-                       "local v=d.voltages(" + _lua(config) + "," + _lua(when) + ",0)\n"
-                       "local out={} for i=1,15 do out[i]=string.format('%.17g',assert(v[i])) end\n"
-                       "assert(#v==15);print(table.concat(out,','))\n", encoding="utf-8", newline="\n")
-    from msplatform.execution.lua_process import run_lua_program
-
-    output = run_lua_program(lua_executable, program, inputs)
-    values = [float(token) for token in output.strip().split(",")]
-    if len(values) != 15 or not all(math.isfinite(v) for v in values):
-        raise ValueError("provider native schedule did not return 15 finite electrode voltages")
-    result = dict(values_v15=values, source_native_drive=schedule, source_voltage_waveforms=waveforms, evaluation_time_us=when,
-                  basis="post_extraction_pulse_held_rf_zero", evaluated_native_operating_point=point,
-                  evaluated_baseline_lift_v=baseline["electric"]["lift_v"], plain_lua=file_record(lua_executable))
-    _write(inputs / "provider_voltage_projection.json", result)
-    return result

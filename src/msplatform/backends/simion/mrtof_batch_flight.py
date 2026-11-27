@@ -12,13 +12,13 @@ from typing import Any
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
-from msplatform.backends.simion.native_completion import parse_fly_completed_line
+from msplatform.analysis.native_completion import parse_fly_completed_line
 from msplatform.io.scientific_csv import iter_csv_rows
 
 from msplatform.backends.simion.mr_bunch_source import (
     resolve_bunch_source_interval,
 )
-from msplatform.backends.simion.mrtof_observations import parse_events, read_scientific_events
+from msplatform.analysis.mr_observations import parse_events, read_scientific_events
 
 _ION_FIELD = re.compile(r"(?<![A-Za-z_])(ion=)(\d+)(?=\s|$)")
 

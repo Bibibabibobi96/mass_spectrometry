@@ -15,7 +15,7 @@ import numpy as np
 from msplatform.backends.simion.tracking_program import validate_propagation_stop
 
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from msplatform.backends.simion.native_completion import parse_fly_completed_line
+from msplatform.analysis.native_completion import parse_fly_completed_line
 
 
 STATE_PATTERN = re.compile(

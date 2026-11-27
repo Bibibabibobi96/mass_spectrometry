@@ -19,7 +19,7 @@ from msplatform.components.ion_processor.coordinates import (
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
 from msplatform.contracts.particle_state import write_component_particle_state_csv
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.results.ip_continuation import continuation_ancestry, continuation_protection_paths
 from msplatform.io.manifest_records import file_record, record_path, verify_record
 from msplatform.execution.solver_review_retirement import verify_retirement

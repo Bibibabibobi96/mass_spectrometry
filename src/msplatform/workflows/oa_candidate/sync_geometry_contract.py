@@ -106,6 +106,11 @@ def render_optimization_envelope() -> str:
 def render_authority_document(path: Path, optimization_envelope: str) -> str:
     source = path.read_text(encoding="utf-8")
     document = json.loads(source)
+    if document.get("status") == "retired":
+        execution = document.get("execution_profile")
+        if execution is not None and execution["authority"].get("path") != "config/execution_profiles.json":
+            raise ValueError(f"unexpected execution profile authority path in {path}")
+        return source
     bindings = {
         "baseline": ("config/baseline.json", CONTRACT_PATH.read_bytes()),
         "solver_numerics": (

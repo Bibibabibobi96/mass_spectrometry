@@ -2160,7 +2160,7 @@ def _derive_saved_slow_signature(trial: dict[str, Any], manifest_path: Path) -> 
     if len(logs) > 1:
         raise CandidateContractError("trial binds duplicate centre flight logs")
     if logs and record_path(logs[0], base_dir=manifest_path.parent).exists():
-        from msplatform.backends.simion.mrtof_observations import parse_events
+        from msplatform.analysis.mr_observations import parse_events
         from msplatform.workflows.prepared_joint.prism_trial import _first_slow_turn_signature
         verify_record("first slow-turn source log", logs[0], base_dir=manifest_path.parent)
         events = parse_events(record_path(logs[0], base_dir=manifest_path.parent).read_text(encoding="utf-8"))
@@ -2336,7 +2336,7 @@ def load_prepared_centroid_trial(manifest_path: Path, target_path: Path,
         _bunch_center_prism_handoff_validation,_bunch_center_stripe_stage_validation,
         _bunch_center_workpoint_validation,_termination_diagnostic,_static_return_diagnostic,
     )
-    from msplatform.workflows.prepared_joint.event_analysis import summarize_events
+    from msplatform.analysis.mr_event_analysis import summarize_events
     materialization.update(particle_mass_th=source["mass_amu"],charge_state=source["charge_state"],
                            target_drift_period_ratio=target["target_k"])
     primary=materialization["source_center_state"]

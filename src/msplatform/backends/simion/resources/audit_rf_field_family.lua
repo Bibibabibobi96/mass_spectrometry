@@ -13,7 +13,9 @@ for _,asset in ipairs(spec.assets) do
   end
   simion.pas:close()
   local pa=assert(simion.pas:open(asset.carrier_path))
-  assert(pa.potential_type=='electric' and pa.symmetry=='3dplanar','RF field type/symmetry differs')
+  local expected_symmetry=asset.mirror_x and '3dplanar[x]' or '3dplanar'
+  assert(pa.potential_type=='electric' and pa.symmetry==expected_symmetry,'RF field type/symmetry differs')
+  if asset.mirror_x then assert(pa.mirror_x and not pa.mirror_y and not pa.mirror_z,'OA carrier mirror axes differ') end
   for key,wanted in pairs(asset.grid) do assert(pa[key]==wanted,'RF grid differs: '..key) end
   local found={}
   for _,eid in ipairs(pa.electrode_numbers) do found[eid]=true end
@@ -63,7 +65,8 @@ for _,asset in ipairs(spec.assets) do
   for _,eid in ipairs(asset.response_ids) do
     local path=asset.carrier_path:gsub('%.pa0$','.pa'..eid)
     local response=assert(simion.pas:open(path))
-    assert(response.potential_type=='electric' and response.symmetry=='3dplanar','RF response type differs')
+    assert(response.potential_type=='electric' and response.symmetry==expected_symmetry,'RF response type differs')
+    if asset.mirror_x then assert(response.mirror_x and not response.mirror_y and not response.mirror_z,'OA response mirror axes differ') end
     for key,wanted in pairs(asset.grid) do assert(response[key]==wanted,'RF response grid differs') end
     local minimum,maximum=response:potentials_minmax()
     assert(finite(minimum) and finite(maximum),'RF response is nonfinite')

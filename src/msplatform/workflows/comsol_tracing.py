@@ -101,7 +101,9 @@ def compile_comsol_inputs(recipe: dict, instrument: Any, particles: Any) -> dict
         raise ValueError('COMSOL observations must start at birth and end at the declared horizon after pulse')
     return {'geometry': copy.deepcopy(geometry), 'projection': projection, 'requests': requests,
             'pulse_groups': pulse_groups, 'drive': {'on_us': on, 'off_us': on + width},
-            'source': {'rows': rows, 'clock': selected[0]['clock'], 'constants_version': CONSTANTS['version']},
+            'source': {'rows': rows, 'clock': selected[0]['clock'], 'constants_version': CONSTANTS['version'],
+                       'species': [item for item in recipe['species']
+                                   if item['species_id'] in {row['species_id'] for row in rows}]},
             'numerics': copy.deepcopy(tracing['comsol']), 'birth_validation': copy.deepcopy(validation),
             'observation_times_us': list(times)}
 

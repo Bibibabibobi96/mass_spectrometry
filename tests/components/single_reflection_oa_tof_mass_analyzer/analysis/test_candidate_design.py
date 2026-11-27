@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
@@ -24,6 +25,25 @@ prepare = partial(_prepare, science_root=REPO_ROOT)
 
 
 class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
+    def test_component_proposal_compilation_matches_frozen_workflow_without_mutation(self):
+        from msplatform.components.single_reflection_oa_tof.design_compilation import compile_design_proposal
+        request = self.base_request()
+        request["constraints"] = []
+        request["design_variables"] = ["accelerator_ring_width"]
+        values = [{"variable": "accelerator_ring_width", "value": 6.0, "unit": "mm"}]
+        expected, report, _ = self.compile(request, values)
+        baseline = load_json(PROJECT_ROOT / "config/baseline.json")
+        catalog = load_json(PROJECT_ROOT / "config/design_variables.json")
+        envelope = load_json(PROJECT_ROOT / "config/optimization_envelope.json")
+        proposal = {"values": values}
+        before = copy.deepcopy((baseline, proposal, request, catalog, envelope))
+        actual, changes, derived = compile_design_proposal(baseline, proposal, request,
+                                                          catalog=catalog, envelope=envelope)
+        self.assertEqual(actual, expected)
+        self.assertEqual(changes, report["changed_variables"])
+        self.assertEqual(derived, report["derived_changes"])
+        self.assertEqual((baseline, proposal, request, catalog, envelope), before)
+
     def test_zero_change_reproduces_formal_baseline_and_resolved_physics(self):
         request = self.base_request()
         request["constraints"] = []

@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.contracts import test_sfi_scalar_binding as fixture
-from tests.workflows.single_reflection import test_single_reflection_program as programs
 from msplatform.backends.simion import tracking_execution, tracking_program, tracking_units
 
 
@@ -16,9 +15,6 @@ class SfiScalarTrackingTests(unittest.TestCase):
         self.basis_case = fixture.SfiScalarAdmissionTests(methodName='runTest')
         self.basis_case.setUp()
         self.addCleanup(self.basis_case.doCleanups)
-        self.program_case = programs.SingleReflectionProgramTests(methodName='runTest')
-        self.program_case.setUp()
-        self.addCleanup(self.program_case.doCleanups)
 
     def test_real_admission_and_changed_source_refusal(self):
         c = self.basis_case
@@ -35,23 +31,6 @@ class SfiScalarTrackingTests(unittest.TestCase):
             tracking_execution._resolve_scalar_basis(source, c.model, plan, bad)
         with self.assertRaisesRegex(ValueError, 'nonempty continuous'):
             tracking_execution._resolve_scalar_basis(source, c.model, dict(plan, rows=[]), selection)
-
-    def test_renderer_keeps_default_and_installs_final_scalar_after_region(self):
-        c = self.program_case
-        basis = self.basis_case.resolve()
-        resources = Path(tracking_program.__file__).parent/'resources'
-        adapter = (resources/'scalar_field_adapter.lua').read_text(encoding='utf-8-sig')
-        composer = (resources/'sfi_scalar_field.lua').read_text(encoding='utf-8-sig')
-        before = c.build(native_path_projection=False)
-        actual = c.build(native_path_projection=False, scalar_field_basis=basis,
-                         scalar_adapter_source=adapter, scalar_composer_source=composer)
-        self.assertNotIn('single_flight_scalar_module', before)
-        self.assertIn("assert(instance~=nil,'selected instance required')", actual)
-        self.assertLess(actual.index('local result=single_flight_region_field.apply(base,state)'),
-                        actual.index('ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=single_flight_scalar('))
-        self.assertLess(actual.index('ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=single_flight_scalar('),
-                        actual.index('function segment.instance_adjust()'))
-        self.assertEqual(c.build(native_path_projection=False), before)
 
     def test_scalar_identity_changes_recovery_and_resources(self):
         basis = self.basis_case.resolve()
@@ -96,81 +75,6 @@ class SfiScalarTrackingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'final capture'):
             _validate_field_observation_row(legacy,spec,legacy_context,{'record_seq':0,'callback_seq':0},{'b':0})
 
-    @unittest.skipUnless(programs.LUA.is_file(), 'plain Lua unavailable')
-    def test_generated_callback_scalar_overrides_region_and_observer_reports_final(self):
-        import re
-        import subprocess
-        c = self.program_case
-        directory = c.root/'scalar-observer-fixture'
-        directory.mkdir()
-        request, run, _ = programs.scientific_preparation_fixture(directory, recorded_birth=True)
-        programs.prepare(request, run)
-        c.upstream, c.oatof = programs.read_designs(run)
-        c.geometry = json.loads((run/'inputs/frontend_geometry.json').read_text(encoding='utf-8'))
-        c.design = json.loads((run/'inputs/frontend_field_design.json').read_text(encoding='utf-8'))
-        basis = self.basis_case.resolve()
-        resources = Path(tracking_program.__file__).parent/'resources'
-        composer = (resources/'sfi_scalar_field.lua').read_text(encoding='utf-8-sig')
-        adapter = "return function(binding) return function(inst,x,y,z) if binding.scalar_pa:find('carrier',1,true) then return 1,2,3 elseif binding.scalar_pa:find('rf_reference',1,true) then return 4,5,6 else return 7,8,9 end end end"
-        specification = programs.field_observation_spec()
-        observation = dict(specification=specification, evidence_context=dict(
-            phase='full_instrument', clock_epoch_id='test-clock', mother_particle_ids=[11,77],
-            input_records={'fixture':'inert callback'}, scalar_sources={
-                name:item['records'] for name,item in basis['bases'].items()}))
-        program = c.build(native_path_projection=False, field_observation=observation,
-            scalar_field_basis=basis, scalar_adapter_source=adapter, scalar_composer_source=composer)
-        tail = r'''
-segment.scalar_test_setup=function()
-  local rf={path='C:/inert/rf.pa',field_vc=function() return 2,-3,5 end}
-  local pulse={path='C:/inert/delta.pa',field_vc=function() return 7,11,-13 end}
-  single_flight_standalone_dynamic_by_instance={[3]={role='accelerator_main',rf_differential_pas={rf},pulse_delta_pa=pulse,rf_reference_voltage_v=10000}}
-  single_flight_initialize_rf_drives()
-  single_flight_pulse=single_flight_pulse_component.new{canonical_clock=single_flight_instrument_time_us,
-    voltage_waveforms=single_flight_voltage_waveforms,pulse_time_us=10,pulse_width_us=3,pulse_mode=function() return 1 end}
-  single_flight_scalar=single_flight_scalar_module.new(single_flight_scalar_adapter,single_flight_rf_kernel,single_flight_pulse,
-    {carrier={scalar_pa='carrier'},rf_reference={scalar_pa='rf_reference'},pulse_delta={scalar_pa='pulse_delta'}},
-    {waveform='cosine',frequency_hz=250000,phase_rad=0,phase_reference_instrument_time_us=0})
-  single_flight_scalar_rf=single_flight_rf_kernel.compile_physical{waveform='cosine',frequency_hz=250000,phase_rad=0,rf_amplitude_v=1,rf_scale=1}
-  single_flight_analyzer={efield_adjust=function() return {} end}
-  single_flight_region_field={apply=function() return {replace_all=true,dvoltsy_gu=5} end}
-  single_flight_field_observer.start_run()
-end
-'''
-        program_path = c.root/'scalar-observed.lua'
-        program_path.write_text(re.sub(r'\badjustable\s+', '', program)+tail,encoding='utf-8',newline='\n')
-        script = c.root/'scalar-callback.lua'
-        script.write_text(r'''
-segment={};simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
-local carrier={path='C:/inert/front.pa',dx_mm=.3,dy_mm=.25,dz_mm=.1,field_vc=function() return -10,-20,-30 end}
-simion.wb.instances[3]={pa=carrier,scale=1,az=0,el=0,rt=0,wb_to_pa_coords=function(self,x,y,z) return x,y,z end}
-dofile(arg[1]);segment.scalar_test_setup()
-ion_instance=3;ion_number=1;ion_time_of_flight=.75;ion_px_mm=4;ion_py_mm=5;ion_pz_mm=6
-ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30
-segment.efield_adjust()
-assert(math.abs(ion_dvoltsx_gu-1)<1e-12 and math.abs(ion_dvoltsy_gu-2)<1e-12 and math.abs(ion_dvoltsz_gu-3)<1e-12)
-''',encoding='utf-8',newline='\n')
-        result = subprocess.run([str(programs.LUA),str(script),str(program_path)],cwd=c.root,
-            capture_output=True,text=True,encoding='utf-8',timeout=30)
-        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        rows = [json.loads(line.split(' ',2)[2]) for line in result.stdout.splitlines()
-                if line.startswith('TRACE: applied_field_observation ')]
-        self.assertEqual(len(rows),1)
-        self.assertEqual(rows[0]['basis'],'common_scalar_query_v1')
-        self.assertEqual(rows[0]['after_region_gradient_gu'],[0,5,0])
-        # cos(pi/2) and three-term binary64 arithmetic retain a few ulps.
-        import math
-        for actual, expected in zip(rows[0]['final_gradient_gu'], (1.,2.,3.), strict=True):
-            self.assertLessEqual(abs(actual-expected), 8*math.ulp(expected))
-        self.assertTrue(rows[0]['legacy_fields_intermediate_only'])
-        from msplatform.backends.simion.tracking_field_observation import _validate_field_observation_row
-        parser_context = dict(eligible_batch_particle_ids=[11,77],instance_index=3,world_frame_id='oatof_global',
-            rf_sources=[{'instance_id':'multipole'}],field_records={'parent':{
-                'carrier_off':{'path':'C:/inert/front.pa'},'rf_reference':{'path':'C:/inert/rf.pa'},
-                'pulse_delta':{'path':'C:/inert/delta.pa'}}},
-            scalar_sources={name:item['records'] for name,item in basis['bases'].items()})
-        counts = {item['bucket_id']:0 for item in specification['buckets']}
-        _validate_field_observation_row(rows[0],specification,parser_context,{'record_seq':0,'callback_seq':0},counts)
-
     def test_split_rf_rejects_historical_scalar_basis_before_owner(self):
         from tests.contracts import test_simion_tracking_execution as tracking_fixture
         from msplatform.backends.simion import operations
@@ -184,28 +88,6 @@ assert(math.abs(ion_dvoltsx_gu-1)<1e-12 and math.abs(ion_dvoltsy_gu-2)<1e-12 and
                 operations.track(source,case.packet,propagation=case.policy,observations=case.observations,
                     numerics=case.numerics,context=session_type().context,scalar_field_basis=selection)
             owner.assert_not_called()
-
-    def test_historical_recorded_birth_scalar_rejects_before_owner(self):
-        from tests.contracts.test_sfi_recorded_birth_entry import historical_fixture
-        from msplatform.workflows.single_reflection_flight.recorded_birth import track_recorded_birth
-        import tempfile
-        with tempfile.TemporaryDirectory() as directory:
-            selected,receipt,model_path=historical_fixture(Path(directory))
-            selected['scalar_field_basis']=dict(geometry_artifact=self.basis_case.geometry_ref,
-                                               samples=self.basis_case.sample_refs)
-            with patch('msplatform.execution.owner.run_managed_stage') as owner:
-                for recovery in (None,{'path':str(Path(directory)/'unused-recovery.json')}):
-                    with self.assertRaisesRegex(ValueError,'legacy composite.*read-only'):
-                        track_recorded_birth(**selected,recovery_reference=recovery)
-                    owner.assert_not_called()
-                for path in (Path(receipt['input_records']['particle_source']['path']),model_path):
-                    original=path.read_bytes()
-                    try:
-                        path.write_bytes(original+b'\n')
-                        with self.assertRaisesRegex(AssertionError,'byte count changed'):
-                            track_recorded_birth(**selected)
-                        owner.assert_not_called()
-                    finally:path.write_bytes(original)
 
     def test_split_rf_rejects_derived_historical_basis_before_owner(self):
         from tests.contracts import test_simion_tracking_execution as tracking_fixture

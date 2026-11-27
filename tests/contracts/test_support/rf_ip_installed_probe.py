@@ -9,45 +9,37 @@ from unittest.mock import patch
 
 
 def run(fixture, leaf):
-    from msplatform.contracts.gas import (
-        BoxDomain,
-        GasFieldSpec,
-        GasSource,
-        GasSpecies,
-        GasState,
-    )
+    from msplatform.contracts.gas import BoxDomain
+    from importlib.resources import files
     from msplatform.execution.context import ExecutionContext
     from msplatform.execution.resources import resource_path
     from msplatform.execution import run_session
     from msplatform.io.manifest_records import file_record
-    from msplatform.workflows.multipole_ip import continuous
+    from msplatform.backends.simion import operations
+    from msplatform.execution.owner import standalone_native_store
+    from msplatform.storage import ArtifactStore
 
     purelib = Path(sysconfig.get_paths()["purelib"]).resolve()
     assert (
-        Path(continuous.__file__).resolve()
-        == purelib / "msplatform/workflows/multipole_ip/continuous.py"
+        Path(operations.__file__).resolve()
+        == purelib / "msplatform/backends/simion/operations.py"
     )
 
     def box(lo, hi):
         return BoxDomain(lo, hi, (True, True, True), (True, True, True))
 
-    outer = GasFieldSpec(
-        field_id="explicit_outer",
-        frame_id=fixture["gas_frame"],
-        representation="uniform",
-        composition_id="ion_processor_explicit_single_gas",
-        composition=(GasSpecies("ion_processor_model_gas", fixture["gas_mass"], 1),),
-        domain=box((-200, -40, -40), (300, 40, 40)),
-        source=GasSource("prescribed", "test_outer", ()),
-        uniform_state=GasState("gas", 4, fixture["gas_temperature"], (1, 2, 3)),
-    )
+    c = fixture["context"]
+    workspace = Path(c["workspace"]); workspace.mkdir(parents=True, exist_ok=True)
+    author = json.loads(files('msplatform').joinpath('components/ion_processor/config/gas_environment.json').read_text(encoding='utf8'))
+    author['outer_state'] = dict(pressure_pa=4, temperature_k=fixture['gas_temperature'], bulk_velocity_m_s=[1, 2, 3])
+    environment = workspace/'test_hs1_environment.json'; environment.write_text(json.dumps(author), encoding='utf8')
     request = dict(
         bath_domain=box((0, -10, -10), (211, 10, 10)),
-        outer=outer,
+        outer_domain=box((-200, -40, -40), (300, 40, 40)),
+        environment_record=file_record(environment), environment_instance_id='ion_processor',
         vendor_record=file_record(Path(fixture["vendor_path"])),
         numerics=dict(seed=40, hs1_steps_per_mfp=20),
     )
-    c = fixture["context"]
     context = ExecutionContext(
         workspace=Path(c["workspace"]),
         python_executable=Path(sys.executable),
@@ -66,12 +58,12 @@ def run(fixture, leaf):
         side_effect=AssertionError("unexpected process"),
     ):
         try:
-            continuous.track_existing_fields(
-                fields=bad_reference,
-                particles=fixture["packet"],
+            operations.track(
+                bad_reference,
+                fixture["packet"],
                 propagation=fixture["propagation"],
                 observations={"plane_observations": []},
-                tracking_numerics=fixture["numerics"],
+                numerics=fixture["numerics"],
                 hs1_request=request,
                 context=context,
             )
@@ -89,13 +81,15 @@ def run(fixture, leaf):
     with (
         patch.dict(os.environ, private),
         patch.object(run_session, "run_observed_process", side_effect=callback),
+        standalone_native_store(ArtifactStore(Path(fixture["artifact_root"])),
+                                task_key="installed-rf-ip-inert", budget=512*1024**2),
     ):
-        result = continuous.track_existing_fields(
-            fields=fixture["reference"],
-            particles=fixture["packet"],
+        result = operations.track(
+            fixture["reference"],
+            fixture["packet"],
             propagation=fixture["propagation"],
             observations={"plane_observations": []},
-            tracking_numerics=fixture["numerics"],
+            numerics=fixture["numerics"],
             hs1_request=request,
             context=context,
         )
@@ -109,4 +103,4 @@ def run(fixture, leaf):
     assert collection["census"]["role"] == "rf_ip_full_mother_census"
     for _, actual, expected in observed:
         assert expected <= actual
-    print("INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91", flush=True)
+    print("INSTALLED_RF_IP_TRACKING_OWNER=PASS native=INERT ids=7,91", flush=True)

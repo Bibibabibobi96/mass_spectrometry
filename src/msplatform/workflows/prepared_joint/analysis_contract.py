@@ -29,7 +29,7 @@ def reference_changes(expected: dict[str, Any], scientific: dict[str, Any], *, c
     peak = scientific.get("peak_analysis")
     previous_peak = expected.get("peak_analysis")
     if peak and peak.get("time_basis") == "instrument_arrival_minus_common_extraction_pulse_us":
-        from msplatform.workflows.prepared_joint.measured_population import validate_measured_peak_analysis_contract
+        from msplatform.results.historical_joint_source import validate_measured_peak_analysis_contract
         validate_measured_peak_analysis_contract(peak, contract_base)
         if peak != previous_peak:
             names = ("resolution_definition", "settings")

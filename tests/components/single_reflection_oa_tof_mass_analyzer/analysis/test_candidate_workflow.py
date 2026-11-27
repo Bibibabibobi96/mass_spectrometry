@@ -159,8 +159,7 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
             self.assertEqual(numerics.read_bytes(), original)
 
     def test_analysis_and_finalization_reject_new_solver_numerics_before_preparation(self):
-        for arguments in (["--postprocess-from", "missing-parent", "--run-id", "unused"],
-                          ["--resume-finalization", "missing-run"]):
+        for arguments in (["--resume-finalization", "missing-run"],):
             with self.subTest(arguments=arguments), mock.patch.object(sys, "argv",
                     ["run_candidate", *arguments, "--solver-numerics-contract", "missing-numerics.json"]), \
                     mock.patch.object(candidate_entry, "prepare_execution") as prepare:
@@ -2140,36 +2139,6 @@ print('FROZEN_ION_CONSUMER_PASS')
         first_asset = min(index for index in (text.find("formal\\"), text.find("New-Item -ItemType Directory")) if index >= 0)
         self.assertLess(preflight, first_asset, script.name)
 
-        from msplatform.workflows import single_reflection_mass_spectrum_study as mass_study
-        with tempfile.TemporaryDirectory() as root:
-            root = Path(root)
-            paths = {name: root / (name + ".json") for name in (
-                "mode_config", "resolved_geometry", "particle_count_policy", "formal_mph",
-                "formal_asset_manifest", "simion_executable", "project_config",
-                "formal_assets", "baseline", "formal_mode", "solver_numerics")}
-            paths["artifact_project_root"] = root / "artifacts"
-            for path in paths.values():
-                if path.suffix == ".json":
-                    path.write_text("{}")
-            with mock.patch.object(mass_study, "validate_formal_inputs",
-                                   side_effect=ValueError("FORMAL_REVALIDATION_REQUIRED")) as preflight, \
-                    mock.patch.object(mass_study, "run_managed_stage") as owner:
-                with self.assertRaisesRegex(ValueError, "legacy mass-spectrum run/resume is retired; use msplatform run with a mass_scan recipe"):
-                    mass_study.run(object(), run_id="20261117_000000__sim__cross__mass-preflight", **paths)
-            preflight.assert_not_called()
-            owner.assert_not_called()
-
-        formal_cli = (
-            PROJECT_ROOT.parents[1]
-            / "workflows/resources"
-            / "run_formal_validation.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("[ValidateSet('Validate','Publish','Recover','Verify')]", formal_cli)
-        self.assertIn("-Phase Verify", formal_cli)
-        validate_branch = formal_cli[formal_cli.index("$candidateRoot =") :]
-        self.assertNotIn("Assert-OaTofFormalAssetsReadable", validate_branch)
-
-
     def test_shared_builder_requires_explicit_seed_and_candidate_template(self):
         builder = (PROJECT_ROOT.parents[1] / "backends/simion/resources" / "build_formal_delivery.ps1").read_text(encoding="utf-8")
         self.assertIn("ParticleSeed is required", builder)
@@ -3042,8 +3011,6 @@ def postprocess_public_entry(root, artifact):
     host_path = root / "public_host_context.json"
     host_path.write_text(env["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"], encoding="utf-8")
     def invoke(arguments):
-        if "--postprocess-from" in arguments:
-            arguments = [*arguments, "--host-context", str(host_path), "--science-root", str(author)]
         return subprocess.run([sys.executable,"-I","-B","-c",bootstrap,str(author),"run_candidate.py",*arguments],
             cwd=author,env=env,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=240)
     return invoke

@@ -4,6 +4,7 @@ import math
 import copy
 import json
 from collections.abc import Mapping, Sequence
+from msplatform.assembly.geometry_primitives import polygon_membership
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
 
 
@@ -42,25 +43,6 @@ def oa_witness_contains(shape: Mapping, point: Sequence[float], *, boundary: boo
     x, y, _ = shape['center_mm']
     radius2 = _radial_square(point, x, y)
     return radius2 <= shape['radius_mm']**2 if boundary else radius2 < shape['radius_mm']**2
-
-
-
-def polygon_membership(point: tuple[float, float], polygon: list[list[float]]) -> tuple[bool, float]:
-    y, z = point
-    inside = False
-    distance = math.inf
-    for start, end in zip(polygon, polygon[1:] + polygon[:1]):
-        y0, z0 = float(start[0]), float(start[1])
-        y1, z1 = float(end[0]), float(end[1])
-        dy, dz = y1 - y0, z1 - z0
-        scale = dy * dy + dz * dz
-        along = 0.0 if scale == 0.0 else max(0.0, min(1.0, ((y - y0) * dy + (z - z0) * dz) / scale))
-        distance = min(distance, math.hypot(y - (y0 + along * dy), z - (z0 + along * dz)))
-        if (z0 > z) != (z1 > z):
-            crossing_y = y0 + (z - z0) * dy / dz
-            if y < crossing_y:
-                inside = not inside
-    return inside, distance
 
 
 

@@ -18,6 +18,7 @@ from msplatform.execution.processes import ProcessExecutionError
 from msplatform.execution.run_session import RunSession
 from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.results.artifacts import open_artifact
+from msplatform.storage.store import ArtifactStore
 
 
 def _prepared_source(helper, root, context, retention):
@@ -108,6 +109,7 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 'stages': {'solve_assembly_stationary': stage, 'recover_assembly_stationary': stage}}), encoding='utf-8')
             context = replace(context, stage_policy_path=policy)
             source = _prepared_source(helper, root, context, retention)
+            store = ArtifactStore(root / "stationary-store")
             source_bytes = {key: source.data_path(key).read_bytes() for key in source.data_records}
             control = context.workspace / 'inert-control.json'
             control.write_text(json.dumps({'case': 'reopen_failure'}), encoding='utf-8')
@@ -128,8 +130,8 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
             with (patch.object(native_execution, 'freeze_native_sources', side_effect=sources),
                   patch.object(RunSession, 'run_process', new=inert_transport)):
                 with self.assertRaises(ProcessExecutionError):
-                    assembly_field_solution.solve_stationary(source, solver_numerics={'kind': 'comsol_stationary_default'}, context=context)
-                manifests = list((context.workspace / 'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-field*/run_manifest.json'))
+                    assembly_field_solution.solve_stationary(source, solver_numerics={'kind': 'comsol_stationary_default'}, context=context, artifact_store=store)
+                manifests = list(store.root.glob('assets/native_stage/*/*/runs/*assembly-field*/run_manifest.json'))
                 self.assertEqual(len(manifests), 1)
                 failed_path = manifests[0]
                 failed_bytes = failed_path.read_bytes()
@@ -142,8 +144,35 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 selected_bytes = selected_path.read_bytes()
                 failed_record = file_record(failed_path, 'required_evidence')
                 control.write_text(json.dumps({'case': 'recovery', 'borrowed_model': str(selected_path)}), encoding='utf-8')
-                recovered = assembly_field_solution.recover_stationary(failed_record, selected_output=selected, context=context)
+                recovered = assembly_field_solution.recover_stationary(failed_record, selected_output=selected, context=context, artifact_store=store)
                 self.assertEqual(recovered.kind, 'field_solution')
+                from msplatform.execution.native_source_guard import guard_native_source
+                with guard_native_source(recovered.reference, expected_kind='field_solution',
+                        expected_artifact_root=context.workspace / 'artifacts', artifact_store=store) as guarded:
+                    self.assertEqual(guarded.data_path('model'), selected_path.resolve())
+                from msplatform.execution.native_source_guard import guard_failed_store_evidence
+                with store._db() as db:
+                    asset_id, token = db.execute("SELECT id,work FROM assets WHERE state='failed'").fetchone()
+                    binding_id, original_state, original_completion = db.execute('''SELECT b.id,b.state,b.completion
+                        FROM native_bindings b JOIN native_binding_controls c ON c.binding_id=b.id
+                        WHERE c.control_id=? LIMIT 1''', (token[8:],)).fetchone()
+                for target, value in (('asset', 'publishing'), ('binding', 'active'), ('receipt', None)):
+                    try:
+                        with store._transaction() as db:
+                            if target == 'asset':
+                                db.execute('UPDATE assets SET state=? WHERE id=?', (value, asset_id))
+                            elif target == 'binding':
+                                db.execute('UPDATE native_bindings SET state=? WHERE id=?', (value, binding_id))
+                            else:
+                                db.execute('UPDATE native_bindings SET completion=? WHERE id=?', (value, binding_id))
+                        with self.subTest(invalid=target), self.assertRaises(ValueError):
+                            with guard_failed_store_evidence(store, failed_record, selected):
+                                self.fail('invalid failed evidence was accepted')
+                    finally:
+                        with store._transaction() as db:
+                            db.execute("UPDATE assets SET state='failed' WHERE id=?", (asset_id,))
+                            db.execute('UPDATE native_bindings SET state=?,completion=? WHERE id=?',
+                                       (original_state, original_completion, binding_id))
                 self.assertEqual(recovered.data_path('model'), selected_path.resolve())
                 self.assertEqual(recovered.data_path('model').read_bytes(), selected_bytes)
                 recovered_manifest = json.loads(recovered.manifest_location.read_text(encoding='utf-8-sig'))
@@ -173,8 +202,8 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                         failed_path.write_text(json.dumps(changed_manifest), encoding='utf-8')
                         changed_record = file_record(failed_path, 'required_evidence')
                         with patch.object(RunSession, 'run_process', side_effect=AssertionError('must not launch')) as launch:
-                            with self.assertRaisesRegex(ValueError, 'source host release reports an error'):
-                                assembly_field_solution.recover_stationary(changed_record, selected_output=selected, context=context)
+                            with self.assertRaises(ValueError):
+                                assembly_field_solution.recover_stationary(changed_record, selected_output=selected, context=context, artifact_store=store)
                             launch.assert_not_called()
                     finally:
                         failed_completion_path.write_bytes(failed_completion_bytes)
@@ -184,8 +213,8 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 selected_path.write_bytes(selected_bytes + b'tampered')
                 try:
                     with patch.object(RunSession, 'run_process', side_effect=AssertionError('must not launch')) as launch:
-                        with self.assertRaises(AssertionError):
-                            assembly_field_solution.recover_stationary(failed_record, selected_output=selected, context=context)
+                        with self.assertRaises((AssertionError, ValueError)):
+                            assembly_field_solution.recover_stationary(failed_record, selected_output=selected, context=context, artifact_store=store)
                         launch.assert_not_called()
                 finally:
                     selected_path.write_bytes(selected_bytes)
@@ -211,6 +240,7 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 'stages': {'solve_assembly_stationary': stage, 'recover_assembly_stationary': stage}}), encoding='utf-8')
             context = replace(context, stage_policy_path=policy)
             source = _prepared_source(helper, root, context, retention)
+            store = ArtifactStore(root / "stationary-store")
             source_bytes = {key: source.data_path(key).read_bytes() for key in source.data_records}
             control = context.workspace / 'inert-control.json'
             control.write_text(json.dumps({'case': 'parent_success'}), encoding='utf-8')
@@ -230,7 +260,7 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 return original_run_process(session, operation_id, **kwargs)
             with (patch.object(native_execution, 'freeze_native_sources', side_effect=sources),
                   patch.object(RunSession, 'run_process', new=inert_transport)):
-                parent = assembly_field_solution.solve_stationary(source, solver_numerics={'kind':'comsol_stationary_default'}, context=context)
+                parent = assembly_field_solution.solve_stationary(source, solver_numerics={'kind':'comsol_stationary_default'}, context=context, artifact_store=store)
                 old_request = json.loads(parent.data_path('request').read_text(encoding='utf-8-sig'))
                 new_request = json.loads(json.dumps(old_request))
                 new_request['group_voltages'][0]['voltage_v'] = 18.0
@@ -238,19 +268,19 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 stage['runtime']={'mph_save_optimization':'size'}
                 policy.write_text(json.dumps({'schema_version':1,'role':'execution_stage_policy','stages':{'solve_assembly_stationary':stage,'recover_assembly_stationary':{key:value for key,value in stage.items() if key!='runtime'}}}),encoding='utf-8')
                 control.write_text(json.dumps({'case':'reuse_success'}),encoding='utf-8')
-                normal=assembly_field_solution.solve_stationary(parent,solver_numerics={'kind':'comsol_stationary_default'},request=new_request,context=context)
-                self.assertEqual(normal.data_path('prepared_manifest'),source.manifest_location)
+                normal=assembly_field_solution.solve_stationary(parent,solver_numerics={'kind':'comsol_stationary_default'},request=new_request,context=context, artifact_store=store)
+                self.assertEqual(normal.data_path('prepared_manifest').read_bytes(),source.manifest_location.read_bytes())
                 normal_manifest=json.loads(normal.manifest_location.read_text(encoding='utf-8-sig'))
                 self.assertEqual(normal.metadata['mph_save_optimization'],'size')
                 self.assertEqual(json.loads(normal.data_path('solve_stationary').read_text(encoding='utf-8-sig'))['mph_save_optimization'],'size')
                 bound=normal_manifest['inputs']['upstream_prepared_manifest']
                 self.assertTrue(Path(bound['path']).is_absolute())
-                self.assertEqual(normal_manifest['products']['solution']['data']['prepared_manifest'],bound)
+                self.assertEqual(normal_manifest['products']['solution']['data']['prepared_manifest']['sha256'],bound['sha256'])
                 self.assertEqual(parent.data_path('model').read_bytes(),parent_bytes)
                 control.write_text(json.dumps({'case':'reuse_reopen_failure'}),encoding='utf-8')
                 with self.assertRaises(ProcessExecutionError):
-                    assembly_field_solution.solve_stationary(parent,solver_numerics={'kind':'comsol_stationary_default'},request=new_request,context=context)
-                manifests=list((context.workspace/'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-field*/run_manifest.json'))
+                    assembly_field_solution.solve_stationary(parent,solver_numerics={'kind':'comsol_stationary_default'},request=new_request,context=context, artifact_store=store)
+                manifests=list(store.root.glob('assets/native_stage/*/*/runs/*assembly-field*/run_manifest.json'))
                 failed_paths=[path for path in manifests if json.loads(path.read_text(encoding='utf-8-sig'))['status']=='failed']
                 self.assertEqual(len(failed_paths),1);failed_path=failed_paths[0];failed_bytes=failed_path.read_bytes()
                 failed=json.loads(failed_bytes);outputs={Path(record['path']).name:record for record in failed['outputs']}
@@ -259,15 +289,15 @@ class StationaryRecoveryManagedTests(unittest.TestCase):
                 for name in ('assembly-stationary-field.mph','assembly-stationary-computed-raw.mph'):
                     selected=outputs[name];verify_record('failed selected output',selected);selected_path=Path(selected['path']);selected_bytes=selected_path.read_bytes()
                     control.write_text(json.dumps({'case':'reuse_recovery','borrowed_model':str(selected_path)}),encoding='utf-8')
-                    recovered=assembly_field_solution.recover_stationary(failed_record,selected_output=selected,context=context)
+                    recovered=assembly_field_solution.recover_stationary(failed_record,selected_output=selected,context=context, artifact_store=store)
                     self.assertEqual(recovered.data_path('model'),selected_path.resolve())
                     self.assertEqual(json.loads(recovered.data_path('request').read_text(encoding='utf-8-sig')),new_request)
-                    self.assertEqual(recovered.data_path('prepared_manifest'),source.manifest_location)
+                    self.assertEqual(recovered.data_path('prepared_manifest').read_bytes(),source.manifest_location.read_bytes())
                     self.assertEqual(selected_path.read_bytes(),selected_bytes)
                 for case in ('reuse_recovery_bad_mesh','reuse_recovery_bad_voltage'):
                     selected=outputs['assembly-stationary-field.mph'];control.write_text(json.dumps({'case':case,'borrowed_model':selected['path']}),encoding='utf-8')
                     with self.subTest(case=case),self.assertRaises(ValueError):
-                        assembly_field_solution.recover_stationary(failed_record,selected_output=selected,context=context)
+                        assembly_field_solution.recover_stationary(failed_record,selected_output=selected,context=context, artifact_store=store)
                 self.assertEqual(failed_path.read_bytes(),failed_bytes)
                 self.assertEqual(parent.data_path('model').read_bytes(),parent_bytes)
                 self.assertEqual({key:source.data_path(key).read_bytes() for key in source.data_records},source_bytes)

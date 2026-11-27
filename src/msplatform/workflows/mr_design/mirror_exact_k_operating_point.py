@@ -28,16 +28,16 @@ from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.host_resource_python import ensure_heavy_entry
-from msplatform.components.multi_reflection_tof.drift_phase_contract import (
+from msplatform.contracts.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     NativeStripeSpatialShapeRoot,
     materialize_native_stripe_spatial_return_root,
 )
+from msplatform.components.multi_reflection_tof.constraint_classification import classify_constraint_system
 from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     StripeHardBoundary,
-    classify_constraint_system,
     derive_coupled_drift_state,
     spatial_return_kappa_derivative_residual,
 )

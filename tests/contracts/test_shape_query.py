@@ -161,7 +161,8 @@ class ShapeQueryTests(unittest.TestCase):
         self.assertEqual(query.query_members([member,other],world.coordinates_mm,frame_id='world')['status'],'unsupported')
 
     def test_shared_mr_polygon_membership_preserves_existing_wrapper(self):
-        from msplatform.backends.simion.mrtof_observations import _polygon_membership, _polygon_contains, _strict_polygon_hole
+        from msplatform.assembly.geometry_primitives import polygon_membership as _polygon_membership
+        from msplatform.analysis.mr_observations import _polygon_contains, _strict_polygon_hole
         poly=[[0,0],[4,0],[4,1],[1,1],[1,4],[0,4]]
         for point in ((.5,3),(3,3),(1,3),(0,0)):
             self.assertEqual(_polygon_membership(point,poly),query.polygon_membership(point,poly))

@@ -82,7 +82,7 @@ class StationarySolutionReadbackTests(unittest.TestCase):
         from pathlib import Path
         from types import SimpleNamespace
         from unittest.mock import patch
-        from msplatform.backends.comsol.assembly_field_solution import solve_stationary
+        from msplatform.backends.comsol.assembly_field_solution import _solve_stationary_guarded as solve_stationary
         from msplatform.execution import owner,stage_policy
         from msplatform.results import artifacts
         with tempfile.TemporaryDirectory() as temporary:
@@ -92,9 +92,8 @@ class StationarySolutionReadbackTests(unittest.TestCase):
             (root/'comsol').touch();(root/'matlab').mkdir()
             context=SimpleNamespace(tools={'comsol_launcher':root/'comsol','matlab_root':root/'matlab'})
             stage={'limits':{'transient_run_directory_bytes':100},'artifact_retention':{}}
-            with patch.object(artifacts,'open_artifact',side_effect=[source,'published']) as op,patch.object(stage_policy,'read_stage_policy',return_value=(stage,{})),patch.object(owner,'run_managed_stage',return_value={'manifest':{}}) as run:
-                self.assertEqual(solve_stationary({},solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context),'published')
-                self.assertEqual(op.call_args_list[0].kwargs['expected_kind'],'field_solution')
+            with patch.object(artifacts,'open_artifact',return_value='published'),patch.object(stage_policy,'read_stage_policy',return_value=(stage,{})),patch.object(owner,'run_managed_stage',return_value={'manifest':{}}) as run:
+                self.assertEqual(solve_stationary(source,solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context,stage=stage,authority={}),'published')
                 self.assertTrue(run.call_args.kwargs['action'].keywords['reuse'])
                 self.assertEqual(run.call_args.kwargs['action'].keywords['upstream_record']['path'],str(root/'prepared_manifest'))
                 self.assertEqual(run.call_args.kwargs['source_references'][1]['manifest_record']['path'],str(root/'prepared_manifest'))
@@ -104,11 +103,11 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                 invalid_stage=dict(stage,runtime=invalid)
                 with self.subTest(runtime=invalid),patch.object(artifacts,'open_artifact',return_value=source),patch.object(stage_policy,'read_stage_policy',return_value=(invalid_stage,{})),patch.object(owner,'run_managed_stage') as refused:
                     with self.assertRaises(ValueError):
-                        solve_stationary({},solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context)
+                        solve_stationary(source,solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context,stage=invalid_stage,authority={})
                     refused.assert_not_called()
             sized_stage=dict(stage,runtime={'mph_save_optimization':'size'})
-            with patch.object(artifacts,'open_artifact',side_effect=[source,'published']),patch.object(stage_policy,'read_stage_policy',return_value=(sized_stage,{})),patch.object(owner,'run_managed_stage',return_value={'manifest':{}}) as sized:
-                self.assertEqual(solve_stationary({},solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context),'published')
+            with patch.object(artifacts,'open_artifact',return_value='published'),patch.object(stage_policy,'read_stage_policy',return_value=(sized_stage,{})),patch.object(owner,'run_managed_stage',return_value={'manifest':{}}) as sized:
+                self.assertEqual(solve_stationary(source,solver_numerics={'kind':'comsol_stationary_default'},request=changed,context=context,stage=sized_stage,authority={}),'published')
                 self.assertEqual(sized.call_args.kwargs['action'].keywords['save_optimization'],'size')
                 self.assertEqual(sized.call_args.kwargs['payload']['stage_policy']['runtime'],{'mph_save_optimization':'size'})
 
@@ -214,7 +213,8 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                 reads.append(name)
                 verify_record(name, originals[name])
                 return Path(originals[name]['path'])
-            source = SimpleNamespace(data_path=data_path, data_records=originals)
+            source = SimpleNamespace(data_path=data_path, data_records=originals, kind='prepared_model',
+                                     reference={'manifest':manifest_record,'product_id':'model'})
             context = SimpleNamespace(workspace=root, python_executable=root / 'python.exe',
                 host_state_path=root / 'host.sqlite', policy_path=root / 'policy.json',
                 tools={'comsol_launcher': comsol, 'matlab_root': root}, powershell_executable=root / 'pwsh.exe')
@@ -249,7 +249,7 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                     names=names, projection=projection, request={},
                     solver_numerics={'kind': 'comsol_stationary_default'}, limits={})
             self.assertNotIn(Path(originals['model']['path']), [call.args[0] for call in freeze.call_args_list])
-            self.assertEqual(len(freeze.call_args_list), len(names) - 1)
+            self.assertEqual(len(freeze.call_args_list), len(names))
             self.assertIn(originals['model'], operations[0][1])
             self.assertNotIn(originals['model'], operations[1][1])
             self.assertEqual(added['prepared_model_model'], originals['model'])
@@ -328,7 +328,7 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                         self.assertEqual(json.loads((target/'inputs/new-workpoint-request.json').read_text()),changed_request)
                         self.assertEqual(json.loads(Path(originals['request']['path']).read_text()),old_request)
                         product=reuse_result['manifest_extra_fields']['products']['solution']
-                        self.assertEqual(product['data']['prepared_manifest']['path'],str(manifest_path))
+                        self.assertEqual(product['data']['prepared_manifest']['sha256'],resolved_upstream['sha256'])
                         reuse_published=target/'published';reuse_published.mkdir()
                         output_records=[file_record(Path(path),'solver_native_binary' if path.endswith('.mph') else 'required_evidence') for path in reuse_result['output_paths']]
                         document=dict(schema_version=2,role='simulation_run_manifest',run_id='reuse-reader',project='software_fixture',mode='stationary_workpoint',status='success',inputs=added,outputs=output_records,products={'solution':product})
@@ -336,7 +336,7 @@ class StationarySolutionReadbackTests(unittest.TestCase):
                         reference={'manifest':file_record(reuse_published/'run_manifest.json'),'product_id':'solution'}
                         with patch.object(artifacts,'ARTIFACT_KINDS',artifacts.ARTIFACT_KINDS | {'field_solution'}):
                             reopened=artifacts.open_artifact(reference,expected_kind='field_solution')
-                            self.assertEqual(reopened.data_path('prepared_manifest'),manifest_path.resolve())
+                            self.assertEqual(reopened.data_path('prepared_manifest').read_bytes(),manifest_path.read_bytes())
             failure_root = root / 'failure'
             for name in ('inputs', 'results', 'logs'):
                 (failure_root / name).mkdir(parents=True)

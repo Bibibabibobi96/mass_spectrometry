@@ -160,6 +160,13 @@ class FieldExecutionPlanningTests(unittest.TestCase):
             kwargs = dict(raw_assets=assets, convergence_v=numerics['downstream_convergence_v'],
                 tool_identity=identity['tool_identity'], builder_identities={name:file_sha256(path) for name,path in resources.items()})
             self.assertEqual(downstream_identity(changed, **kwargs), identity)
+            voltage_drive = copy.deepcopy(document['drive'])
+            reflectron = next(groups for groups in voltage_drive['groups'].values()
+                              if 'reflectron_stage1_ring_1' in groups)
+            reflectron['reflectron_stage1_ring_1']['voltage_v'] += 1
+            voltage_model = compile_prepared_model(model_geometry(model), document['components_resolved'],
+                                                  drive=voltage_drive, physics=PHYSICS)
+            self.assertNotEqual(downstream_identity(voltage_model, **kwargs), identity)
             for field in ('raw_assets','convergence_v','tool_identity','builder_identities'):
                 broken = copy.deepcopy(kwargs)
                 if field == 'raw_assets': broken[field]['detector']['raw_record']['sha256'] = 'F'*64
@@ -169,6 +176,25 @@ class FieldExecutionPlanningTests(unittest.TestCase):
                 with self.subTest(field=field):
                     self.assertNotEqual(downstream_identity(model, **broken), identity)
 
+    def test_response_exports_are_private_stage_standalone_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model, assets, numerics, resources, _identity = field_case(root)
+            plan, bindings = _plan_downstream_solve_with_assets(model, raw_geometry_assets=assets,
+                working_directory=root/'work', convergence_v=numerics['downstream_convergence_v'],
+                exporter_resource=resources['export_standalone_pa.lua'],
+                verifier_resource=resources['audit_downstream_fields.lua'])
+            responses = next(row for row in bindings if row['role'] == 'reflectron')['response_paths']
+            operations = [row for row in plan.operations if row['operation_id'].startswith('export_reflectron_response_')]
+            self.assertTrue(responses)
+            self.assertEqual(len(operations), len(responses))
+            for index, (operation, output) in enumerate(zip(operations, responses, strict=True), 1):
+                self.assertTrue(output.endswith('reflectron_response_'+str(index)+'.pa'))
+                self.assertEqual(operation['outputs'], [output])
+                self.assertIn('reflectron.pa'+str(index), operation['arguments'][-2])
+                self.assertLess(list(plan.operations).index(operation),
+                                next(i for i, row in enumerate(plan.operations) if row['operation_id'] == 'audit_downstream'))
+
     def test_reflectron_response_reader_authenticates_order_identity_grid_and_bytes(self):
         from msplatform.backends.simion.field_closure import load_reflectron_response_records
         from msplatform.results.artifacts import OpenedArtifact
@@ -176,13 +202,13 @@ class FieldExecutionPlanningTests(unittest.TestCase):
             root = Path(directory)
             records = {}
             for response_id in (1,2):
-                path = root/('reflectron.pa'+str(response_id))
+                path = root/('reflectron_response_'+str(response_id)+'.pa')
                 path.write_bytes(b'INERT_RESPONSE_'+bytes([response_id]))
                 records['response_'+str(response_id)] = file_record(path, 'solver_native_binary')
             model_identity = 'A'*64
             spatial_identity = dict(schema_version=1, identity_sha256='B'*64)
             grid = dict(nx=10, ny=11, nz=12, dx_mm=.1, dy_mm=.1, dz_mm=.1)
-            basis = dict(schema_version=1, model_identity_sha256=model_identity,
+            basis = dict(schema_version=2, model_identity_sha256=model_identity,
                 downstream_identity=spatial_identity, grid=grid, symmetry='2dcylindrical',
                 responses=[dict(response_id=index, data_key='response_'+str(index)) for index in (1,2)])
             metadata = dict(model_identity_sha256=model_identity, downstream_identity=spatial_identity,
@@ -200,6 +226,7 @@ class FieldExecutionPlanningTests(unittest.TestCase):
             self.assertEqual(actual, [dict(records['response_'+str(index)], response_id=index) for index in (1,2)])
             faults = {}
             faults['missing'] = dict(metadata, reflectron_response_basis=None)
+            faults['legacy_family'] = dict(metadata, reflectron_response_basis=dict(basis, schema_version=1))
             for case in ('reordered','duplicated','duplicated_keys','wrong_model','wrong_spatial',
                          'wrong_grid','wrong_symmetry','extra_field'):
                 changed = copy.deepcopy(basis)
@@ -219,7 +246,7 @@ class FieldExecutionPlanningTests(unittest.TestCase):
                                    ('expected_grid',dict(expected_grid=dict(grid, nx=99)))):
                 with self.subTest(case=case), self.assertRaises(ValueError):
                     load_reflectron_response_records(artifact(metadata), **dict(kwargs, **override))
-            path = root/'reflectron.pa2'
+            path = root/'reflectron_response_2.pa'
             original = path.read_bytes()
             path.write_bytes(b'TAMPERED')
             with self.assertRaises((ValueError, AssertionError)):
@@ -274,7 +301,7 @@ class DownstreamWorkerTests(unittest.TestCase):
                 self.assertEqual(Path(parameters['receipt_path']), canonical/'results/downstream_fields.json')
                 report = json.loads(Path(parameters['receipt_path']).read_text(encoding='utf-8'))
                 self.assertEqual(report['request']['path'], str(request_path))
-                self.assertEqual(report['native_count'], 5)
+                self.assertEqual(report['native_count'], 5 + len(next(row for row in report['assets'] if row['role'] == 'reflectron')['response_records']))
                 observations.append(dict(alias=str(alias), canonical=str(canonical),
                     request_record=report['request'], working_directory=str(work),
                     worker_native_observations=report['native_operations']))
@@ -429,14 +456,14 @@ class DownstreamWorkerTests(unittest.TestCase):
                     action_record=file_record(Path(__file__), 'required_evidence'),
                     completion_api=lambda:SimpleNamespace(recoverable_batch_logs=lambda _root:set()))
             self.assertEqual(result['stage'], 'complete')
-            self.assertEqual(reports[0]['native_count'], 5)
+            self.assertEqual(reports[0]['native_count'], 5 + len(next(row for row in reports[0]['assets'] if row['role'] == 'reflectron')['response_records']))
             self.assertEqual(reports[0]['refine_calls'], 3)
             self.assertEqual([len(row['family_records']) for row in reports[0]['assets']], [4,4,0])
             reflectron = reports[0]['assets'][2]
             self.assertEqual([row['response_id'] for row in reflectron['response_records']],
                 list(range(1, len(reflectron['response_records'])+1)))
-            self.assertEqual([Path(row['record']['path']).suffix for row in reflectron['response_records']],
-                ['.pa'+str(row['response_id']) for row in reflectron['response_records']])
+            self.assertEqual([Path(row['record']['path']).name for row in reflectron['response_records']],
+                ['reflectron_response_'+str(row['response_id'])+'.pa' for row in reflectron['response_records']])
             completion = json.loads((Path(result['run_directory'])/'results/execution_completion.json').read_text())
             self.assertEqual(len(completion['writer_completion']['operations']), 2)
             self.assertEqual(len(completion['writer_completion']['resource_releases']), 2)

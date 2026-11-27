@@ -20,7 +20,7 @@ NATIVE_MODEL = UnsolvedModelSpec(run_label="wehnelt-model",
 
 
 def build_wehnelt_model(baseline: Mapping[str, Any], modes: Mapping[str, Any], *, mode_id: str,
-                        evidence_particle_count: int, context: ExecutionContext) -> OpenedArtifact:
+                        evidence_particle_count: int, context: ExecutionContext, artifact_store=None) -> OpenedArtifact:
     """Build the original three-stage chain and cold-reopen its unsolved CPT model.
 
     Particle count configures the saved inlet only. This operation performs no
@@ -29,7 +29,8 @@ def build_wehnelt_model(baseline: Mapping[str, Any], modes: Mapping[str, Any], *
     resolved = resolve_wehnelt_build_request(baseline, modes, mode_id=mode_id,
                                             evidence_particle_count=evidence_particle_count)
     return build_unsolved_model(resolved, baseline, modes, action_name="build_wehnelt_model",
-                                spec=NATIVE_MODEL, context=context)
+                                spec=NATIVE_MODEL, context=context,
+                                **({'artifact_store': artifact_store} if artifact_store is not None else {}))
 
 
 def resolve_wehnelt_build_request(baseline: Mapping[str, Any], modes: Mapping[str, Any], *,

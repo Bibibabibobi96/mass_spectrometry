@@ -158,18 +158,32 @@ def protect_ip_mr_tracking_fields(session: Any, admission: Mapping[str, Any]) ->
     from .model_execution import _protected_source
     source = admission['source']
     owned = [str(source.data_locations[key]) for key in source.data_records]
-    _protected_source(session, source.reference['manifest'], required_paths=owned)
-    if admission.get('collision_reference') is not None:
-        _protected_source(session, admission['collision_reference']['manifest'])
+    from msplatform.execution.owner import current_managed_native_store
     basis = admission['basis']
-    _protected_source(session, admission['prepared_reference']['manifest'])
-    _protected_source(session, basis['geometry_reference']['manifest'],
-                      required_paths=[basis['geometry_execution_request']['path']])
-    for item in basis['bases'].values():
-        for level in [item, *item.get('refinement_windows', [])]:
-            _protected_source(session, level['reference']['manifest'],
-                              required_paths=[row['path'] for row in level['records'].values()])
-            _protected_source(session, level['field_solution_reference']['manifest'])
+    if current_managed_native_store() is None:
+        _protected_source(session, source.reference['manifest'], required_paths=owned)
+        if admission.get('collision_reference') is not None:
+            _protected_source(session, admission['collision_reference']['manifest'])
+        basis = admission['basis']
+        _protected_source(session, admission['prepared_reference']['manifest'])
+        _protected_source(session, basis['geometry_reference']['manifest'],
+                          required_paths=[basis['geometry_execution_request']['path']])
+        for item in basis['bases'].values():
+            for level in [item, *item.get('refinement_windows', [])]:
+                _protected_source(session, level['reference']['manifest'],
+                                  required_paths=[row['path'] for row in level['records'].values()])
+                _protected_source(session, level['field_solution_reference']['manifest'])
+    else:
+        from .neutral_sampled_field import protect_neutral_records
+        products = [source.reference, admission['prepared_reference'], basis['geometry_reference']]
+        if admission.get('collision_reference') is not None:
+            products.append(admission['collision_reference'])
+        for item in basis['bases'].values():
+            for level in [item, *item.get('refinement_windows', [])]:
+                products.extend((level['reference'], level['field_solution_reference']))
+                if level.get('original_samples_reference') is not None:
+                    products.append(level['original_samples_reference'])
+        protect_neutral_records(session, products, admission['immutable_input_records'])
     for index, record in enumerate(admission['immutable_input_records']):
         verify_record('IP–MR tracking source protection', record)
         session.add_input('ip_mr_field_input_'+str(index), record)

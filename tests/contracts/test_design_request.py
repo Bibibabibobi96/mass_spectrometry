@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 from tools.repository.repository_root import REPO_ROOT
-from msplatform.contracts.machine_contracts import load_json
+from msplatform.contracts.machine_contracts import ContractError, load_json, validate_schema
 from msplatform.workflows.design_request import validate_request
 
 
@@ -27,15 +27,24 @@ class DesignRequestTests(unittest.TestCase):
             request["target"].pop("structural_variant_id")
         else:
             request["target"]["structural_variant_id"] = variant
+            request["target"]["mode"] = variant + "_transport_no_collision"
         request["objectives"] = request["objectives"][:1]
         request["design_variables"] = []
-        request["evidence_level"] = "static"
         return request
 
     def test_examples_are_ready(self):
         self.assertEqual(self.status(self.request), "READY")
         rf = load_json(HERE / "rf_quadrupole_transport.example.json")
         self.assertEqual(self.status(rf), "READY")
+
+    def test_recorded_v1_request_is_readable_but_cannot_start_new_execution(self):
+        path = (REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof/config/requests"
+                / "reflectron_midgrid_structural_campaign.json")
+        recorded = load_json(path)
+        validate_schema(recorded, "design_request_v1.schema.json")
+        with self.assertRaises(ContractError):
+            validate_schema(recorded, "design_request.schema.json")
+        self.assertEqual(validate_request(recorded, self.registry)["status"], "NEEDS_CLARIFICATION")
 
     def accelerator_request(self, variant=None, metric="axial_flight_time"):
         request = copy.deepcopy(self.request)
@@ -49,7 +58,6 @@ class DesignRequestTests(unittest.TestCase):
         request["objectives"] = [{"metric": metric, "operator": "minimize", "value": None, "unit": "us", "tolerance": None}]
         request["constraints"] = []
         request["design_variables"] = []
-        request["evidence_level"] = "plan"
         return request
 
     def test_accelerator_requires_structure_even_when_metric_exists_only_in_three_zone(self):
@@ -65,8 +73,6 @@ class DesignRequestTests(unittest.TestCase):
                 result = validate_request(request, self.registry)
                 self.assertEqual(result["status"], "READY")
                 self.assertEqual(result["selected_capability_id"], variant + "_orthogonal_acceleration")
-                request["evidence_level"] = "static"
-                self.assertEqual(self.status(request), "NEEDS_PROJECT_COMPLETION")
         result = validate_request(self.accelerator_request("two_zone"), self.registry)
         self.assertEqual(result["status"], "NEEDS_PROJECT_COMPLETION")
         self.assertIn("Unsupported metrics: axial_flight_time", result["messages"])
@@ -106,7 +112,7 @@ class DesignRequestTests(unittest.TestCase):
         request["design_variables"] = []
         request["required_outputs"] = ["comsol_model", "cad"]
         request["evidence_level"] = "formal"
-        self.assertEqual(self.status(request), "NEEDS_PROJECT_COMPLETION")
+        self.assertEqual(self.status(request), "NEEDS_CLARIFICATION")
 
     def test_new_multipole_function_needs_new_project(self):
         request = copy.deepcopy(self.request)
@@ -153,12 +159,6 @@ class DesignRequestTests(unittest.TestCase):
         for variant in ("hexapole", "octupole"):
             with self.subTest(variant=variant):
                 request = self.multipole_request(variant)
-                request["evidence_level"] = "candidate"
-                result = validate_request(request, self.registry)
-                self.assertEqual(result["status"], "NEEDS_PROJECT_COMPLETION")
-                self.assertTrue(result["selected_capability_id"].startswith(variant + "_"))
-                self.assertTrue(any("below requested candidate" in message for message in result["messages"]))
-                request["evidence_level"] = "static"
                 request["objectives"][0]["metric"] = "rms_beam_radius"
                 result = validate_request(request, self.registry)
                 self.assertEqual(result["status"], "NEEDS_PROJECT_COMPLETION")

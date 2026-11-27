@@ -5,11 +5,20 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.io.file_identity import file_sha256
 
 
 class CanonicalClockAuthorityTests(unittest.TestCase):
+    def test_detached_clock_module_declares_its_schema(self) -> None:
+        import importlib.util
+        from msplatform.execution.inputs import enumerate_python_sources
+        root = Path(__file__).resolve().parents[2]
+        self.assertIsNone(importlib.util.find_spec('msplatform.execution.clock_authority'))
+        paths = enumerate_python_sources(root, module_paths=['src/msplatform/io/clock_authority.py'],
+                                         provider_root='src/msplatform')
+        self.assertIn('src/msplatform/contracts/schemas/canonical_clock_authority.schema.json', paths)
+
     def test_accepts_single_frozen_authority(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -52,9 +61,9 @@ class CanonicalClockAuthorityTests(unittest.TestCase):
     def test_canonical_origin_missing_schema_tamper_and_confinement(self) -> None:
         from unittest.mock import patch
         from jsonschema.exceptions import ValidationError
-        from msplatform.execution import clock_authority as canonical
+        from msplatform.io import clock_authority as canonical
 
-        self.assertEqual(canonical.validate_clock_authority.__module__, "msplatform.execution.clock_authority")
+        self.assertEqual(canonical.validate_clock_authority.__module__, "msplatform.io.clock_authority")
         self.assertEqual(canonical.file_sha256.__module__, "msplatform.io.file_identity")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "explicit_data"

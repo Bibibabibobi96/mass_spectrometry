@@ -10,7 +10,7 @@
 - STEP实现：`../cad/export_oatof_cad_step.m`
 - CAD测试：`../tests/cad/OaTofCadExportTest.m`
 - Candidate同步：`../workflows/design_candidate/run_candidate_cad_sync.m`
-- Formal发布：`../workflows/formal_reference/run_formal_validation.ps1 -Phase Publish`
+- 历史资产只读证据：`msplatform.execution.owner.publish_historical_release_evidence`（ArtifactStore；不修改历史目录或授予新资格）
 - Formal资产身份：[`../config/formal_assets.json`](../config/formal_assets.json)
 
 历史Formal位于项目descriptor登记的只读archive；路径、文件名和SHA只认asset manifest。既有主装配

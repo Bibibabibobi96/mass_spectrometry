@@ -4,6 +4,9 @@ import unittest
 import base64
 import re
 import subprocess
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 
 
@@ -11,6 +14,33 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4] / "src/msplatform/components/
 
 
 class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('pwsh'), 'PowerShell 7 required')
+    def test_stable_gate_uses_explicit_science_root_from_external_cwd(self):
+        source = PROJECT_ROOT.parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / 'installed/msplatform'
+            for relative in ('workflows/resources/verify_stable_entry.ps1',
+                             'workflows/resources/oatof_lifecycle_preflight.ps1',
+                             'execution/resources/workspace_paths.ps1'):
+                target = package / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source / relative, target)
+            science = root / 'science'
+            (science / 'config').mkdir(parents=True)
+            (science / 'config/simion_stable_entry.json').write_text(
+                '{"schema_version":0,"frozen_on":"x","role":"x",'
+                '"artifact_workspace_relative":"formal","entries":[]}', encoding='utf-8')
+            result = subprocess.run([
+                'pwsh', '-NoProfile', '-NonInteractive', '-File',
+                str(package / 'workflows/resources/verify_stable_entry.ps1'),
+                '-WorkspaceRoot', str(root), '-ArtifactRootPath', str(root / 'artifacts'),
+                '-ScienceRoot', str(science), '-PythonExe', sys.executable, '-SkipRuntime',
+            ], cwd=root, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('SIMION stable-entry identity differs', result.stderr)
+            self.assertFalse((root / 'artifacts').exists())
+
     def test_geometry_gate_resolves_artifact_root_before_formal_paths(self):
         gate = (
             PROJECT_ROOT.parents[1] / "workflows/resources" / "verify_geometry_contract.ps1"
@@ -45,77 +75,6 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
 
 
 
-
-    def test_single_formal_cli_has_explicit_phases_and_serializes_solvers(self):
-        runner = (
-            PROJECT_ROOT.parents[1] / "workflows/resources" / "run_formal_validation.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            "[ValidateSet('Validate','Publish','Recover','Verify')]",
-            runner,
-        )
-        self.assertIn("--recover", runner)
-        self.assertIn("--verify-hashes", runner)
-        self.assertIn("--project single_reflection_oa_tof_mass_analyzer", runner)
-        self.assertIn(
-            "-WorkspaceRoot $workspaceRoot -ArtifactRootPath $artifactRootPath "
-            "-ScienceRoot $projectRoot -PythonExe $python",
-            runner,
-        )
-        self.assertIn(
-            "msplatform.workflows.oa_formal."
-            "publish_formal_release",
-            runner,
-        )
-        self.assertIn("Copy-VerifiedRunInput", runner)
-        self.assertIn("Complete-FailedRun", runner)
-        self.assertIn("-RetentionClass qualification", runner)
-        self.assertIn("-CapacityLedgerLifecycleEnabled", runner)
-        self.assertLess(
-            runner.index("$runRecordComplete = $false"),
-            runner.index("New-RunPackage"),
-        )
-        self.assertIn("$candidateManifestSource --require-status success", runner)
-        self.assertIn("$candidateDiffPath", runner)
-        self.assertIn("$candidateMphSource", runner)
-        self.assertIn("$candidateSimionSource -Recurse -File", runner)
-        self.assertIn("$candidateMph = Copy-VerifiedRunInput", runner)
-        self.assertIn("$ion = Join-Path $candidateSimion", runner)
-        self.assertIn("$iob = Join-Path $candidateSimion", runner)
-        self.assertLess(
-            runner.index("backends\\comsol\\launcher\\run_comsol_r2025b.ps1"),
-            runner.index("Start-Process -FilePath $SimionExe"),
-        )
-        self.assertLess(
-            runner.index("Start-Process -FilePath $SimionExe"),
-            runner.index("oa_candidate.reference_analysis compare"),
-        )
-        for retired in (
-            "run_formal_vnext_validation.ps1",
-            "run_oatof_formal_cad_sync.m",
-        ):
-            self.assertFalse(
-                (
-                    PROJECT_ROOT
-                    / "workflows"
-                    / "formal_reference"
-                    / retired
-                ).exists()
-            )
-        self.assertFalse(
-            (PROJECT_ROOT.parents[1] / "workflows/oa_tof_design" / "publish_formal_validation.py").exists()
-        )
-        self.assertFalse(
-            (PROJECT_ROOT.parents[1] / "workflows/oa_tof_design" / "promote_formal_vnext.py").exists()
-        )
-        self.assertFalse(
-            (
-                PROJECT_ROOT.parents[1] / "workflows/resources" / "run_coupled_baseline_validation.ps1"
-            ).exists()
-        )
-        self.assertTrue(
-            (PROJECT_ROOT.parents[1] / "workflows/oa_formal" / "publish_formal_release.py").is_file()
-        )
 
     def test_project_formal_gate_forwards_explicit_reference_context(self):
         gate = (

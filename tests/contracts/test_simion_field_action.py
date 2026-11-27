@@ -23,7 +23,7 @@ from msplatform.backends.simion.resources import structural_seed_path
 from msplatform.execution import owner
 from msplatform.results.artifacts import open_artifact
 from msplatform.execution.capacity_admission import _capacity_policy
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.inputs import freeze_file
 from msplatform.io.manifest_records import file_record
@@ -232,7 +232,7 @@ class FieldActionTests(unittest.TestCase):
                     self.assertEqual(len(completion['writer_completion']['operations']), len(graph['expected_operation_ids']))
                     self.assertEqual(len(completion['writer_completion']['resource_releases']), len(graph['expected_operation_ids']))
                 self.assertEqual(outcomes[0].metadata['frontend_native_operations'], 9)
-                self.assertEqual(outcomes[0].metadata['downstream_native_operations'], 5)
+                self.assertEqual(outcomes[0].metadata['downstream_native_operations'], 5 + len(outcomes[0].metadata['reflectron_response_basis']['responses']))
                 self.assertEqual(outcomes[1].metadata['frontend_native_operations'], 0)
                 self.assertEqual(outcomes[1].metadata['downstream_native_operations'], 0)
                 self.assertTrue(outcomes[1].metadata['downstream_reused'])

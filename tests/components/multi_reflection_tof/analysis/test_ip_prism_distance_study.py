@@ -498,7 +498,7 @@ class ContourPreparationTests(unittest.TestCase):
             current.parent.mkdir(parents=True);current.write_text("changed")
             case = dict(config=dict(coordinate_transform=dict(from_frame_id="native", to_frame_id="IP-world"),
                                     native_projection=dict(frame_id="native")))
-            with patch("msplatform.workflows.prepared_joint.native_preparation.project_provider_voltages") as projection:
+            with patch("msplatform.backends.simion.provider_voltage_projection.project_provider_voltages") as projection:
                 with self.assertRaisesRegex(ValueError, "schedule differs"):
                     _contour_geometry_and_voltage(case, self.contract()["source_registration"], fixture(), source_inputs, root/"lua.exe")
                 projection.assert_not_called()
@@ -514,7 +514,7 @@ class ContourPreparationTests(unittest.TestCase):
             (inputs/'simion/voltage_waveforms.lua').write_text('return {producer=731}')
             case = dict(config=dict(coordinate_transform=dict(from_frame_id='native',to_frame_id='IP-world'),
                 native_projection=dict(frame_id='native')))
-            helper = 'msplatform.workflows.prepared_joint.native_preparation.project_provider_voltages'
+            helper = 'msplatform.backends.simion.provider_voltage_projection.project_provider_voltages'
             with patch(MODULE+'.installed_resource', side_effect=lambda relative: root/relative), \
                  patch(helper) as projection, self.assertRaisesRegex(ValueError, 'voltage_waveforms'):
                 _contour_geometry_and_voltage(case, self.contract()['source_registration'], fixture(), inputs, root/'lua.exe')
@@ -608,7 +608,7 @@ class ContourPreparationTests(unittest.TestCase):
                        source=dict(species=dict(mass_amu=524,charge_state=1)),native_operating_point=dict(lift_v=4480))
             case=dict(config=model,exits={1:dict(vz_mm_us=-40)})
             projection=dict(values_v15=list(range(15)),evaluated_native_operating_point=model["native_operating_point"])
-            helper="msplatform.workflows.prepared_joint.native_preparation.project_provider_voltages"
+            helper="msplatform.backends.simion.provider_voltage_projection.project_provider_voltages"
             with patch(MODULE+'.installed_resource', side_effect=lambda relative: root/relative), \
                  patch(helper,return_value=projection) as native_projection:
                 geometry,actual=_contour_geometry_and_voltage(case,self.contract()["source_registration"],fixture(),inputs,root/"lua.exe")
