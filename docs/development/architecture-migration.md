@@ -6,13 +6,13 @@
 
 ## 当前批次 B 检查点
 
-批次B同一Goal仍active，不启动C/M06–M08。主任务分支已普通push至`1868fc2c`，保留既有无关工作与artifacts。
+批次B同一Goal仍active，不启动C/M06–M08。代码提交08eab366已普通push；当前在其基础上修复最终门禁发现的两项问题，保留已有无关工作与artifacts。
 
-- SSA真实安装闭环、N3/N2复用／缺件局部重算／自动合格GC及API重放已验证；CC真实安装闭环已验证。两者0 hit、unknown归属保留，未授仪器精度／优化资格。
-- CS仍未完成：计数和同电位重叠修复已完成；b4在world启动前发现缺少直接原owner保护并正常failed收尾。修复`de88e5c9`的普通wheel已在确认idle后安全安装，公共CLI重试正在运行（`scalar-installed-study/native-run-de88e5c9.log`），等待实际world/Fly/SCI证据。
-- 真实N1合成ON脉冲回调解析基准通过。首次publication中断亦已保全原success completion、经私有一次性维护封存并释放lease；未加公共恢复能力、未新增科学产品。
-- 原广Changed实际FAIL（7 PASS/4 FAIL/23 BLOCKED），日志保留。对应失效正例、真实来源fixture、Lua多返回、SQLite连接关闭逐项定向修正；最终冻结后的必要增量Changed尚未启动，包含普通wheel/sdist两臂，不另重复整轮发行。
-- 下一步：真实CS闭环、最终增量目录门禁与双发行、完整CLOC、BA01–BA15和C剩余入口对账；成功后同步任务分支，不合并主线。
+- SSA、CC、CS三个已安装公共原生小N闭环均成功；CS同版本重放27/27阶段复用，3266项原生文件清单不变。三格均complete 0 hit/unknown3，未授仪器精度、ON响应或跨后端等价资格。
+- SSA真实N3/N2多电荷、复用、缺件局部重算、合格GC和API重放已完成；真实N1原pulse回调对独立解析解通过。原失败和私有publication修复证据保留。
+- 08eab366非空Changed实际结束：9 PASS、2 FAIL、15 BLOCKED，3337.056s/2400 tests。普通双发行离仓父方法通过1951.566s，不能掩盖完整门禁FAIL。
+- 两个实际问题为PA冲突旧错误文案断言，以及simion_field_reference导入recipes的逆向依赖。已按原唯一验证器将recipe验证上移native_tracing，不改边界白名单；42项定向测试22.074s及Ruff通过。
+- 下一步：冻结修复提交、补检原15个blocked消费者、最终普通两发行和受影响已安装SIMION小N链、最终CLOC/文档/push；不无理由重复已经完成的2400项分片或昂贵原场求解。原完整Changed失败与之后分项证据分别记录，不伪称恢复该轮PASS。
 
 ## 开工事实与边界
 
@@ -1510,6 +1510,153 @@ Agent 1在隔离worktree交付六文件：shape_query、assembly_scalar_fill、a
 de88重试重新采样OFF/ON（原场0 Compute），其world `20261127_072142__sim__simion__world-cfea186ecb50` 四项实际exit0、summary/manifest/completion success、writer stopped；27个显式source refs已含原015508与012811，证明保护修复越过原失败。track `20261127_072417__sim__simion__track-fda5a79a70e5` 在启动native前失败，原因为workflow未传现有scalar_field_basis参数；0 operations且正常failed/已释放，未补造SCI或Fly。
 
 `workflows.scalar_tracing.run_scalar_stages` 现将用于world的同一selection显式传入simion.track，不从metadata另建authority、不取消guard。spy回归核对完整geometry、OFF/ON及两个有序窗口一致。根执行scalar_workflow/split_scalar_binding/split_tof_tracking共17项，7.315s PASS；Ruff/LF PASS。该接线仍须用新安装版本真实Fly验证。bridge_source整体身份会保守使已完成采样/world阶段失效，实际重算须据回执报告，不声称代码升级零重算；不因此扩大缓存重构。
+
+### B4 三个原生组合闭合（08eab366代码快照）
+
+COMSOL→SIMION 已由普通wheel安装的公共CLI完成，Store `b3bac2eedb3340318a6d8531f8e5e8f5` 为 succeeded/ready；原SIMION owner `20261127_074232__sim__simion__track-fe43712319cc` 完成 build_tracking_iob、verify_tracking_iob、track_fly 三项操作且均exit0，包含一次实际Fly，不是三次Fly。原geometry/prepared/field/collision五个资产阶段复用；OFF/ON冷采样、支持、world、trace二十二阶段本次新做，原COMSOL场0 Compute。源码变化保守使采样键失效的事实保留，不把升级运行标为0native复用。
+
+公开SCI重读为3初态、3终态、0事件、3个birth轨迹样本；后续请求采样时刻已晚于原生停止，不补造轨迹。detector观测complete、0/3命中、总权重3、unknown归属3，arrival/峰拟合/校准不适用。停止时刻23.00、24.27、21.83 us，均早于原pulse起点80.051373 us；未改变birth制造命中。此新链功能证据与真实N1 ON回调解析基准相互独立，不能据此授予仪器ON响应、跨后端数值等价或统计精度。
+
+| field_source → particle_tracer | 实际版本与本机条件 | 已安装公共新链小N事实 |
+|---|---|---|
+| SIMION→SIMION | e95f6705/b1；SIMION8.2.0.11 | Store 52dde608d07245b99185f77da95c9a17，3/3终态、complete 0 hit、unknown3；1 Fly、无新Refine/场求解；后续N3/N2多电荷和局部重算实证见前节。 |
+| COMSOL→COMSOL | e95f6705/b1；COMSOL6.4 Build293、MATLAB R2025b | Store 28234aa32d4e45bdb3da93a4883a0167，3/3终态、12记录样本（停止后Freeze）、complete 0 hit、unknown3；1 CPT、原OFF/ON场复用。 |
+| COMSOL→SIMION | 08eab366/b4；同COMSOL/MATLAB及SIMION | Store b3bac2eedb3340318a6d8531f8e5e8f5，3/3终态、complete 0 hit、unknown3；OFF/ON五网格各冷采样0 Compute、支持/世界完成、1 Fly。 |
+
+三格均为明确外部给定场、真空/B=0、已声明几何/源/时钟/脉冲的受管小N技术验收，不是任意Assembly、RF、碰撞或自洽能力。COMSOL有限外框Dirichlet与SIMION Neumann不是相同BVP，不以终态时间接近声称等价。原生字段无法给出物理接触归属时保持unavailable，不按末位置猜电极。
+
+CS普通wheel SHA256 `6257E0064C2240788172DCE9AEAEE3360440046056D96789FE233F01BA0AF527`；作者SHA `646D263200FEA2C2733241E6841773FA1654B16BF7FC7BEA762FB024D803C5A9`、resolved SHA `BB37B6AACF2CA68D629B0F557AAE33836EEC127C191D7C3547122323187810F3`。完整manifest身份/窗口/软件版本在`scalar-installed-study/cs-final-matrix-evidence-08eab366.json`，同版本重放证据在`scalar-installed-study/repeat-08eab366/evidence.json`。
+
+CS有效域与掩码：每工作点world675783点/原FEM有效639620、birth11475/11475、grid1 252450/229024、intermediate2 252450/236930、exit252450/244978。FEM无效点不是一律填零：只对语义几何证明严格导体内部且本工作点全部参与组电位精确相等者生成v2支持；world原36163个FEM无效节点中35279个严格导体内部填值、884个边界保持无效；其余boundary/unsupported保持拒绝。实际原生调用证明选定窗口与support可消费，不替代全仪器插值收敛。独立SDK线性场、真实N1分段常加速度和COMSOL零力解析基准的事先容差及实测误差见相应前节，未看结果后放宽容差。
+
+主要逐字节/运行证据位于 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/`：`scalar-installed-study/result-evidence-08eab366.json`、`evidence/cc-installed-acceptance.json`、`native-reuse-acceptance/acceptance-summary.json`，作者/resolved、环境、源码身份与原owner引用均保留；旧失败原run不改写为成功缓存。
+
+### B 最终验收对账（最终软件门禁尚待结果）
+
+| 验收 | 当前事实与限制 |
+|---|---|
+| BA01 | B0四项定向实修通过；原A writer/source_bytes/历史reader修复保留，未重立项。 |
+| BA02 | 共同Recipe/CLI/API、独立field_source/tracer、预检拒绝和三格实际入口通过。 |
+| BA03–04 | 独立OA/不含OA下游、注册/编译/geometry/drive/source消费闭合；冻结旧45电极oracle及原源/驱动/clock核对。RF recorded-birth已有软件迁移，未执行RF原生Fly，不外推。 |
+| BA05 | 原V(t)/epoch保留；SDK原pulse和实际N1 Fly独立解析验证通过；仪器N3均早于ON停止，仪器ON效果未验证。 |
+| BA06 | 三格实际已安装小N新链成功，详见上表，不授仪器物理资格。 |
+| BA07–08 | 各格SI/母群/初终态/事件/轨迹与unknown边界已记录；mask/support单位及独立可解释基准通过，未测仪器COMSOL→SIMION独立点值/梯度holdout残差，不声称仪器网格收敛。 |
+| BA09–10 | 真实worker生命周期/原owner保护与正常失败收尾，受控父退出/子仍活/取消恢复合同，阶段预算与唯一删除owner；实际reserve触发合格GC。未把登记215153B说成独立测得释放字节。 |
+| BA11 | SSA真实repeat/API重放无新增native、K2只增N2、缺443B受控缓存只重算N3trace、GC保留历史SCI；CS同版本重放8448b694e34f486aba0a783744a32d2f ready/succeeded、27/27 stage复用；原生根前后3266项path/size清单完全一致、无新增owner/receipt；无native-control记录的worker计数为null而非伪称实测0。两个run公开读取的数据/分析逐项一致。 |
+| BA12 | K1及K2 N3/N2、100Da的+1/+2、权重总和4、完整0hit/分析不适用、母群归并与失败负例通过。 |
+| BA13–14 | B链跨组件重释入口拒绝；合法分批/观测及历史reader保留；新链无Candidate/Formal总等级。旧Candidate/compensation的本地初态实验及历史owner、IP/MR等列C；MATLAB guard原生正反例未执行。 |
+| BA15 | 08eab366最终非空增量Changed与双发行进行中；完整CLOC已按a9d76aa4→08eab366规范工具测得，表见下节；最终delivery/push仍待记录。 |
+
+### B 可复制的已安装命令
+
+下列命令在已有已封存原生资产及授权工具环境重放；路径含该主机环境。重新冷建场/大型研究不是这些命令的隐含前置。完整能力选择/作者冻结/预算由所指作者及environment承担，不以source-revision参数替代真实安装代码身份。
+
+```powershell
+$deliveryRoot = 'C:/Users/Liao/msplatform-artifacts/architecture-b-20261127'
+$nativeWorkspace = 'C:/Users/Liao/mass_spectrometry/artifacts/batch_b_comsol_split_small_20261127'
+$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = 'C:/Users/Liao/mass_spectrometry/artifacts/platform/host_resources.sqlite3'
+# SSA，同质量+1/+2，N3/N2；原作者和场manifest必须仍存在
+& "$deliveryRoot/installed-standalone-b1/Scripts/python.exe" -I -m msplatform run "$deliveryRoot/native-reuse-acceptance/authors/oa_split_tof_mass_scan_small_v1.toml" --artifact-root "$deliveryRoot/native-reuse-acceptance/store" --reserve-bytes 1073741824 --execution-environment "$deliveryRoot/simion-installed-standalone-b1/environment.json" --profile small_native --workspace $nativeWorkspace --source-revision e95f6705cfe1544c269bab66504a046f5daae759
+# CC，原birth/原OFF/ON；一次真实CPT可能耗时，已有缓存按实际阶段复用
+& "$deliveryRoot/installed-standalone-b1/Scripts/python.exe" -I -m msplatform run 'C:/Users/Liao/mass_spectrometry/artifacts/batch_b_comsol_small_cli_20261127/oa_split_tof_comsol_small_reused_v1.toml' --artifact-root "$deliveryRoot/comsol-installed-store" --reserve-bytes 1073741824 --execution-environment "$deliveryRoot/comsol-installed-e95f6705/environment.json" --profile trace_existing_field --workspace $nativeWorkspace --source-revision e95f6705cfe1544c269bab66504a046f5daae759
+# CS，08eab366已安装冻结包与相同作者/窗口
+& "$deliveryRoot/installed-standalone-b4/Scripts/python.exe" -I -m msplatform run "$deliveryRoot/scalar-installed-study/scalar_recipe.toml" --artifact-root "$deliveryRoot/scalar-installed-store" --reserve-bytes 1073741824 --execution-environment "$deliveryRoot/scalar-installed-study/environment-08eab366.json" --profile scalar_native --workspace $nativeWorkspace --source-revision 08eab3660225ca48382333a4c56068533afd8a22
+```
+
+上面是运行/重放命令；有意删除单个缓存和调整GC水位的六阶段验收已执行，不应当作日常命令反复执行。公共API重放脚本 `native-reuse-acceptance/api_repeat.py` 保留完整前后native目录清单与公开读取事实。
+
+### B 临时构建副本清理
+
+确认十二个 `distribution-<sha>/source` 目录均在本任务外部根内、无reparse、无活动进程引用，并保留每份source.tar及SHA、wheel、build/install日志后，使用PowerShell原生Remove-Item仅删除重复解包树。逻辑文件字节合计4,850,159,822 B，未独立测定并发门禁期间物理释放量；可由保留归档/原Git提交重建。证据 `evidence/extracted-build-source-cleanup.json`。不删除原生PA/MPH、科学Store、已安装环境、原研究产物或门禁Temp。此前自动审批拒绝的三个Temp清理目标保持原状，未重试或绕过。
+
+### B 最终增量复验发现的问题（08eab366轮，原轮已结束）
+
+本轮普通双发行离仓父测试已实际PASS（1951.566 s），两臂参考链包含真实DOP853、独立电场解析对照、重读/复用/作者快照，B配方预检/退役拒绝亦PASS；不是新的厂商native。安装后36个选中路径的bytes/SHA、HEAD和status不变。
+
+完整Changed为FAIL，不能以安装通过掩盖：`test_scalar_pa_fill.PaFillTests.test_conflict_never_publishes` 的科学guard正确拒绝不同电位，旧断言文案未迁；`test_scientific_core_boundaries` 发现 simion_field_reference 对recipes的实际逆向依赖。后一项不是测试误报，修复职责上移至现有native_tracing，不放宽boundary白名单。原两个失败分片及其他健康分片均已自然结束，原log/summary保留。原发行身份在 `evidence/final-changed-08eab366-distribution-hashes.json`，不冒充后续新代码安装证据。最终修复、影响范围验证与BA15仍待闭合。
+
+### B 门禁发现的职责修复（08eab366后，本主题提交）
+
+最终08轮实际9 PASS/2 FAIL/15 BLOCKED/27 NOT_APPLICABLE，3337.056s，机器分片01 506、02 474、03 772、04 648合计2400 tests；1项symlink创建权限skip、2 failure。两个失败分别为PA填充负例仍要求旧shape-query错误文本，以及field-reference helper对recipes的实际逆向依赖。原轮不回写PASS。
+
+`native_tracing._validated_simion_field_reference`复用唯一validate_recipe/validate_collision_reference，在源guard前核验冻结引用；`_admit_simion_field_reference`由已验证snapshot解码时钟并调用低层。`simion_field_reference.admit_simion_field_reference`接收Study/reference/clock，保留独立重编全模型及场numerics/design/bank/member/downstream/clock验证，不导入recipes、不新增recipe权威或豁免边界。预检和实际执行统一走同一包装，实际源guard作用域不缩短。测试保留完整原模型/字段/引用篡改与保护负例，新增snapshot篡改在guard前拒绝；PA测试精确匹配不同电位冲突的新错误，未改生产guard。
+
+根实际执行 `python -m unittest tests.contracts.test_scientific_core_boundaries tests.contracts.test_simion_field_reference tests.contracts.test_scalar_pa_fill tests.contracts.test_native_workflow tests.contracts.test_native_asset_recipe -q`：42 tests，22.074s PASS；四文件Ruff与git diff --check PASS。log为外部 `evidence/boundary-fix-targeted.log`。本单元尚未取得新SHA普通双发行/已安装native资格；原08及e95原生结果保持各自代码身份，不自动提升为本提交证据。
+
+验证选择：没有合法public Resume/failed-only门禁；PlanPath是同checkout冻结选择，不能修改后消费旧计划。后续采用公共窄Changed验证真实变动测试、原15 blocked消费者的原catalog命令逐项补检，以及最终代码完整普通双发行父方法；所有结果按项记录，不拼出一次原完整Changed PASS。不重复未受影响的2400项或冷求场。最终必要检查失败则继续按实际原因处理。
+
+
+### B 累计 CLOC（08eab366代码快照）
+
+规范工具实际PASS；原日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/code-08eab366-cloc.log`。每格为 基线 → 结果（delta）；只统计指定提交，不把未跟踪产物或WIP算入。
+
+#### total
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 282 → 291 (+9) | 0 → 0 (+0) | 0 → 0 (+0) | 126022 → 130154 (+4132) |
+| Lua | 119 → 120 (+1) | 413 → 416 (+3) | 828 → 830 (+2) | 13219 → 13273 (+54) |
+| MATLAB | 186 → 188 (+2) | 1066 → 1068 (+2) | 2053 → 2067 (+14) | 19701 → 20023 (+322) |
+| PowerShell | 150 → 150 (+0) | 1100 → 1101 (+1) | 1195 → 1195 (+0) | 46113 → 46242 (+129) |
+| Python | 1435 → 1499 (+64) | 32921 → 33761 (+840) | 42493 → 43073 (+580) | 396258 → 407993 (+11735) |
+| SIMION GEM | 10 → 10 (+0) | 26 → 26 (+0) | 51 → 51 (+0) | 214 → 214 (+0) |
+| TOML | 5 → 9 (+4) | 43 → 46 (+3) | 2 → 2 (+0) | 219 → 283 (+64) |
+| YAML | 2 → 2 (+0) | 8 → 8 (+0) | 20 → 20 (+0) | 506 → 506 (+0) |
+| SUM | 2189 → 2269 (+80) | 35577 → 36426 (+849) | 46642 → 47238 (+596) | 602252 → 618688 (+16436) |
+#### production
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 259 → 267 (+8) | 0 → 0 (+0) | 0 → 0 (+0) | 42340 → 45539 (+3199) |
+| Lua | 99 → 100 (+1) | 333 → 336 (+3) | 703 → 705 (+2) | 11141 → 11195 (+54) |
+| MATLAB | 118 → 120 (+2) | 526 → 528 (+2) | 1462 → 1476 (+14) | 12164 → 12486 (+322) |
+| PowerShell | 138 → 138 (+0) | 1037 → 1038 (+1) | 1149 → 1149 (+0) | 44012 → 44131 (+119) |
+| Python | 685 → 714 (+29) | 16804 → 17255 (+451) | 11609 → 11933 (+324) | 182981 → 189466 (+6485) |
+| SIMION GEM | 10 → 10 (+0) | 26 → 26 (+0) | 51 → 51 (+0) | 214 → 214 (+0) |
+| TOML | 5 → 9 (+4) | 43 → 46 (+3) | 2 → 2 (+0) | 219 → 283 (+64) |
+| YAML | 2 → 2 (+0) | 8 → 8 (+0) | 20 → 20 (+0) | 506 → 506 (+0) |
+| SUM | 1316 → 1360 (+44) | 18777 → 19237 (+460) | 14996 → 15336 (+340) | 293577 → 303820 (+10243) |
+#### tests
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| JSON | 23 → 24 (+1) | 0 → 0 (+0) | 0 → 0 (+0) | 83682 → 84615 (+933) |
+| Lua | 20 → 20 (+0) | 80 → 80 (+0) | 125 → 125 (+0) | 2078 → 2078 (+0) |
+| MATLAB | 68 → 68 (+0) | 540 → 540 (+0) | 591 → 591 (+0) | 7537 → 7537 (+0) |
+| PowerShell | 12 → 12 (+0) | 63 → 63 (+0) | 46 → 46 (+0) | 2101 → 2111 (+10) |
+| Python | 750 → 785 (+35) | 16117 → 16506 (+389) | 30884 → 31140 (+256) | 213277 → 218527 (+5250) |
+| SUM | 873 → 909 (+36) | 16800 → 17189 (+389) | 31646 → 31902 (+256) | 308675 → 314868 (+6193) |
+#### unclassified
+
+| Language | Files | Blank | Comment | Code |
+|---|---:|---:|---:|---:|
+| SUM | 0 → 0 (+0) | 0 → 0 (+0) | 0 → 0 (+0) | 0 → 0 (+0) |
+
+#### 输入身份与完整过滤口径
+
+```text
+BASELINE=a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be
+RESULT=08eab3660225ca48382333a4c56068533afd8a22
+CLOC_VERSION=2.10
+CREATED_UTC=2026-11-26T23:31:17.5907223+00:00
+CLASSIFIER_SHA256=d3abfc94e920066445561b696c76131b43eab9713a0cbcb9e2c1270ba7136952
+LANGUAGE_DEFINITION_SHA256=985e60f06bd8981c36966a0895cccfccd182fd625c79eb6ae94b65a12c5508a6
+INPUT_IDENTITY SNAPSHOT=baseline FILES=2234 SHA256=2e9c89b9e7a4ddd9d2d2e95a292cfbe15ca5b439965fa762bd82c4277fa07818
+INPUT_IDENTITY SNAPSHOT=result FILES=2314 SHA256=c362a78247cf671b52190e0b2ac8f5dcc3c4d40617dcd1bf4f744742832948f9
+FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=active_powershell_entrypoint FILES=53
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=execution_profile_entrypoint FILES=17
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=production REASON=non_test_source FILES=1246
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=tests REASON=test_filename FILES=842
+CLASSIFICATION_DETAIL SNAPSHOT=baseline CATEGORY=tests REASON=test_support_path FILES=76
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=active_powershell_entrypoint FILES=53
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=execution_profile_entrypoint FILES=17
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=production REASON=non_test_source FILES=1290
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_filename FILES=876
+CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_support_path FILES=78
+```
+
+功能分类完整输出保留在原日志。
 
 ### B 累计 CLOC（至 f216a7af，不含后续改动）
 

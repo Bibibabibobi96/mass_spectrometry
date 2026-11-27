@@ -58,6 +58,29 @@ def _flight_request(recipe, instrument, particles):
     return propagation, observations
 
 
+def _validated_simion_field_reference(recipe):
+    """Apply the one recipe and frozen-manifest authority before source access."""
+    from msplatform.recipes.native_assets import validate_collision_reference
+
+    recipe = validate_recipe(recipe)
+    if recipe['schema_version'] != 2:
+        raise ValueError('explicit native field reference requires a frozen native recipe')
+    source = recipe.get('field_source')
+    if not isinstance(source, dict) or set(source) != {'kind', 'reference'} or source['kind'] != 'simion_native':
+        raise ValueError('an explicit SIMION native field reference is required')
+    return recipe, validate_collision_reference(source['reference'])
+
+
+def _admit_simion_field_reference(recipe, *, expected_model, field_numerics, artifact=None):
+    """Validate author-derived inputs before the scientific field admission."""
+    from .simion_field_reference import admit_simion_field_reference
+
+    recipe, frozen = _validated_simion_field_reference(recipe)
+    authority = json.loads(base64.b64decode(recipe['resource_snapshots']['instrument_clock_authority_v1.json']['bytes_base64']))
+    return admit_simion_field_reference(recipe['study']['document'], reference=frozen['reference'],
+        clock_authority=authority, expected_model=expected_model, field_numerics=field_numerics, artifact=artifact)
+
+
 def preflight_native(recipe: dict, *, context=None) -> dict:
     """Check scientific compilation independently of host availability/native evidence."""
     recipe = validate_recipe(recipe)
@@ -119,10 +142,10 @@ def preflight_native(recipe: dict, *, context=None) -> dict:
         if context is None:
             raise ValueError('explicit SIMION field reference requires an execution workspace for owner validation')
         from msplatform.execution.native_source_guard import guard_native_source
-        from .simion_field_reference import admit_simion_field_reference
-        with guard_native_source(recipe['field_source']['reference']['reference'], expected_kind='field_bundle',
+        recipe, frozen = _validated_simion_field_reference(recipe)
+        with guard_native_source(frozen['reference'], expected_kind='field_bundle',
                                  expected_artifact_root=context.workspace/'artifacts') as artifact:
-            admit_simion_field_reference(recipe, expected_model=model, field_numerics=study['numerics']['fields'], artifact=artifact)
+            _admit_simion_field_reference(recipe, expected_model=model, field_numerics=study['numerics']['fields'], artifact=artifact)
     from msplatform.backends.simion.tracking_execution import plan_tracking_execution
     # Materialize only the already-frozen small clock inputs for the existing
     # planner's file-record contract; no native process or run is created.
@@ -297,8 +320,7 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
         if not comsol and 'reference' in recipe['field_source']:
             from msplatform.backends.simion.model import compile_prepared_model
             from msplatform.execution.native_source_guard import guard_native_source
-            from .simion_field_reference import admit_simion_field_reference
-            frozen = recipe['field_source']['reference']
+            recipe, frozen = _validated_simion_field_reference(recipe)
             field = stack.enter_context(guard_native_source(frozen['reference'], expected_kind='field_bundle',
                                                            expected_artifact_root=context.workspace/'artifacts'))
             scientific_drive = copy.deepcopy(study['drive'])
@@ -306,7 +328,7 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
             authority = json.loads(base64.b64decode(recipe['resource_snapshots']['instrument_clock_authority_v1.json']['bytes_base64']))
             scientific_drive['clock'].update(clock_epoch_id=authority['clock_epoch_id'], authority_sha256=authority['authority']['sha256'])
             requested_model = compile_prepared_model(compiled, instrument.components_resolved, drive=scientific_drive, physics=study['physics'])
-            field = admit_simion_field_reference(recipe, expected_model=requested_model,
+            field = _admit_simion_field_reference(recipe, expected_model=requested_model,
                                                  field_numerics=study['numerics']['fields'], artifact=field)
             field_key = canonical_json_sha256(dict(stage='explicit_simion_field_reference',
                 manifest_sha256=frozen['snapshot']['sha256'], product_id=frozen['reference']['product_id'],

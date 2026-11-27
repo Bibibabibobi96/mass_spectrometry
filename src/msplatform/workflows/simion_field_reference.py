@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import base64
 import copy
 from collections.abc import Mapping
 from typing import Any
@@ -15,9 +14,7 @@ from msplatform.backends.simion.model import compile_prepared_model, model_geome
 from msplatform.backends.simion.model_execution import _clock_reference
 from msplatform.backends.simion.native_plans import plan_solve_fields
 from msplatform.io.file_identity import canonical_json_sha256
-from msplatform.recipes.native_assets import validate_collision_reference
 from msplatform.results.artifacts import OpenedArtifact, open_artifact
-from msplatform.recipes import validate_recipe
 from msplatform import assembly, components
 
 
@@ -26,7 +23,8 @@ def _json(value: Any) -> Any:
     return json.loads(json.dumps(value, allow_nan=False, sort_keys=True))
 
 
-def admit_simion_field_reference(recipe: Mapping[str, Any], *, expected_model: CompiledPreparedModel,
+def admit_simion_field_reference(study: Mapping[str, Any], *, reference: Mapping[str, Any],
+                                 clock_authority: Mapping[str, Any], expected_model: CompiledPreparedModel,
                                  field_numerics: Mapping[str, Any], artifact: OpenedArtifact | None = None) -> OpenedArtifact:
     """Verify frozen field identity and science, without writing or solving.
 
@@ -34,14 +32,7 @@ def admit_simion_field_reference(recipe: Mapping[str, Any], *, expected_model: C
     Explicitly missing, incomplete or mismatched assets fail; no recomputation is
     attempted. The originating implementation remains provenance of this field.
     """
-    recipe = validate_recipe(recipe)
-    if recipe['schema_version'] != 2:
-        raise ValueError('explicit native field reference requires a frozen native recipe')
-    source = recipe.get('field_source')
-    if not isinstance(source, Mapping) or set(source) != {'kind', 'reference'} or source['kind'] != 'simion_native':
-        raise ValueError('an explicit SIMION native field reference is required')
-    frozen = validate_collision_reference(source['reference'])
-    ref = frozen['reference']
+    ref = reference
     if artifact is not None:
         if not isinstance(artifact, OpenedArtifact):
             raise ValueError('supplied field source must be an opened artifact')
@@ -55,15 +46,13 @@ def admit_simion_field_reference(recipe: Mapping[str, Any], *, expected_model: C
             or meta.get('source_status') != 'not_requested'
             or meta.get('field_representation') not in (None, 'native_domain_composition')):
         raise ValueError('field reference must be a complete source-independent SIMION native field')
-    study = recipe['study']['document']
     providers = {name: components.resolve_component(request) for name, request in study['component_requests'].items()}
     instrument = assembly.assemble(study['recipe'], providers)
     from msplatform.backends import simion
     compiled = simion.compile_geometry(instrument, numerics=study['numerics']['geometry'])
     drive = copy.deepcopy(study['drive'])
     drive.pop('clock_authority')
-    authority = json.loads(base64.b64decode(recipe['resource_snapshots']['instrument_clock_authority_v1.json']['bytes_base64']))
-    drive['clock'].update(clock_epoch_id=authority['clock_epoch_id'], authority_sha256=authority['authority']['sha256'])
+    drive['clock'].update(clock_epoch_id=clock_authority['clock_epoch_id'], authority_sha256=clock_authority['authority']['sha256'])
     requested = compile_prepared_model(compiled, instrument.components_resolved, drive=drive, physics=study['physics'])
     expected = require_prepared_model(expected_model)
     if _json(expected) != _json(require_prepared_model(requested)):
@@ -75,7 +64,7 @@ def admit_simion_field_reference(recipe: Mapping[str, Any], *, expected_model: C
     if (_json(document) != _json(expected) or meta.get('model_identity_sha256') != expected['model_identity_sha256']
             or meta.get('clock') != expected['drive']['clock']):
         raise ValueError('field model, physical inputs, drive or clock differs from the requested model')
-    if not isinstance(field_numerics, Mapping) or _json(field_numerics) != _json(recipe['study']['document']['numerics']['fields']):
+    if not isinstance(field_numerics, Mapping) or _json(field_numerics) != _json(study['numerics']['fields']):
         raise ValueError('field numerics argument differs from the frozen study')
     read = lambda name: json.loads(selected.data_path(name).read_text(encoding='utf-8-sig'))
     if _json(read('field_numerics')) != _json(field_numerics):

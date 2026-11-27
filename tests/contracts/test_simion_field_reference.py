@@ -17,7 +17,7 @@ from msplatform.backends.simion.native_plans import plan_solve_fields
 from msplatform.io.file_identity import canonical_json_sha256
 from msplatform.io.manifest_records import file_record
 from msplatform.recipes import load_recipe
-from msplatform.workflows.simion_field_reference import admit_simion_field_reference
+from msplatform.workflows.native_tracing import _admit_simion_field_reference as admit_simion_field_reference
 
 
 EXAMPLES = Path(__file__).resolve().parents[2]/'src/msplatform/examples'
@@ -188,6 +188,19 @@ class SimionFieldReferenceTests(unittest.TestCase):
             self.assertEqual(recipe['recipe_id'],other['recipe_id'])
             self.assertNotEqual(recipe['field_source']['reference']['reference']['manifest']['path'],
                                 other['field_source']['reference']['reference']['manifest']['path'])
+
+    def test_tampered_frozen_reference_rejected_before_source_guard(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from msplatform.workflows.native_tracing import preflight_native
+
+        with tempfile.TemporaryDirectory() as directory:
+            recipe, _, _, _, _ = fixture(Path(directory))
+            recipe['field_source']['reference']['snapshot']['sha256'] = '0' * 64
+            with patch('msplatform.execution.native_source_guard.guard_native_source') as guard:
+                with self.assertRaises(ValueError):
+                    preflight_native(recipe, context=SimpleNamespace(workspace=Path(directory)))
+                guard.assert_not_called()
 
     def test_scientific_mismatch_and_unbound_member_fail_closed(self):
         for mutation, message in (('numerics','field numerics differ'),('design','working-point design'),('drive','physical inputs, drive or clock'),

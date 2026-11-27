@@ -38,7 +38,7 @@ class PaFillTests(unittest.TestCase):
         self.projection['members'].append(other);self.projection['electrode_groups'].append({'instance_id':'oa','electrode_group_id':'other','member_ids':['second']})
         self.request['group_voltages'].append({'instance_id':'oa','electrode_group_id':'other','voltage_v':1.})
         inputs=(self.p.read_bytes(),self.m.read_bytes())
-        with self.assertRaisesRegex(ValueError,'different electrode groups'):self.run_fill()
+        with self.assertRaisesRegex(ValueError,'overlapping electrode groups have different voltages'):self.run_fill()
         self.assertTrue(self.o.exists());self.assertTrue(self.om.exists())
         self.assertEqual((self.p.read_bytes(),self.m.read_bytes()),inputs)
     def test_bad_header_nonfinite_flags_and_existing_destination(self):
