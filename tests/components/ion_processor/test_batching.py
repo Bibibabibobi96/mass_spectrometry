@@ -42,7 +42,8 @@ class BatchingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.run=Path(self.temp.name)/"run"
         for name in ("inputs","simion","results","logs"):(self.run/name).mkdir(parents=True)
-        self.config={name:functional.read_json(PROJECT/"config"/f"{name}.json") for name in ("baseline","numerics","source","native_operating_point")}
+        self.config={name:functional.read_json(PROJECT/"config"/f"{name}.json") for name in ("baseline","gas_environment","numerics","source","native_operating_point")}
+        self.config["baseline"]=preparation.project_ip_baseline(self.config["gas_environment"],self.config["baseline"])
         self.config["coordinate_transform"]=functional.read_json(PROJECT/"config/coordinate_transform.json")
         self.config["native_timing"]=derive_native_timing(self.config["baseline"])
         self.config["native_projection"]=native_projection(self.config["baseline"],self.config["numerics"])
@@ -589,7 +590,11 @@ if($script:reads-ne$count-or$global:MassSpectrometryImmutablePaSourceGuards.Coun
     def populate(self,plan: dict) -> None:
         fields=["event","particle_id","reason","t_us","x_mm","y_mm","z_mm","vx_mm_us","vy_mm_us","vz_mm_us"]
         sample_fields=["particle_id",*fields[3:]]
-        expected=dict(gas_mass_amu=28,temperature_k=300,pressure_pa=0,sigma_m2=2.27e-18,mean_free_path_mm=-1,steps_per_mfp=20,random_seed=43,mark_collisions=0,trace_level=0)
+        gas=self.config["baseline"]["gas"]
+        expected=dict(gas_mass_amu=gas["mass_amu"],temperature_k=gas["temperature_k"],pressure_pa=0,
+            sigma_m2=gas["cross_section_m2"],mean_free_path_mm=gas["mean_free_path_mm"],
+            steps_per_mfp=self.config["numerics"]["hs1_steps_per_mfp"],
+            random_seed=self.config["numerics"]["seed"]+1,mark_collisions=0,trace_level=0)
         for batch in plan["batches"]:
             folder=self.run/f"simion_batch_{batch['index']:04d}"
             rows=[];samples=[];seeds=[]

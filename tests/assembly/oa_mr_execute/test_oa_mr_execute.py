@@ -33,7 +33,7 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
         self.assertNotIn("Join-Path $PSScriptRoot '../../../..'", source)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
-    def test_joint_owners_transport_profiles_for_actual_fixed_missing_intervals(self):
+    def test_oa_mr_transports_profiles_for_actual_fixed_missing_intervals(self):
         from msplatform.execution.simion_dispatch import plan_simion_dispatch
         from tests.simion.test_resource_scheduler import ResourceSchedulerTests, GIB
 
@@ -52,9 +52,9 @@ class TwoPrismTrialRunnerTest(unittest.TestCase):
             for name, value in (('initial', initial), ('fixed', fixed)):
                 (root/f'{name}.json').write_text(json.dumps(value), encoding='utf-8')
             script = root/'fixed_joint.ps1'
-            script.write_text(r'''param($Repo,$Root,$Python,$Owner,$Covered)
+            script.write_text(r'''param($Repo,$Root,$Python,$Covered)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$errors=$null;$entry=if($Owner-eq'prepared_joint'){Join-Path $Repo 'src/msplatform/workflows/resources/prepared_joint_execute.ps1'}else{Join-Path $Repo 'src/msplatform/workflows/resources/oa_mr.ps1'}
+$errors=$null;$entry=Join-Path $Repo 'src/msplatform/workflows/resources/oa_mr.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($entry,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 $env:PYTHONPATH=$Repo
@@ -62,20 +62,12 @@ function Invoke-ProjectPython {param($Arguments) & $Python @Arguments|Out-Host;i
 function Write-RunJson {param($Path,$Value) $Value|ConvertTo-Json -Depth 30|Set-Content $Path}
 $plan=Join-Path $Root 'fixed.json';$profiles=Join-Path $Root 'profiles.json';$resultDir=Join-Path $Root results
 $initial=Get-Content (Join-Path $Root 'initial.json') -Raw
-if($Owner-eq'prepared_joint'){
- $dispatch=Join-Path $Root 'parent-dispatch.json';Set-Content $dispatch $initial
- $parentBefore=Get-Content $dispatch -Raw
- $missing=@((Get-Content $plan -Raw|ConvertFrom-Json).batches|Where-Object{$_.index-in@(2,3)})
- $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$missing.Count'},$true)
-}else{
- $runtimeDispatchPlanPath=Join-Path $Root 'results/oa-dispatch.json';Set-Content $runtimeDispatchPlanPath $initial
- $batchContinuationPlan=@{};$replayBatchIndexes=@(2,3);$batchPlanPath=$plan;$resourceProfilesPath=$profiles
- $checkpointConfig=@{inputs=@{}};$runConfig=Join-Path $Root 'run_config.json'
- $branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$null-ne$batchContinuationPlan-and$replayBatchIndexes.Count-gt0'},$true)
-}
+$runtimeDispatchPlanPath=Join-Path $Root 'results/oa-dispatch.json';Set-Content $runtimeDispatchPlanPath $initial
+$batchContinuationPlan=@{};$replayBatchIndexes=@(2,3);$batchPlanPath=$plan;$resourceProfilesPath=$profiles
+$checkpointConfig=@{inputs=@{}};$runConfig=Join-Path $Root 'run_config.json'
+$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$null-ne$batchContinuationPlan-and$replayBatchIndexes.Count-gt0'},$true)
 Invoke-Expression $branch.Extent.Text
-$output=if($Owner-eq'prepared_joint'){$dispatch}else{$runtimeDispatchPlanPath}
-$actual=Get-Content $output -Raw|ConvertFrom-Json
+$actual=Get-Content $runtimeDispatchPlanPath -Raw|ConvertFrom-Json
 if($Covered-eq'yes'){
  if($actual.estimation.kind-ne'exact_resource_profile'-or$actual.estimation.observed_batch_work_units-ne2500){throw 'covering frozen profile was ignored'}
  if($actual.limits.maximum_concurrency-ne1){throw 'CPU-limited joint profile over-admitted'}
@@ -83,18 +75,16 @@ if($Covered-eq'yes'){
  if($actual.estimation.kind-ne'formal_first_batch_observation'-or$actual.estimation.observed_missing_batch_index-ne2){throw 'insufficient profile skipped largest original missing-unit observation'}
 }
 if($actual.particle_count-ne5000-or(($actual.waves[0].batches|ForEach-Object{$_.count})-join',')-ne'500,2500,2000'){throw 'joint original partition changed'}
-if($Owner-eq'prepared_joint'-and(Get-Content (Join-Path $Root 'parent-dispatch.json') -Raw)-cne$parentBefore){throw 'parent dispatch was rewritten'}
 exit 0
 ''', encoding='utf-8')
-            for owner in ('prepared_joint', 'oa_mr'):
-                for covered in (True, False):
-                    with self.subTest(owner=owner, covered=covered):
-                        current = {**profile, 'observed_batch_work_units': 2500 if covered else 2000}
-                        (root/'profiles.json').write_text(json.dumps([current]), encoding='utf-8')
-                        result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), directory,
-                            sys.executable, owner, 'yes' if covered else 'no'], cwd=REPO,
-                            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
-                        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+            for covered in (True, False):
+                with self.subTest(covered=covered):
+                    current = {**profile, 'observed_batch_work_units': 2500 if covered else 2000}
+                    (root/'profiles.json').write_text(json.dumps([current]), encoding='utf-8')
+                    result = subprocess.run(['pwsh', '-NoProfile', '-File', str(script), str(REPO), directory,
+                        sys.executable, 'yes' if covered else 'no'], cwd=REPO,
+                        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_fixed_partition_observes_largest_missing_not_reused_prefix(self):

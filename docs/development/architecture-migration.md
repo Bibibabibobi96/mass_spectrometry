@@ -272,6 +272,14 @@ paired-static 的实际 workflow、模型/样本来源、PA身份、投影与Sto
 
 原直接分析/CLI 180测试、生产消费者174测试通过；其他相关套件78（1既有skip）、116（14 skip）、26测试均通过，科学边界16/16 PASS。公共选择器在完整 Git 元数据下67父测试／322回执全PASS，Changed 合同109父测试／460回执全PASS。共享测试仍报告旧 gas 字段、Prepared AST和 host-context 等其他在途欠项，不能写成全仓通过；普通双安装、Repository 和商业 native 留待最终同 SHA。
 
+本主题已提交并普通 push `3b0b348444974119f0fdcdbdef14d4d0e36c211e`，local/remote 一致。规范 CLOC 2.10 `1e88f65f→3b0b3484` PASS：total code 624972→627172（+2200）、production 305884→307497（+1613）、tests 319088→319675（+587），unclassified=0；逐语言 files/blank/comment/code、输入快照和完整过滤口径在外部 `C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/mr-event-3b0b3484-cloc.log`。该计数是中间候选差值，不代替 C 最终基线对账。
+
+### C 迁移后回归夹具复验
+
+在 `3b0b3484` 干净跟踪树上以实际 `unittest` 重跑两个已知欠项：IP batching 为33父测试／10 ERROR（15.610s），OA–MR 为52父测试／2个子例FAIL（125.717s）。前者是手工 resolved fixture 未经过当前 `project_ip_baseline`，后者仍 AST 抽取已删除的 Prepared 飞行调度分支；均不是商业求解结果。
+
+IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图，worker HS1 期望值也从该已投影配置及 numerics 派生，不恢复重复气体权威或旧质量常数；33父测试全PASS（15.431s），0 skip。OA–MR 保留当前真实 owner 的覆盖/不足资源profile、原500/2500/2000固定分区和最大缺失单元观察断言，仅删除已退役 Prepared owner 的两个无效子例；定向1父测试／2子例PASS，完整52父测试全PASS（116.829s），0 skip。当前 Prepared 历史分析/恢复职责及其专门测试不因这次删减免除。Ruff 与文档 StructureOnly PASS（323 files，0 error）；外部日志为 `fix-ion-batching-unittest-r2.log`、`fix-oa-mr-unittest.log` 和 `regression-doc-structure.log`。未运行原生、完整 Changed/Repository 或双安装。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
