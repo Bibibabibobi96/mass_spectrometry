@@ -1435,10 +1435,11 @@ exit 0
         for name in ('prepare.py', 'downstream_fields.py', 'request_v11.schema.json'):
             selected = expected | ({'tests.workflows.single_reflection.test_single_reflection_recorded_birth_consumer'} if name == 'prepare.py' else set())
             cases.append((('-ChangedPath', 'src/msplatform/workflows/single_reflection_flight/' + name), selected))
-        for path in ('tests/assembly/oa_mr_execute/test_oa_mr_execute.py',
-                     'tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'):
-            cases.append((('-ChangedPath', source, path),
-                          expected | {path[:-3].replace('/', '.')}))
+        path = 'tests/assembly/oa_mr_execute/test_oa_mr_execute.py'
+        cases.append((('-ChangedPath', source, path), expected | {path[:-3].replace('/', '.')}))
+        retired = 'tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'
+        self.assertFalse((REPO_ROOT / retired).exists())
+        cases.append((('-ChangedPath', source, retired), full))
         cases += [(('-Scope', 'Owner', '-Owner', 'instrument_assembly'), full),
                   (('-Scope', 'Repository'), full)]
         for arguments, wanted in cases:

@@ -212,6 +212,8 @@ RF–IP 候选代码提交为 `0ff4a4b1b200f616f6c06c2b8fea9198d6ec2c0a`。规�
 
 OA代码提交为 `3cafdf7db7b9b0267d3a3382807aa6ed1e3948cb`；精确索引快照 `oa-formal-index-check-20261128T013658` 复验同一16父测试／22回执PASS（1.092s）。CLOC 2.10 `a5d10669→3cafdf7d` PASS：total code -1155、production -1208、tests +53、unclassified=0；完整各语言基线/结果/差值和过滤口径在外部 `oa-formal-3cafdf7d-cloc.log`。这些提交仍不构成C最终验收。
 
+变更选择器对账另修复一项真实旧期望：`test_field_plan_dependency_uses_actual_selected_consumers_without_duplicates` 对已删除的 `test_paired_accelerator_static_field_execute.py` 现要求完整 Assembly owner 回退，而不是把已删路径加入窄集合；原其他来源、混合变更、Owner/Repository 断言保留。定向1父测试／9条回执PASS（25.398s），未扩大为完整模块通过或原生证据。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
