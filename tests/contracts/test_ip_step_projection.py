@@ -76,12 +76,14 @@ class IpStepProjectionTests(unittest.TestCase):
         from msplatform.exporters import operations
         context=SimpleNamespace()
         stage=dict(runtime={},limits={'transient_run_directory_bytes':1},artifact_retention={})
+        store=object()
         with patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), \
              patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{}}) as owner, \
              patch('msplatform.results.artifacts.open_artifact',return_value='OPENED'):
-            result=operations.export_cad(self.assembly,format='step',options=dict(representation='physical_solids',write_pcurves=True,precision_mode=0),context=context)
+            result=operations.export_cad(self.assembly,format='step',options=dict(representation='physical_solids',write_pcurves=True,precision_mode=0),context=context,artifact_store=store)
         self.assertEqual(result,'OPENED')
         call=owner.call_args.kwargs
+        self.assertIs(call['artifact_store'],store)
         self.assertEqual(call['expected_operation_ids'],('export_step',))
         self.assertEqual(call['payload']['assembly']['components_resolved']['ion_processor'],self.assembly.components_resolved['ion_processor'])
     def test_changed_selected_csg_or_source_is_rejected(self):

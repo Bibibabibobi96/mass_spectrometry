@@ -290,6 +290,7 @@ Save these paths once in the machine deployment described below; daily studies s
 import json
 from pathlib import Path
 from msplatform import assembly as assembly_api, components, examples, execution, exporters
+from msplatform.storage import ArtifactStore
 
 workspace = (Path.cwd() / "my_study").resolve()
 workspace.mkdir(parents=True, exist_ok=True)
@@ -312,7 +313,8 @@ print(json.dumps(options, indent=2))
 context = execution.load_environment(
     Path("deployment/machine.json").absolute(), workspace=workspace, profile="standard",
 )
-cad = exporters.export_cad(assembly, format="step", options=options, context=context)
+store = ArtifactStore(workspace / "store")
+cad = exporters.export_cad(assembly, format="step", options=options, context=context, artifact_store=store)
 with (workspace / "cad-reference.json").open("x", encoding="utf-8") as stream:
     json.dump(cad.reference, stream, indent=2)
 print(cad.data_path("step"))

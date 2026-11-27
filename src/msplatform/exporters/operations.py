@@ -55,7 +55,7 @@ def _validate_step_export_options(assembly: Assembly, format: str, options: Mapp
 
 
 def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
-               context: ExecutionContext) -> OpenedArtifact:
+               context: ExecutionContext, artifact_store=None) -> OpenedArtifact:
     """Publish an independent STEP without solver, source, field or GUI actions.
 
     The selected context Python must have this distribution and cad-step extra
@@ -82,6 +82,10 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
     stage, authority = read_stage_policy(context, "export_cad", required_roles=("solver_native_binary",))
     if stage.get("runtime"):
         raise ContractError("The STEP exporter has no additional runtime mode")
+    if artifact_store is None:
+        from msplatform.execution.owner import current_managed_native_store
+        if current_managed_native_store() is None:
+            raise ContractError('CAD export requires an explicit ArtifactStore or protected parent scope')
     source = file_record(Path(execute_cad_export.__code__.co_filename).resolve(), "required_evidence")
     result = run_managed_stage(context,
         descriptor=dict(project="instrument_assembly", mode="cad_only", software=["CadQuery", "OCCT"]),
@@ -93,5 +97,6 @@ def export_cad(assembly: Assembly, *, format: str, options: Mapping[str, Any],
         action=partial(execute_cad_export, snapshot=snapshot, representation=options["representation"],
             options={name: options[name] for name in ("write_pcurves", "precision_mode", "name") if name in options}, limits=stage["limits"]),
         action_record=source, completion_api=no_particle_batch_completion_api,
-        expected_relative_paths=("results/" + filename, "results/cad_export_report.json"))
+        expected_relative_paths=("results/" + filename, "results/cad_export_report.json"),
+        **({'artifact_store': artifact_store} if artifact_store is not None else {}))
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "cad_geometry"}, expected_kind="cad_geometry")
