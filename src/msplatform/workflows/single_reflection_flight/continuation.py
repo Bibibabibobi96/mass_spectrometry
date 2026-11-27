@@ -51,10 +51,10 @@ def render_legacy_iob_builder(core: str) -> str:
     # The legacy address ABI is identity; preserve the entire body verbatim.
     locator_sites = (
         "native_path(assert(spec.empty_particle_control,",
-        "local projected=native_path(path)",
+        "local projected=spec.preserve_canonical_instances and path or native_path(path)",
         "reference.path=native_path(spec.bootstrap_paths[index])",
         "simion.wb:load_particles(native_path(spec.empty_particle_control))",
-        "reference.path=native_path(row.path)",
+        "reference.path=spec.preserve_canonical_instances and row.path or native_path(row.path)",
     )
     if body.count("native_path(") != len(locator_sites) or any(
         body.count(site) != 1 for site in locator_sites

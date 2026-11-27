@@ -224,13 +224,42 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
                                       "metadata": metadata, "data": records}}})
         return run / "run_manifest.json"
 
+    def historical_inert_basis_model(self):
+        """Build the existing historical read-only oracle; no native execution."""
+        import copy
+        from importlib.resources import files
+        from msplatform import assembly as assembly_api, components as component_api, examples as example_api
+        from msplatform.backends.simion.compiler import compile_geometry
+        from msplatform.backends.simion.model import PHYSICS, compile_prepared_model, project_resolved_drive
+        from msplatform.execution.clock_authority import validate_clock_authority
+
+        case = example_api.load_example('rf_oatof_functional_v1')
+        parts = {key: component_api.resolve_component(value) for key, value in case.component_requests.items()}
+        instrument = assembly_api.assemble(case.recipe, parts)
+        geometry_numerics = copy.deepcopy(case.geometry_numerics)
+        geometry_numerics['geometry_build']['detector']['max_mib'] = 128.0
+        compiled = compile_geometry(dict(composition_plan=instrument.composition_plan,
+            components_resolved=instrument.components_resolved), numerics=geometry_numerics)
+        clock_root = Path(str(files('msplatform.examples')))
+        clock_path = clock_root / 'instrument_clock_authority_v1.json'
+        authority = validate_clock_authority(clock_path, clock_root)
+        clock = dict(clock_epoch_id=authority['clock_epoch_id'], authority_sha256=authority['authority_sha256'],
+                     **case.drive['clock'])
+        drive = project_resolved_drive(compiled, compiled.components_resolved, pulse=case.drive['pulse'], clock=clock)
+        model = compile_prepared_model(compiled, compiled.components_resolved, drive=drive, physics=PHYSICS)
+        numerics = dict(frontend_domains=geometry_numerics['frontend_domains'], rf_reference_voltage_v=10000.,
+            downstream_convergence_v=dict(flight_tube=.001, detector=.001, reflectron=.001))
+        for domain in numerics['frontend_domains'].values():
+            domain['refine_convergence_v'] = dict(carrier_off=.001, rf_reference=.001, pulse_delta=.001)
+        return model, numerics, clock_path, clock_root
+
     def public_basis(self, executable: Path) -> tuple[Path, dict, dict]:
-        from tests.contracts.test_simion_field_action import public_case
+        """Publish synthetic historical basis records for the read-only consumer."""
         from msplatform.backends.simion.downstream_fields_worker import DOWNSTREAM_RESOURCES
         from msplatform.backends.simion.field_closure import downstream_identity
         from msplatform.backends.simion.model import model_geometry
         from msplatform.backends.simion.resources import native_resource_path
-        model, numerics, clock_path, clock_root = public_case()
+        model, numerics, clock_path, clock_root = self.historical_inert_basis_model()
         serial = getattr(self, "public_serial", 0) + 1
         self.public_serial = serial
         document = model.document

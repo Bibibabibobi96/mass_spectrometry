@@ -6,13 +6,14 @@
 
 ## 当前批次 B 检查点
 
-批次B同一Goal仍active，不启动C/M06–M08。代码提交08eab366已普通push；当前在其基础上修复最终门禁发现的两项问题，保留已有无关工作与artifacts。
+批次B同一Goal仍active，不启动C/M06–M08。主任务分支已普通push至ee0bb140；当前完成原blocked消费者补检后的最小修复，待本主题提交及最终发行/当前安装CLI再验。
 
-- SSA、CC、CS三个已安装公共原生小N闭环均成功；CS同版本重放27/27阶段复用，3266项原生文件清单不变。三格均complete 0 hit/unknown3，未授仪器精度、ON响应或跨后端等价资格。
-- SSA真实N3/N2多电荷、复用、缺件局部重算、合格GC和API重放已完成；真实N1原pulse回调对独立解析解通过。原失败和私有publication修复证据保留。
-- 08eab366非空Changed实际结束：9 PASS、2 FAIL、15 BLOCKED，3337.056s/2400 tests。普通双发行离仓父方法通过1951.566s，不能掩盖完整门禁FAIL。
-- 两个实际问题为PA冲突旧错误文案断言，以及simion_field_reference导入recipes的逆向依赖。已按原唯一验证器将recipe验证上移native_tracing，不改边界白名单；42项定向测试22.074s及Ruff通过。
-- 下一步：冻结修复提交、补检原15个blocked消费者、最终普通两发行和受影响已安装SIMION小N链、最终CLOC/文档/push；不无理由重复已经完成的2400项分片或昂贵原场求解。原完整Changed失败与之后分项证据分别记录，不伪称恢复该轮PASS。
+- 三格新链实际native成功：SSA e95/ee0、CC e95、CS08；同版本复用、N3/N2多电荷、缺件局部重算、合格GC、原pulse N1独立解析基准均已有证据。0 hit/unknown归属和仪器ON/场精度未验证范围不改写。
+- ee0正式聚焦Changed已PASS（7阶段/28 tests/0 skip，1820.198s），含完整普通双发行父方法1794.208s；原08广Changed仍保留9 PASS/2 FAIL/15 BLOCKED，不拼成全绿。
+- 原15 blocked消费者已逐项执行完：11 PASS、4 FAIL、0 BLOCKED，前后40输入SHA一致。实际故障、过时旧执行正例和历史inert fixture逐项修复；根87项定向回归285.105s PASS，Ruff/文本字节PASS。
+- 深路径旧ReanalyzeOnly原90秒测试仍FAIL，旧observer在a9之前即失配；后代自然analysis success/complete，0native、source认证/不变、错误context拒绝/正确context恢复与资源释放均已实证。具体cwd/alias断言仍未验证，作为明确C/P4遗留，不改变timeout、不推断无性能回归、不称整catalog PASS。
+- 两个本轮临时worktree已备份全部11个改动字节/patch并验证属于现有任务提交，普通移除，无force/reset主工作树。可重建解包源码清理及原日志/归档保留；研究PA/MPH、原始数据和此前被自动审批拒绝的三个Temp保持不动。
+- 下一步：提交本修复单元；冻结后用既有verify_reference_delivery执行最终普通wheel/sdist两臂（含真实参考链、B预检/mass_scan与新增installed continuation probe），而非再重复已通过的完整RF/IP安装probe；b6独立环境依赖就绪，随后装最终wheel并通过公共CLI/reader对账；最终CLOC/文档/远端同步后止于B。
 
 ## 开工事实与边界
 
@@ -1584,6 +1585,86 @@ $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = 'C:/Users/Liao/mass_spectromet
 根实际执行 `python -m unittest tests.contracts.test_scientific_core_boundaries tests.contracts.test_simion_field_reference tests.contracts.test_scalar_pa_fill tests.contracts.test_native_workflow tests.contracts.test_native_asset_recipe -q`：42 tests，22.074s PASS；四文件Ruff与git diff --check PASS。log为外部 `evidence/boundary-fix-targeted.log`。本单元尚未取得新SHA普通双发行/已安装native资格；原08及e95原生结果保持各自代码身份，不自动提升为本提交证据。
 
 验证选择：没有合法public Resume/failed-only门禁；PlanPath是同checkout冻结选择，不能修改后消费旧计划。后续采用公共窄Changed验证真实变动测试、原15 blocked消费者的原catalog命令逐项补检，以及最终代码完整普通双发行父方法；所有结果按项记录，不拼出一次原完整Changed PASS。不重复未受影响的2400项或冷求场。最终必要检查失败则继续按实际原因处理。
+
+
+### B 最终受影响已安装原生复验（ee0bb140）
+
+最终代码为 `ee0bb140d425ec9fa727a149808ed2bc60cc40ca`。普通隔离构建wheel SHA256 `A38BC2D33E53035BC13DA6F323A66C4BB3B026D26B3D3D60141E2AE6E2D28E57`，安装到独立b5，不升级b1/b4。最终安装测试wheel与b5 wheel的1345个msplatform/成员逐字节完全一致（归档metadata不混比），证据`evidence/ee0-native-and-installed-wheel-payload-comparison.json`。
+
+保持原作者、原Study、源birth、原031207 sealed fields和原环境策略，仅将Python/policy_path指向b5。首次Store `8fa83f03944b4516ac5c3fb13f41cfc6`和同版本重复 `5d76749d7f4048b4876fa14e1be937c7`均succeeded/ready。新增成功ground `20261127_085349__sim__simion__ground-61a274793a36`的6项操作和track `20261127_085504__sim__simion__track-f06eab9768c4`的3项操作均exit0，包含一次Fly；无新Refine/COMSOL Compute，不将9个worker误称9次Fly。所有9条native binding complete，两个原owner lease文件已消失，Store claims/reservations=0。
+
+重复运行stage_productions=[]、无新增native-control证据，worker_count为null/unavailable（不是实测计数0）；3374项原生路径/size及小receipt/manifest SHA前后完全不变。公共read_particle_data/summarize/analyze的初态/终态/事件/轨迹/分析逐项一致。3母群完整，complete 0 hit、unknown归属3、轨迹仅各birth样本，不授仪器精度或动态ON资格。完整记录`final-simion-ee0bb140/acceptance.json`及before/after-first/after-repeat、first/repeat日志。
+
+本次职责移动仅在显式SIMION引用分支；COMSOL原生/采样分支与原物理、vendor接口未改，42项边界/场引用/原生workflow定向复验通过。CC/CS真实新链资格仍绑定各自e95/08代码，不自动贴ee0新标签；不重复未受影响的昂贵原场/CPT/冷采样。
+
+可复制的最终SSA命令（工作目录任意；所有外部原资产须保留）：
+
+```powershell
+$deliveryRoot = 'C:/Users/Liao/msplatform-artifacts/architecture-b-20261127'
+$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = 'C:/Users/Liao/mass_spectrometry/artifacts/platform/host_resources.sqlite3'
+& "$deliveryRoot/installed-standalone-b5/Scripts/python.exe" -I -m msplatform run "$deliveryRoot/explicit-simion-source-study/oa_split_tof_native_small_v1.toml" --artifact-root "$deliveryRoot/final-simion-ee0bb140/store" --reserve-bytes 1073741824 --execution-environment "$deliveryRoot/final-simion-ee0bb140/environment.json" --profile small_native --workspace 'C:/Users/Liao/mass_spectrometry/artifacts/batch_b_comsol_split_small_20261127' --source-revision ee0bb140d425ec9fa727a149808ed2bc60cc40ca
+```
+
+同质量+1/+2的真实N3/N2 mass_scan与局部重算/GC仍见此前e95专项命令及证据，不把最终单物种重复冒充重新做了整个六阶段试验。
+
+
+### B 最终普通发行与聚焦门禁（ee0bb140）
+
+公共命令 `tools/repository/verify.ps1 -Scope Changed -PythonExe ./.venv/Scripts/python.exe -ChangedPath tests/contracts/test_installed_scientific_core.py,tests/contracts/test_simion_field_reference.py,tests/contracts/test_scalar_pa_fill.py -SummaryPath <external>`（PowerShell调用时ChangedPath传真实数组）实际PASS：7 PASS、37 NOT_APPLICABLE，1820.198s。三个unittest分片分别11/6/11项，共28 tests、0 skips。完整普通双发行父方法1794.208s PASS；wheel与sdist重建wheel各自离仓执行真实DOP853/独立解析/重读/复用/作者快照及B公开配方预检/退役拒绝，B probe明确native_run=0，与上述b5实际native证据分开。
+
+日志/summary及input/post记录在外部 `evidence/final-focused-ee0bb140*`。结束时HEAD、三个选中路径bytes/SHA一致，staged/unstaged实际diff为空；不是利用空Changed选择取得PASS。该scope仅声明实际列明检查，未重跑08轮2400项，也不把旧广Changed FAIL改成PASS。原15 blocked消费者的完整原命令另行逐项补检，最终结果见后续对账。
+
+最终发行SHA256：普通wheel `605D9A444600DC307FC6483A724F401AE566869B885F274364D81160473830FF`；sdist `290A6A9FEFFE07AEF5B048070D5B29D85AC0FD0DA5B27690EA4230A510B231D7`；sdist重建wheel `697773C8AE5636EFD57D93349149FB0FB48CF4B438D60570A793EF9517EF9F3E`。完整文件大小与路径在 `evidence/final-focused-ee0bb140-distribution-hashes.json`；测试自身按既有临时生命周期清理发行Temp，native b5独立普通wheel保留。
+
+### B 原 blocked 消费者补检（ee0bb140 原始结果）
+
+由最终checkout的未修改官方PlanOnly逐项对照原command/modules/requires/resource后执行，15项前后40输入SHA均一致。以下是原始结果，不因后续修复回写PASS。tests_run按completed invocation统计，包含阶段间重复，不将subtest outcome数冒充测试数。
+
+| stage | 原结果 | tests_run | skips |
+|---|---|---:|---:|
+| simion_backend | PASS | 371 | 7 |
+| rf_multipole_domain_tests | PASS | 524 | 2 |
+| instrument_assembly__tests_01 | PASS | 123 | 0 |
+| instrument_assembly__tests_02 | PASS | 156 | 0 |
+| instrument_assembly__tests_03 | PASS | 238 | 0 |
+| instrument_assembly__tests_04 | FAIL | 217 | 0 |
+| parallel_mirror_dual_stripe_mr_tof_static | PASS | 142 | 1 |
+| single_reflection_oa_tof_mass_analyzer_static | PASS | N/A（静态前置） | 0 |
+| single_reflection_oa_tof_mass_analyzer_static__tests_01 | FAIL | 84 | 0 |
+| single_reflection_oa_tof_mass_analyzer_static__tests_02 | FAIL | 232 | 2 |
+| single_reflection_oa_tof_mass_analyzer_static__tests_03 | PASS | 159 | 0 |
+| single_reflection_oa_tof_mass_analyzer_static__tests_04 | FAIL | 304 | 0 |
+| rf_multipole_quadrupole_static | PASS | 338 | 0 |
+| rf_multipole_hexapole_static | PASS | 18 | 0 |
+| rf_multipole_octupole_static | PASS | 18 | 0 |
+
+完整命令、原日志、逐个skip名称和原因见 `evidence/focused-ee0-blocked-detailed-report.json`。其中portable Lua单例后来以局部PATH实际PASS（1 test，0.408s，`evidence/portable-lua-recheck-ee0bb140.log`）；原RF suite skip不删除。需显式native授权/lease、retained native-97、历史source snapshot与OATOF_THREE_ZONE_T5_RECEIPT的其他跳过保持未验证。
+
+深路径ReanalyzeOnly旧测试原90秒FAIL继续保留；其observer早于B即已失配，超时后真实Python分析自然完成3 species/0native，source通过11exports认证且两次resume前后字节不变，错误context拒绝、正确context恢复PASS，host/capacity均释放。具体cwd/alias断言未由旧observer证明，留C/P4；未比较B前耗时，不推断无性能回归。证据 `evidence/deep-reanalysis-diagnostic/evidence.md` / `.json`，独立范围审计 `evidence/b-exit-scope-independent-audit.md`。不得将该历史case或整catalog称PASS。
+
+### B6 消费者补检后的最小收尾（ee0bb140后，本主题提交）
+
+唯一生产变化是 `workflows/single_reflection_flight/continuation.py::render_legacy_iob_builder` 两条当前locator完整字面值。继续要求调用总数5、各项唯一、已知header/CLI包络和整段字节比对；未知/旧表达式及额外locator拒绝。B canonical IOB已加入preserve_canonical_instances，原变换器未同步，确属保留whole-batch历史兼容路径的软件回归。没有恢复旧composite新执行或改动物理/求解器/源/clock。
+
+测试同步分别是：旧recorded-birth composite正例改实际ContractError+owner0，保留模型/几何/clock/源篡改；当前plan6 RF的粒子、clock、model与producer绑定另由现有v12/tracking实际公开调用测试覆盖。旧mass run/resume不可再用来生成新母资产，七个旧producer成功/故障断言替为两个具名API/真实PS入口拒绝测试，owner/native0；历史reanalysis/来源篡改/终结恢复独立fixture和方法保留。新mass_scan的N3/N2、多电荷、局部重算、失败和重读由新链独立证据验证，不称旧producer仍通过。
+
+reflectron compensation本轮未迁入split生产：测试改用现有旧author→resolved→Assembly→private纯compiler的历史inert oracle，完整旧合同/源/clock保留，不拼接/重命名split字段、不伪称真实native；五项原正负basis断言均保留。ideal source package fixture补真实single_reflection_tof依赖，原mutate/missing-executor反例保留；权限测试分别验证退休mass/Formal Validate不创建owner/lease，其他合法入口的permission/release保持。原项目Formal Verify/Publish/Recover和resume_finalization不被退休。
+
+既有安装probe新增从purelib内实际读取iob_core并执行严格continuation lowering/未知locator拒绝，marker为`INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1`。同一marker加入reference_only和完整两臂父断言；此时仍待本提交实际安装，不能把开发树或外部候选PASS冒充installed。
+
+根主工作树实际87 tests、285.105s、0 skips PASS（whole continuation/recorded-birth consumer、边界、RF绑定、退休API/PS、compensation及两个package/permission病例）；Ruff、git diff --check、repository_text_bytes PASS。原命令选择逐行保留在外部`evidence/final-consumer-fixes-tests.txt`，log为`evidence/final-consumer-fixes-targeted.log`。不重复已完成的2400项、20分钟Candidate全模块或无关完整32分钟RF/IP安装；最终实际ordinary两发行参考/B/新reader验收仍将执行。
+
+```powershell
+# 在simulation_repo根运行；这是定向软件回归，不启动商业求解器
+$env:SIMION_LUA_EXE = 'C:/Program Files/SIMION-2020/lua.exe'
+$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = 'C:/Users/Liao/mass_spectrometry/artifacts/platform/host_resources.sqlite3'
+$tests = Get-Content 'C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/evidence/final-consumer-fixes-tests.txt'
+& ./.venv/Scripts/python.exe -m unittest @tests -q
+```
+
+历史deep case的原始失败与后续实际功能证据分轴记录，依据独立范围审计留C/P4：若需声明该深路径cwd/stream alias合同或要求相关旧Owner全绿，必须先重建有效observer，再按明确预算核验；不能从本次晚于90s的成功推断此前性能或每时刻保护。本轮BA09依靠独立生命周期合同和真实native保护证据，不用此单一诊断冒充。
+
+清理：此前12个解包source逻辑字节4,850,159,822 B；本次普通移除两个已提交/备份的临时worktree（225,725,941 B及223,228,025 B）和distribution-ee0/source（404,358,497 B）。只统计删除内容的逻辑文件字节，未独立测得并发期间物理释放。完整raw备份/补丁在`evidence/worktree-backups/`，清理审计`evidence/final-worktree-cleanup.json`。所有对应Git提交/source.tar/wheel/log仍可重建；不动研究PA/MPH和真实Store，三个原自动审批拒绝Temp保持不动。
 
 
 ### B 累计 CLOC（08eab366代码快照）

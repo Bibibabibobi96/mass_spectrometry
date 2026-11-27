@@ -233,96 +233,22 @@ for index,row in enumerate(rows,1):
                  "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "",
                  "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE": ""})
 
-    def test_public_api_five_species_native_units_sources_and_outputs(self):
-        with self.workspace() as root:
-            formal_before = {str(path): file_record(path, "required_evidence")["sha256"]
-                for path in (root / "artifacts").rglob("*") if path.is_file()}
-            result = self.run_study(root, RUN_ID)
-            run = Path(result["run_directory"])
-            self.assertEqual(result["status"], "success")
-            inventory = _json(run / "inputs/code_inventory.json")
-            paths = {row["relative_path"]: row for row in inventory["files"]}
-            for relative in study.RETRACE_RESOURCES:
-                name = f"src/msplatform/backends/comsol/matlab/{relative}"
-                source = REPO / name
-                self.assertEqual(Path(paths[name]["path"]).read_bytes(), source.read_bytes())
-            completion = _json(run / "results/execution_completion.json")
-            self.assertEqual([row["operation_id"] for row in completion["writer_completion"]["operations"]],
-                [f"comsol-mz{mass}_z1" for mass in (10, 100, 500, 1000, 2000)]
-                + ["simion-mixed-species"])
-            for mass in (10, 100, 500, 1000, 2000):
-                name = f"mz{mass}_z1"
-                parent = run / f"ions/{name}__n1000_parent.ion"
-                selected = run / f"ions/{name}.ion"
-                self.assertEqual(len(parent.read_text(encoding="ascii").splitlines()), 1000)
-                self.assertEqual(selected.read_text(encoding="ascii").splitlines(),
-                    parent.read_text(encoding="ascii").splitlines()[:100])
-                self.assertTrue((run / f"logs/{name}.comsol_completion.json").is_file())
-            from msplatform.backends.simion.ion_table import read_ion_table
-            self.assertEqual(read_ion_table(run / "ions/wide_mz_combined.ion")["Ion"].tolist(),
-                             list(range(1, 501)))
-            for name in study.OUTPUT_NAMES:
-                self.assertTrue((run / "results" / name).is_file(), name)
-            metrics = _json(run / "results/mass_spectrum_metrics.json")
-            self.assertFalse(metrics["resolution_claim_allowed"])
-            self.assertEqual(len(metrics["species"]), 10)
-            formal_after = {str(path): file_record(path, "required_evidence")["sha256"]
-                for path in (root / "artifacts/components/single_reflection_oa_tof_mass_analyzer/formal").rglob("*")
-                if path.is_file()}
-            for path, sha in formal_before.items():
-                if "/formal/" in path.replace("\\", "/"):
-                    self.assertEqual(formal_after[path], sha)
+    def test_retired_mass_run_and_partial_successor_refuse_before_owner(self):
+        from unittest.mock import patch
+        names = ("mode_config", "resolved_geometry", "particle_count_policy", "formal_mph",
+                 "formal_asset_manifest", "simion_executable", "artifact_project_root",
+                 "project_config", "formal_assets", "baseline", "formal_mode", "solver_numerics")
+        paths = dict.fromkeys(names, Path("nonexistent"))
+        with patch.object(study, "run_managed_stage") as owner, patch.object(RunSession, "run_process") as native:
+            for parent in (None, {"completed": {"mz10_z1": "historical"}}):
+                with self.subTest(partial_parent=parent), self.assertRaisesRegex(
+                        ValueError, "legacy mass-spectrum run/resume is retired; use msplatform run with a mass_scan recipe"):
+                    study.run(object(), run_id=RUN_ID, partial_parent=parent, **paths)
+            owner.assert_not_called()
+            native.assert_not_called()
 
-    def test_authenticated_partial_successor_reuses_only_complete_species(self):
-        with self.workspace() as root:
-            result = self.run_study(root, RUN_ID, fail_species="mz500_z1")
-            self.assertEqual(result["status"], "failed")
-            parent = root / f"artifacts/components/{study.PROJECT}/runs/{RUN_ID}"
-            summary = _json(parent / "summary.json")
-            self.assertEqual(summary["scientific_failures"], ["mz500_z1"])
-            selection = study.select_partial_source(parent, root / "artifacts")
-            self.assertEqual(set(selection["completed"]), {"mz10_z1", "mz100_z1", "mz1000_z1", "mz2000_z1"})
-            child_id = "20261116_120100__sim__cross__mass-resumed"
-            result = self.run_study(root, child_id, partial_parent=selection)
-            child = Path(result["run_directory"])
-            operations = _json(child / "results/execution_completion.json")["writer_completion"]["operations"]
-            self.assertEqual([row["operation_id"] for row in operations],
-                ["comsol-mz500_z1", "simion-mixed-species"])
-            for name in ("mz10_z1", "mz100_z1"):
-                self.assertEqual((parent / f"comsol/{name}.csv").read_bytes(),
-                                 (child / f"comsol/{name}.csv").read_bytes())
-            self.assertEqual(len(list(child.glob("logs/*.comsol_completion.json"))), 5)
 
-    def test_reanalysis_tamper_and_original_cli_zero_native_finalization(self):
-        with self.workspace() as root:
-            result = self.run_study(root, RUN_ID)
-            parent = Path(result["run_directory"])
-            parent_bytes = {path.relative_to(parent): path.read_bytes()
-                            for path in parent.rglob("*") if path.is_file()}
-            child_id = "20261116_120200__analysis__python__mass-reanalysis"
-            selected = study.select_analysis_source(parent, root / "artifacts")
-            with patch("msplatform.execution.owner._finalize", side_effect=RuntimeError("held finalization")), \
-                    patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": "",
-                        "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID": "",
-                        "MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE": ""}):
-                with self.assertRaisesRegex(RuntimeError, "held finalization"):
-                    study.analyze(self.context(root), run_id=child_id, selection=selected,
-                                  committed_new_bytes=8388608)
-            recovered = self.cli(root, child_id, "-ResumeFinalization")
-            self.assertEqual(recovered.returncode, 0, recovered.stderr)
-            child = Path(recovered.stdout.split('"run_directory": "')[1].split('"')[0])
-            operations = _json(child / "results/execution_completion.json")["writer_completion"]["operations"]
-            self.assertEqual([row["operation_id"] for row in operations], ["python-analysis"])
-            self.assertEqual(len(list(child.glob("results/mass_*"))), 6)
-            for relative, payload in parent_bytes.items():
-                self.assertEqual((parent / relative).read_bytes(), payload)
-            second = self.cli(root, child_id, "-ResumeFinalization")
-            self.assertEqual(second.returncode, 0, second.stderr)
-            tampered = parent / "comsol/mz10_z1.csv"
-            tampered.write_bytes(tampered.read_bytes() + b"tamper\n")
-            with self.assertRaises(Exception):
-                study.select_analysis_source(parent, root / "artifacts")
-            self.assertFalse((root / f"artifacts/components/{study.PROJECT}/runs/tampered-child").exists())
+
 
     def test_original_cli_rejects_external_retrace_override(self):
         with self.workspace() as root:

@@ -986,163 +986,26 @@ class MassSpectrumTestIsolationTests(unittest.TestCase):
 
 
 class MassSpectrumNativeLifecycleTests(unittest.TestCase):
-    def test_original_cli_success_preserves_native_transport_and_rejects_legacy_resume(self):
+    def test_retired_mass_cli_run_and_resume_start_no_owner_or_native(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
             env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
-            run_id = '20261116_100000__sim__cross__mass-owner-success'
-            result = run_mass_native(owner, fixture, env, run_id, simion)
-            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
-            native_log = child/'logs/simion_stderr.log'
-            diagnostic = native_log.read_text(encoding='utf-8', errors='replace') if native_log.is_file() else ''
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr+diagnostic)
-            receipt_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
-            assert_managed_terminal(self, receipt_path)
-            completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
-            self.assertEqual(len(completion['writer_completion']['operations']), 6)
-            self.assertEqual(completion['summary']['status'], 'success')
-            self.assertEqual(completion['summary']['run_id'], run_id)
-            config = json.loads((child/'run_config.json').read_text(encoding='utf-8-sig'))
-            self.assertEqual(set(config['native_completion']),
-                             {'mz10_z1', 'mz100_z1', 'mz500_z1', 'mz1000_z1', 'mz2000_z1'})
-            captures = [json.loads(line) for line in (root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()]
-            self.assertEqual(len(captures), 5)
-            expected_environment = {
-                'OATOF_ACCELERATOR_HMAX_MM': '1', 'OATOF_REUSE_EXISTING_FIELD': '1',
-                'OATOF_FINE_TSTEP_NS': '0.2', 'OATOF_DRIFT_TSTEP_NS': '50',
-                'OATOF_SEGMENTED_OUTPUT': '1', 'OATOF_USE_PARTICLE_STOP_TIME': '0',
-                'OATOF_CLEAR_PARTICLE_SOLUTION_DATA': '0', 'OATOF_APPLY_PARTICLE_PROPERTIES': '1'}
-            for index, capture in enumerate(captures):
-                self.assertEqual(capture['run_id'], run_id)
-                self.assertTrue(capture['completion_path'].endswith('.comsol_completion.json'))
-                self.assertEqual(capture['task_script'], str(child/'inputs/code/src/msplatform/backends/comsol/matlab/run_fixed_particle_retrace.m'))
-                self.assertEqual({key: capture['environment'][key] for key in expected_environment}, expected_environment)
-                self.assertEqual(Path(capture['environment']['OATOF_ION_TABLE']).name,
-                                 f"{config['species'][index]['species_id']}.ion")
-            native = json.loads((root/'simion-capture.json').read_text(encoding='utf-8'))
-            arguments = native['arguments']
-            self.assertEqual(arguments[:13], ['--default-num-particles', '500', '--nogui', 'fly',
-                '--trajectory-quality', '8', '--retain-trajectories', '0', '--particles', arguments[9],
-                '--programs', '1', '--adjustable'])
-            self.assertEqual(arguments[13:17], ['trajectory_quality=8', '--adjustable', 'trajectory_log_enable=1', '--adjustable'])
-            self.assertTrue(arguments[17].startswith('diagnostic_max_tof_us='))
-            self.assertTrue(arguments[18].endswith('oatof_ideal_grounded.iob'))
-            legacy_id = '20261116_100001__sim__cross__mass-legacy-resume'
-            legacy = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{legacy_id}'
-            for relative in ('inputs', 'results', 'logs', 'ions', 'comsol'):
-                (legacy/relative).mkdir(parents=True, exist_ok=True)
-            legacy_config = dict(config)
-            legacy_config['run_id'] = legacy_id
-            legacy_config.pop('native_completion', None)
-            (legacy/'run_config.json').write_text(json.dumps(legacy_config), encoding='utf-8')
-            refused = run_mass_native(owner, fixture, env, legacy_id, simion, '-ResumeAfterComsol')
-            self.assertNotEqual(refused.returncode, 0)
-            self.assertIn('partial resume requires --source-run', refused.stdout+refused.stderr)
-            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 5)
+            for index, options in enumerate(((), ('-ResumeAfterComsol',),
+                                             ('-ResumeAfterComsol', '-SourceRunPath', str(root/'historical')))):
+                run_id = f'20261116_10000{index}__sim__cross__mass-retired'
+                with self.subTest(options=options):
+                    result = run_mass_native(owner, fixture, env, run_id, simion, *options)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('Legacy mass-spectrum run/resume is retired; use msplatform run with a mass_scan recipe',
+                                  result.stdout+result.stderr)
+                    self.assertFalse((artifacts/'components/single_reflection_oa_tof_mass_analyzer/runs'/run_id).exists())
+                    self.assertFalse((root/'comsol-capture.jsonl').exists())
+                    self.assertFalse((root/'simion-capture.json').exists())
 
-    def test_authenticated_comsol_replay_rejects_tamper_and_reruns_only_incomplete_species(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
-            env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
-            run_id = '20261116_100100__sim__cross__mass-owner-replay'
-            successor_id = '20261116_100101__sim__cross__mass-owner-replay-successor'
-            env['TEST_MASS_FAIL_SPECIES'] = 'mz100_z1'
-            failed = run_mass_native(owner, fixture, env, run_id, simion)
-            self.assertNotEqual(failed.returncode, 0)
-            parent = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
-            self.assertEqual(json.loads((parent/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'failed')
-            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
-            csv_path = parent/'comsol/mz10_z1.csv'
-            original_csv = csv_path.read_bytes()
-            csv_path.write_bytes(original_csv+b' ')
-            tampered = run_mass_native(owner, fixture, env, successor_id, simion,
-                                       '-ResumeAfterComsol', '-SourceRunPath', str(parent))
-            self.assertNotEqual(tampered.returncode, 0)
-            self.assertIn('changed', tampered.stdout+tampered.stderr)
-            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
-            csv_path.write_bytes(original_csv)
-            env.pop('TEST_MASS_FAIL_SPECIES')
-            resumed = run_mass_native(owner, fixture, env, successor_id, simion,
-                                      '-ResumeAfterComsol', '-SourceRunPath', str(parent))
-            self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
-            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{successor_id}'
-            captures = [json.loads(line)['environment']['OATOF_ION_TABLE'] for line in
-                        (root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()]
-            self.assertEqual(len(captures), 6)
-            self.assertEqual(sum(path.endswith('mz10_z1.ion') for path in captures), 1)
-            self.assertEqual(sum(path.endswith('mz100_z1.ion') for path in captures), 2)
-            receipt_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{successor_id}/result.json'
-            assert_managed_terminal(self, receipt_path)
-            completion = json.loads((child/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
-            self.assertEqual(len(completion['writer_completion']['operations']), 5)
-            self.assertEqual(len(list(child.glob('logs/*.comsol_completion.json'))), 5)
-            self.assertEqual((child/'comsol/mz10_z1.csv').read_bytes(), original_csv)
 
-    def test_native_failure_seals_failed_run_and_unknown_writer_retains_hold(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
-            env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
-            failed_id = '20261116_100200__sim__cross__mass-native-failed'
-            env['TEST_MASS_FAIL_SPECIES'] = 'mz100_z1'
-            failed = run_mass_native(owner, fixture, env, failed_id, simion)
-            self.assertNotEqual(failed.returncode, 0)
-            receipt_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{failed_id}/result.json'
-            receipt = assert_managed_terminal(self, receipt_path, status='failed')
-            self.assertIn('INERT_COMSOL_FAILURE', receipt['exception']['message'])
-            replay = run_mass_native(owner, fixture, env, failed_id, simion, '-ResumeAfterComsol')
-            self.assertNotEqual(replay.returncode, 0)
-            self.assertIn('partial resume requires --source-run', replay.stdout+replay.stderr)
-            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 2)
-            env.pop('TEST_MASS_FAIL_SPECIES')
-            unknown_id = '20261116_100201__sim__cross__mass-writer-unknown'
-            env['TEST_MASS_UNKNOWN_SPECIES'] = 'mz10_z1'
-            unknown = run_mass_native(owner, fixture, env, unknown_id, simion)
-            self.assertNotEqual(unknown.returncode, 0)
-            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{unknown_id}'
-            retained_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{unknown_id}/result.json'
-            retained = json.loads(retained_path.read_text(encoding='utf-8-sig'))
-            self.assertFalse(retained['writers_confirmed'])
-            self.assertEqual(retained['resume_action'], 'inspect_writer_completion')
-            self.assertEqual(json.loads((child/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'], 'checkpoint')
-            hold_path = child/'logs/capacity_session.json'
-            self.assertEqual(json.loads(hold_path.read_text(encoding='utf-8-sig'))['status'], 'active')
-            protected = (retained_path, hold_path, child/'run_config.json')
-            before = {path: path.read_bytes() for path in protected}
-            launches_before = len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines())
-            refused = run_mass_native(owner, fixture, env, unknown_id+'-successor', simion,
-                                      '-ResumeAfterComsol', '-SourceRunPath', str(child))
-            self.assertNotEqual(refused.returncode, 0)
-            self.assertIn('stopped payload receipt', refused.stdout+refused.stderr)
-            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), launches_before)
-            self.assertEqual(before, {path: path.read_bytes() for path in protected})
 
-    def test_normal_finalization_resume_replays_no_native_work(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            fixture, owner, artifacts, simion, leaf = mass_native_fixture(root)
-            env = mass_native_environment(root, fixture, artifacts, simion, leaf, Path(sys.executable))
-            env['TEST_MASS_FINALIZATION_SENTINEL'] = 'NORMAL_FINALIZATION_SENTINEL'
-            run_id = '20261116_100300__sim__cross__mass-finalization-resume'
-            failed = run_mass_native(owner, fixture, env, run_id, simion)
-            self.assertNotEqual(failed.returncode, 0)
-            self.assertIn('NORMAL_FINALIZATION_SENTINEL', failed.stdout+failed.stderr)
-            child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
-            completion_path = child/'results/execution_completion.json'
-            completion = completion_path.read_bytes()
-            receipt_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
-            self.assertEqual(json.loads(receipt_path.read_text(encoding='utf-8-sig'))['stage'], 'finalization')
-            env.pop('TEST_MASS_FINALIZATION_SENTINEL')
-            resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization',
-                '-RunId', run_id, '-ResultPath', str(receipt_path), '-PythonExe', sys.executable],
-                cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=60)
-            self.assertEqual(resumed.returncode, 0, resumed.stdout+resumed.stderr)
-            self.assertEqual(completion, completion_path.read_bytes())
-            assert_managed_terminal(self, receipt_path)
-            self.assertEqual(len((root/'comsol-capture.jsonl').read_text(encoding='utf-8').splitlines()), 5)
-            self.assertTrue((root/'simion-capture.json').is_file())
+
 
 
 class MassSpectrumInputAdmissionTests(unittest.TestCase):

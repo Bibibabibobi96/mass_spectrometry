@@ -252,6 +252,24 @@ with section_timing('b_native_preflight', sys.argv[2]):
     for installed_name in ('msplatform.workflows.native_tracing','msplatform.workflows.mass_scan','msplatform.backends.simion.operations',
                            'msplatform.backends.simion.mass_spectrum'):
         assert pathlib.Path(sys.modules[installed_name].__file__).resolve().is_relative_to(installed_purelib), installed_name
+    from msplatform.workflows.single_reflection_flight import continuation as installed_continuation
+    import inspect as installed_inspect
+    assert pathlib.Path(installed_inspect.getfile(installed_continuation)).resolve().is_relative_to(installed_purelib)
+    installed_iob_core = installed_files('msplatform.backends.simion').joinpath('resources', 'iob_core.lua')
+    assert pathlib.Path(str(installed_iob_core)).resolve().is_relative_to(installed_purelib)
+    installed_core_text = installed_iob_core.read_text(encoding='utf-8')
+    installed_legacy_builder = installed_continuation.render_legacy_iob_builder(installed_core_text)
+    assert "local spec=dofile(assert(arg[1]" in installed_legacy_builder
+    installed_locator = '    local projected=spec.preserve_canonical_instances and path or native_path(path)\n'
+    assert installed_core_text.count(installed_locator) == 1
+    try:
+        installed_continuation.render_legacy_iob_builder(installed_core_text.replace(
+            installed_locator, installed_locator + "    native_path('extra')\n"))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('installed continuation accepted an unknown locator')
+    print('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', flush=True)
     print('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', flush=True)
 # B_NATIVE_PREFLIGHT_INSTALLED_END
 # STRICT_JSON_INSTALLED_BEGIN
@@ -7577,6 +7595,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                         self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', evidence)
                         self.assertIn('INSTALLED_REFERENCE_ORIGINS=PASS', evidence)
                         self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', evidence)
+                        self.assertIn('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', evidence)
                         self.assertIn('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', evidence)
                         self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), recipe_bytes)
                         print('INSTALLED_REFERENCE_EVIDENCE=' + evidence.strip(), flush=True)
@@ -8026,6 +8045,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                           cwd=root, environment=probe_environment, timeout=900)
                 self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', result)
                 self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', result)
+                self.assertIn('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', result)
                 self.assertIn('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', result)
                 self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), reference_fixture_bytes)
                 self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)

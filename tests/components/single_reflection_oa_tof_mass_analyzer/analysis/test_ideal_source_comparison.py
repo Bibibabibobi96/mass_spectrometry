@@ -371,7 +371,8 @@ class IdealSourceComparisonTests(unittest.TestCase):
                 provider.mkdir(parents=True)
                 (provider / "__init__.py").write_text("", encoding="utf-8")
                 for relative in ("analysis", "contracts", "execution", "io", "components/orthogonal_accelerator",
-                                 "components/single_reflection_oa_tof", "components/rf_multipole", "workflows/oa_tof_design"):
+                                 "components/single_reflection_oa_tof", "components/single_reflection_tof",
+                                 "components/rf_multipole", "workflows/oa_tof_design"):
                     package = provider / relative
                     package.mkdir(parents=True, exist_ok=True)
                     (package / "__init__.py").write_text("", encoding="utf-8")

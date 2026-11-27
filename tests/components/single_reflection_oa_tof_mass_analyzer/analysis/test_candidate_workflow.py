@@ -2150,7 +2150,7 @@ print('FROZEN_ION_CONSUMER_PASS')
                 execute_stage(stage, {"run_root": str(run_root), "execution_source_closure": {}}, "unused")
 
 
-    def test_formal_asset_entrypoints_preflight_before_paths_or_runs(self):
+    def test_formal_geometry_preflight_and_retired_mass_run_before_owner(self):
         script = PROJECT_ROOT.parents[1] / "workflows/resources" / "verify_geometry_contract.ps1"
         text = script.read_text(encoding="utf-8")
         preflight = text.index("Assert-OaTofFormalAssetsReadable")
@@ -2171,9 +2171,9 @@ print('FROZEN_ION_CONSUMER_PASS')
             with mock.patch.object(mass_study, "validate_formal_inputs",
                                    side_effect=ValueError("FORMAL_REVALIDATION_REQUIRED")) as preflight, \
                     mock.patch.object(mass_study, "run_managed_stage") as owner:
-                with self.assertRaisesRegex(ValueError, "FORMAL_REVALIDATION_REQUIRED"):
+                with self.assertRaisesRegex(ValueError, "legacy mass-spectrum run/resume is retired; use msplatform run with a mass_scan recipe"):
                     mass_study.run(object(), run_id="20261117_000000__sim__cross__mass-preflight", **paths)
-            preflight.assert_called_once()
+            preflight.assert_not_called()
             owner.assert_not_called()
 
         formal_cli = (
@@ -2181,6 +2181,7 @@ print('FROZEN_ION_CONSUMER_PASS')
             / "workflows/resources"
             / "run_formal_validation.ps1"
         ).read_text(encoding="utf-8")
+        self.assertIn("[ValidateSet('Validate','Publish','Recover','Verify')]", formal_cli)
         self.assertIn("-Phase Verify", formal_cli)
         validate_branch = formal_cli[formal_cli.index("$candidateRoot =") :]
         self.assertNotIn("Assert-OaTofFormalAssetsReadable", validate_branch)

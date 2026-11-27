@@ -157,6 +157,8 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
             self.assertIsInstance(result.stderr, str)
             if expect_lease_release:
                 self.assertIn("\ufffd", result.stderr)
+            else:
+                self.assertFalse((root / "artifacts").exists(), "retired entry must not create an owner run")
             output = result.stdout + result.stderr
             self.assertNotEqual(result.returncode, 0, output)
             return output
@@ -187,19 +189,20 @@ foreach($name in @('Save-RunEnvironment','Restore-RunEnvironment')){
         self.assertEqual(output.count("TEST_LEASE_ENTER=SIMION"), 1, output)
         self.assertEqual(output.count("TEST_LEASE_EXIT=SIMION"), 1, output)
 
-    def test_direct_flight_entrypoints_select_permission_and_release(self) -> None:
+    def test_retired_and_active_flight_entrypoints_preserve_lease_boundaries(self) -> None:
         mass_output = self.run_failure(
             "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1", [],
             expect_lease_release=False,
         )
-        self.assertTrue(
-            "Select an explicit execution environment and engineering profile" in mass_output
-            or "mass_spectrum.json" in mass_output,
-            mass_output,
+        self.assertIn("Legacy mass-spectrum run/resume is retired", mass_output)
+        self.assertNotIn("TEST_LEASE_", mass_output)
+        formal_output = self.run_failure(
+            "workflows/formal_reference/run_formal_validation.ps1", [],
+            expect_lease_release=False,
         )
-        self.assertNotIn("TEST_LEASE_ENTER", mass_output)
+        self.assertIn("composite validation execution is retired", formal_output)
+        self.assertNotIn("TEST_LEASE_", formal_output)
         cases = (
-            ("workflows/formal_reference/run_formal_validation.ps1", [], "SIMION"),
             ("simion/workbench/run_ideal_field_diagnostic.ps1", ["-AnalyzeOnly", "-SourceRunPath", "fixture-source"], "GATE"),
             ("tests/simion/run_field_idealization_sweep.ps1", [], "SIMION"),
             ("tests/simion/run_field_idealization_sweep.ps1", ["-ValidateConfigOnly"], "GATE"),

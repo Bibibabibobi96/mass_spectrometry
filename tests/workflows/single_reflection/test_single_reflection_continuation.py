@@ -169,11 +169,16 @@ class SingleReflectionContinuationTests(unittest.TestCase):
         self.assertNotIn('return function(spec,mode,native_path)', expected)
         comment = '-- bounded fixture comment header\n\n'
         self.assertEqual(render_legacy_iob_builder(comment + core), comment + expected)
+        current_site = '    local projected=spec.preserve_canonical_instances and path or native_path(path)\n'
+        self.assertEqual(core.count(current_site), 1)
+        extra_locator = core.replace(current_site, current_site + "    native_path('extra')\n")
+        old_locator = core.replace(current_site, '    local projected=native_path(path)\n')
+        self.assertNotEqual(extra_locator, core)
+        self.assertNotEqual(old_locator, core)
         for bad in ("print('side effect')\n" + core,
                     "--[[ comment ]] print('side effect')\n" + core,
                     core.replace('return function(spec,mode,native_path)', 'return function(spec,mode,unknown_path)'),
-                    core.replace('    local projected=native_path(path)\n',
-                                 "    local projected=native_path(path)\n    native_path('extra')\n")):
+                    extra_locator, old_locator):
             with self.subTest(prefix=bad[:80]), self.assertRaises(ValueError):
                 render_legacy_iob_builder(bad)
 

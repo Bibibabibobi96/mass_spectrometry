@@ -74,7 +74,7 @@ class RecordedBirthConsumerTests(unittest.TestCase):
             opened.assert_not_called()
             owner.assert_not_called()
 
-    def test_real_prepared_source_calls_public_track_and_binds_producer(self):
+    def test_historical_prepared_source_refuses_public_track_before_owner(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             request_path, run, request = scientific_preparation_fixture(root, recorded_birth=True)
@@ -147,18 +147,17 @@ class RecordedBirthConsumerTests(unittest.TestCase):
             from types import SimpleNamespace
             context = SimpleNamespace(tools={'simion':Path(__file__)})
             stage = {'limits': {'transient_run_directory_bytes': 1}, 'artifact_retention': {}}
+            # This historical composite remains readable, but must not start
+            # a new native owner. Plan6 RF producer/consumer and mother binding
+            # are covered by test_recorded_birth_v12 and tracking execution.
+            from msplatform.contracts.machine_contracts import ContractError
             with patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
-                 patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest': {}}) as owner, \
-                 patch('msplatform.results.artifacts.open_artifact', return_value='published'):
-                result = recorded_birth.track_recorded_birth(preparation_manifest=producer, fields=field_reference,
+                 patch('msplatform.execution.owner.run_managed_stage') as owner, \
+                 self.assertRaisesRegex(ContractError, 'legacy composite OA'):
+                recorded_birth.track_recorded_birth(preparation_manifest=producer, fields=field_reference,
                     species_id='explicit-fixture', expected_particle_ids=ids,
                     observations={'plane_observations': []}, context=context)
-                self.assertEqual(result, 'published')
-                call = owner.call_args.kwargs
-                self.assertEqual(call['payload']['propagation']['scope'], 'continuous_assembly')
-                self.assertEqual(len(call['payload']['particles']['mother']['records']), 100)
-                self.assertIn({'manifest_record': producer}, call['source_references'])
-                self.assertIn('source_provenance', call['payload']['birth_source_authority']['records'])
+            owner.assert_not_called()
             for mismatch in ('pulse', 'clock'):
                 altered_pulse = dict(request['flight']['pulse'])
                 if mismatch == 'pulse':
