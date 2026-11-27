@@ -298,6 +298,8 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 完整 `tests.contracts.test_execution_compiler` 45父测试全PASS（34.380s），0 skip；日志 `execution-compiler-current-contracts.log`。Ruff 与 diff-check PASS。该结果只关闭上述测试合同欠项，不表示 Prepared 容器、CA19、完整门禁或原生验收已经完成。
 
+本单元提交并普通 push `cf3e398e`；CLOC 2.10 `14f34b06→cf3e398e` PASS：total code -3、production +0、tests -3，unclassified=0。逐语言和过滤口径在外部 `execution-compiler-cf3e398e-cloc.log`。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
