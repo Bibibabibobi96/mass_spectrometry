@@ -292,6 +292,12 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `2db14205f51713effde159ac2f50ed9a703fea0a`。CLOC 2.10 `dda2ad61→2db14205` PASS：total code -5、production -2、tests -3，unclassified=0；完整逐语言和过滤口径在外部 `recorded-joint-2db14205-cloc.log`。
 
+### C4 执行编译合同测试收口
+
+上节保留的3个执行编译欠项已按当前机器合同逐项处理：Python owner 测试删除对已退役 `single_reflection_flight` Assembly workflow 的多余调用，继续实测成功、失败、缺失和不可用解释器；六组件当前实际11个 profiles，逐 profile 编译断言由旧12改为11；OA 示例的 `single_reflection_mass_analysis/mass_spectrum` 无当前执行 profile，现明确断言 NEEDS_IMPLEMENTATION、unsafe 且零命令，不再期待旧 profile 才能产生的 objectives/constraints/outputs 文本。没有修改生产编译器、执行准入或科学参数。
+
+完整 `tests.contracts.test_execution_compiler` 45父测试全PASS（34.380s），0 skip；日志 `execution-compiler-current-contracts.log`。Ruff 与 diff-check PASS。该结果只关闭上述测试合同欠项，不表示 Prepared 容器、CA19、完整门禁或原生验收已经完成。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

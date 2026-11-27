@@ -865,7 +865,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                     count += 1
                     self.assertEqual([step["step_id"] for step in result["commands"]], [step["step_id"] for step in profile["steps"]])
                     self.assertFalse(any(step["step_id"] == "static_gate" for step in result["commands"]))
-            self.assertEqual(count, 12)
+            self.assertEqual(count, 11)
 
     def test_ion_processor_existing_functional_runner_is_discoverable_without_budget_bindings(self):
         result = self.compile_request(self.ion_processor_request())
@@ -1214,9 +1214,9 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
         request = load_json(HERE / "fixtures" / "oa_tof_500da_r30000.example.json")
         result = self.compile_request(request)
         self.assertEqual(result["status"], "NEEDS_IMPLEMENTATION")
-        self.assertTrue(any("objectives" in item for item in result["blockers"]))
-        self.assertTrue(any("constraints" in item for item in result["blockers"]))
-        self.assertTrue(any("outputs" in item for item in result["blockers"]))
+        self.assertEqual(result["blockers"], ["No execution profile for single_reflection_mass_analysis/mass_spectrum"])
+        self.assertFalse(result["safe_to_execute"])
+        self.assertEqual(result["commands"], [])
 
     def test_oa_validated_structural_candidate_requires_explicit_seed(self):
         request = load_json(HERE / "fixtures" / "oa_tof_500da_r30000.example.json")
@@ -1358,7 +1358,6 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_python_owner_uses_compiler_interpreter_without_repo_venv_and_propagates_exit(self):
         import os
-        from tools.repository.compile_execution_plan import compile_assembly_execution
         from msplatform.execution.retention import file_record
         interpreter = str(Path(sys.executable).resolve())
         with tempfile.TemporaryDirectory() as directory:
@@ -1379,8 +1378,6 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
             self.assertEqual(preview.returncode, 0, preview.stdout + preview.stderr)
             compiled = json.loads(saved_path.read_text(encoding="utf-8"))
         self.assertEqual(compiled["python_executable"], interpreter)
-        assembly = compile_assembly_execution("instrument_assembly", "single_reflection_flight", self.run_id, {})
-        self.assertEqual(assembly["python_executable"], interpreter)
         for mode in ("success", "failure", "missing", "unavailable"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
