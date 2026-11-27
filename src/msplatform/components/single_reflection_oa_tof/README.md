@@ -47,25 +47,24 @@
 | 理想场残差、仿射斜率与束宽设计比较 | [统一分析入口](docs/ANALYSIS.md#自动理想场比较) | 同一 workflow 按科学配置选择比较；配置角色、运行方法及声明边界在分析说明维护 |
 | COMSOL生产 | [`run_oatof_model.m`](../../../../src/msplatform/backends/comsol/matlab/run_oatof_model.m) | `config/baseline.json`与显式Candidate合同 |
 | SIMION交付构建 | [`simion/workbench/build_formal_delivery.ps1`](../../backends/simion/resources/build_formal_delivery.ps1) | Formal只读；Candidate输出不得反写Formal |
-| 单个结构Candidate | [`workflows/design_candidate/run_candidate.py`](../../workflows/oa_candidate/run_candidate.py) | 获批request、显式seed、执行／postprocess 的 `--host-context`、完整COMSOL/SIMION/CAD链 |
+| 单个结构Candidate | [`workflows/design_candidate/run_candidate.py`](../../workflows/oa_candidate/run_candidate.py) | 获批request、显式seed、执行的 `--host-context`、完整COMSOL/SIMION/CAD链 |
+| 已封存 COMSOL detector 数据分析 | `msplatform.workflows.historical_comsol_detector` | 显式历史清单与 Store；失败来源保留原失败状态，未确认探测不推断为物理丢失 |
 | 预注册Candidate campaign | [`workflows/experiment_campaign/run_campaign.py`](../../workflows/oa_tof_design/run_campaign.py) | 默认合同已完成并retired；新campaign须使用新的合同与run ID，执行时显式选择实验或`--all` |
-| Formal验证、发布、复核 | [`workflows/formal_reference/run_formal_validation.ps1`](../../workflows/resources/run_formal_validation.ps1) | `-Phase Validate`、`Publish` 或 `Verify` |
-| 五质量候选 | [`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`](../../workflows/resources/run_mass_spectrum_candidate.ps1) | 五个固定质量点，不自动推广Formal |
+| 历史资产证据 | `msplatform.execution.owner.publish_historical_release_evidence` | 显式选择历史资产记录并发布至 ArtifactStore；不授予新科学资格 |
+| 历史质量谱重分析 | `msplatform.workflows.historical_mass_analysis.analyze_recorded_mass_spectrum` | 仅读取已成功封存的历史来源，通过 ArtifactStore 发布分析 |
 | Formal跨求解器诊断 | [`workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1`](../../workflows/resources/run_cross_solver_diagnostics.ps1) | 只读冻结场与轨迹，只发布diagnostic结果 |
 | 加速器横向场均匀性 | [`workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1`](../../workflows/resources/run_accelerator_transverse_field_uniformity.ps1) | 只读Formal COMSOL保存场，不重求粒子 |
 | oaTOF径向紧凑化 | [`radial_compaction.py`](../../workflows/oa_candidate/radial_compaction.py) | 默认[`campaign合同`](config/radial_compaction_campaign.json)，新建可显式`--campaign`；续跑用新run ID与`--resume-from`，范围见[项目状态](docs/PROJECT.md)；SIMION-only Candidate，不自动推广Formal |
-| 反射器电压场补偿 | [`run_compensation.py`](../../workflows/oa_candidate/run_compensation.py) | 固定源、固定端点与单调环电压；新run私有runtime，公共批次比较原场/补偿场/理想场，显式父manifest仅复用完整单元 |
+| 反射器电压场补偿 | `msplatform.workflows.reflectron_compensation.run_compensation_study` | 显式轴响应、固定端点和同母群三臂；经公共Recipe与ArtifactStore运行；真实原生全链尚待验证 |
 | CAD导出 | [`cad/ms_export_oatof_to_solidworks.m`](../../exporters/solidworks/resources/ms_export_oatof_to_solidworks.m) | 读取指定模型与合同 |
 | 项目软件验证 | [`tools/repository/verify.ps1`](../../../../tools/repository/verify.ps1) `-Scope Owner -Owner single_reflection_oa_tof_mass_analyzer` | 一次前置检查及完整测试的计权分片；不代表物理资格 |
 | 既有资格适配 | [`verify_project.ps1`](../../workflows/resources/oatof_verify.ps1) `-Level Candidate`／`Formal` | 保留原明确请求的原生／发布动作，不是软件验证新等级 |
 
 软件验证通过公共计时runner即时报告失败和逐测试耗时。完整Owner／Repository及源码影响范围保持原freshness与理论前置，并沿公共计权机制执行完整tests范围；candidate设计／工作流／旧证据复用按职责拆为独立模块，公共目录计权为4片，预算由现host准入决定实际并发。单独选定现存测试模块的Changed请求按真实影响执行。详见[项目状态](docs/PROJECT.md#完整软件验证分片)。
 
-反射器补偿入口使用原`--resume-from <manifest>`创建后继run，复用同一科学输入的完整批次；
-原始case只读，不改母群、ID或birth时钟。`--resume-finalization --run-id <原run> [--result-path <Result>]`
-只恢复公共owner收尾，不接受新的科学输入、不启动原生进程；分析失败则新建后继run复用完整计算并重做分析。
-小Result默认位于项目`scratch/workflow_results/<run_id>/result.json`。软件完成、科学结果和收尾状态分别报告；
-既有三臂粗网格证据仅适用于原冻结实现，不授予新精度或科学资格。
+反射器补偿的拟合输入和来源随新Study冻结；已完成的Store资产按实际身份复用，缺件由公共执行链局部重算。
+指定原生stage的收尾恢复使用 `recover_compensation_stage`，不触发Fly。历史Result仅沿原记录只读核验；
+Store全局发布恢复须按现有管理合同执行。三臂完整SIMION验证仍未完成。
 
 所有workflow从本表导航；目录内不再复制合同和资格说明。命令行细节由入口的`--help`/参数块给出，
 SIMION运行边界见[`docs/SIMION.md`](docs/SIMION.md)，Formal与开放任务见[`docs/PROJECT.md`](docs/PROJECT.md)。
@@ -93,7 +92,7 @@ src/msplatform/
 ├─ components/single_reflection_oa_tof/  # 科学合同、纯部件实现与当前文档
 ├─ workflows/oa_candidate/              # Candidate、径向和补偿工作流
 ├─ workflows/oa_tof_design/             # 理想场、理论与发表研究工作流
-├─ workflows/oa_formal/                 # Formal staging、发布、晋升与验证
+├─ components/single_reflection_oa_tof/ # 几何、科学合同与验证
 ├─ workflows/resources/                 # 可安装PowerShell入口与项目验证器
 ├─ backends/{comsol,simion}/            # 原生模型及SIMION资源
 └─ exporters/solidworks/resources/      # CAD导出资源

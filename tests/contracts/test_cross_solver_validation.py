@@ -12,8 +12,8 @@ from msplatform.results.cross_solver_history import read_cross_solver_record
 
 
 class CrossSolverValidationTests(unittest.TestCase):
-    def test_retired_verifier_module_is_not_an_importable_wrapper(self):
-        self.assertIsNone(importlib.util.find_spec("msplatform.workflows.oa_formal.verify_formal_validation"))
+    def test_retired_formal_package_is_not_an_importable_wrapper(self):
+        self.assertIsNone(importlib.util.find_spec("msplatform.workflows.oa_formal"))
 
     def test_historical_reader_rejects_unknown_version(self):
         with tempfile.TemporaryDirectory() as directory:

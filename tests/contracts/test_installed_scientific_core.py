@@ -231,6 +231,16 @@ with section_timing('b_native_preflight', sys.argv[2]):
             assert [row['particle_weight'] for row in installed_rows] == [1., 1., 1., .5, .5]
             assert {row['mass_amu'] for row in installed_rows} == {100.}
             print('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', flush=True)
+    def installed_missing_module(name):
+        try:
+            return importlib.util.find_spec(name) is None
+        except ModuleNotFoundError as error:
+            if error.name and name.startswith(error.name + '.'):
+                return True
+            raise
+    assert installed_missing_module('msplatform.workflows.oa_formal')
+    assert installed_missing_module('msplatform.workflows.oa_formal.prepare_formal_promotion')
+    assert installed_missing_module('msplatform.workflows.oa_formal.verify_geometry_derivation')
     installed_old = installed_examples.load_example('rf_oatof_functional_v1')
     installed_parts = {name: installed_components.resolve_component(value) for name, value in installed_old.component_requests.items()}
     installed_old_assembly = installed_assembly.assemble(installed_old.recipe, installed_parts)

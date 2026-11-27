@@ -37,9 +37,8 @@ class GeometryDerivationTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             verify_geometry_derivation(changed)
 
-    def test_retired_grade_authorizer_and_old_verifier_are_absent(self):
-        for name in ("prepare_formal_promotion", "verify_geometry_derivation"):
-            self.assertIsNone(importlib.util.find_spec("msplatform.workflows.oa_formal." + name))
+    def test_retired_grade_package_is_absent(self):
+        self.assertIsNone(importlib.util.find_spec("msplatform.workflows.oa_formal"))
 
 
 if __name__ == "__main__":

@@ -5,8 +5,17 @@ function Assert-OaTofFormalAssetsReadable {
   param([Parameter(Mandatory)][string]$ProjectRoot)
   $contractPath = Join-Path $ProjectRoot 'config\project.json'
   $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($contract.lifecycle_status -eq 'formal_revalidation_pending') {
-    throw 'FORMAL_REVALIDATION_REQUIRED: Formal assets are unavailable until vNext revalidation completes.'
+  if ($contract.schema_version -eq 1) {
+    if ($contract.lifecycle_status -eq 'formal_revalidation_pending') {
+      throw 'FORMAL_REVALIDATION_REQUIRED: Formal assets are unavailable until vNext revalidation completes.'
+    }
+  } elseif ($contract.schema_version -eq 2) {
+    if ($contract.project_id -ne 'single_reflection_oa_tof_mass_analyzer' -or
+        $contract.asset_references.identity_contract -ne 'config/formal_assets.json') {
+      throw 'ASSET_IDENTITY_REQUIRED: Project asset identity reference differs.'
+    }
+  } else {
+    throw 'Unsupported project descriptor version.'
   }
 }
 
@@ -24,8 +33,8 @@ function New-OaTofFormalSimionRuntime {
   if (-not $destinationFull.StartsWith("$scratchFull\", [StringComparison]::OrdinalIgnoreCase)) {
     throw "Formal SIMION runtime must remain under project scratch: $destinationFull"
   }
-  & $PythonExe -m msplatform.workflows.oa_formal.stage_formal_simion_runtime `
-    --artifact-root $artifactFull --destination $destinationFull --receipt $Receipt |
+  & $PythonExe -m msplatform.backends.simion.runtime_materialization `
+    --artifact-root $artifactFull --destination $destinationFull --receipt $Receipt --project-id 'single_reflection_oa_tof_mass_analyzer' |
     ForEach-Object { Write-Host $_ }
   if ($LASTEXITCODE -ne 0) { throw 'Formal SIMION runtime staging failed.' }
   return $destinationFull
