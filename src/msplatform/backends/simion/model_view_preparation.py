@@ -7,7 +7,7 @@ from typing import Any, Callable, Mapping
 from msplatform.results.artifacts import OpenedArtifact
 from msplatform.execution.run_session import RunSession
 from .field_closure import load_field_model
-from .model_execution import _execute_model_preparation, _protected_source, _require_materializer
+from .model_execution import _execute_model_preparation, _require_materializer
 
 
 def prepare_view(session: RunSession, *, model_reference: Mapping | OpenedArtifact,
@@ -23,13 +23,18 @@ def prepare_view(session: RunSession, *, model_reference: Mapping | OpenedArtifa
     if session.expected_operation_ids != ('materialize_geometry', 'build_model', 'verify_model', 'view_model'):
         raise ValueError('SIMION model view requires exactly materialize/build/verify/view operations')
     _require_materializer(materialize_geometry, materializer_record)
-    selected = load_field_model(model_reference)
+    from msplatform.execution.owner import current_managed_native_store
+    from msplatform.execution.native_source_guard import guard_native_source
+    scope = current_managed_native_store()
+    if scope is None:
+        raise ValueError('SIMION model viewing requires its active Store owner')
+    reference = model_reference.reference if isinstance(model_reference, OpenedArtifact) else model_reference
+    guarded = scope['lifetime'].enter_context(guard_native_source(reference,
+        expected_kind='prepared_model', expected_artifact_root=session.context.workspace / 'artifacts',
+        artifact_store=scope['store']))
+    selected = load_field_model(guarded)
     source = selected.artifact
     source_manifest = dict(source.reference['manifest'], path=str(source.manifest_location))
-    paths = [source.data_locations['compiled_model'],
-        *(record['path'] for records in selected.native_assets.values()
-          for record in (records['raw_record'], *records['surface_records']))]
-    _protected_source(session, source_manifest, required_paths=paths)
     result = _execute_model_preparation(session, model=selected.model, assets=selected.native_assets,
         source_manifest_record=source_manifest, clock_authority_reference=selected.clock_authority_reference,
         seed_record=seed_record, limits=limits, materialize_geometry=materialize_geometry,

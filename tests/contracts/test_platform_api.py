@@ -208,6 +208,8 @@ class PlatformApiTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(root / "viewer-store")
             exe, template, assembly_template, manifest = (root / "sldworks.exe", root / "part.prtdot",
                 root / "assembly.asmdot", root / "manifest.json")
             exe.write_bytes(b"INERT_NOT_SOLIDWORKS")
@@ -232,28 +234,29 @@ class PlatformApiTests(unittest.TestCase):
             sentinel = {"software_fixture": True}
             with patch("msplatform.execution.owner.run_managed_stage", return_value=sentinel) as owner, \
                  patch("subprocess.Popen", side_effect=AssertionError("transport test launched a tool")):
-                self.assertIs(applications_api.open_model(source, application="solidworks", context=context), sentinel)
+                self.assertIs(applications_api.open_model(source, application="solidworks", context=context, artifact_store=store), sentinel)
                 call = owner.call_args.kwargs
                 self.assertEqual(call["expected_operation_ids"], ("materialize_view", "view_model"))
                 self.assertEqual(call["operation_dependencies"], {"view_model": ["materialize_view"]})
                 self.assertIs(call["action"].func, execute_open_model)
                 self.assertIs(call["action"].keywords["model_reference"], source)
                 self.assertEqual(call["action"].keywords["application_settings"], runtime)
-                self.assertEqual(call["source_references"], [{"manifest_record": source.reference["manifest"]}])
+                self.assertNotIn("source_references", call)
+                self.assertIs(call["artifact_store"], store)
                 self.assertEqual(call["payload"]["stage_policy"], stage)
                 owner.reset_mock()
                 checks = dict(schema_version=1, kind="selected_solid_geometry_v1", selected_step_members=["member_00008"])
                 with patch("msplatform.applications.model_execution._inspection_input") as read_report:
-                    self.assertIs(applications_api.open_model(source, application="solidworks", context=context, checks=checks), sentinel)
+                    self.assertIs(applications_api.open_model(source, application="solidworks", context=context, checks=checks, artifact_store=store), sentinel)
                     read_report.assert_called_once_with(source, checks)
                     self.assertEqual(owner.call_args.kwargs["action"].keywords["checks"], checks)
                     self.assertEqual(owner.call_args.kwargs["payload"]["checks"], checks)
                 owner.reset_mock()
                 with self.assertRaisesRegex(ValueError, "does not support"):
-                    applications_api.open_model(source, application="simion", context=context, checks=checks)
+                    applications_api.open_model(source, application="simion", context=context, checks=checks, artifact_store=store)
                 owner.assert_not_called()
                 with self.assertRaisesRegex(ValueError, "prepared_model|PreparedModel|unsolved"):
-                    applications_api.open_model(source, application="simion", context=context)
+                    applications_api.open_model(source, application="simion", context=context, artifact_store=store)
                 owner.assert_not_called()
             self.assertFalse(context.workspace.exists())
 
@@ -274,6 +277,8 @@ class PlatformApiTests(unittest.TestCase):
         model = compile_prepared_model(compiled, components, drive=drive, physics=case.physics)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(root / "viewer-store")
             exe, manifest = root / "simion.exe", root / "manifest.json"
             exe.write_bytes(b"INERT_NOT_SIMION")
             manifest.write_text("{}", encoding="utf-8")
@@ -304,7 +309,7 @@ class PlatformApiTests(unittest.TestCase):
                  patch("subprocess.Popen", side_effect=AssertionError("API transport must not launch a tool")):
                 for value, application in ((artifact, None), (artifact.reference, "simion")):
                     with self.subTest(application=application):
-                        self.assertIs(applications_api.open_model(value, application=application, context=context), sentinel)
+                        self.assertIs(applications_api.open_model(value, application=application, context=context, artifact_store=store), sentinel)
                         call = owner.call_args.kwargs
                         ids = ("materialize_geometry", "build_model", "verify_model", "view_model")
                         self.assertEqual(call["expected_operation_ids"], ids)
@@ -317,7 +322,8 @@ class PlatformApiTests(unittest.TestCase):
                         self.assertIs(preparer.keywords["allow_asynchronous_io"], False)
                         verify_record("preparer", call["action"].keywords["preparer_record"])
                         verify_record("materializer", preparer.keywords["materializer_record"])
-                        self.assertEqual(call["source_references"], [{"manifest_record": artifact.reference["manifest"]}])
+                        self.assertNotIn("source_references", call)
+                        self.assertIs(call["artifact_store"], store)
                         self.assertTrue(call["use_short_execution_path"])
                         self.assertNotIn("Fly", ids)
                 for runtime in ({"unexpected": True}, {"simion_allow_asynchronous_io": 1}):
@@ -326,9 +332,27 @@ class PlatformApiTests(unittest.TestCase):
                         write_policy()
                         owner.reset_mock()
                         with self.assertRaisesRegex(ContractError, "view runtime"):
-                            applications_api.open_model(artifact, application="simion", context=context)
+                            applications_api.open_model(artifact, application="simion", context=context, artifact_store=store)
                         owner.assert_not_called()
             self.assertFalse(context.workspace.exists())
+
+    def test_model_view_rejects_missing_or_different_store_before_any_native_owner(self):
+        from contextlib import ExitStack
+        from msplatform.execution.owner import managed_native_store
+        from msplatform.storage import ArtifactStore
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory) / 'store')
+            other = ArtifactStore(Path(directory) / 'other')
+            with patch('msplatform.execution.owner.run_managed_stage') as launch:
+                with self.assertRaisesRegex(ContractError, 'ArtifactStore'):
+                    applications_api.open_model({}, context=None)
+                with ExitStack() as lifetime, managed_native_store(
+                        store, task_key='view-admission', lifetime=lifetime, account=lambda path: None):
+                    with self.assertRaisesRegex(ContractError, 'parent Store'):
+                        applications_api.open_model({}, context=None, artifact_store=other)
+                launch.assert_not_called()
+            self.assertEqual(list((store.root / 'work').iterdir()), [])
+            self.assertEqual(list((other.root / 'work').iterdir()), [])
 
     def test_tracking_dispatch_preserves_real_source_clock_graph_and_zero_handoff(self):
         from dataclasses import replace

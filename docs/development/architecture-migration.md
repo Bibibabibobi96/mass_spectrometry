@@ -164,6 +164,16 @@ Agent0隔离暂存树 `8353030928dbf7966c16f14d52dba921a0e10b93`（`scalar-reten
 
 RF-IP public partial replay另已PASS194.901s：实际失败index `[true,true,false]`、第三unit exit7，后续新run只启动1个Fly group member，前2单位实际复用，最终succeeded与完整N3冷读。证据外部 `rf-ip-recovery-bjcr1mj3`；原失败资产、前轮160.094s ERROR及旧probe原状态保持。真实IOB/Fly为Python惰性子进程，非SIMION数值或RNG逐位资格；原field复用/partial恢复软件合同已闭合，可据此退旧consumer，当前未把C2/C3/CA19整阶段写PASS。
 
+### C3 显式模型查看：退出旧容量 owner（Agent0）
+
+实际依赖审计发现 `applications.operations.open_model` 的SIMION/SolidWorks查看仍消费旧capacity owner；本单元公开API要求显式ArtifactStore或匹配的父scope，同一 `run_managed_stage` 管理私有副本、原进程和发布。`applications/model_execution.py` 在读STEP/report前持 `guard_native_source`；`backends/simion/model_view_preparation.py` 在解码/准备原model前持同一真实product guard，不再调用旧 `_protected_source` / `run_capacity_lifecycle`。公开查看图、模板设置/恢复、零粒子、禁止隐式Compute/Refine/Fly/保存及GUI生命周期均不改变；历史自定义路径resolver仍可只读解码，不能凭伪lease执行新view。
+
+工作区实际受管软件证据：SolidWorks惰性文档两情形1方法PASS40.652s（有/无限定检查，真实Python子进程），SIMION惰性4操作与GUI前hook拒绝1方法PASS66.335s；原模板/STEP或模型、副本OS保护、原PID终态与正式host release保留，角色为GATE，绝不称真实供应商GUI。日志分别外部 `viewer-store-inert.log` / `simion-viewer-store-inert.log`。公开dispatch两项PASS2.137s、missing/不同Store拒绝PASS0.288s、只读relocation与无owner执行拒绝PASS2.071s；属于同范围追加/重复验证，不与不同环境算加速比。
+
+独立暂存树 `97badb93c68a222ada62a41219d32266c5246716` / `viewer-store-index-check-96174402` 的上述4项低成本API/解码合同PASS3.185s及Ruff PASS；选择性暂存排除 `test_platform_api.py` 中尚未整体提交的particle/其他consumer迁移。受管惰性执行证据来自当时工作区同一三个view实现，未为该暂存树重复107秒完整惰性流程；最终发行/离仓/GUI验收边界保持未完成，未借源码证据冒称installed通过。最近 `docs/SOLIDWORKS.md` 与操作示例同步实际Store要求。
+
+此前标量导出主题已普通push `0df3adaa5150b0b54694d153e261208492f5c92d`；规范CLOC2.10 `78144e45→0df3adaa` PASS：total618524→622059(+3535)、production303823→303841(+18)、tests314701→318218(+3517)、unclassified0，完整各语言用途/blank/comment/code及过滤见外部 `scalar-retention-cloc.log`。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

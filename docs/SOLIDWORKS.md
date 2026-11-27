@@ -10,7 +10,7 @@
 | 解析受支持的安装 | [PowerShell 解析器](../src/msplatform/exporters/solidworks/resources/resolve_solidworks_2022.ps1)、[Python 解析器](../src/msplatform/exporters/solidworks/installation.py) |
 | 从 MATLAB 导入 STEP 并保存零件／装配 | [MATLAB 桥接](../src/msplatform/exporters/solidworks/resources/import_step_to_solidworks.m)，通过临时 JSON manifest 调用安装包 Python 模块 |
 | 从 Python 导入 STEP，或复用保存、变换操作 | [Python 桥接](../src/msplatform/exporters/solidworks/import_step_to_solidworks.py)：`import_steps`、`save_native_document`、`create_transform`、`document_title` |
-| 仅查看已发布 STEP，不保存或转存 | `msplatform.applications.open_model(..., application="solidworks")`；[阶段参数](REPOSITORY_OPERATIONS.md#科学核心发行与旧入口)，当前验收范围查集成正文 |
+| 仅查看已发布 STEP，不保存或转存 | `msplatform.applications.open_model(..., application="solidworks", artifact_store=store)`；[阶段参数](REPOSITORY_OPERATIONS.md#科学核心发行与旧入口)，当前验收范围查集成正文 |
 | 核对项目几何、交付及资格 | 项目 README → `docs/CAD.md`；当前资产与资格只查 PROJECT 和 manifest |
 
 ## 调用边界
@@ -36,6 +36,11 @@ Python 的 `import_steps` 消费同样的显式输入；CLI 的 `--manifest` 适
 使用这两种默认值。装配STEP不能仅设置零件模板后就宣称不再需要装配模板。
 新查看请求显式提供`part_template`与`assembly_template`，复制、记录并保护实际模板，临时设置后逐项恢复；
 文件存在不证明模板无附加几何或适合全部导入任务，实际冷打开仍需验证。
+
+显式查看由调用者提供的 `ArtifactStore` 或同一 Store 的已保护父运行负责发布。
+查看阶段通过公共来源 guard 持有原 STEP、检验报告或 SIMION 模型成员，复制到本次私有工作目录；
+原进程及其 immutable 输入保护、自然退出和发布仍由既有执行 owner 负责。
+该路径不再启动旧容量账本事务，也不凭一次窗口关闭授予几何资格。
 这些COM调用改变同一用户的系统选项，不是单次导入的隔离设置；修改期间可能落盘，正常清理后须验证恢复。
 进程崩溃或同用户并发修改时不能承诺自动恢复或完全隔离，原异常与未恢复事实必须保留。
 依据为2026-11-04核查的SolidWorks2022 SP5本机`api/redist/SolidWorks.Interop.swconst.dll`（30.5.0.49）

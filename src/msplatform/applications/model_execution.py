@@ -10,22 +10,19 @@ from typing import Any, Callable, Mapping
 from msplatform.results.artifacts import OpenedArtifact, open_artifact
 from msplatform.io.manifest_records import file_record, verify_record
 from msplatform.execution.recorded_file_removal import write_json_atomic
-from msplatform.execution.run_capacity_lifecycle import resolve_consumed_run_capacity_owner
 from msplatform.execution.run_session import RunSession
 
 
-def _protected_source(session: RunSession, source: OpenedArtifact, step: Path) -> None:
-    owner = resolve_consumed_run_capacity_owner(source.reference['manifest'], consumer_artifact_root=session.artifact_root)
-    capacity = session.capacity_session
-    if capacity.get('status') != 'active':
-        raise ValueError('viewer requires its active original capacity owner')
-    paths = list(capacity['protected_paths'])
-    for lease in capacity['source_protection_leases']:
-        if lease['status'] == 'active':
-            paths.extend(lease['protected_paths'])
-    for target in (Path(owner['run_directory']), step):
-        if not any(target.resolve().is_relative_to(Path(path).resolve()) for path in paths):
-            raise ValueError('viewer source has no active owner protection')
+def _protected_source(session: RunSession, source: OpenedArtifact) -> OpenedArtifact:
+    """Hold the actual published STEP and report through the native stage."""
+    from msplatform.execution.owner import current_managed_native_store
+    from msplatform.execution.native_source_guard import guard_native_source
+    scope = current_managed_native_store()
+    if scope is None:
+        raise ValueError('model viewing requires its active Store owner')
+    return scope['lifetime'].enter_context(guard_native_source(source.reference,
+        expected_kind='cad_geometry', expected_artifact_root=session.context.workspace / 'artifacts',
+        artifact_store=scope['store']))
 
 
 def _inspection_input(source: OpenedArtifact, checks):
@@ -75,11 +72,11 @@ def execute_open_model(session: RunSession, *, model_reference: Mapping[str, Any
     source = model_reference if isinstance(model_reference, OpenedArtifact) else open_artifact(model_reference, expected_kind='cad_geometry')
     if source.kind != 'cad_geometry':
         raise ValueError('SolidWorks viewer requires a published CAD geometry artifact')
+    source = _protected_source(session, source)
     step = source.data_path('step')
     if step.suffix.lower() not in {'.step', '.stp'}:
         raise ValueError('SolidWorks viewer supports the declared STEP member')
     inspection = _inspection_input(source, checks) if checks is not None else None
-    _protected_source(session, source, step)
     root = session.artifact_run_dir.resolve()
     source_record = dict(source.data_records['step'], path=str(step))
     template_record = file_record(template, 'required_evidence')

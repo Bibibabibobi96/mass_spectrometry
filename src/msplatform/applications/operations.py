@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from msplatform.execution.context import ExecutionContext
 
 
-def _open_simion_model(model: OpenedArtifact | Mapping[str, Any], context: ExecutionContext) -> dict[str, Any]:
+def _open_simion_model(model: OpenedArtifact | Mapping[str, Any], context: ExecutionContext, *, artifact_store=None) -> dict[str, Any]:
     """Compose the unique unsolved-model preparation and explicit GUI action."""
     from datetime import datetime
     from functools import partial
@@ -58,12 +58,12 @@ def _open_simion_model(model: OpenedArtifact | Mapping[str, Any], context: Execu
             preparer_record=file_record(Path(prepare_view.__code__.co_filename).resolve(), "required_evidence"),
             limits=stage["limits"]),
         action_record=file_record(Path(execute_simion_open_model.__code__.co_filename).resolve(), "required_evidence"),
-        source_references=[{"manifest_record": source.artifact.reference["manifest"]}],
-        use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
+        use_short_execution_path=True, completion_api=no_particle_batch_completion_api,
+        **({'artifact_store': artifact_store} if artifact_store is not None else {}))
 
 
 def open_model(model: OpenedArtifact | Mapping[str, Any], *, application: str | None = None,
-               context: ExecutionContext, checks: Mapping[str, Any] | None = None) -> dict[str, Any]:
+               context: ExecutionContext, checks: Mapping[str, Any] | None = None, artifact_store=None) -> dict[str, Any]:
     """Explicitly view a published model copy and await its normal closure.
 
     The current application action supports SolidWorks2022 STEP viewing. Close
@@ -74,6 +74,7 @@ def open_model(model: OpenedArtifact | Mapping[str, Any], *, application: str | 
     select their application explicitly. Export/prepare never call this action.
     Optional SolidWorks checks select at most7 published STEP members for bounded
     readonly native observations, never automatic geometric qualification.
+    An explicit ArtifactStore or matching protected parent owns the view run.
     """
     from datetime import datetime
     from functools import partial
@@ -81,16 +82,21 @@ def open_model(model: OpenedArtifact | Mapping[str, Any], *, application: str | 
     from msplatform.applications.model_execution import execute_open_model
     from msplatform.results.artifacts import OpenedArtifact
     from msplatform.io.manifest_records import file_record
-    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.owner import run_managed_stage, current_managed_native_store
     from msplatform.execution.payload_inputs import materialize_payloads
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.execution.completion import no_particle_batch_completion_api
 
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ContractError('model viewing requires an explicit ArtifactStore or protected parent scope')
+    if parent is not None and artifact_store is not None and parent['store'] is not artifact_store:
+        raise ContractError('model viewing must use the parent Store')
     selected = ("simion" if isinstance(model, OpenedArtifact) and model.kind == "prepared_model" else "solidworks") if application is None else application
     if selected == "simion":
         if checks is not None:
             raise ContractError("SIMION model viewing does not support SolidWorks geometry checks")
-        return _open_simion_model(model, context)
+        return _open_simion_model(model, context, artifact_store=artifact_store)
     if selected != "solidworks":
         raise ContractError("open_model supports the explicit SolidWorks STEP or SIMION PreparedModel action")
     source = model if isinstance(model, OpenedArtifact) else artifact_reader.open_artifact(model, expected_kind="cad_geometry")
@@ -123,5 +129,5 @@ def open_model(model: OpenedArtifact | Mapping[str, Any], *, application: str | 
             materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
             application_settings=settings, checks=checks),
         action_record=file_record(Path(execute_open_model.__code__.co_filename).resolve(), "required_evidence"),
-        source_references=[{"manifest_record": source.reference["manifest"]}],
-        completion_api=no_particle_batch_completion_api)
+        completion_api=no_particle_batch_completion_api,
+        **({'artifact_store': artifact_store} if artifact_store is not None else {}))

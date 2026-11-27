@@ -21,7 +21,7 @@ from msplatform.backends.simion.model_view_preparation import prepare_view
 from msplatform.backends.simion.native_plans import plan_solve_fields
 from msplatform.execution import owner
 from msplatform.results.artifacts import open_artifact
-from msplatform.execution.capacity_admission import _capacity_policy
+from msplatform.storage import ArtifactStore
 from msplatform.execution.context import ExecutionContext
 from msplatform.io.manifest_records import file_record
 from msplatform.execution.payload_inputs import materialize_payloads
@@ -81,7 +81,7 @@ class SimionModelOpenTests(unittest.TestCase):
             self.assertEqual(calls[0]['role'], 'SIMION')
             self.assertEqual(calls[0]['stage'], 'gui_review')
 
-    def test_resolved_model_is_preserved_through_field_plan_and_new_view_preparation(self):
+    def test_resolved_model_reads_relocated_but_view_requires_store_owner(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model, assets, seed, _ = model_plan(root/'author')
@@ -110,15 +110,11 @@ class SimionModelOpenTests(unittest.TestCase):
             self.assertEqual(plan_solve_fields(selected.model, numerics=field_numerics)['field_design']['schema_version'], 3)
             session = _InertModelSession(root/'view', moved)
             session.expected_operation_ids += ('view_model',)
-            with patch('msplatform.backends.simion.model_execution.resolve_consumed_run_capacity_owner',
-                       return_value=dict(run_directory=str(moved))):
-                view = prepare_view(session, model_reference=opened, seed_record=seed, limits={},
+            # Relocation is a read-only decoder capability; a native action
+            # must acquire the actual Store source rather than a fake lease.
+            with self.assertRaisesRegex(ValueError, 'active Store owner'):
+                prepare_view(session, model_reference=opened, seed_record=seed, limits={},
                     materialize_geometry=_inert_small_materialization, materializer_record=file_record(Path(__file__).with_name('test_simion_model_execution.py'), 'required_evidence'))
-            self.assertEqual([row['operation_id'] for row in view['preparation_operations']],
-                ['materialize_geometry', 'build_model', 'verify_model'])
-            self.assertEqual(view['model_identity_sha256'], model.document['model_identity_sha256'])
-            self.assertFalse(view['original_iob_bytes_preserved'])
-            self.assertTrue(all(Path(row['path']).is_relative_to(session.run_dir) for row in view['native_asset_records']))
             Path(opened.data_locations['compiled_model']).write_bytes(b'TAMPER')
             with self.assertRaises(AssertionError):
                 load_field_model(opened)
@@ -164,7 +160,7 @@ class SimionModelOpenTests(unittest.TestCase):
             tool.write_bytes(b'INERT_ARGV_TOOL_RECORD_NOT_EXECUTED')
             context = ExecutionContext(workspace=root/'study', python_executable=Path(sys.executable),
                 powershell_executable=Path(shutil.which('pwsh')), tools={'simion':tool},
-                host_state_path=root/'private-host.sqlite3', policy_path=resource_path('host_resource_policy.json'))
+                host_state_path=Path(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH', str(root/'private-host.sqlite3'))), policy_path=resource_path('host_resource_policy.json'))
             budget = root/'budget.json'
             budget.write_text('{"bytes":104857600}', encoding='utf-8')
             base = dict(descriptor=dict(project='instrument_assembly', mode='inert_simion_view', software=[]),
@@ -187,7 +183,7 @@ class SimionModelOpenTests(unittest.TestCase):
                 materializer_record=file_record(Path(inspect.getsourcefile(materialize_payloads)), 'required_evidence'))
             environment = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='', MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
                 MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='', MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path))
-            policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=0)
+            store = ArtifactStore(root / 'store')
             original_process = RunSession.run_process
             proof = []
             phase = 'success'
@@ -211,11 +207,11 @@ class SimionModelOpenTests(unittest.TestCase):
                     # Python process falsely qualified as a vendor SIMION run.
                     options.update(executable=Path(sys.executable), arguments=['-I','-c',code], role='GATE', stage='inert_view_software')
                 return original_process(session, operation_id, **options)
-            with patch.dict(os.environ, environment), patch('msplatform.execution.capacity_admission._capacity_policy', return_value=policy), \
+            with patch.dict(os.environ, environment), \
                     patch.object(RunSession, 'run_process', inert_process):
                 producer = owner.run_managed_stage(context, run_id='20261104_000010__test__cad__inert-model-source',
                     expected_operation_ids=(), operation_dependencies={}, action=publish,
-                    action_record=file_record(Path(__file__), 'required_evidence'), **base)
+                    action_record=file_record(Path(__file__), 'required_evidence'), artifact_store=store, **base)
                 reference = dict(manifest=producer['manifest'], product_id='model')
                 source = open_artifact(reference, expected_kind='prepared_model')
                 for index, phase in enumerate(('success','hook_failure'), 11):
@@ -226,14 +222,16 @@ class SimionModelOpenTests(unittest.TestCase):
                         expected_operation_ids=('materialize_geometry','build_model','verify_model','view_model'),
                         operation_dependencies={'build_model':('materialize_geometry',),'verify_model':('build_model',),'view_model':('verify_model',)},
                         action=action, action_record=file_record(Path(inspect.getsourcefile(execute_simion_open_model)), 'required_evidence'),
-                        source_references=[{'manifest_record':producer['manifest']}], **base)
+                        artifact_store=store, **base)
                     if phase == 'success':
                         result = owner.run_managed_stage(**arguments)
                         self.assertEqual((result['status'],result['stage'],result['writers_confirmed']), ('success','complete',True))
                     else:
                         with self.assertRaisesRegex(ValueError, 'automatic build/source/Program'):
                             owner.run_managed_stage(**arguments)
-                    run = context.workspace/'artifacts/assemblies/instrument_assembly/runs'/run_id
+                    matches = list(store.root.glob('assets/native_stage/*/*/runs/' + run_id))
+                    self.assertEqual(len(matches), 1)
+                    run = matches[0]
                     receipt = json.loads((run/'results/simion_view_receipt.json').read_text(encoding='utf-8'))
                     completion = json.loads((run/'results/execution_completion.json').read_text(encoding='utf-8'))
                     operations = completion['writer_completion']['operations']

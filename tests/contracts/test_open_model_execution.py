@@ -15,7 +15,7 @@ from unittest.mock import patch
 from msplatform.applications.model_execution import execute_open_model
 from msplatform.applications import solidworks_worker
 from msplatform.results.artifacts import open_artifact
-from msplatform.execution.capacity_admission import _capacity_policy
+from msplatform.storage import ArtifactStore
 from msplatform.execution.context import ExecutionContext
 from msplatform.io.manifest_records import file_record
 from msplatform.execution import owner
@@ -349,7 +349,7 @@ class OpenModelExecutionTests(unittest.TestCase):
                 assembly.write_bytes(b'INERT_NOT_ASSEMBLY_TEMPLATE')
                 context = ExecutionContext(workspace=root/'study', python_executable=Path(sys.executable),
                     powershell_executable=Path(shutil.which('pwsh')), tools={'solidworks':tool},
-                    host_state_path=root/'private-host.sqlite3', policy_path=resource_path('host_resource_policy.json'))
+                    host_state_path=Path(os.environ.get('MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH', str(root/'private-host.sqlite3'))), policy_path=resource_path('host_resource_policy.json'))
                 authority = root/'budget.json'
                 authority.write_text('{"bytes":10485760}', encoding='utf-8')
                 base = dict(descriptor=dict(project='instrument_assembly', mode='inert_view', software=[]),
@@ -393,11 +393,11 @@ class OpenModelExecutionTests(unittest.TestCase):
 
                 environment = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='', MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='',
                     MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='', MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path))
-                policy = dict(_capacity_policy(), target_gib=1, minimum_free_gib=0)
-                with patch.dict(os.environ, environment), patch('msplatform.execution.capacity_admission._capacity_policy', return_value=policy):
+                store = ArtifactStore(root / 'store')
+                with patch.dict(os.environ, environment):
                     producer = owner.run_managed_stage(context, run_id='20261104_000001__test__cad__inert-view-source',
                         expected_operation_ids=(), operation_dependencies={}, action=publish,
-                        action_record=file_record(Path(__file__), 'required_evidence'), **base)
+                        action_record=file_record(Path(__file__), 'required_evidence'), artifact_store=store, **base)
                     ref = {'manifest':producer['manifest'], 'product_id':'cad_geometry'}
                     source = open_artifact(ref, expected_kind='cad_geometry')
                     action = partial(execute_open_model, model_reference=source, application='solidworks', limits=limits,
@@ -407,7 +407,7 @@ class OpenModelExecutionTests(unittest.TestCase):
                         result = owner.run_managed_stage(context, run_id='20261104_000002__test__cad__inert-view-consumer',
                             expected_operation_ids=('materialize_view', 'view_model'), operation_dependencies={'view_model':('materialize_view',)},
                             action=action, action_record=file_record(Path(inspect.getsourcefile(execute_open_model)), 'required_evidence'),
-                            source_references=[{'manifest_record':producer['manifest']}], **base)
+                            artifact_store=store, **base)
                 self.assertEqual((result['status'], result['stage'], result['writers_confirmed']), ('success', 'complete', True))
                 run = Path(result['run_directory'])
                 report = json.loads((run/'results/model_view_receipt.json').read_text(encoding='utf-8'))
