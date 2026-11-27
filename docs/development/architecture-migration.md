@@ -248,7 +248,7 @@ Agent 8 将 prepared_joint_execute 的完整 Flight 参数、两种 source mode�
 
 公共双锥 Changed 的失败已逐项定位：实际 Lua 5.1.5 通过 `SIMION_LUA_EXE` 显式选择；安装夹具改用唯一气体/环境/几何来源及记录；MR 当前组件和轴响应资源绑定实际字节；错误文本中的乱码统一恢复为规范 IP–MR/OA–MR/RF–IP/OA–TOF。`execute_fields` 在任何 Store/文件/进程操作前完成预算、I/O、materializer 与 artifact-reference 结构校验，保持原错误语义。
 
-离仓历史质量谱曾因父级 token 泄漏而无法取得非继承 owner。公共进程适配现在仅清除 token、owner PID 和 role，保留显式状态库与 Python，原保护握手仍严格要求独立 owner；回归同时核原宿主错误/退出码保留。相关 Store/IPMR 正反例、原生资产与完整响应绑定模块均PASS；独立索引4父测试／9回执全PASS。公共离仓运行中历史质量谱/场读取、参考三类物种和记录出生已PASS；最终仍在历史 IP 旧 source schema 处失败，需只读事件解码，不能重新采样冒充历史，故未标最终通过。
+离仓历史质量谱曾因父级 token 泄漏而无法取得非继承 owner。公共进程适配现在仅清除 token、owner PID 和 role，保留显式状态库与 Python，原保护握手仍严格要求独立 owner；回归同时核原宿主错误/退出码保留。相关 Store/IPMR 正反例、原生资产与完整响应绑定模块均PASS；独立索引4父测试／9回执全PASS。公共离仓运行中历史质量谱/场读取、参考三类物种和记录出生已PASS；最终仍在历史 IP 旧 source schema 处失败，需只读事件解码，不能重新采样冒充历史，故未标最终通过。该单元提交/普通 push 为 `c43a0220`；CLOC 2.10 `c734366a→c43a0220` PASS：total code +409、production +6、tests +403，unclassified=0，完整口径在外部 `store-preflight-c43a0220-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 

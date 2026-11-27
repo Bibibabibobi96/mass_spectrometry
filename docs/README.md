@@ -58,7 +58,7 @@
 | 峰形、场比较、粒子配对与数值统计 | [公共分析](../tests/analysis/README.md) |
 | run身份、冻结、manifest、保留、容量与项目发现 | [机器合同](../tools/repository/README.md) |
 | 组件连接、完整与局部配方解析 | [公共连接合同](CONNECTIONS.md) |
-| 离子释放、种子、粒子身份与母群 | [公共离子释放](ION_RELEASE.md) |
+| 离子释放、种子、粒子身份与母群 | [公共离子释放](PARTICLE_RELEASE.md) |
 | SIMION执行、PA与缓存机制 | [公共SIMION实现](SIMION_BACKEND.md) |
 | COMSOL启动和公共验证模型 | [公共COMSOL实现](COMSOL_BACKEND.md) |
 | SolidWorks桥接和保存 | [公共SolidWorks实现](SOLIDWORKS.md) |

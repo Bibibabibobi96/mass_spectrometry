@@ -26,7 +26,18 @@ def analyze(run: Path) -> dict[str, Any]:
     transform = transform_from_config(c)
     transformed = "coordinate_transform" in c
     b, acceptance = c["baseline"], c["acceptance"]
-    sources = frozen_release_states(run, c)
+    source = c["source"]
+    historical = ("injected_source" not in c and type(source.get("schema_version")) is int
+                  and source["schema_version"] == 1 and source.get("role") == "repository_ion_release")
+    sources = frozen_release_states(run, c, historical=historical)
+    historical_center = None
+    if (historical and sources and source["sampling"].get("strategy") in {
+            "center_first_halton_cylinder_v1", "center_first_halton_cylinder_thermal_transverse_v1"}):
+        historical_center = to_project_position(c, source["geometry"]["center_mm"])
+        if transformed:
+            historical_center = (historical_center[2], historical_center[0], historical_center[1])
+        else:
+            historical_center = (historical_center[0], historical_center[2], historical_center[1])
     source_by_id = {row["particle_id"]: row for row in sources}
     if not sources and "injected_source" in c:
         with (run/"results/particle_state.csv").open("w", encoding="utf-8", newline="") as stream:
@@ -114,6 +125,9 @@ def analyze(run: Path) -> dict[str, Any]:
             ("time_us", "elapsed_time_us", "axial_z_mm", "transverse_x_mm", "transverse_y_mm",
              "velocity_axial_m_s", "velocity_x_m_s", "velocity_y_m_s", "kinetic_energy_eV"),
             (arrival, arrival-source["birth_time_s"]*1e6, *position, *velocity, kinetic_energy_ev(source["mass_amu"], vx, vy, vz))))
+        if historical_center is not None and source["particle_id"] == sources[0]["particle_id"]:
+            expected[source["particle_id"]].update(zip(
+                ("axial_z_mm", "transverse_x_mm", "transverse_y_mm"), historical_center, strict=True))
     validation = validate_rf_event_table(output,expected,b["electric"]["rf_frequency_hz"],b["clock"]["rf_phase_rad"],enums={**ENUMS,"event":EVENTS,"terminal_reason":[*ENUMS["terminal_reason"],"downstream_domain_exit"]})
     grouped={event:[r for r in rows if r["event"]==event] for event in EVENTS}
     metrics = {}

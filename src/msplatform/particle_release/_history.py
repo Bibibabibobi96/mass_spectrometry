@@ -10,6 +10,8 @@ from pathlib import Path
 
 _COLUMNS = ("particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm",
             "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state")
+_EVENT_COLUMNS = ("particle_id", "event", "reason", "t_us", "x_mm", "y_mm", "z_mm",
+                  "vx_mm_us", "vy_mm_us", "vz_mm_us")
 _ROLES = {"repository_ion_release", "continuous_axial_volume_ion_beam_source"}
 
 
@@ -77,6 +79,54 @@ def _read_legacy(path: Path, receipt: dict) -> dict:
     if identity != receipt.get("state_identity"):
         raise ValueError("historical release state identity changed")
     return receipt
+
+
+def read_legacy_event_release_states(path: Path, spec: dict) -> list[dict]:
+    """Restore schema-1 standalone sources from frozen events without producing new states."""
+    if (not isinstance(spec, dict) or type(spec.get("schema_version")) is not int
+            or spec["schema_version"] != 1 or spec.get("role") != "repository_ion_release"):
+        raise ValueError("historical event source requires schema 1 repository_ion_release")
+    count, mother_count = spec.get("particle_count"), spec.get("mother_particle_count")
+    if (type(count) is not int or type(mother_count) is not int
+            or count <= 0 or mother_count != count):
+        raise ValueError("historical event source does not declare one complete mother cohort")
+    birth = spec.get("common_time_of_birth_s")
+    species = spec.get("species")
+    if (isinstance(birth, bool) or not isinstance(birth, (int, float)) or not math.isfinite(birth)
+            or not isinstance(species, dict)):
+        raise ValueError("historical event source birth or species is invalid")
+    mass, charge = species.get("mass_amu"), species.get("charge_state")
+    if (isinstance(mass, bool) or not isinstance(mass, (int, float)) or not math.isfinite(mass) or mass <= 0
+            or type(charge) is not int or charge == 0):
+        raise ValueError("historical event source mass or charge is invalid")
+    states = []
+    try:
+        with Path(path).open(encoding="utf-8-sig", newline="") as stream:
+            reader = csv.DictReader(stream)
+            if tuple(reader.fieldnames or ()) != _EVENT_COLUMNS:
+                raise ValueError("historical event source columns changed")
+            for row in reader:
+                if row["event"] != "source":
+                    continue
+                if None in row or any(value is None for value in row.values()):
+                    raise ValueError("historical event source row is malformed")
+                try:
+                    particle_id = int(row["particle_id"])
+                    values = {key: float(row[key]) for key in _EVENT_COLUMNS[3:]}
+                except (ValueError, TypeError) as error:
+                    raise ValueError("historical event source row has invalid values") from error
+                if (particle_id <= 0 or any(not math.isfinite(value) for value in values.values())
+                        or values["t_us"] != birth * 1e6):
+                    raise ValueError("historical event source identity or units are invalid")
+                states.append(dict(particle_id=particle_id, birth_time_s=float(birth),
+                    x_mm=values["x_mm"], y_mm=values["y_mm"], z_mm=values["z_mm"],
+                    vx_m_s=values["vx_mm_us"] * 1000, vy_m_s=values["vy_mm_us"] * 1000,
+                    vz_m_s=values["vz_mm_us"] * 1000, mass_amu=float(mass), charge_state=charge))
+    except OSError as error:
+        raise ValueError("historical event source is unavailable") from error
+    if [state["particle_id"] for state in states] != list(range(1, count + 1)):
+        raise AssertionError("particle IDs do not match the input table")
+    return states
 
 
 def receipt_reader(function):

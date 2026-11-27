@@ -72,6 +72,22 @@ def _role_voltages(plan: dict) -> dict:
         raise ValueError(f'saved COMSOL field common BVP differs: {exc}') from exc
 
 
+
+def paired_comsol_inputs(plan: dict) -> dict:
+    # An explicitly selected MPH already contains its geometry and mesh.
+    # SIMION pitch/raster and numeric electrode IDs are not COMSOL inputs.
+    instance = plan['oatof_instance_id']
+    port = plan['composition_plan']['components'][instance]['ports']['side_entry']
+    return dict(
+        **{name: plan[name] for name in ('schema_version', 'accelerator_variant', 'oatof_instance_id',
+                                       'coordinate_frame', 'accelerator_electrical')},
+        numerical_domain={key: value for key, value in plan['numerical_domain'].items() if key != 'cell_mm_xyz'},
+        accelerator_geometry={key: value for key, value in plan['accelerator_geometry'].items() if key not in (
+            'numerical_port_width_mm', 'numerical_port_height_mm', 'accelerator_port_aperture_discretization')},
+        side_opening=dict(center_mm=port['center_mm'], **{key: port['cross_section'][key] for key in (
+            'shape', 'width_mm', 'height_mm')}),
+        role_voltages=_role_voltages(plan))
+
 def load_paired_static_model_source(
     manifest_path: Path, manifest_snapshot: Path, *, expected_plan: dict | None = None,
 ) -> dict:
@@ -95,20 +111,6 @@ def load_paired_static_model_source(
         if verify:
             verify_record(path.name, matches[0], base_dir=base)
         return matches[0]
-    def comsol_inputs(plan: dict) -> dict:
-        # An explicitly selected MPH already contains its geometry and mesh.
-        # SIMION pitch/raster and numeric electrode IDs are not COMSOL inputs.
-        instance = plan['oatof_instance_id']
-        port = plan['composition_plan']['components'][instance]['ports']['side_entry']
-        return dict(
-            **{name: plan[name] for name in ('schema_version', 'accelerator_variant', 'oatof_instance_id',
-                                           'coordinate_frame', 'accelerator_electrical')},
-            numerical_domain={key: value for key, value in plan['numerical_domain'].items() if key != 'cell_mm_xyz'},
-            accelerator_geometry={key: value for key, value in plan['accelerator_geometry'].items() if key not in (
-                'numerical_port_width_mm', 'numerical_port_height_mm', 'accelerator_port_aperture_discretization')},
-            side_opening=dict(center_mm=port['center_mm'], **{key: port['cross_section'][key] for key in (
-                'shape', 'width_mm', 'height_mm')}),
-            role_voltages=_role_voltages(plan))
     borrowed = None
     if not any(record_path(row, base_dir=base) == (base/'comsol/comsol_field_solution.json').resolve() for row in records):
         # An export consumer declares its source explicitly. Follow its flat
@@ -116,7 +118,7 @@ def load_paired_static_model_source(
         consumer_plan = read(record_path(bound(base/'inputs/bvp/paired_accelerator_static_field_plan.json')))
         _role_voltages(consumer_plan)
         if (consumer_plan.get('schema_version') != 2 or expected_plan is not None and (
-                expected_plan.get('schema_version') != 2 or comsol_inputs(consumer_plan) != comsol_inputs(expected_plan))):
+                expected_plan.get('schema_version') != 2 or paired_comsol_inputs(consumer_plan) != paired_comsol_inputs(expected_plan))):
             raise ValueError('saved COMSOL field common BVP differs')
         expected_plan = consumer_plan
         borrowed = read(record_path(bound(base/'inputs/comsol_source.json')))
@@ -179,7 +181,7 @@ def load_paired_static_model_source(
     previous = read(source_plan)
     _role_voltages(previous)
     if previous.get('schema_version') != 2 or (expected_plan is not None and (
-            expected_plan.get('schema_version') != 2 or comsol_inputs(previous) != comsol_inputs(expected_plan))):
+            expected_plan.get('schema_version') != 2 or paired_comsol_inputs(previous) != paired_comsol_inputs(expected_plan))):
         raise ValueError('saved COMSOL field common BVP differs')
     # Original points are not an ES input: export-only may sample a new exact set.
     model = bound(base/'comsol/paired_accelerator_static.mph', verify=False)

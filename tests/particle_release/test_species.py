@@ -110,3 +110,38 @@ class ParticleReleaseSpeciesTests(unittest.TestCase):
                 stream.write(b"tampered")
             with self.assertRaisesRegex(ValueError, "historical release table identity changed"):
                 validate_materialized_release(path)
+
+    def test_legacy_event_source_is_read_only_and_current_generation_is_unchanged(self):
+        from msplatform.backends.simion.ip_handoff import frozen_release_states
+        request = halton_spec(2)
+        request["common_time_of_birth_s"] = 0.0000025
+        request["species"] = {"species_kind": "ion", "mass_amu": 100., "charge_state": 1}
+        old = copy.deepcopy(request)
+        old.update(schema_version=1, role="repository_ion_release", mother_particle_count=request["particle_count"])
+        old["species"].pop("species_kind")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "simion").mkdir()
+            events = root / "simion/events.csv"
+            events.write_text(
+                "particle_id,event,reason,t_us,x_mm,y_mm,z_mm,vx_mm_us,vy_mm_us,vz_mm_us\n"
+                "1,source,none,2.5,1,2,3,0.001,0.002,0.003\n"
+                "2,source,none,2.5,4,5,6,0.004,0.005,0.006\n"
+                "2,terminal,acceptance_surface,3,4,5,6,0.004,0.005,0.006\n",
+                encoding="utf-8", newline="")
+            before = events.read_bytes()
+            with patch("msplatform.backends.simion.ip_handoff.generate_release_states",
+                       side_effect=AssertionError("historical reader invoked a producer")):
+                states = frozen_release_states(root, {"source": old}, historical=True)
+            self.assertEqual(states, [
+                dict(particle_id=1, birth_time_s=0.0000025, x_mm=1., y_mm=2., z_mm=3.,
+                     vx_m_s=1., vy_m_s=2., vz_m_s=3., mass_amu=100., charge_state=1),
+                dict(particle_id=2, birth_time_s=0.0000025, x_mm=4., y_mm=5., z_mm=6.,
+                     vx_m_s=4., vy_m_s=5., vz_m_s=6., mass_amu=100., charge_state=1),
+            ])
+            self.assertEqual(events.read_bytes(), before)
+            with self.assertRaises(ValueError):
+                frozen_release_states(root, {"source": old})
+            events.write_bytes(before.replace(b"2,source", b"9,source"))
+            with self.assertRaisesRegex(AssertionError, "particle IDs do not match the input table"):
+                frozen_release_states(root, {"source": old}, historical=True)

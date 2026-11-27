@@ -22,6 +22,7 @@ from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.io.manifest_records import file_record, record_path, verify_record, verified_successful_run_reference
 from msplatform.execution.retention import classify_file
 from msplatform.io.manifest_records import require_completed_terminal_publication
+from msplatform.particle_release._history import read_legacy_event_release_states
 from msplatform.particle_release.release import generate_release_states
 
 SCHEMA = Path(str(files("msplatform.backends.simion").joinpath("resources/ip_injected_source.schema.json")))
@@ -246,9 +247,11 @@ def freeze_injected_source(admission: dict[str, Any], run: Path) -> None:
     (inputs/"injected_source.json").write_text(json.dumps(contract, indent=2)+"\n", encoding="utf-8")
 
 
-def frozen_release_states(run: Path, config: dict[str, Any]) -> list[dict[str, Any]]:
-    """Read the run's actual injection table, or retain standalone source behavior."""
+def frozen_release_states(run: Path, config: dict[str, Any], *, historical: bool = False) -> list[dict[str, Any]]:
+    """Read actual injected states, selected historical events, or the current standalone source."""
     if "injected_source" not in config:
+        if historical:
+            return read_legacy_event_release_states(run/"simion/events.csv", config["source"])
         return generate_release_states(config["source"])
     rows = load_component_particle_state_csv(run/"inputs/injected_states.csv").rows if config["source"]["particle_count"] else []
     return sorted(release_states(dict(rows=rows)), key=lambda row: row["particle_id"])
