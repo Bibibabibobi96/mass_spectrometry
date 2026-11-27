@@ -12,7 +12,7 @@ C 已按用户 2026-11-27 指令实际启动，同一 Goal 使用外部包 `ms_p
 - Agent 0集成/共享合同/命名/迁移页/Git；Agent 1 C0-01真实仪器V/E；Agent 2 particle_release与三类Species/参考冷读；Agent 3 C0-02/03；Agent 4 C0-04；Agent 5气体冲突/唯一数据导出；Agent 6不可达旧生产体退役。共享文件单owner，Git串行。C0-02/03闭合前不扩大native并发。
 - C0正在实施；两个原存储probe只作旧缺陷证据，新复现另存外部C证据根，不覆盖recorded结果。B0四项不重做。真实点验只复用已求OFF/ON资产，不重算整场、不改pulse/birth追命中。
 - 气体统一允许有依据的科学输入修正，独立版本/缓存影响与纯改名分开；IP proxy不能证明独立物种，HS1示例截面不冒充N2标定。正/负离子与电子身份独立，不靠电荷符号或小质量猜类型。
-- 当前不授任何CA PASS；下一步完成C0定向反例/修复、维护逐消费者表，再按依赖推进C1–C7。未启动M06–M08或大型研究，不合并主线。
+- C0-02/03/04已实修并定向验证；C0-01按用户后续“报告残差即可，不设置阈值”决定交付实测，不授场精度资格。其余CA继续按实际实施/证据闭合，尚不称C全部完成。未启动M06–M08或大型研究，不合并主线。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
@@ -47,6 +47,21 @@ Agent 6沿真实调用确认`backends/comsol/oatof_retrace.py`的completion读�
 Agent 3的实际定向命令均为仓库`.venv` Python、显式src环境：`tests.repository.test_native_artifact_controls`的两个not_started方法分别1 PASS/6.169s和1 PASS/6.092s；同模块四项父死子活/精确身份/quickexit/活登记失败4 PASS/27.353s；`tests.contracts.test_native_workflow tests.contracts.test_artifact_store -q`26 PASS/10.385s（含remaining），预算细例另重复1 PASS/0.209s。上述加deep测试共34个调用/33个唯一方法、0 skip；wall分项不相加成端到端历时。Ruff/diff PASS。C04的前后observer与日志在`C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/c0-deep-reanalysis/`；C02/03命令结果来自本轮工具执行记录，未伪造单独stdout日志。外部Linux存储probe直接复制到新C目录在Windows无法按shebang启动，exit1不是重现成功或修复PASS，原recorded JSON未改。C0-01实际点验仍在运行，C0整体验收未完成。
 
 上述C0软件单元已普通push为`6ba108fd53a06fe27997190800ab15183984deec`；暂未混入particle_release包移动，跨包命名另主题提交。
+
+### C0-01 实际 V/E 有限点位记录与用户追加决定
+
+用户在本轮明确回复：“报告残差即可，不设置阈值。” 该决定覆盖执行包CA01的事先误差阈值退出条件；本项按真实测量/来源/误差记录交付，不因没有阈值阻塞，也不授予仪器场精度、网格收敛或跨后端等价资格。
+
+比较前冻结frame=oatof_global的5点（mm）：world(200,200,400)、birth(-14,0,-20)、grid1(5,5,-7)、intermediate2(5,5,30)、exit(5,5,270)，分别OFF/ON。原COMSOL MPH独立mphinterp查V/三分量，SIMION8.2实际scalar_field_adapter查绑定窗口；两状态共10组插值支撑均核原始FEM mask全有效。0 Compute、0 Refine，不改源/脉冲/网格；点集冻结SHA为`87F6D968EE98ECA9A012EC6E908E46DAA925B88D6E11503ABF21ABE929196F55`。
+
+| 记录量 | 最大绝对残差 | 所在点/状态 |
+|---|---:|---|
+| V | 0.1652609324 V | grid1 / ON |
+| Ex | 5.701606175 V/m | grid1 / ON |
+| Ey | 33.00130575 V/m | grid1 / ON |
+| Ez | 55.00354663 V/m | grid1 / ON |
+
+OFF的5点均为零；ON逐点原值、窗口/support与分量残差在外部`C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/c0-field-validation/{point-comparison.json,support-evidence.json,evidence.md}`。COMSOL首次外部诊断因返回单位数组形状断言失败，修形状无关严格校验后原生query exit0/bootstrap PASS并保存10行结果，但Python诊断owner又因标记检查错误最终failed；这些结果按失败owner中的实际成功原生operation证据引用，未改写owner为成功。随后单独SIMION查询owner success/complete/writers_confirmed、容量释放。所有失败原run保留，未第三次冷开MPH；COMSOL runtime自动产生的recovery副本归本任务临时写入，不修改原3.08GB MPH。
 
 ### C4 两条失效生产脚本退出
 

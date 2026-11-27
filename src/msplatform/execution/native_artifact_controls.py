@@ -159,6 +159,7 @@ def reconcile_native_receipt(store, receipt_path: Path) -> bool:
                 or release.get("result") != {"status": "released", "token": row[1]}
                 or Path(prefix + ".worker.json").exists()):
             raise ValueError("native not-started proof differs")
+        _validate_released_host(dict(host_token=row[1], host_state_path=row[5], host_file_id=json.loads(row[6])))
         return store._complete_native_not_started(binding_id, receipt=receipt)
     worker = json.loads(Path(prefix + ".worker.json").read_text(encoding="utf-8"))
     if worker.get("nonce") != nonce or worker.get("binding_id") != binding_id:

@@ -414,7 +414,6 @@ class ArtifactStore:
 
     def _complete_native_not_started(self, binding_id: str, *, receipt: dict) -> bool:
         """Close a proved pre-launch failure without releasing live outer controls."""
-        from msplatform.execution.native_artifact_controls import _validate_released_host
         with self._db() as db:
             row = db.execute("""SELECT host_token,operation_id,worker_pid,worker_started,state,host_state_path,host_file_id
                 FROM native_bindings WHERE id=?""", (binding_id,)).fetchone()
@@ -429,7 +428,6 @@ class ArtifactStore:
                 or release.get("error") is not None
                 or release.get("result") != {"status": "released", "token": row[0]}):
             raise ValueError("native not-started completion differs")
-        _validate_released_host(dict(host_token=row[0], host_state_path=row[5], host_file_id=json.loads(row[6])))
         with self._transaction() as db:
             current = db.execute("SELECT state,worker_pid,worker_started FROM native_bindings WHERE id=?", (binding_id,)).fetchone()
             if current[0] == "complete":
