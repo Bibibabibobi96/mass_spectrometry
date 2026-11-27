@@ -56,6 +56,11 @@ run 仍可合法并发。首次写入升级只在原 token OS 锁与绑定证明
 发布中断保留 publishing 状态和原 work/destination；管理员确认所有 writer 已停止并独占操作后
 调用 `recover_publications()` 重放同一状态机。删除中断由后续 collect 重放 delete_pending；
 OS 锁随 GC 进程退出释放。句柄/权限失败留下失败原因，不宣称已释放。
+单个运行可调用 `recover_run_publication(run_id)`：只读取该 run 的登记来源/目标，取得原 writer
+token 的 OS 锁并确认无 active native binding 后恢复发布；缺失锁证据、活 writer、双份或改动载荷
+明确拒绝。ready 运行复核原文件后返回 `False`，成功恢复返回 `True`，不扫描其他 run/asset。
+原 failed/cancelled 执行状态和原因保留，不能被旧 manifest 中的 succeeded 覆盖；
+发布恢复不重做分析或 Fly。原 writer token 在 publishing 时保留供该证明使用。
 claim 和预留持有独立 token 的现有 OS 文件锁；`recover_controls()` 仅在取得原 token 锁后释放
 精确控制记录，活进程持有的保护保持。未知旧控制记录保守留存，无 TTL。
 `recover_interrupted_runs()` 先恢复失联控制，再逐个尝试取得原 writer token 的 OS 锁；

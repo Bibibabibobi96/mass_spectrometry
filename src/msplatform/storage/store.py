@@ -695,8 +695,9 @@ class ArtifactStore:
                 with self._transaction() as db:
                     db.execute("""DELETE FROM run_writers WHERE run_id=? AND token=?
                         AND EXISTS(SELECT 1 FROM run_execution WHERE id=? AND status!='running')
+                        AND NOT EXISTS(SELECT 1 FROM runs WHERE id=? AND state='publishing')
                         AND NOT EXISTS(SELECT 1 FROM native_bindings WHERE run_id=? AND state='active')""",
-                               (run_id, token, run_id, run_id))
+                               (run_id, token, run_id, run_id, run_id))
 
     def recover_interrupted_runs(self) -> list[str]:
         """Mark unlocked pre-publication running writers failed, retaining their work.
@@ -990,6 +991,83 @@ class ArtifactStore:
             if not changed:
                 raise ValueError("unknown reservation or growth beyond original reservation")
 
+    def _recover_run_payload(self, run_id: str, row, *, require_no_active: bool) -> bool:
+        """Replay one registered run publication while the caller holds its guards."""
+        relative, expected, work_name = row
+        destination = self.root / relative
+        source = self.root / 'work' / work_name
+        if destination.exists() and source.exists():
+            raise ValueError('ambiguous interrupted publication')
+        payload = destination if destination.exists() else source
+        records = _records(payload)
+        if records != json.loads(expected):
+            raise ValueError('interrupted publication payload is missing or modified')
+        manifest = json.loads((payload / 'run_manifest.json').read_text(encoding='utf-8'))
+        status = manifest.get('execution_status')
+        if (manifest.get('schema_version') != 1 or manifest.get('run_id') != run_id
+                or (status not in {'succeeded', 'failed', 'cancelled'} and not (status is None and not require_no_active))
+                or manifest.get('files') != {key: value for key, value in records.items() if key != 'run_manifest.json'}):
+            raise ValueError('interrupted run manifest differs')
+        if require_no_active:
+            with self._db() as db:
+                if db.execute("SELECT 1 FROM native_bindings WHERE run_id=? AND state='active'", (run_id,)).fetchone():
+                    raise ValueError('active native binding prevents run publication recovery')
+        if payload == source:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, destination)
+        with self._transaction() as db:
+            if require_no_active and db.execute("SELECT 1 FROM native_bindings WHERE run_id=? AND state='active'", (run_id,)).fetchone():
+                raise ValueError('active native binding prevents run publication recovery')
+            changed = db.execute("""UPDATE runs SET state='ready' WHERE id=? AND state='publishing'
+                AND path=? AND records=? AND work=?""", (run_id, relative, expected, work_name)).rowcount
+            if changed and status is not None:
+                db.execute("UPDATE run_execution SET status=?,reason=NULL WHERE id=? AND status='running'", (status, run_id))
+        return bool(changed)
+
+    def recover_run_publication(self, run_id: str) -> bool:
+        """Recover exactly one stopped run, or verify an already ready run.
+
+        The original writer token's OS lock proves it no longer holds the run;
+        active native bindings and missing lock evidence fail closed. Existing
+        failed/cancelled execution status and its reason are never overwritten.
+        """
+        with self._gc_guard():
+            with self._db() as db:
+                row = db.execute('''SELECT r.path,r.records,r.work,r.state,w.token FROM runs r
+                    LEFT JOIN run_writers w ON w.run_id=r.id WHERE r.id=?''', (run_id,)).fetchone()
+                active = db.execute("SELECT 1 FROM native_bindings WHERE run_id=? AND state='active'", (run_id,)).fetchone()
+            if row is None:
+                raise KeyError(run_id)
+            if active:
+                raise ValueError('active native binding prevents run publication recovery')
+            relative, expected, work_name, state, token = row
+            if state not in {'ready', 'publishing'}:
+                raise ValueError('run publication state does not support recovery')
+            if token is None and state == 'publishing':
+                raise ValueError('run writer lock evidence is unavailable')
+            if token is not None and not (self.root / 'control' / (token + '.lock')).is_file():
+                raise ValueError('run writer lock evidence is unavailable')
+            lock = self._control_lock(token) if token is not None else nullcontext()
+            with lock:
+                with self._db() as db:
+                    current = db.execute('SELECT state FROM runs WHERE id=?', (run_id,)).fetchone()
+                    active = db.execute("SELECT 1 FROM native_bindings WHERE run_id=? AND state='active'", (run_id,)).fetchone()
+                if current is None or active:
+                    raise ValueError('run publication changed or native binding is active')
+                if current[0] == 'ready':
+                    self.inspect_run(run_id)
+                    recovered = False
+                elif current[0] == 'publishing':
+                    recovered = self._recover_run_payload(run_id, (relative, expected, work_name), require_no_active=True)
+                else:
+                    raise ValueError('run publication state changed')
+                if token is not None:
+                    with self._transaction() as db:
+                        db.execute('''DELETE FROM run_writers WHERE run_id=? AND token=?
+                            AND NOT EXISTS(SELECT 1 FROM native_bindings WHERE run_id=? AND state='active')''',
+                            (run_id, token, run_id))
+                return recovered
+
     def recover_publications(self) -> list[str]:
         """Resume interrupted publications after confirming their writers stopped.
 
@@ -1007,6 +1085,10 @@ class ArtifactStore:
                         # No persisted terminal proof: preserve the original path
                         # and partial evidence for explicit owner reconciliation.
                         continue
+                    if table == 'runs':
+                        if self._recover_run_payload(identity, (relative, expected, work_name), require_no_active=False):
+                            recovered.append(identity)
+                        continue
                     destination = self.root / relative
                     source = self.root / "work" / work_name
                     if destination.exists() and source.exists():
@@ -1017,13 +1099,7 @@ class ArtifactStore:
                     if payload == source:
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         os.replace(source, destination)
-                    status = None
-                    if table == "runs":
-                        manifest = json.loads((destination / "run_manifest.json").read_text(encoding="utf-8"))
-                        status = manifest.get("execution_status")
                     with self._transaction() as db:
-                        changed = db.execute(f"UPDATE {table} SET state='ready' WHERE id=? AND state='publishing'", (identity,)).rowcount
-                        if changed and status in {"succeeded", "failed", "cancelled"}:
-                            db.execute("UPDATE run_execution SET status=?,reason=NULL WHERE id=?", (status, identity))
+                        db.execute(f"UPDATE {table} SET state='ready' WHERE id=? AND state='publishing'", (identity,))
                     recovered.append(identity)
         return recovered

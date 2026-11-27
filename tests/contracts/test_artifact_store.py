@@ -53,6 +53,21 @@ def _inplace_writer(root: str, ready, result) -> None:
         get_context("spawn").Event().wait(30)
 
 
+def _publishing_writer(root: str, ready, release, result) -> None:
+    store = ArtifactStore(root)
+    run, work = store.begin_run()
+    (work / 'payload').write_bytes(b'published evidence')
+    with store.run_writer(run):
+        store.mark_running(run)
+        def pause(_source, _destination):
+            result.send(run)
+            ready.set()
+            release.wait(30)
+            raise OSError('publication interrupted')
+        with patch('msplatform.storage.store.os.replace', side_effect=pause):
+            store.publish_run(work, run_id=run)
+
+
 class ArtifactStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -63,6 +78,64 @@ class ArtifactStoreTests(unittest.TestCase):
         work = self.store.new_work()
         (work / "data").write_bytes(content)
         return self.store.put_asset("field", key, work)
+
+    def test_one_run_publication_recovery_requires_dead_writer_and_is_idempotent(self) -> None:
+        context = get_context('spawn')
+        ready, release = context.Event(), context.Event()
+        receive, send = context.Pipe(duplex=False)
+        process = context.Process(target=_publishing_writer, args=(str(self.store.root), ready, release, send))
+        process.start()
+        try:
+            self.assertTrue(ready.wait(20))
+            run = receive.recv()
+            with self.assertRaises(TimeoutError):
+                self.store.recover_run_publication(run)
+            process.terminate()
+            process.join(20)
+            self.assertFalse(process.is_alive())
+            self.assertTrue(self.store.recover_run_publication(run))
+            self.assertEqual(self.store.inspect_run(run).joinpath('payload').read_bytes(), b'published evidence')
+            self.assertFalse(self.store.recover_run_publication(run))
+        finally:
+            if process.is_alive():
+                process.terminate()
+                process.join(20)
+
+    def test_one_run_recovery_preserves_failure_and_rejects_active_or_missing_proof(self) -> None:
+        run, work = self.store.begin_run()
+        (work / 'payload').write_bytes(b'evidence')
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with patch('msplatform.storage.store.os.replace', side_effect=OSError('interrupted')):
+                with self.assertRaises(OSError):
+                    self.store.publish_run(work, run_id=run)
+            self.store.finish_run(run, 'failed', reason='original failure')
+        with self.store._db() as db:
+            token = db.execute('SELECT token FROM run_writers WHERE run_id=?', (run,)).fetchone()[0]
+        with self.store._transaction() as db:
+            db.execute('INSERT INTO native_bindings VALUES(?,?,?,?,?,?,?,?,?,?,NULL)',
+                       ('active-fixture', run, 'host', 'host-path', '{}', '[]', 'worker', None, None, 'active'))
+        with self.assertRaisesRegex(ValueError, 'active native binding'):
+            self.store.recover_run_publication(run)
+        with self.store._transaction() as db:
+            db.execute('DELETE FROM native_bindings WHERE id=?', ('active-fixture',))
+        self.assertTrue(self.store.recover_run_publication(run))
+        self.assertEqual(self.store.run_status(run)['execution_status'], 'failed')
+        self.assertEqual(self.store.run_status(run)['reason'], 'original failure')
+        self.assertFalse(self.store.recover_run_publication(run))
+        missing, work = self.store.begin_run()
+        (work / 'payload').write_bytes(b'evidence')
+        with self.store.run_writer(missing):
+            self.store.mark_running(missing)
+            with patch('msplatform.storage.store.os.replace', side_effect=OSError('interrupted')):
+                with self.assertRaises(OSError):
+                    self.store.publish_run(work, run_id=missing)
+        with self.store._db() as db:
+            missing_token = db.execute('SELECT token FROM run_writers WHERE run_id=?', (missing,)).fetchone()[0]
+        self.assertNotEqual(token, missing_token)
+        (self.store.root / 'control' / (missing_token + '.lock')).unlink()
+        with self.assertRaisesRegex(ValueError, 'lock evidence'):
+            self.store.recover_run_publication(missing)
 
     def test_shared_required_reference_and_claim_survive_collection(self) -> None:
         identity = self.asset("same")
@@ -440,7 +513,8 @@ class ArtifactStoreTests(unittest.TestCase):
         self.assertEqual(self.store.run_status(run)["execution_status"], "running")
         self.store.finish_run(run, "failed", reason="publication interrupted")
         self.assertEqual(self.store.recover_publications(), [run])
-        self.assertEqual(self.store.run_status(run)["execution_status"], "succeeded")
+        self.assertEqual(self.store.run_status(run)["execution_status"], "failed")
+        self.assertEqual(self.store.run_status(run)["reason"], "publication interrupted")
         self.assertEqual(self.store.inspect_run(run).joinpath("result").read_bytes(), b"complete")
         self.assertEqual(self.store.recover_publications(), [])
 

@@ -123,6 +123,14 @@ Agent0发现reader仍有分析/绘图主体后按上述实际职责再次拆分�
 
 Agent3实际惰性原样本→派生→再派生→prepared support复用与错身份拒绝1项PASS（48.982s），真实OS句柄阻删4次、原源不变，无商业COMSOL；随后修raw guard局部变量遮蔽，source guard全9项PASS（2.791s）、prepared scalar全11项PASS（5.059s）、Ruff PASS，未无理由重跑49秒链。两个原始COMSOL采样公开入口仍待显式Store接管，这里只完成原样本派生，不能写全部scalar生产已迁。
 
+本单元提交`47409f1b`已普通push；Agent0独立暂存树`1b3f20f3eb94b4ff2579f23c5c4f7c08f5706e61`离仓源码20项PASS（7.573s）与Ruff PASS，覆盖与前述20项重复，非另一次商业链。
+
+### C3 指定 run 发布恢复（WORKTREE）
+
+`ArtifactStore.recover_run_publication(run_id)`复用同一发布状态机，仅处理指定run；先GC锁、原writer token OS锁，再短事务核对发布状态/原records及native绑定。活writer/active binding/缺锁证据/双份或改动payload失败关闭；ready重读后幂等False。publishing保留原token直到可证明收尾，原failed/cancelled状态与reason不被manifest成功覆写；全Store管理恢复同步使用同一payload实现，不新增owner或全库自动扫描。该接口供新补偿等明确阶段恢复使用，不恢复旧Result/producer，不启动分析/Fly。
+
+Agent3真实短子进程活writer拒绝→强制结束→恢复→再恢复，以及failed原因/active binding/缺证据与原admin覆盖4项PASS（1.526s）；受影响Store全28项PASS（10.305s）、Ruff PASS。两次测试进程因夹具在强杀后错误通知Event卡住，由创建Agent停止；删除该测试通知后通过，生产代码未因此放宽退出证明。尚无商业求解新增，该单元不代替全C生命周期交付。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
