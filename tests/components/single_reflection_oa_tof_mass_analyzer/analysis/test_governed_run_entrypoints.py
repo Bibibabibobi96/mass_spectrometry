@@ -25,7 +25,7 @@ class GovernedRunEntrypointTests(unittest.TestCase):
             "workflows/formal_reference/run_formal_validation.ps1": "qualification",
             "workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1": "solver_review",
             "simion/workbench/run_ideal_field_diagnostic.ps1": "solver_review",
-            "workflows/field_idealization/run_field_idealization_sweep.ps1": "compact",
+            "tests/simion/run_field_idealization_sweep.ps1": "compact",
         }
         for relative, retention_class in entries.items():
             with self.subTest(entry=relative):
@@ -80,7 +80,7 @@ class GovernedRunEntrypointTests(unittest.TestCase):
     def test_public_output_directory_overrides_are_canonical_run_paths(self):
         for relative in (
             "simion/workbench/run_ideal_field_diagnostic.ps1",
-            "workflows/field_idealization/run_field_idealization_sweep.ps1",
+            "tests/simion/run_field_idealization_sweep.ps1",
         ):
             with self.subTest(entry=relative):
                 source = entry_source(relative).read_text(encoding="utf-8")
