@@ -44,6 +44,15 @@ def _running_worker(root: str, identity: str, ready, release, result) -> None:
             store.finish_run(run, "cancelled", reason="test complete")
 
 
+def _inplace_writer(root: str, ready, result) -> None:
+    store = ArtifactStore(root)
+    with store.inplace_asset("native_stage", "interrupted-native") as (identity, path, _claim, _seal):
+        (path / "partial").write_bytes(b"evidence")
+        result.send((identity, str(path)))
+        ready.set()
+        get_context("spawn").Event().wait(30)
+
+
 class ArtifactStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -217,6 +226,122 @@ class ArtifactStoreTests(unittest.TestCase):
         with patch.object(self.store, "claim", side_effect=collect_before_claim):
             with self.store.claim_key("race") as result:
                 self.assertIsNone(result)
+
+    def test_inplace_native_asset_stays_stable_and_claimed_until_scope_exit(self) -> None:
+        with self.store.inplace_asset("native_stage", "native-key") as (asset, path, _claim, seal):
+            payload = path / "solver-output.bin"
+            payload.write_bytes(b"small native stand-in")
+            self.assertIsNone(self.store.find_asset("native-key"))
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            seal()
+            self.assertEqual(self.store.find_asset("native-key"), (asset, path))
+            self.assertEqual(payload.read_bytes(), b"small native stand-in")
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        self.assertEqual(self.store.collect(100)["released_bytes"], len(b"small native stand-in"))
+        self.assertIsNone(self.store.find_asset("native-key"))
+
+    def test_inplace_native_failure_retains_evidence_without_cache_success(self) -> None:
+        with self.store.inplace_asset("native_stage", "failed-native") as (identity, path, _claim, seal):
+            (path / "failure.json").write_text('{"reason":"start failed"}', encoding="utf-8")
+            seal(failure_reason="start failed")
+        self.assertIsNone(self.store.find_asset("failed-native"))
+        self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        self.assertTrue((path / "failure.json").is_file())
+        with self.store._db() as db:
+            self.assertEqual(db.execute("SELECT state,failure FROM assets WHERE id=?", (identity,)).fetchone(),
+                             ("failed", "start failed"))
+
+    def test_killed_inplace_writer_requires_lock_before_failure_closure(self) -> None:
+        from msplatform.execution.owner import recover_managed_native_store_stage
+        ctx = get_context("spawn")
+        ready = ctx.Event()
+        receive, send = ctx.Pipe(duplex=False)
+        process = ctx.Process(target=_inplace_writer, args=(str(self.store.root), ready, send))
+        process.start()
+        try:
+            self.assertTrue(ready.wait(20))
+            identity, raw_path = receive.recv()
+            with self.assertRaises(TimeoutError):
+                recover_managed_native_store_stage(self.store, identity, context=None)
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            process.terminate()
+            process.join(20)
+            self.assertFalse(process.is_alive())
+            with self.assertRaisesRegex(ValueError, "run identity is unavailable"):
+                recover_managed_native_store_stage(self.store, identity, context=None)
+            self.assertEqual((Path(raw_path) / "partial").read_bytes(), b"evidence")
+            self.assertIsNone(self.store.find_asset("interrupted-native"))
+        finally:
+            if process.is_alive():
+                process.terminate()
+                process.join(20)
+
+    def test_interrupted_inplace_native_asset_preserves_unsealed_evidence(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "worker interrupted"):
+            with self.store.inplace_asset("native_stage", "incomplete") as (identity, path, _claim, _seal):
+                (path / "partial").write_bytes(b"evidence")
+                raise RuntimeError("worker interrupted")
+        self.assertEqual(self.store.recover_publications(), [])
+        self.assertEqual(self.store.recover_publications(), [])
+        self.assertIsNone(self.store.find_asset("incomplete"))
+        self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        self.assertEqual((path / "partial").read_bytes(), b"evidence")
+        with self.store._db() as db:
+            self.assertEqual(db.execute("SELECT state FROM assets WHERE id=?", (identity,)).fetchone()[0], "publishing")
+
+    def test_creation_month_survives_interrupted_publication_in_next_month(self) -> None:
+        from datetime import datetime, timezone
+        class January(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 1, 31, 23, 59, tzinfo=timezone.utc)
+        class February(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2026, 2, 1, 0, 1, tzinfo=timezone.utc)
+        with patch("msplatform.storage.store.datetime", January):
+            run, work = self.store.begin_run()
+        self.assertEqual(self.store.run_status(run)["run_path"], f"runs/2026/01/{run}")
+        (work / "payload").write_bytes(b"original")
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with patch("msplatform.storage.store.datetime", February), patch(
+                    "msplatform.storage.store.os.replace", side_effect=OSError("interrupted")):
+                with self.assertRaisesRegex(OSError, "interrupted"):
+                    self.store.publish_run(work, run_id=run)
+        with patch("msplatform.storage.store.datetime", February):
+            self.assertEqual(self.store.recover_publications(), [run])
+            self.assertEqual(self.store.recover_publications(), [])
+        self.assertEqual(self.store.inspect_run(run), self.store.root / "runs" / "2026" / "01" / run)
+        self.assertFalse((self.store.root / "runs" / "2026" / "02" / run).exists())
+
+    def test_registered_legacy_paths_remain_readable_and_collectable(self) -> None:
+        asset = self.asset("legacy-field")
+        _, current_asset = self.store.find_asset("legacy-field")
+        legacy_asset = self.store.root / "assets" / "field" / "legacy" / asset
+        legacy_asset.parent.mkdir()
+        current_asset.rename(legacy_asset)
+        run_work = self.store.new_work()
+        (run_work / "result").write_bytes(b"result")
+        run, original = self.store.publish_run(run_work)
+        legacy_run = self.store.root / "runs" / "legacy" / run
+        legacy_run.parent.mkdir()
+        original.rename(legacy_run)
+        with self.store._transaction() as db:
+            db.execute("UPDATE runs SET path=? WHERE id=?", (legacy_run.relative_to(self.store.root).as_posix(), run))
+            db.execute("UPDATE assets SET path=? WHERE id=?", (legacy_asset.relative_to(self.store.root).as_posix(), asset))
+        self.assertEqual(self.store.inspect_run(run), legacy_run)
+        with self.store.claim_key("legacy-field") as found:
+            self.assertEqual(found, (asset, legacy_asset))
+            self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        self.assertEqual(self.store.collect(100)["released_bytes"], 3)
+        self.assertEqual(self.store.inspect_run(run), legacy_run)
+
+    def test_asset_new_path_uses_kind_and_key_hash_prefix(self) -> None:
+        identity = self.asset("layout-key")
+        _, path = self.store.find_asset("layout-key")
+        self.assertEqual(path.relative_to(self.store.root).as_posix(),
+            f"assets/field/{hashlib.sha256(b'layout-key').hexdigest()[:2]}/{identity}")
 
     def test_manifest_and_private_work_disposal(self) -> None:
         import json

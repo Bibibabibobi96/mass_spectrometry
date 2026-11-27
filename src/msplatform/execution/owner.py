@@ -6,6 +6,8 @@ solver formula, cache, secondary ledger, or alternative recovery state machine.
 from __future__ import annotations
 
 from functools import partial
+from contextlib import contextmanager
+from contextvars import ContextVar
 import copy
 import inspect
 import json
@@ -29,6 +31,94 @@ from msplatform.execution.run_session import RunSession
 from msplatform.io.manifest_records import TERMINAL_JOURNAL_NAME
 from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
 from msplatform.execution.workflow_publication import publish_workflow_terminal
+
+
+_STORE_STAGE = ContextVar("managed_native_store_stage", default=None)
+
+
+@contextmanager
+def managed_native_store(store, *, task_key: str, lifetime, account):
+    """Select Store ownership for native stages produced within one task.
+
+    The lifetime ExitStack must outlive every dependent consumer of the stage.
+    The surrounding native control scope supplies the parent writer and budget.
+    """
+    if not isinstance(task_key, str) or not task_key or not callable(account):
+        raise ValueError("native Store stage requires its actual task key and accounting callback")
+    token = _STORE_STAGE.set(dict(store=store, task_key=task_key, lifetime=lifetime, account=account))
+    try:
+        yield
+    finally:
+        _STORE_STAGE.reset(token)
+
+
+def current_managed_native_store():
+    return _STORE_STAGE.get()
+
+
+def recover_managed_native_store_stage(store, asset_id: str, *, context: ExecutionContext) -> bool:
+    """Replay only an already terminal, fully proved Store stage after writer loss."""
+    from contextlib import ExitStack
+    from msplatform.io.file_identity import guarded_file_identity
+    from msplatform.io.manifest_records import require_completed_terminal_publication, record_path
+
+    def verify(stage_directory):
+        runs = stage_directory / "runs"
+        candidates = list(runs.iterdir()) if runs.is_dir() else []
+        if len(candidates) != 1 or not candidates[0].is_dir():
+            raise ValueError("native Store stage run identity is unavailable")
+        root = candidates[0]
+        manifest_path = root / "run_manifest.json"
+        require_completed_terminal_publication(manifest_path)
+        manifest = _json(manifest_path)
+        completion = _json(root / "results/execution_completion.json")
+        request = _json(root / "inputs/execution_request.json")
+        terminal_status = completion.get("status")
+        if (terminal_status not in {"success", "failed", "interrupted", "cancelled"}
+                or manifest.get("status") != terminal_status
+                or manifest.get("run_id") != root.name or completion.get("run_id") != root.name
+                or request.get("package", {}).get("run_id") != root.name
+                or request.get("paths", {}).get("artifact_root") != str(store.root)):
+            raise ValueError("native Store stage terminal identity differs")
+        for name in ("execution_request", "run_config"):
+            verify_record("native stage recovery " + name, completion[name])
+        writer = completion.get("writer_completion", {})
+        operations = writer.get("operations", [])
+        expected = tuple(request["expected_operation_ids"])
+        validate_writer_completion(writers_stopped=True, expected_operation_ids=expected,
+            operations=operations, resource_releases=writer.get("resource_releases", []))
+        operation_ids = {item["operation_id"] for item in operations}
+        if terminal_status == "success" and operation_ids != set(expected):
+            raise ValueError("successful native stage does not prove every operation")
+        with store._db() as db:
+            row = db.execute("SELECT work FROM assets WHERE id=?", (asset_id,)).fetchone()
+            token = row[0][len("inplace:"):]
+            bindings = db.execute("""SELECT b.operation_id,b.state FROM native_bindings b
+                JOIN native_binding_controls c ON c.binding_id=b.id WHERE c.control_id=?""", (token,)).fetchall()
+        bound_operations = {item[0] for item in bindings}
+        if (any(state != "complete" for _, state in bindings) or not operation_ids <= bound_operations
+                or (terminal_status == "success" and bound_operations != set(expected))):
+            raise ValueError("native Store stage binding completion is unavailable")
+        records = [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])]
+        with ExitStack() as guards:
+            seen = {}
+            for record in records:
+                path = record_path(record, base_dir=root)
+                identity = (record["bytes"], str(record["sha256"]).upper())
+                if path in seen:
+                    if seen[path] != identity:
+                        raise ValueError("native stage recovery contains conflicting file records")
+                    continue
+                seen[path] = identity
+                guards.enter_context(guarded_file_identity(path, expected_bytes=identity[0], expected_sha256=identity[1]))
+            alias = completion.get("package", {}).get("execution_alias")
+            if alias and Path(alias).exists():
+                remove_execution_alias(context, Path(alias), root)
+        if terminal_status == "success":
+            return "ready", None
+        return "failed", json.dumps(completion.get("exception") or {"status": terminal_status}, sort_keys=True)
+
+    return store._recover_inplace_asset(asset_id, verify=verify)
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -178,6 +268,20 @@ def _publish(session: RunSession, request: Mapping[str, Any], completion: Mappin
 def _finalize(session: RunSession, request: dict[str, Any], completion: dict[str, Any], *,
               completion_api: Callable[[], Any] | None) -> dict[str, Any]:
     _writer_completion(session)
+    if getattr(session, "_store_seal", None) is not None:
+        session.close_immutable_inputs(run_owned_only=True)
+        _publish(session, request, completion, completion_api)
+        session._store_account(session._store_stage_directory)
+        alias = session.package.get("execution_alias")
+        if alias:
+            remove_execution_alias(session.context, Path(alias), session.artifact_run_dir)
+        result = _result(session, status=completion["status"], stage="complete", writers_confirmed=True,
+            resume_action=None, capacity_session=session.capacity_session,
+            manifest=file_record(session.artifact_run_dir / "run_manifest.json", "required_evidence"),
+            exception=completion["exception"])
+        reason = None if completion["status"] == "success" else str(completion.get("exception") or completion["status"])
+        session._store_seal(failure_reason=reason)
+        return result
     _require_capacity_accounted(session)
     session.close_immutable_inputs(run_owned_only=True)
     _publish(session, request, completion, completion_api)
@@ -254,39 +358,66 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
             or any(name not in ids or any(parent not in ids or parent == name for parent in parents)
                    for name, parents in operation_dependencies.items())):
         raise ValueError("Declared operation identities or dependencies differ")
-    # A genuinely new empty artifact root has an explicit empty calibrated baseline.
-    # Existing content without a ledger is never discovered or silently adopted.
-    context.workspace.mkdir(parents=True, exist_ok=True)
-    root = context.workspace / "artifacts"
-    if not root.exists():
-        root.mkdir()
-        capacity_ledger.initialize_capacity_ledger(root, objects=[])
-    if capacity_ledger.load_capacity_ledger(root) is None:
-        raise ValueError("Existing artifact root lacks its explicit calibrated capacity ledger")
-    project = descriptor["project"]
-    owner_kind = "assembly" if project == "instrument_assembly" else "component"
-    owner_root = resolve_run_artifact_root(root, owner_kind=owner_kind, owner_id=project)
-    run_root = owner_root / "runs" / run_id
-    if run_root.exists():
-        raise FileExistsError("Run already exists; resume its original finalization")
-    result_path = owner_root / "scratch/workflow_results" / run_id / "result.json"
-    if result_path.exists():
-        raise FileExistsError("Workflow Result already exists")
-    policy_selection = capture_capacity_policy(context.capacity_policy_path)
-    policy_snapshot = policy_selection["snapshot"]
-    capacity = enter_capacity_session(root, run_root,
-        owner=f"run-artifact-workflow:{project}:{run_id}", committed_new_bytes=committed_new_bytes,
-        protected_paths=protected_paths, protected_cache_keys=protected_cache_keys,
-        source_references=source_references, pressure_maintenance=pressure_maintenance,
-        capacity_policy=policy_selection)
+    store_scope = _STORE_STAGE.get()
+    parent_scope = None
+    if store_scope is not None:
+        from msplatform.execution.native_artifact_controls import current_native_artifact_scope
+        parent_scope = current_native_artifact_scope()
+        if parent_scope is None or parent_scope["store"] is not store_scope["store"]:
+            raise ValueError("Store native stage requires the existing protected parent scope")
+        store = store_scope["store"]
+        _asset, stage_directory, stage_claim, stage_seal = store_scope["lifetime"].enter_context(
+            store.inplace_asset("native_stage", store_scope["task_key"] + ":" + run_id))
+        run_root = stage_directory / "runs" / run_id
+        root = store.root
+        result_path = parent_scope["work_directory"] / ("native-result-" + run_id + ".json")
+        project = descriptor["project"]
+        policy_selection = capture_capacity_policy(context.capacity_policy_path)
+        policy_snapshot = policy_selection["snapshot"]
+        capacity = dict(schema_version=1, role="store_native_stage_capacity", status="active",
+                        owner="store-native:" + run_id, artifact_root=str(root),
+                        lease_id=parent_scope["reservation_ids"][0], source_protection_leases=[],
+                        capacity_policy=policy_selection)
+    else:
+        # A genuinely new empty artifact root has an explicit empty calibrated baseline.
+        # Existing content without a ledger is never discovered or silently adopted.
+        context.workspace.mkdir(parents=True, exist_ok=True)
+        root = context.workspace / "artifacts"
+        if not root.exists():
+            root.mkdir()
+            capacity_ledger.initialize_capacity_ledger(root, objects=[])
+        if capacity_ledger.load_capacity_ledger(root) is None:
+            raise ValueError("Existing artifact root lacks its explicit calibrated capacity ledger")
+        project = descriptor["project"]
+        owner_kind = "assembly" if project == "instrument_assembly" else "component"
+        owner_root = resolve_run_artifact_root(root, owner_kind=owner_kind, owner_id=project)
+        run_root = owner_root / "runs" / run_id
+        if run_root.exists():
+            raise FileExistsError("Run already exists; resume its original finalization")
+        result_path = owner_root / "scratch/workflow_results" / run_id / "result.json"
+        if result_path.exists():
+            raise FileExistsError("Workflow Result already exists")
+        policy_selection = capture_capacity_policy(context.capacity_policy_path)
+        policy_snapshot = policy_selection["snapshot"]
+        capacity = enter_capacity_session(root, run_root,
+            owner=f"run-artifact-workflow:{project}:{run_id}", committed_new_bytes=committed_new_bytes,
+            protected_paths=protected_paths, protected_cache_keys=protected_cache_keys,
+            source_references=source_references, pressure_maintenance=pressure_maintenance,
+            capacity_policy=policy_selection)
     package = dict(artifact_run_dir=str(run_root), run_dir=str(run_root), execution_alias=None)
     session = RunSession(context, root, run_id, project, descriptor["mode"], package, capacity,
         run_root / "inputs/execution_request.json", result_path, ids, dict(operation_dependencies))
+    if store_scope is not None:
+        session._store_seal = stage_seal
+        session._store_account = store_scope["account"]
+        session._store_stage_directory = stage_directory
+        session._store_managed = True
     primary = None
     finalized = False
     try:
-        run_root.mkdir(parents=True)
-        lifecycle.register_writing_range(root, run_root)
+        run_root.mkdir(parents=True, exist_ok=store_scope is not None)
+        if store_scope is None:
+            lifecycle.register_writing_range(root, run_root)
         report = path_capacity(context, run_root, expected_relative_paths=expected_relative_paths)
         if use_short_execution_path or (expected_relative_paths and not report["legacy_windows_compatible"]):
             alias = create_execution_alias(context, run_root, expected_relative_paths=expected_relative_paths)
@@ -298,7 +429,7 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
         config = dict(schema_version=2, run_id=run_id, project=project, mode=descriptor["mode"],
             project_root=str(context.workspace), inputs={"execution_request": str(session.execution_request)},
             parameters=dict(payload), formal_gate_passed=False, paths=paths, artifact_retention=dict(retention),
-            capacity_ledger_lifecycle=dict(schema_version=1, enabled=True, artifact_root=str(root),
+            capacity_ledger_lifecycle=dict(schema_version=1, enabled=store_scope is None, artifact_root=str(root),
                 light_evidence_budget_bytes=policy_snapshot["light_evidence_budget_bytes"]))
         request = dict(schema_version=1, role="run_artifact_workflow_request", package=dict(descriptor, run_id=run_id),
             payload=dict(payload), capacity=dict(committed_new_bytes=committed_new_bytes,
@@ -326,7 +457,8 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
             retention_api=lambda: _retention_api(session, completion_api), software=list(descriptor["software"]),
             output_paths=[run_root / "summary.json"])
         write_json_atomic(run_root / "run_manifest.json", checkpoint)
-        lifecycle.register_writing(root, session.run_config)
+        if store_scope is None:
+            lifecycle.register_writing(root, session.run_config)
         _result(session, status="pending", stage="prepared", resume_action="inspect_writer_completion")
         try:
             from msplatform.execution.inputs import freeze_file
@@ -345,7 +477,14 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
             write_json_atomic(session.execution_request, updated_request)
             request = updated_request
             session.add_input("owner_authority_0", frozen_action_record)
-            result = dict(action(session))
+            if store_scope is None:
+                result = dict(action(session))
+            else:
+                from msplatform.execution.native_artifact_controls import protect_native_controls
+                with protect_native_controls(store, run_id=parent_scope["run_id"],
+                        claim_ids=(*parent_scope["claim_ids"], stage_claim),
+                        reservation_ids=parent_scope["reservation_ids"], work_directory=parent_scope["work_directory"]):
+                    result = dict(action(session))
         except BaseException as failure:
             primary = failure
             try:

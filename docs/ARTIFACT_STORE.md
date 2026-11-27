@@ -11,7 +11,19 @@
 `claim(asset_id)` 适用于已知精确身份；`pin` 与必要 run 引用阻止回收。
 `publish_run(work, required_assets=(), provenance_assets=())` 固定月桶和独立 JSON manifest；
 `inspect_run` 复核 SQL/JSON 及载荷；`discard_work` 只清当前实例创建的精确私有写区。
+新 run 在 `begin_run` 登记时固定 UTC `runs/YYYY/MM/<run_id>`，跨月发布或恢复仍使用该登记路径；
+单步 `publish_run` 在其创建运行身份时固定月桶。资产采用
+`assets/<kind>/<sha256(key)前两位>/<asset_id>`，写区为 `work/<task_id>`，元数据保存在
+`catalog.sqlite`。历史 Store 的登记路径由数据库作为权威，读取、恢复和回收不重排旧文件；
+manifest 当前的 `created_utc` 记录发布时刻，不能据此反推已经登记的创建月桶。
 `reference_tracing` 的 run 自含证据，因此其性能缓存用 provenance 引用。
+`inplace_asset(kind, key)` 为需要稳定绝对路径的未来原生 owner 提供原位写入基础：先登记
+publishing 与持有 claim，返回最终路径，调用者证明所有 writer 和 native binding 已停止后
+才能 `seal()`；失败时可明确记录失败原因，未完成的原位资产不可命中缓存或被 GC。
+控制进程失联后的 `recover_managed_native_store_stage` 仅接受已完成的原 terminal、writer 和
+绑定证据，成功与失败按原 completion 恢复；未知状态保持 publishing，不以父退出或 TTL 猜测。
+原生 `run_managed_stage` 的显式 `managed_native_store` scope 可调用该接口，并复用既有
+进程绑定与逐文件 guard；公共 native 工作流尚需逐消费者接入，不能据此声称全部 PA/MPH 已转移。
 `begin_run/mark_running/finish_run/run_status` 提供运行前身份和独立的执行/发布状态；
 未准入的 queued 输入和原因可查询，当前没有后台自动派发器。
 调用 `mark_running` 前须进入 `with store.run_writer(run_id):`，持锁覆盖计算、异常收尾及发布；

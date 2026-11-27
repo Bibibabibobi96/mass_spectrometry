@@ -6,13 +6,44 @@
 
 ## 当前批次 C 检查点
 
-C 已按用户 2026-11-27 指令实际启动，同一 Goal 使用外部包 `ms_phase_c_execution_20261127/goal_prompt_C.md` 原文并绑定完整 `implementation_plan_C.md`，C0–C7/CA01–CA18全范围适用。追加决定 `user_decisions_C.md` 优先于冻结附件旧建议。A/B正文保留为当时执行记录；本包独立验收对B的结论是带整改项接收，不能沿用下文旧交付的无条件BA闭合措辞。
+C 已按用户 2026-11-27 指令实际启动；用户随后更新整个执行包并清除原Goal，现已用新版`goal_prompt_C.md`原文重新设置同一C任务Goal，绑定完整`implementation_plan_C.md`和新增`architecture_convergence_C.md`。当前合同为C-r2、C0–C7/CA01–CA19。追加决定`user_decisions_C.md`（D-C01–04）优先于冻结附件旧建议；用户本会话的C0“报告残差即可，不设置阈值”决定继续优先。A/B正文保留为当时执行记录；本包独立验收对B的结论是带整改项接收，不能沿用下文旧交付的无条件BA闭合措辞。
 
 - 开工 HEAD 与包审计相同：`78144e456f6141374853233e958b2b91723ea54f`；B代码`90d6d5e8`。分支`task/architecture-migration-20261126`跟踪同名origin任务分支，远端为Bibibabibobi96/mass_spectrometry。无审计后代码增量，不reset；21个已有tracked M实际diff为空，原未跟踪artifacts保留。
 - Agent 0集成/共享合同/命名/迁移页/Git；Agent 1 C0-01真实仪器V/E；Agent 2 particle_release与三类Species/参考冷读；Agent 3 C0-02/03；Agent 4 C0-04；Agent 5气体冲突/唯一数据导出；Agent 6不可达旧生产体退役。共享文件单owner，Git串行。C0-02/03闭合前不扩大native并发。
 - C0正在实施；两个原存储probe只作旧缺陷证据，新复现另存外部C证据根，不覆盖recorded结果。B0四项不重做。真实点验只复用已求OFF/ON资产，不重算整场、不改pulse/birth追命中。
 - 气体统一允许有依据的科学输入修正，独立版本/缓存影响与纯改名分开；IP proxy不能证明独立物种，HS1示例截面不冒充N2标定。正/负离子与电子身份独立，不靠电荷符号或小质量猜类型。
 - C0-02/03/04已实修并定向验证；C0-01按用户后续“报告残差即可，不设置阈值”决定交付实测，不授场精度资格。其余CA继续按实际实施/证据闭合，尚不称C全部完成。未启动M06–M08或大型研究，不合并主线。
+
+### C-r2 更新接续与实际工作区
+
+已重读更新后的所有根文档、三份冻结审计、probe源码及证据说明；全部26文件只读加载，JSON/日志程序化核对，manifest列出的25件bytes/SHA均相符。外部读取凭据为`C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/c-r2-package-reread.json`；Goal SHA `df877b996e68660d82d0b531975bcaeb1833b562046b2075cd5f6633f59df7e2`、主计划SHA `dd9a131f82571265bbb6eabe3fec281c58cc64d2d744e7f2c366bb37aee782aa`、新退出细则SHA `27ae4fe2220732d854be5d08a40919fb5e4ede0e8a50434abaaa322cfe056f24`。旧175次调用/22skip仍只属于B独立验收；两个旧probe未覆盖、未当修复PASS、未原地执行。
+
+此次更新时HEAD为已普通push的`095f9a05`，此前C提交依次为`1b77f612`（guard后死体）、`6ba108fd`（C0软件）、`a3681dfc`（两失效PS退出）、`b407afcf`（修正提交边界）、`095f9a05`（host完成验证归owner及C0点验记录）。`a3681dfc`暂存时误夹带在途sweep的两处测试路径，`b407afcf`已恢复已提交旧路径；工作树新版路径完整保留供其完整主题提交，不reset或覆盖在途实现。C-r2生效后这些早期拒绝壳/旧owner过渡保护均不得称最终退役。
+
+当前在途代码包括：particle_release/三类Species及参考schema3、native schema2显式registry；唯一电子/N2/HS1/SDS数据与GasEnvironment/IP消费者；project/request/profile/plan v2退出总等级；Store原位native stage与真实进程保护；recorded v13及IP/MR旧支路收口；诊断source认证拆入execution。各自已有定向软件证据，但尚无C最终普通发行/Repository/新整合native证据，不能写全C验收通过。原有研究资产、冻结历史及其他工作全部保留。
+
+### C-r2 旧职责接管与删除状态（滚动对账）
+
+| 旧位置/表面与实际能力 | 唯一目标职责/实际新入口 | 当前切换与已删除项 | 仍有引用及理由/退出条件 | 证据边界与状态 |
+|---|---|---|---|---|
+| ion_release包/函数/role/schema/资源；源采样与身份 | particle_release、contracts.species、规范结果reader | 物理包与tests已移；外部完整imports、精确动作符号/NAME token、作者spec及schema/资源在途切换；无旧活动包别名 | 精确schema1 receipt/原CSV只读decoder，不能调用旧sampler；部分当前fixture/冻结资源仍待同步 | 三类非零E独立解析/冷读及源定向已测；双发行尚未测，未闭合 |
+| single_reflection_flight总包；recorded源认证/追踪与后端序列化 | particle_release源、Recipe冻结、backend适配、公共native_tracing | v13显式kind仅过渡；Agent4开始直接接公共Recipe，不调用旧包 | prepare/recorded_birth及registry/PS仍活，成熟源码须拆给真实owner后整包/脚本退出 | v13与旧版本软件测试不是CA19；未闭合 |
+| prepared_joint/FullJoint/accelerator_interface；准备、局部源、连续演化/分析 | Assembly/场准备、particle_release局部源、tracing、results/analysis | 跨组件终态重释支路已在途删除/拒绝；已有原出生IP/MR后端为实际复用基础 | 旧PS/profile、准备/研究/import仍活；不以guard、prepare-only或历史标签豁免 | 公共Recipe观察/HS1/原出生接线正在实做，未闭合 |
+| oa_candidate/oa_formal；局部whole-Fly、响应/补偿、验证/发布/恢复 | OA领域算法、公共Study/tracing、analysis、Store/execution | grade v2合同在途完成；diagnostic source认证已拆到execution.diagnostic_inputs，两个PS直接使用 | 其余旧controller、runtime/validator/publisher、命令/profile仍活；Agent1/6分职责拆并删除，不能整体换名 | 旧Verify/Publish/Recover软件通过仅表能力保持，不是新owner接管；未闭合 |
+| execution旧native容量/产物管理及source桥；登记/发布/回收/恢复 | ArtifactStore与保留的通用execution进程/host机制 | 新scope稳定路径原位stage、claim/binding/真实短OS进程；历史sourceguard已移除旧ledger调用，纯原manifest及OS文件句柄只读保护 | 默认旧owner/ledger/retention/恢复仍活；21生产模块调用需切换后删管理体，只保留精确历史文件读取 | 基础原位crash续发已测，真实native产品闭包/全部caller未整合；未闭合 |
+| tests中两坏producer与有用场诊断sweep | 公共Study；analysis诊断+execution认证/当前Store | 两坏PS已删；有用sweep/旧矩阵共用新source认证，不复制第二算法 | normal native仍待当前Store接线、旧runtime私有引用必须退出；不能为拒绝测试复活已删脚本 | AnalyzeOnly正反/0hit null软件证据已测，normal/native未测；未闭合 |
+
+表中目标不是一对一新包装；所有CLI/API、schema/registry/profile、动态资源/生成器、安装包、测试与当前文档均须同步。精确历史/第三方例外只解释/返回数据，不得启动旧producer、调度或旧登记/发布/恢复/GC。当前任何未解释的旧活动路径均为未通过CA19；上述在途表不代替实际整改。
+
+### C3 原位 native stage 与历史只读保护基础
+
+`ArtifactStore.inplace_asset`在最终稳定asset路径登记publishing并持writer/claim，原生manifest内绝对路径不因发布重命名失效。现有`execution.owner.managed_native_store`作用域将每个stage claim与父run原claim/reservation一起交既有进程binding；不为此新建host调度或第二GC。Store scope下RunSession不取得旧容量lease，PowerShell仍逐条独立核验immutable_input_records并持OS不可改/删句柄。真实落盘后沿C0同一account回调减少remaining；成功/失败分别seal，未知writer保持publishing且不可当成功缓存。
+
+失联恢复只通过同一execution owner验证原request/config/terminal/完成回执与binding，取得writer OS锁后重放Store原子终态；成功不降级、真实失败保留原因并非缓存，两次无新增副作用。仅父锁释放但无绑定/原生完成事实不允许猜停止。已删除任意reason直接标失败的试制恢复入口，避免成功terminal到seal之间崩溃后回退。
+
+历史`native_source_guard`不再调用`capacity_decision_lock`/`resolve_consumed_run_capacity_owner`，不创建历史根锁；先持原manifest的精确OS句柄，再逐config/product原record取得并验证句柄，最后验证terminal/product。缺件、篡改或删除竞争失败关闭，读取前后原目录字节/清单不变。Store产品使用唯一claim；明确`ground_source_reference`外借payload须逐路径/bytes/SHA等于已保护来源，未知外借闭包拒绝。
+
+实际软件验证：Store+历史sourceguard完整29 PASS/7.885s；必要成功/失败terminal到seal崩溃与活/未知writer4 PASS/2.546s（有重复方法，不另当全新覆盖）；真实Windows短child+OS输入不可写保护PASS/10.272s，真实invalid-image未启动→failed证据PASS/6.483s；四项stage/source组合PASS/17.583s；显式旧源借用保护PASS/1.159s。命令结果来自本轮工具记录，没有虚构独立stdout日志。Ruff/diff PASS；未新增商业原生运行。默认旧owner、旧retention执行及全部生产caller仍待接管/删除，C3/CA19未完成；此基础提交不是最终退役结论。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 

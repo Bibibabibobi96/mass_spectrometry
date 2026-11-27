@@ -78,6 +78,32 @@ else:
             data.unlink()
             self.assertFalse(data.exists())
 
+    def test_history_read_is_readonly_and_fails_closed_if_source_disappears(self):
+        from contextlib import contextmanager
+        from unittest.mock import patch
+        from msplatform.io.file_identity import guarded_file_identity
+        with tempfile.TemporaryDirectory() as directory:
+            root, data, reference = self.fixture(Path(directory))
+            before = {item.relative_to(root).as_posix(): item.read_bytes() for item in root.rglob("*") if item.is_file()}
+            with guard_native_source(reference, expected_kind="geometry_artifact", expected_artifact_root=root):
+                pass
+            after = {item.relative_to(root).as_posix(): item.read_bytes() for item in root.rglob("*") if item.is_file()}
+            self.assertEqual(before, after)
+            removed = False
+            @contextmanager
+            def race(path, **kwargs):
+                nonlocal removed
+                if Path(path).name == "run_config.json" and not removed:
+                    data.unlink()
+                    removed = True
+                with guarded_file_identity(path, **kwargs) as guard:
+                    yield guard
+            with patch("msplatform.execution.native_source_guard.guarded_file_identity", race):
+                with self.assertRaises((FileNotFoundError, OSError, ValueError)):
+                    with guard_native_source(reference, expected_kind="geometry_artifact", expected_artifact_root=root):
+                        pass
+            self.assertTrue(removed)
+
     def test_rejects_wrong_root_wrong_kind_and_damaged_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root, data, reference = self.fixture(Path(directory))

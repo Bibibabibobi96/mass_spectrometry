@@ -94,6 +94,9 @@ class RunSession:
     def renew_capacity(self, *, remaining_committed_new_bytes: int | None = None,
                        protected_cache_keys: Sequence[str] = ()) -> dict[str, Any]:
         """Renew the same finite lease, preserving its original closure deadline."""
+        if getattr(self, "_store_managed", False):
+            # The surrounding ArtifactStore reservation is the only capacity owner.
+            return dict(self.capacity_session)
         with self._lock:
             result = renew_capacity_session(self.capacity_session,
                 remaining_committed_new_bytes=remaining_committed_new_bytes,
@@ -242,6 +245,10 @@ class RunSession:
                     raise
                 self._immutable_guard_stacks[path] = stack
                 self._immutable_guards[path] = guard
+            if getattr(self, "_store_managed", False):
+                # process_owner independently verifies and holds every supplied
+                # immutable_input_record; do not invent an old-owner lease.
+                return {}
             return {"immutable_input_session": dict(schema_version=1, role="run_immutable_input_session",
                 run_id=self.run_id, operation_id=operation_id, lease_id=self.capacity_session["lease_id"],
                 artifact_root=str(self.artifact_root.resolve()), lease_owner=self.capacity_session["owner"],
@@ -270,7 +277,7 @@ class RunSession:
     def _record_process(self, operation_id: str, receipt: dict[str, Any]) -> None:
         if receipt.get("not_started") is True:
             # The protected transport records this only after verifying the
-            # owner’s exact pre-launch failure and host release evidence.
+            # owner's exact pre-launch failure and host release evidence.
             with self._lock:
                 self._active.remove(operation_id)
             return

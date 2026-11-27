@@ -228,6 +228,91 @@ class ArtifactStore:
                 self._active_control_ids.discard(claim_id)
                 self._release_claim(claim_id)
 
+    @contextmanager
+    def inplace_asset(self, kind: str, key: str, *, retention: str = "cache"):
+        """Write at a stable Store-owned asset path, then seal under the same claim.
+
+        A failed or interrupted writer remains publishing and cannot be reused or
+        collected. The caller must establish worker termination before sealing;
+        scope exit never infers completion from a dead parent or elapsed time.
+        """
+        _token(kind)
+        if not isinstance(key, str) or not key or retention not in {"cache", "preserve"}:
+            raise ValueError("explicit key and supported retention are required")
+        identity, claim_id = uuid4().hex, uuid4().hex
+        relative = Path("assets") / kind / hashlib.sha256(key.encode("utf-8")).hexdigest()[:2] / identity
+        destination = self.root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with self._control_lock(claim_id):
+            destination.mkdir()
+            with self._transaction() as db:
+                db.execute("INSERT INTO assets VALUES(?,?,?,?,?,?,?,?,?,NULL,?)",
+                    (identity, key, relative.as_posix(), "publishing", retention, "{}", 0, 0,
+                     datetime.now(timezone.utc).isoformat(), "inplace:" + claim_id))
+                db.execute("INSERT INTO claims VALUES(?,?)", (claim_id, identity))
+                db.execute("INSERT INTO controls VALUES(?,?,?)", (claim_id, "claim", os.getpid()))
+            self._active_control_ids.add(claim_id)
+            sealed = False
+            def seal(*, failure_reason=None):
+                nonlocal sealed
+                if sealed:
+                    raise ValueError("in-place asset is already sealed")
+                if failure_reason is not None and (not isinstance(failure_reason, str) or not failure_reason.strip()):
+                    raise ValueError("failure evidence requires a nonempty reason")
+                records = _records(destination)
+                state = "failed" if failure_reason is not None else "ready"
+                with self._transaction() as db:
+                    if db.execute("""SELECT 1 FROM native_binding_controls c JOIN native_bindings b
+                        ON b.id=c.binding_id WHERE c.control_id=? AND b.state='active'""", (claim_id,)).fetchone():
+                        raise ValueError("in-place native worker is still protected")
+                    changed = db.execute("""UPDATE assets SET state=?,records=?,size=?,failure=?
+                        WHERE id=? AND state='publishing' AND work=?""",
+                        (state, json.dumps(records, sort_keys=True), sum(row["bytes"] for row in records.values()),
+                         failure_reason, identity, "inplace:" + claim_id)).rowcount
+                    if not changed:
+                        raise ValueError("in-place asset writer identity differs")
+                sealed = True
+            try:
+                yield identity, destination, claim_id, seal
+            finally:
+                self._active_control_ids.discard(claim_id)
+                self._release_claim(claim_id)
+
+    def _recover_inplace_asset(self, identity: str, *, verify) -> bool:
+        """Replay an explicitly verified terminal stage after its writer lock drains."""
+        with self._db() as db:
+            row = db.execute("SELECT path,state,work FROM assets WHERE id=?", (identity,)).fetchone()
+        if row is None or not row[2].startswith("inplace:"):
+            raise ValueError("asset is not an in-place native stage")
+        if row[1] in {"ready", "failed"}:
+            return False
+        if row[1] != "publishing":
+            raise ValueError("in-place asset is not publishing")
+        token = row[2][len("inplace:"):]
+        if not (self.root / "control" / (token + ".lock")).is_file():
+            raise ValueError("in-place writer lock evidence is unavailable")
+        with self._control_lock(token):
+            with self._db() as db:
+                active = db.execute("""SELECT 1 FROM native_binding_controls c JOIN native_bindings b
+                    ON b.id=c.binding_id WHERE c.control_id=? AND b.state='active'""", (token,)).fetchone()
+            if active:
+                raise ValueError("in-place native worker is still protected")
+            path = self.root / row[0]
+            state, reason = verify(path)
+            if state not in {"ready", "failed"} or (state == "failed" and not reason):
+                raise ValueError("native stage terminal proof differs")
+            records = _records(path)
+            with self._transaction() as db:
+                changed = db.execute("""UPDATE assets SET state=?,records=?,size=?,failure=?
+                    WHERE id=? AND state='publishing' AND work=? AND NOT EXISTS
+                    (SELECT 1 FROM native_binding_controls c JOIN native_bindings b ON b.id=c.binding_id
+                     WHERE c.control_id=? AND b.state='active')""",
+                    (state, json.dumps(records, sort_keys=True), sum(item["bytes"] for item in records.values()),
+                     reason, identity, row[2], token)).rowcount
+        if changed:
+            self._recover_controls((token,))
+        return bool(changed)
+
     def find_asset(self, key: str) -> tuple[str, Path] | None:
         """Probe a cache; callers must claim it again before consuming the path."""
         with self.claim_key(key) as result:
@@ -257,6 +342,16 @@ class ArtifactStore:
                 manager.__exit__(None, None, None)
             return
         yield None
+
+    @contextmanager
+    def claim_verified(self, asset_id: str):
+        """Hold and revalidate one explicitly identified ready asset."""
+        with self.claim(asset_id) as path:
+            with self._db() as db:
+                row = db.execute("SELECT records FROM assets WHERE id=? AND state='ready'", (asset_id,)).fetchone()
+            if row is None or _records(path) != json.loads(row[0]):
+                raise ValueError("published asset is incomplete or modified")
+            yield path
 
     def _release_claim(self, claim_id: str) -> None:
         with self._transaction() as db:
@@ -837,6 +932,10 @@ class ArtifactStore:
                 runs = db.execute("SELECT id,path,records,work FROM runs WHERE state='publishing'").fetchall()
             for table, rows in (("assets", assets), ("runs", runs)):
                 for identity, relative, expected, work_name in rows:
+                    if table == "assets" and work_name.startswith("inplace:"):
+                        # No persisted terminal proof: preserve the original path
+                        # and partial evidence for explicit owner reconciliation.
+                        continue
                     destination = self.root / relative
                     source = self.root / "work" / work_name
                     if destination.exists() and source.exists():

@@ -268,6 +268,313 @@ class NativeArtifactControlsTests(unittest.TestCase):
                 process.join(20)
             native_release.set()
 
+    def test_managed_store_stage_publishes_at_stable_path_without_old_ledger(self) -> None:
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        from msplatform.backends.simion import native_completion
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.owner import managed_native_store, run_managed_stage
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        budget = self.root / "budget.json"
+        budget.write_text('{"bytes":100}', encoding="utf-8")
+        context = ExecutionContext(workspace=self.root / "study", python_executable=Path(sys.executable),
+            powershell_executable=Path(shutil.which("pwsh") or sys.executable), tools={},
+            host_state_path=self.host, policy_path=resource_path("host_resource_policy.json"))
+        def action(session):
+            output = session.declare_file(session.result_dir / "output.bin", "solver_native_binary")
+            output.write_bytes(b"native stand-in")
+            product = {"schema_version": 1, "kind": "geometry_artifact", "status": "complete",
+                       "metadata": {}, "data": {"geometry": file_record(output, "solver_native_binary")}}
+            return dict(status="success", summary={}, output_paths=[str(output)],
+                        required_output_paths=[str(output)], retention_preserve_paths=[],
+                        manifest_extra_fields={"products": {"geometry": product}})
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with ExitStack() as lifetime, self.store.claim_token(self.asset) as (claim, _), self.store.reserve(1000000) as reservation:
+                with protect_native_controls(self.store, run_id=run, claim_ids=(claim,),
+                        reservation_ids=(reservation,), work_directory=work), managed_native_store(
+                        self.store, task_key="actual-task-key", lifetime=lifetime, account=lambda _path: None), patch.object(
+                        __import__("msplatform.execution.owner", fromlist=["owner"]), "path_capacity", return_value={"legacy_windows_compatible": True}):
+                    result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="test", software=[]),
+                        run_id="20261127_000000__test__python__store-stage", payload={}, committed_new_bytes=100,
+                        commitment_inputs=[file_record(budget, "required_evidence")],
+                        retention={"policy_version": 1, "class": "solver_review", "reason": "inert test"},
+                        expected_operation_ids=[], operation_dependencies={}, action=action,
+                        action_record=file_record(Path(__file__), "required_evidence"), completion_api=lambda: native_completion)
+                self.assertEqual(result["status"], "success")
+                manifest = Path(result["manifest"]["path"])
+                self.assertTrue(manifest.is_file())
+                self.assertTrue(manifest.is_relative_to(self.store.root / "assets" / "native_stage"))
+                self.assertFalse((context.workspace / "artifacts").exists())
+                from msplatform.execution.native_source_guard import guard_native_source
+                with guard_native_source({"manifest": result["manifest"], "product_id": "geometry"},
+                        expected_kind="geometry_artifact", expected_artifact_root=context.workspace / "artifacts",
+                        artifact_store=self.store) as artifact:
+                    self.assertEqual(artifact.data_path("geometry").read_bytes(), b"native stand-in")
+                    self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+                (manifest.parent / "results" / "output.bin").write_bytes(b"tampered")
+                with self.assertRaisesRegex(ValueError, "incomplete or modified"):
+                    with guard_native_source({"manifest": result["manifest"], "product_id": "geometry"},
+                            expected_kind="geometry_artifact", expected_artifact_root=context.workspace / "artifacts",
+                            artifact_store=self.store):
+                        pass
+            self.store.finish_run(run, "succeeded")
+
+    @unittest.skipUnless(os.name == "nt", "Windows immutable file sharing required")
+    def test_store_stage_replays_completed_terminal_after_seal_interruption(self) -> None:
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        from msplatform.backends.simion import native_completion
+        from msplatform.execution import owner
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        budget = self.root / "budget.json"
+        budget.write_text('{"bytes":100}', encoding="utf-8")
+        context = ExecutionContext(workspace=self.root / "study", python_executable=Path(sys.executable),
+            powershell_executable=Path(shutil.which("pwsh") or sys.executable), tools={},
+            host_state_path=self.host, policy_path=resource_path("host_resource_policy.json"))
+        def action(session):
+            output = session.declare_file(session.result_dir / "output.bin", "solver_native_binary")
+            output.write_bytes(b"original")
+            def interrupted(**_kwargs):
+                raise OSError("seal interrupted")
+            session._store_seal = interrupted
+            return dict(status="success", summary={}, output_paths=[str(output)],
+                        required_output_paths=[str(output)], retention_preserve_paths=[], manifest_extra_fields={})
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with ExitStack() as lifetime, self.store.claim_token(self.asset) as (claim, _), self.store.reserve(1000000) as reservation:
+                with protect_native_controls(self.store, run_id=run, claim_ids=(claim,), reservation_ids=(reservation,),
+                        work_directory=work), owner.managed_native_store(self.store, task_key="interrupted-stage", lifetime=lifetime,
+                        account=lambda _path: None), patch.object(owner, "path_capacity", return_value={"legacy_windows_compatible": True}):
+                    with self.assertRaisesRegex(OSError, "seal interrupted"):
+                        owner.run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="test", software=[]),
+                            run_id="20261127_000000__test__python__recover-stage", payload={}, committed_new_bytes=100,
+                            commitment_inputs=[file_record(budget, "required_evidence")],
+                            retention={"policy_version": 1, "class": "solver_review", "reason": "inert test"},
+                            expected_operation_ids=[], operation_dependencies={}, action=action,
+                            action_record=file_record(Path(__file__), "required_evidence"), completion_api=lambda: native_completion)
+            self.store.finish_run(run, "failed", reason="owner interrupted")
+        with self.store._db() as db:
+            identity, state = db.execute("SELECT id,state FROM assets WHERE key LIKE 'interrupted-stage:%'").fetchone()
+        self.assertEqual(state, "publishing")
+        self.assertTrue(owner.recover_managed_native_store_stage(self.store, identity, context=context))
+        self.assertFalse(owner.recover_managed_native_store_stage(self.store, identity, context=context))
+        with self.store.claim_verified(identity) as path:
+            self.assertEqual(next(path.rglob("output.bin")).read_bytes(), b"original")
+
+    @unittest.skipUnless(os.name == "nt", "Windows immutable file sharing required")
+    def test_store_stage_replays_failed_terminal_without_success_cache(self) -> None:
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        from msplatform.backends.simion import native_completion
+        from msplatform.execution import owner
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        budget = self.root / "budget.json"
+        budget.write_text('{"bytes":100}', encoding="utf-8")
+        context = ExecutionContext(workspace=self.root / "study", python_executable=Path(sys.executable),
+            powershell_executable=Path(shutil.which("pwsh") or sys.executable), tools={},
+            host_state_path=self.host, policy_path=resource_path("host_resource_policy.json"))
+        def action(session):
+            output = session.declare_file(session.result_dir / "output.bin", "solver_native_binary")
+            output.write_bytes(b"original")
+            def interrupted(**_kwargs):
+                raise OSError("seal interrupted")
+            session._store_seal = interrupted
+            raise RuntimeError("original native failure")
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with ExitStack() as lifetime, self.store.claim_token(self.asset) as (claim, _), self.store.reserve(1000000) as reservation:
+                with protect_native_controls(self.store, run_id=run, claim_ids=(claim,), reservation_ids=(reservation,),
+                        work_directory=work), owner.managed_native_store(self.store, task_key="failed-stage", lifetime=lifetime,
+                        account=lambda _path: None), patch.object(owner, "path_capacity", return_value={"legacy_windows_compatible": True}):
+                    with self.assertRaisesRegex(RuntimeError, "original native failure"):
+                        owner.run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="test", software=[]),
+                            run_id="20261127_000000__test__python__recover-stage", payload={}, committed_new_bytes=100,
+                            commitment_inputs=[file_record(budget, "required_evidence")],
+                            retention={"policy_version": 1, "class": "solver_review", "reason": "inert test"},
+                            expected_operation_ids=[], operation_dependencies={}, action=action,
+                            action_record=file_record(Path(__file__), "required_evidence"), completion_api=lambda: native_completion)
+            self.store.finish_run(run, "failed", reason="owner interrupted")
+        with self.store._db() as db:
+            identity, state = db.execute("SELECT id,state FROM assets WHERE key LIKE 'failed-stage:%'").fetchone()
+        self.assertEqual(state, "publishing")
+        self.assertTrue(owner.recover_managed_native_store_stage(self.store, identity, context=context))
+        self.assertFalse(owner.recover_managed_native_store_stage(self.store, identity, context=context))
+        with self.store._db() as db:
+            state, reason, relative = db.execute("SELECT state,failure,path FROM assets WHERE id=?", (identity,)).fetchone()
+        self.assertEqual(state, "failed")
+        self.assertIn("original native failure", reason)
+        self.assertEqual(next((self.store.root / relative).rglob("output.bin")).read_bytes(), b"original")
+
+    @unittest.skipUnless(os.name == "nt", "Windows immutable file sharing required")
+    def test_store_stage_guards_explicit_borrowed_old_owner_field(self) -> None:
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        from msplatform.backends.simion import native_completion
+        from msplatform.execution import owner
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.native_source_guard import guard_native_source
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        from tests.execution.test_native_source_guard import NativeSourceGuardTests
+        legacy_root, borrowed, origin = NativeSourceGuardTests().fixture(self.root)
+        origin_path = Path(origin["manifest"]["path"])
+        document = json.loads(origin_path.read_text(encoding="utf-8"))
+        document["products"]["geometry"]["kind"] = "field_bundle"
+        origin_path.write_text(json.dumps(document), encoding="utf-8")
+        origin["manifest"] = file_record(origin_path)
+        budget = self.root / "budget.json"
+        budget.write_text('{"bytes":100}', encoding="utf-8")
+        context = ExecutionContext(workspace=self.root / "study", python_executable=Path(sys.executable),
+            powershell_executable=Path(shutil.which("pwsh") or sys.executable), tools={},
+            host_state_path=self.host, policy_path=resource_path("host_resource_policy.json"))
+        def action(session):
+            record = file_record(borrowed, "required_evidence")
+            session.add_input("borrowed", record)
+            product = {"schema_version": 1, "kind": "field_bundle", "status": "complete",
+                "metadata": {"ground_source_reference": origin}, "data": {"payload": record}}
+            return dict(status="success", summary={}, output_paths=[], required_output_paths=[],
+                        retention_preserve_paths=[], manifest_extra_fields={"products": {"fields": product}})
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with ExitStack() as lifetime, self.store.claim_token(self.asset) as (claim, _), self.store.reserve(1000000) as reservation:
+                with protect_native_controls(self.store, run_id=run, claim_ids=(claim,), reservation_ids=(reservation,),
+                        work_directory=work), owner.managed_native_store(self.store, task_key="borrowed", lifetime=lifetime, account=lambda _path: None), patch.object(
+                        owner, "path_capacity", return_value={"legacy_windows_compatible": True}):
+                    result = owner.run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="test", software=[]),
+                        run_id="20261127_000000__test__python__borrowed", payload={}, committed_new_bytes=100,
+                        commitment_inputs=[file_record(budget, "required_evidence")],
+                        retention={"policy_version": 1, "class": "solver_review", "reason": "inert test"},
+                        expected_operation_ids=[], operation_dependencies={}, action=action,
+                        action_record=file_record(Path(__file__), "required_evidence"), completion_api=lambda: native_completion)
+                with guard_native_source({"manifest": result["manifest"], "product_id": "fields"},
+                        expected_kind="field_bundle", expected_artifact_root=legacy_root, artifact_store=self.store) as artifact:
+                    self.assertEqual(artifact.data_path("payload"), borrowed)
+                    with self.assertRaises(OSError):
+                        borrowed.unlink()
+            self.store.finish_run(run, "succeeded")
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_managed_store_stage_runs_protected_short_process(self) -> None:
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        from msplatform.backends.simion import native_completion
+        from msplatform.execution import owner
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        budget = self.root / "budget.json"
+        budget.write_text('{"bytes":100}', encoding="utf-8")
+        context = ExecutionContext(workspace=self.root / "study", python_executable=Path(sys.executable),
+            powershell_executable=Path(shutil.which("pwsh")), tools={},
+            host_state_path=self.root / "actual-host.sqlite", policy_path=resource_path("host_resource_policy.json"))
+        source = self.root / "immutable-source.bin"
+        source.write_bytes(b"original")
+        def action(session):
+            code = "from pathlib import Path; import sys; p=Path(sys.argv[1]);\ntry:p.write_bytes(b'changed')\nexcept OSError:pass\nelse:raise SystemExit(3)"
+            session.run_process("worker", executable=Path(sys.executable), arguments=["-c", code, str(source)],
+                role="GATE", stage="store_fixture", limits=None,
+                immutable_input_records=[file_record(source, "required_evidence")])
+            output = session.declare_file(session.result_dir / "output.bin", "solver_native_binary")
+            output.write_bytes(b"native stand-in")
+            return dict(status="success", summary={}, output_paths=[str(output)],
+                        required_output_paths=[str(output)], retention_preserve_paths=[], manifest_extra_fields={})
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with ExitStack() as lifetime, self.store.claim_token(self.asset) as (claim, _), self.store.reserve(1000000) as reservation:
+                with protect_native_controls(self.store, run_id=run, claim_ids=(claim,), reservation_ids=(reservation,),
+                        work_directory=work), owner.managed_native_store(self.store, task_key="worker-task", lifetime=lifetime, account=lambda _path: None), patch.object(
+                        owner, "path_capacity", return_value={"legacy_windows_compatible": True}):
+                    result = owner.run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="test", software=[]),
+                        run_id="20261127_000000__test__python__store-child", payload={}, committed_new_bytes=100,
+                        commitment_inputs=[file_record(budget, "required_evidence")],
+                        retention={"policy_version": 1, "class": "solver_review", "reason": "inert test"},
+                        expected_operation_ids=["worker"], operation_dependencies={}, action=action,
+                        action_record=file_record(Path(__file__), "required_evidence"), completion_api=lambda: native_completion)
+                self.assertEqual(result["status"], "success")
+                self.assertEqual(source.read_bytes(), b"original")
+                self.assertFalse((context.workspace / "artifacts").exists())
+                with self.store._db() as db:
+                    self.assertEqual(db.execute("SELECT state FROM native_bindings WHERE run_id=?", (run,)).fetchall(), [("complete",)])
+            self.store.finish_run(run, "succeeded")
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_managed_store_stage_launch_failure_keeps_failed_evidence(self) -> None:
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        from msplatform.backends.simion import native_completion
+        from msplatform.execution import owner
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.processes import ProcessExecutionError
+        from msplatform.execution.resources import resource_path
+        from msplatform.io.manifest_records import file_record
+        budget = self.root / "budget.json"
+        budget.write_text('{"bytes":100}', encoding="utf-8")
+        invalid = self.root / "invalid.exe"
+        invalid.write_bytes(b"not a native executable")
+        context = ExecutionContext(workspace=self.root / "study", python_executable=Path(sys.executable),
+            powershell_executable=Path(shutil.which("pwsh")), tools={},
+            host_state_path=self.root / "actual-host.sqlite", policy_path=resource_path("host_resource_policy.json"))
+        def action(session):
+            session.run_process("worker", executable=invalid, arguments=[], role="GATE", stage="store_fixture", limits=None)
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with ExitStack() as lifetime, self.store.claim_token(self.asset) as (claim, _), self.store.reserve(1000000) as reservation:
+                with protect_native_controls(self.store, run_id=run, claim_ids=(claim,), reservation_ids=(reservation,),
+                        work_directory=work), owner.managed_native_store(self.store, task_key="failed-task", lifetime=lifetime, account=lambda _path: None), patch.object(
+                        owner, "path_capacity", return_value={"legacy_windows_compatible": True}):
+                    with self.assertRaises(ProcessExecutionError):
+                        owner.run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="test", software=[]),
+                            run_id="20261127_000000__test__python__store-failure", payload={}, committed_new_bytes=100,
+                            commitment_inputs=[file_record(budget, "required_evidence")],
+                            retention={"policy_version": 1, "class": "solver_review", "reason": "inert test"},
+                            expected_operation_ids=["worker"], operation_dependencies={}, action=action,
+                            action_record=file_record(Path(__file__), "required_evidence"), completion_api=lambda: native_completion)
+                with self.store._db() as db:
+                    row = db.execute(
+                        "SELECT state,failure,path FROM assets WHERE key LIKE 'failed-task:%'").fetchone()
+                self.assertEqual(row[0], "failed")
+                self.assertTrue(row[1])
+                self.assertTrue((self.store.root / row[2]).is_dir())
+                self.assertFalse((context.workspace / "artifacts").exists())
+            self.store.finish_run(run, "failed", reason="child launch failed")
+
+    def test_inplace_asset_cannot_close_while_native_binding_is_active(self) -> None:
+        run, _work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with self.store.inplace_asset("native_stage", "inplace-native") as (asset, path, claim, seal):
+                (path / "partial").write_bytes(b"evidence")
+                with self.store.reserve(9) as reservation:
+                    self.store.bind_native_controls(run, host_state_path=self.host, host_token="fixture-token",
+                        host_owner={"pid": 7, "started": "123"}, operation_id="worker", claim_ids=(claim,),
+                        reservation_ids=(reservation,))
+                    with self.assertRaisesRegex(ValueError, "still protected"):
+                        seal()
+                    self.store.collect(100)
+                    self.assertTrue((path / "partial").is_file())
+        with self.assertRaisesRegex(ValueError, "still protected"):
+            self.store._recover_inplace_asset(asset, verify=lambda _path: ("failed", "unproved"))
+        self.assertEqual((path / "partial").read_bytes(), b"evidence")
+        self.assertIsNone(self.store.find_asset("inplace-native"))
+
     def test_fixture_completion_requires_exact_worker_and_release(self) -> None:
         run, _ = self.store.begin_run()
         with self.store.run_writer(run):
