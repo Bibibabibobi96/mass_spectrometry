@@ -45,10 +45,10 @@ REQUIRED_MODULES = (
     "msplatform.contracts.particle_physics",
     "msplatform.contracts.particle_count_policy",
     "msplatform.io.file_identity",
-    "msplatform.ion_release",
-    "msplatform.ion_release.mt19937_disk_cone_rf_phase",
-    "msplatform.ion_release.numpy_box_cone",
-    "msplatform.ion_release.numpy_ion11_box",
+    "msplatform.particle_release",
+    "msplatform.particle_release.mt19937_disk_cone_rf_phase",
+    "msplatform.particle_release.numpy_box_cone",
+    "msplatform.particle_release.numpy_ion11_box",
     "msplatform.components.rf_multipole",
     "msplatform.components.rf_multipole.interface_geometry",
     "msplatform.components.rf_multipole.source_validation",
@@ -858,7 +858,7 @@ exit 0
                                for item in record["execution"]["frozen_modules"]}
                     for module in (
                         "msplatform.analysis.mass_response",
-                        "msplatform.ion_release.paired_mass_scan",
+                        "msplatform.particle_release.paired_mass_scan",
                         "msplatform.io.file_identity",
                         "msplatform.analysis.peak_metrics",
                     ):

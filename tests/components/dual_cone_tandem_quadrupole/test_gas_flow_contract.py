@@ -10,7 +10,6 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3] / "src/msplatform/components/dual_cone_tandem_quadrupole"
-SCIENCE_PATH = PROJECT_ROOT / "config" / "gas_flow_science.json"
 NUMERICS_PATH = PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
 GEOMETRY_PATH = PROJECT_ROOT / "config" / "resolved_geometry.json"
 from msplatform.backends.comsol.resources import native_resource_path
@@ -26,17 +25,22 @@ def _load_validator():
 
 
 def _contracts() -> tuple[dict, dict]:
-    return (
-        json.loads(SCIENCE_PATH.read_text(encoding="utf-8")),
-        json.loads(NUMERICS_PATH.read_text(encoding="utf-8")),
-    )
+    from msplatform.backends.comsol.gas_flow import resolve_gas_flow_request
+    request = resolve_gas_flow_request(*(PROJECT_ROOT / "config" / name for name in (
+        "baseline.json", "resolved_geometry.json", "gas_flow_science.json", "comsol_solver_numerics.json", "gas_environment.json")))
+    return request["projected_science"], json.loads(NUMERICS_PATH.read_text(encoding="utf-8"))
 
 
-def _write_fixture(tmp_path: Path) -> tuple[Path, Path]:
-    science, numerics = _contracts()
+def _write_fixture(tmp_path: Path, *, science_path=None, numerics_path=NUMERICS_PATH, geometry_path=GEOMETRY_PATH,
+                   grid_size=(10, 10)) -> tuple[Path, Path]:
+    if science_path is None:
+        science_path = tmp_path / "science_resolved.json"
+        science_path.write_text(json.dumps(_contracts()[0], indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    science = json.loads(science_path.read_text(encoding="utf-8"))
+    numerics = json.loads(numerics_path.read_text(encoding="utf-8"))
     columns = science["export_contract"]["columns"]
-    r_values = [float(index) for index in range(10)]
-    z_values = [float(index) for index in range(10)]
+    r_values = [float(index) for index in range(grid_size[0])]
+    z_values = [float(index) for index in range(grid_size[1])]
     gas = science["physics"]["gas_species"]
     pressure = 500.0
     temperature = 300.0
@@ -77,11 +81,11 @@ def _write_fixture(tmp_path: Path) -> tuple[Path, Path]:
         "grid": {"r_values_mm": r_values, "z_values_mm": z_values},
         "field_csv_sha256": hashlib.sha256(csv_path.read_bytes()).hexdigest(),
         "source_contract_sha256": {
-            "gas_flow_science": hashlib.sha256(SCIENCE_PATH.read_bytes()).hexdigest(),
+            "gas_flow_science": hashlib.sha256(science_path.read_bytes()).hexdigest(),
             "comsol_solver_numerics": hashlib.sha256(
-                NUMERICS_PATH.read_bytes()
+                numerics_path.read_bytes()
             ).hexdigest(),
-            "resolved_geometry": hashlib.sha256(GEOMETRY_PATH.read_bytes()).hexdigest(),
+            "resolved_geometry": hashlib.sha256(geometry_path.read_bytes()).hexdigest(),
         },
         "solution_summary": {
             "requested_outlet_static_pressure_pa": science["boundary_conditions"][
@@ -106,7 +110,7 @@ class GasFlowContractTests(unittest.TestCase):
         validator = _load_validator()
         with tempfile.TemporaryDirectory() as directory:
             csv_path, metadata_path = _write_fixture(Path(directory))
-            arguments = (csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH)
+            arguments = (csv_path, metadata_path, csv_path.parent / "science_resolved.json", NUMERICS_PATH, GEOMETRY_PATH)
             original = validator.validate_gas_field(*arguments)
             data = read_gas_field_data(*arguments)
             self.assertEqual(validator.validate_gas_field_data(data), original)
@@ -184,7 +188,7 @@ class GasFlowContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             csv_path, metadata_path = _write_fixture(Path(directory))
             summary = validator.validate_gas_field(
-                csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH
+                csv_path, metadata_path, csv_path.parent / "science_resolved.json", NUMERICS_PATH, GEOMETRY_PATH
             )
         self.assertEqual(summary["status"], "PASS")
         self.assertEqual(summary["row_count"], 100)
@@ -221,7 +225,7 @@ class GasFlowContractTests(unittest.TestCase):
                         metadata["row_count"] = len(rows)
                         metadata["field_csv_sha256"] = hashlib.sha256(csv_path.read_bytes()).hexdigest()
                         metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
-                        arguments = (csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH)
+                        arguments = (csv_path, metadata_path, csv_path.parent / "science_resolved.json", NUMERICS_PATH, GEOMETRY_PATH)
                         accepted = token == "nan" if fluid_mask == 0 else token == "finite"
                         if accepted:
                             summary = validator.validate_gas_field(*arguments)
@@ -243,7 +247,7 @@ class GasFlowContractTests(unittest.TestCase):
                     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
                     with self.assertRaisesRegex(ValueError, "axes must be finite"):
                         validator.validate_gas_field(
-                            csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH
+                            csv_path, metadata_path, csv_path.parent / "science_resolved.json", NUMERICS_PATH, GEOMETRY_PATH
                         )
         for value in (float("nan"), float("inf"), float("-inf"), 0.0):
             with self.subTest(coordinate_tolerance=value), tempfile.TemporaryDirectory() as directory:
@@ -258,7 +262,7 @@ class GasFlowContractTests(unittest.TestCase):
                     numerics_path.read_bytes()
                 ).hexdigest()
                 metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
-                arguments = (csv_path, metadata_path, SCIENCE_PATH, numerics_path, GEOMETRY_PATH)
+                arguments = (csv_path, metadata_path, csv_path.parent / "science_resolved.json", numerics_path, GEOMETRY_PATH)
                 if math.isfinite(value):
                     self.assertEqual(validator.validate_gas_field(*arguments)["status"], "PASS")
                 else:
@@ -273,7 +277,7 @@ class GasFlowContractTests(unittest.TestCase):
                 stream.write("tampered\n")
             with self.assertRaisesRegex(ValueError, "SHA-256"):
                 validator.validate_gas_field(
-                    csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH
+                    csv_path, metadata_path, csv_path.parent / "science_resolved.json", NUMERICS_PATH, GEOMETRY_PATH
                 )
 
     def test_valid_field_compiles_to_hashed_self_contained_lua(self) -> None:
@@ -296,9 +300,9 @@ class GasFlowContractTests(unittest.TestCase):
             from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
             from msplatform.io.manifest_records import file_record
 
-            paths = dict(field_csv=csv_path, field_metadata=metadata_path, science=SCIENCE_PATH,
+            paths = dict(field_csv=csv_path, field_metadata=metadata_path, science=csv_path.parent / "science_resolved.json",
                          numerics=NUMERICS_PATH, geometry=GEOMETRY_PATH)
-            data = read_gas_field_data(csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH)
+            data = read_gas_field_data(csv_path, metadata_path, csv_path.parent / "science_resolved.json", NUMERICS_PATH, GEOMETRY_PATH)
             field, metadata = prepare_cfd_gas_field(data, interface=interface,
                 source_records={name: file_record(path, "required_evidence") for name, path in paths.items()})
             manifest = materialize_gas_runtime(field, lua_path, manifest_path, manifest_metadata=metadata)

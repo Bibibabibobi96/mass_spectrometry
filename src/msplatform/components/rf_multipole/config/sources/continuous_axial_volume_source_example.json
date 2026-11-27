@@ -1,8 +1,8 @@
 {
-  "schema_version": 1,
-  "role": "continuous_axial_volume_ion_beam_source",
-  "method": "independent_spatial_velocity_ion_source_snapshot_v1",
-  "source_region_model": "ion_source_volume_cylinder_v1",
+  "schema_version": 2,
+  "role": "continuous_axial_volume_particle_beam_source",
+  "method": "independent_spatial_velocity_particle_source_snapshot_v2",
+  "source_region_model": "particle_source_volume_cylinder_v2",
   "source_frame_id": "multipole_cartesian_z_axis_v1",
   "particle_count": 5000,
   "seed": 2026082802,
@@ -23,5 +23,9 @@
     "sigma_vz_m_s": 50.0,
     "minimum_vz_m_s": 1500.0
   },
-  "ion": {"mass_amu": 100.0, "charge_state": 1}
+  "species": {
+    "mass_amu": 100.0,
+    "charge_state": 1,
+    "species_kind": "ion"
+  }
 }

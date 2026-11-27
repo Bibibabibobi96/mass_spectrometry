@@ -8,7 +8,7 @@ from pathlib import Path
 from msplatform.workflows.rf_mass_filter import (
     prepare_simion_scan as MODULE,
 )
-from msplatform.ion_release import paired_mass_scan
+from msplatform.particle_release import paired_mass_scan
 from msplatform.analysis.mass_response import load_ion_masses
 
 
@@ -49,16 +49,16 @@ class MassScanParticleTableTests(unittest.TestCase):
                 row = original.copy()
                 row[column] = value
                 with self.assertRaises(ValueError):
-                    paired_mass_scan.build_paired_ion_rows([row], [96, 100, 106])
+                    paired_mass_scan.build_paired_particle_rows([row], [96, 100, 106])
                 root = Path(temporary)
                 path = root / "source.ion"
                 with path.open("w", newline="") as stream:
                     csv.writer(stream).writerow(row)
-                for reader in (paired_mass_scan.load_ion_rows, load_ion_masses):
+                for reader in (paired_mass_scan.load_particle_rows, load_ion_masses):
                     with self.assertRaises(ValueError):
                         reader(path)
                 with self.assertRaises(ValueError):
-                    paired_mass_scan.generate_paired_ion_table(
+                    paired_mass_scan.generate_paired_particle_table(
                         path, root / "scan.ion", root / "scan.json", [96, 100, 106], 1, {},
                     )
                 with self.assertRaises(ValueError):

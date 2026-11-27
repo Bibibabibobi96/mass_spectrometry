@@ -1,10 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "project_id": "dual_cone_tandem_quadrupole",
   "family_id": "atmospheric_pressure_ion_interfaces",
   "display_name": "双锥串联四极杆离子传输接口",
   "purpose": "以COMSOL气流场到SIMION气体辅助轨迹的冻结依赖链验证双锥及两级RF四极导引接口",
-  "lifecycle_status": "prototype",
   "toolchains": [
     "comsol",
     "matlab",
@@ -26,7 +25,6 @@
     {
       "capability_id": "axisymmetric_gas_flow_field_generation",
       "function": "gas_flow_field_generation",
-      "status": "prototype",
       "modes": [
         "axisymmetric_gas_flow_screening"
       ],
@@ -41,7 +39,6 @@
     {
       "capability_id": "gas_field_driven_simion_transport",
       "function": "gas_assisted_ion_transport",
-      "status": "prototype",
       "modes": [
         "gas_field_driven_simion_transport"
       ],
@@ -55,11 +52,6 @@
       "design_variables": []
     }
   ],
-  "formal_assets": {
-    "status": "none",
-    "types": [],
-    "identity_contract": null
-  },
   "known_gaps": [
     "Component vendor and exact product identity are unconfirmed",
     "Cone truncation and aperture-plane interpretation remain provisional; pump geometry and intermediate pressures are missing",
@@ -68,6 +60,10 @@
     "The current ion source, 570 kHz and 300 V peak-to-ground RF point, and official SIMION SDS collision closure are explicit but not experimentally qualified",
     "CAD, pump type and geometry, intermediate pressure measurements, Candidate evidence and Formal evidence are unavailable"
   ],
+  "asset_references": {
+    "types": [],
+    "identity_contract": null
+  },
   "retired_project_descriptors": [
     {
       "project_id": "dual_cone_tandem_quadrupole_ion_interface",

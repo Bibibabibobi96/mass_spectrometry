@@ -148,7 +148,7 @@ try {
         -RelativePaths $analysisFiles
     $analysisRequiredModules = @($analysisModule,
       'msplatform.analysis.mass_response',
-      'msplatform.ion_release.paired_mass_scan',
+      'msplatform.particle_release.paired_mass_scan',
       'msplatform.io.file_identity','msplatform.analysis.peak_metrics')
     $analysisDistributions = @('matplotlib','numpy','scipy')
     Assert-FrozenPythonPackage -Package $frozenAnalysisPackage

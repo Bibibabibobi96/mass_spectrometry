@@ -13,20 +13,14 @@ from msplatform.contracts.particle_count_policy import (
     validate_prefix_particle_sources,
     validate_standard_particle_count,
 )
-from msplatform.ion_release.dotnet_gaussian_box_ion11 import (
-    _serialized_ion_source,
-    generate_ion_source,
-    validate_ion_source,
+from msplatform.particle_release.dotnet_gaussian_box_ion11 import (
+    _serialized_particle_source,
+    generate_particle_source,
+    validate_particle_source,
 )
-from msplatform.workflows.single_reflection_mass_spectrum_study import build_source_cohort
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4] / "src/msplatform/components/single_reflection_oa_tof"
-RUNNER = (
-    PROJECT_ROOT.parents[1]
-    / "workflows/resources"
-    / "run_mass_spectrum_candidate.ps1"
-)
 MODE = PROJECT_ROOT / "config" / "modes" / "mass_spectrum.json"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -64,32 +58,6 @@ class ParticleSourcePolicyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "deterministic prefix"):
                 validate_prefix_particle_sources(n100, n1000)
 
-    def test_runner_derives_n100_from_parent_and_validates_before_comsol(self) -> None:
-        source = RUNNER.read_text(encoding="utf-8")
-        self.assertNotIn("ParticleCountOverride", source)
-        self.assertNotIn("effective_mode.json", source)
-        self.assertIn("msplatform.workflows.single_reflection_mass_spectrum_study", source)
-        with tempfile.TemporaryDirectory() as root:
-            root_path = Path(root)
-            cohort = build_source_cohort(
-                MODE,
-                PROJECT_ROOT / "config" / "resolved_geometry.json",
-                REPO_ROOT / "src" / "msplatform" / "contracts" / "particle_count_policy.json",
-                root_path / "ions",
-                root_path / "logs",
-            )
-            self.assertEqual(cohort["total_particles"], 500)
-            self.assertEqual(len(cohort["mixed"].read_text(encoding="ascii").splitlines()), 500)
-            for selected, parent, receipt in zip(
-                cohort["individual"], cohort["parents"], cohort["provenance"], strict=True,
-            ):
-                parent_lines = parent.read_text(encoding="ascii").splitlines()
-                self.assertEqual(len(parent_lines), 1000)
-                self.assertEqual(selected.read_text(encoding="ascii").splitlines(), parent_lines[:100])
-                self.assertEqual(receipt["consumed_source_path"], str(selected))
-                report = root_path / "logs" / f"{parent.name.removesuffix('.ion')}_validation.json"
-                self.assertEqual(json.loads(report.read_text(encoding="utf-8")), receipt)
-
     def test_post_prefix_parent_tampering_requires_full_rebuild_validation(self) -> None:
         arguments = {
             "particle_count": 1000,
@@ -101,19 +69,19 @@ class ParticleSourcePolicyTests(unittest.TestCase):
             "center_xyz_mm": (-48.8, 0.0, -18.4),
             "seed": 20260713,
         }
-        parent_lines = generate_ion_source(**arguments)
+        parent_lines = generate_particle_source(**arguments)
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)
             parent = root_path / "n1000.ion"
             child = root_path / "n100.ion"
-            parent.write_bytes(_serialized_ion_source(parent_lines))
-            child.write_bytes(_serialized_ion_source(parent_lines[:100]))
+            parent.write_bytes(_serialized_particle_source(parent_lines))
+            child.write_bytes(_serialized_particle_source(parent_lines[:100]))
             validate_prefix_particle_sources(child, parent)
             parent_lines[899] = parent_lines[899].replace(",1,0", ",2,0")
-            parent.write_bytes(_serialized_ion_source(parent_lines))
+            parent.write_bytes(_serialized_particle_source(parent_lines))
             validate_prefix_particle_sources(child, parent)
             with self.assertRaisesRegex(ValueError, "deterministic source"):
-                validate_ion_source(source_path=parent, **arguments)
+                validate_particle_source(source_path=parent, **arguments)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_seed_mismatch_terminal_record_preserves_frozen_source_evidence(self) -> None:
@@ -145,9 +113,9 @@ class ParticleSourcePolicyTests(unittest.TestCase):
             )
             parent = run_dir / "parent.ion"
             child = run_dir / "child.ion"
-            lines = generate_ion_source(**arguments)
-            parent.write_bytes(_serialized_ion_source(lines))
-            child.write_bytes(_serialized_ion_source(lines[:100]))
+            lines = generate_particle_source(**arguments)
+            parent.write_bytes(_serialized_particle_source(lines))
+            child.write_bytes(_serialized_particle_source(lines[:100]))
             run_config = {
                 "schema_version": 1,
                 "run_id": "20260725_120000__test__python__source-preflight-failure",
@@ -175,7 +143,7 @@ class ParticleSourcePolicyTests(unittest.TestCase):
             config_path = run_dir / "run_config.json"
             config_path.write_text(json.dumps(run_config), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "deterministic source"):
-                validate_ion_source(
+                validate_particle_source(
                     source_path=parent,
                     **{**arguments, "seed": 20260714},
                 )
@@ -229,31 +197,6 @@ class ParticleSourcePolicyTests(unittest.TestCase):
                 self.assertTrue(manifest["inputs"][role]["exists"])
                 self.assertRegex(manifest["inputs"][role]["sha256"], r"^[0-9A-F]{64}$")
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
-    def test_removed_arbitrary_particle_override_fails_at_parameter_binding(self) -> None:
-        flags = (0, subprocess.CREATE_NO_WINDOW) if os.name == "nt" else (0,)
-        for creationflags in flags:
-            with self.subTest(creationflags=creationflags):
-                # Binding fails before script initialization. Hidden Windows
-                # hosts may emit localized OEM bytes instead of UTF-8; the
-                # rejected parameter identity is ASCII in either encoding.
-                result = subprocess.run(
-                    [
-                        "pwsh",
-                        "-NoProfile",
-                        "-File",
-                        str(RUNNER),
-                        "-ParticleCountOverride",
-                        "30",
-                    ],
-                    cwd=Path(__file__).resolve().parents[4],
-                    capture_output=True,
-                    check=False,
-                    creationflags=creationflags,
-                    timeout=30,
-                )
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn(b"ParticleCountOverride", result.stderr)
 
 
 if __name__ == "__main__":

@@ -470,7 +470,7 @@ Invoke-Expression $resolvedBlock.Extent.Text
             )
             registry.write_text(json.dumps(document), encoding="utf-8")
             with patch(
-                "msplatform.ion_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
+                "msplatform.particle_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
                 side_effect=AssertionError("resolution sampled"),
             ):
                 value = runtime_profile._resolve_particle_source(

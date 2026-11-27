@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import unittest
 
-from tests.components.dual_cone_tandem_quadrupole.test_dual_cone_transport_execution import CONFIG, LUA, request
+from tests.contracts.test_support.dual_cone_transport import CONFIG, LUA, native_request, request
 from tests.components.dual_cone_tandem_quadrupole.test_dual_cone_stages import CLOCK, geometry
 from msplatform.backends.simion import dual_cone_stages as stages
 from msplatform.backends.simion.dual_cone_transport import _materialize_gas_source, _render_run_config, source_placement
@@ -35,7 +35,7 @@ class DualConePlacementTests(unittest.TestCase):
     def test_actual_program_repeat_run_resets_only_its_particle_bookkeeping(self):
         from tests.components.dual_cone_tandem_quadrupole.test_simion_layer import write_uniform_gas_fixture
 
-        values = request()
+        values = native_request()
         harness = r"""local old=loadfile
 local config
 loadfile=function(path)
@@ -179,9 +179,9 @@ print('INSTALLS='..installs..' SEEDS='..#seeds)
                     numerics=values['numerics'],gas_science=json.loads((CONFIG/'gas_flow_science.json').read_text()),
                     source_spec_path=release,**extra)
                 runs.append((frozen,states))
-            self.assertEqual((runs[0][0]/'cylindrical_ion_source.csv').read_bytes(),
-                             (runs[1][0]/'cylindrical_ion_source.csv').read_bytes())
-            with (runs[1][0]/'cylindrical_ion_source.csv').open(newline='') as stream:
+            self.assertEqual((runs[0][0]/'cylindrical_particle_source.csv').read_bytes(),
+                             (runs[1][0]/'cylindrical_particle_source.csv').read_bytes())
+            with (runs[1][0]/'cylindrical_particle_source.csv').open(newline='') as stream:
                 rows = list(csv.DictReader(stream))
             self.assertEqual(len(rows),100)
             self.assertEqual({row['charge_state'] for row in rows}, {'-1'})
@@ -206,7 +206,7 @@ print('INSTALLS='..installs..' SEEDS='..#seeds)
 
     @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable; no native fallback')
     def test_actual_program_inverse_points_rotated_gas_velocity_and_local_terminal(self):
-        values=request()
+        values=native_request()
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);solver=root/'run/solver/simion';solver.mkdir(parents=True)
             (root/'run/results').mkdir()
@@ -254,7 +254,8 @@ segment.terminate_run();print('POSED_GAS_AND_TERMINAL=PASS')
                 prepare_transport(output, mode='c0_gem_smoke',
                     resolved_path=CONFIG/'resolved_geometry.json', numerics_path=CONFIG/'simion_solver_numerics.json',
                     science_path=CONFIG/'ion_transport_science.json', interface_path=CONFIG/'gas_field_interface.json',
-                    gas_science_path=CONFIG/'gas_flow_science.json', source_spec_path=CONFIG/'cylindrical_ion_source.json',
+                    gas_science_path=CONFIG/'gas_flow_science.json', environment_path=CONFIG/'gas_environment.json',
+                    source_spec_path=CONFIG/'cylindrical_particle_source.json',
                     placement=pose(values), source_to_device=registration(values))
             self.assertFalse(output.exists())
 

@@ -8,13 +8,13 @@ from msplatform import components, examples
 from msplatform.components.single_reflection_oa_tof.accelerator_geometry import (
     apply_side_opening, resolve_accelerator_geometry, resolve_oa_provider,
 )
-from msplatform.ion_release.release import generate_release_states, materialize_release, validate_materialized_release
+from msplatform.particle_release.release import generate_release_states, materialize_release, validate_materialized_release
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.recipes import load_recipe, validate_recipe
 from msplatform.backends.simion.compiler import compile_geometry
 from msplatform.backends.simion.model import compile_prepared_model
 from msplatform.backends.simion.field_execution import plan_fields_execution
-from msplatform.ion_release.dotnet_gaussian_box_ion11 import generate_ion_source
+from msplatform.particle_release.dotnet_gaussian_box_ion11 import generate_particle_source
 
 
 class SplitNativeExampleTests(unittest.TestCase):
@@ -56,7 +56,7 @@ class SplitNativeExampleTests(unittest.TestCase):
                 self.assertIn("downstream_fields", plan["expected_operation_ids"])
         spec = study["release"]["release_spec"]
         g, sample, species = spec["geometry"], spec["sampling"], spec["species"]
-        lines = generate_ion_source(particle_count=1000, mass_amu=species["mass_amu"], charge=species["charge_state"],
+        lines = generate_particle_source(particle_count=1000, mass_amu=species["mass_amu"], charge=species["charge_state"],
             energy_mean_ev=sample["energy_mean_ev"], energy_std_ev=sample["energy_std_ev"],
             half_width_xyz_mm=tuple(g["half_width_mm"]), center_xyz_mm=tuple(g["center_mm"]), seed=sample["seed"])
         self.assertEqual(hashlib.sha256(("\r\n".join(lines[:3]) + "\r\n").encode("ascii")).hexdigest(),

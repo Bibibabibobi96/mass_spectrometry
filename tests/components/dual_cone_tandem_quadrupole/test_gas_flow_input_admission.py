@@ -14,7 +14,7 @@ from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import 
 
 PROJECT = Path(__file__).resolve().parents[3] / "src/msplatform/components/dual_cone_tandem_quadrupole"
 REPO = PROJECT.parents[3]
-NAMES = ("baseline.json", "resolved_geometry.json", "gas_flow_science.json", "comsol_solver_numerics.json")
+NAMES = ("baseline.json", "resolved_geometry.json", "gas_flow_science.json", "comsol_solver_numerics.json", "gas_environment.json")
 
 
 def cold(root, code, paths):
@@ -62,8 +62,8 @@ class GasFlowInputAdmissionTests(unittest.TestCase):
                 code = """
 from msplatform.backends.comsol.gas_flow import resolve_gas_flow_request
 import numpy
-request=resolve_gas_flow_request(*map(pathlib.Path,sys.argv[3:7]))
-assert set(request['inputs'])=={'baseline','geometry','science','numerics'}
+request=resolve_gas_flow_request(*map(pathlib.Path,sys.argv[3:8]))
+assert set(request['inputs'])=={'baseline','geometry','science','numerics','environment','species_data','constants_data','transport_data'}
 assert all(pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
            for name,module in sys.modules.items() if name=='msplatform' or name.startswith('msplatform.'))
 print('GEOMETRY_INPUT_ADMISSION=PASS NUMPY='+numpy.__version__)
@@ -84,12 +84,15 @@ print('GEOMETRY_INPUT_ADMISSION=PASS NUMPY='+numpy.__version__)
             shutil.copytree(
                 REPO / "src/msplatform", root / "src/msplatform", ignore=shutil.ignore_patterns("__pycache__")
             )
-            csv_path, metadata_path = _write_fixture(root)
-            paths = [csv_path, metadata_path]
-            for name in NAMES[2:] + NAMES[1:2]:
-                target = root / name
-                target.write_bytes((PROJECT / "config" / name).read_bytes())
-                paths.append(target)
+            original_paths = tuple((PROJECT / "config" / name).resolve() for name in NAMES)
+            request = resolve_gas_flow_request(*original_paths)
+            science = root / "science_resolved.json"
+            science.write_text(json.dumps(request["projected_science"], indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+            numerics, geometry = root / NAMES[3], root / NAMES[1]
+            numerics.write_bytes(original_paths[3].read_bytes())
+            geometry.write_bytes(original_paths[1].read_bytes())
+            csv_path, metadata_path = _write_fixture(root, science_path=science, numerics_path=numerics, geometry_path=geometry)
+            paths = [csv_path, metadata_path, science, numerics, geometry]
             code = """
 from msplatform.components.dual_cone_tandem_quadrupole import gas_field_validation as gas_field
 assert pathlib.Path(gas_field.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]).resolve())
@@ -118,12 +121,11 @@ print('FROSNAPSHOT')
                 deployment = root / "machine.json"
                 deployment.write_text("{}", encoding="utf-8")
                 plan = dict(
-                    role="solver_neutral_design_plan",
+                    schema_version=2, role="solver_neutral_design_plan",
                     request_status="approved",
                     project_id=PROJECT.name,
                     capability_id="axisymmetric_gas_flow_field_generation",
                     mode="axisymmetric_gas_flow_screening",
-                    requested_evidence_level="plan",
                     run_id="20260720_130000__analysis__repo__design-request",
                     operating_points=[],
                     objectives=[],
@@ -146,10 +148,9 @@ print('FROSNAPSHOT')
                         engineering_profile="local",
                     ),
                     purpose="field_generation",
-                    qualification="none",
                 )
                 self.assertEqual(compiled["status"], "EXECUTION_READY", compiled.get("blockers"))
-                expected = {"geometry_baseline", "resolved_geometry", "gas_flow_science", "comsol_solver_numerics"}
+                expected = {"geometry_baseline", "resolved_geometry", "gas_flow_science", "comsol_solver_numerics", "gas_environment"}
                 self.assertEqual({row["name"] for row in compiled["resolved_inputs"]}, expected)
                 private = root / "compiled"
                 records = []
@@ -175,9 +176,10 @@ print('FROSNAPSHOT')
                 if scenario == "compiled_pair":
                     paths = compiled_gas_flow_paths(bundle)
                     resolved = resolve_gas_flow_request(*paths)
-                    self.assertEqual(len(resolved["inputs"]), 4)
-                    for path, record in zip(paths, records):
-                        self.assertEqual(file_record(path)["sha256"], record["sha256"])
+                    self.assertEqual(len(resolved["inputs"]), 8)
+                    by_name = {record["name"]: record for record in records}
+                    for path, name in zip(paths, ("geometry_baseline", "resolved_geometry", "gas_flow_science", "comsol_solver_numerics", "gas_environment"), strict=True):
+                        self.assertEqual(file_record(path)["sha256"], by_name[name]["sha256"])
                     self.assertFalse((root / "new workspace").exists())
                 elif scenario == "missing_baseline":
                     with self.assertRaisesRegex(ValueError, "geometry_baseline"):

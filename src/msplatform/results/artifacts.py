@@ -20,7 +20,7 @@ from msplatform.io.manifest_records import (
 
 ArtifactResolver = Callable[[Mapping[str, Any], Path | None], Path]
 ARTIFACT_KINDS = frozenset({
-    "cad_geometry", "geometry_artifact", "prepared_model", "field_bundle", "field_solution", "scalar_field_samples", "gas_field", "trajectory_result",
+    "historical_detector_export", "cad_geometry", "geometry_artifact", "prepared_model", "field_bundle", "field_solution", "scalar_field_samples", "axis_response_samples", "gas_field", "trajectory_result",
 })
 
 
@@ -150,9 +150,33 @@ def open_artifact(reference: Mapping[str, Any] | OpenedArtifact, *, expected_kin
             or product.get("status") != "complete" or not isinstance(product.get("metadata"), dict)
             or not isinstance(product.get("data"), dict) or not product["data"]):
         raise ValueError("artifact product is missing, incomplete, unknown-version or the wrong kind")
+    if expected_kind == "historical_detector_export":
+        metadata = product["metadata"]
+        if (manifest.get("status") != "success"
+                or set(product["data"]) != {"events", "request", "report", "geometry", "analysis_contract", "saved_context"}
+                or set(metadata) != {"backend", "scope", "native_particle_solve_count",
+                                    "native_field_solve_count", "source_manifest", "source_model", "source_execution_status"}
+                or metadata["backend"] != "comsol" or metadata["scope"] != "saved_solution_read_only"
+                or not isinstance(metadata["source_execution_status"], str)
+                or metadata["source_execution_status"] not in {"success", "failed"}
+                or type(metadata["native_particle_solve_count"]) is not int
+                or metadata["native_particle_solve_count"] != 0
+                or type(metadata["native_field_solve_count"]) is not int
+                or metadata["native_field_solve_count"] != 0):
+            raise ValueError("historical detector export metadata or data differs")
+        validate_file_record(metadata["source_manifest"], "historical source manifest")
+        validate_file_record(metadata["source_model"], "historical source model")
     inputs, outputs = manifest.get("inputs"), manifest.get("outputs")
     if not isinstance(inputs, dict) or not isinstance(outputs, list):
         raise ValueError("artifact manifest input/output records are invalid")
+    if expected_kind == "historical_detector_export":
+        for metadata_name, input_name in (("source_manifest", "source_manifest"), ("source_model", "source_model")):
+            identity = product["metadata"][metadata_name]
+            declared = validate_file_record(inputs.get(input_name), "historical source input")
+            if (record_path(identity, base_dir=manifest_path.parent) != record_path(declared, base_dir=manifest_path.parent)
+                    or identity["bytes"] != declared["bytes"]
+                    or identity["sha256"].lower() != declared["sha256"].lower()):
+                raise ValueError("historical detector source identity is not bound by its producer")
     bound = [*inputs.values(), *outputs]
     records, paths = {}, {}
     prior_records = opened.data_records if opened is not None else {}

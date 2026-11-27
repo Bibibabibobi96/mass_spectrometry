@@ -8,10 +8,10 @@ import io
 from pathlib import Path
 
 from msplatform.io.file_identity import file_sha256 as sha256
-from msplatform.ion_release.mt19937_disk_cone_rf_phase import (
+from msplatform.particle_release.mt19937_disk_cone_rf_phase import (
     STRATEGY,
 )
-from msplatform.ion_release.release import generate_release_states
+from msplatform.particle_release.release import generate_release_states
 
 
 SEED = 2026072801
@@ -44,13 +44,13 @@ def generate_rows(seed: int, total_count: int) -> list[dict[str, object]]:
 
     The historical CSV records use Python ``repr`` strings.  Keeping that
     conversion here preserves the frozen tables while the sampling algorithm
-    itself is owned by :mod:`msplatform.ion_release`.
+    itself is owned by :mod:`msplatform.particle_release`.
     """
     if total_count < 1:
         raise ValueError("particle count must be positive")
     spec = {
-        "schema_version": 1,
-        "role": "repository_ion_release",
+        "schema_version": 2,
+        "role": 'repository_particle_release',
         "frame_id": "rf_multipole_source_local_cartesian_v1",
         "particle_count": total_count,
         "mother_particle_count": total_count,
@@ -59,7 +59,7 @@ def generate_rows(seed: int, total_count: int) -> list[dict[str, object]]:
             "center_mm": [0.0, 0.0, SOURCE_Z_MM],
             "radius_mm": SOURCE_RADIUS_MM,
         },
-        "species": {"mass_amu": MASS_AMU, "charge_state": CHARGE_STATE},
+        "species": {'species_kind': 'ion', "mass_amu": MASS_AMU, "charge_state": CHARGE_STATE},
         "sampling": {
             "strategy": STRATEGY,
             "seed": seed,

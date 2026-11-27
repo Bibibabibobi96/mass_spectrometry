@@ -31,6 +31,7 @@ def run_gas_assisted_transport(
     science_path,
     interface_path,
     gas_science_path,
+    environment_path,
     source_spec_path,
     gas_field_reference,
     collision_sds_dir,
@@ -47,13 +48,14 @@ def run_gas_assisted_transport(
         science_path=Path(science_path),
         interface_path=Path(interface_path),
         gas_science_path=Path(gas_science_path),
+        environment_path=Path(environment_path),
         source_spec_path=Path(source_spec_path),
         gas_field_reference=copy.deepcopy(gas_field_reference),
         collision_sds_dir=Path(collision_sds_dir),
     )
     values = {
         name: json.loads(request[name + "_path"].read_text(encoding="utf-8-sig"))
-        for name in ("resolved", "numerics", "science", "source_spec")
+        for name in ("resolved", "numerics", "science", "source_spec", "environment")
     }
     graph = plan_transport_operations(**values, placement=placement, source_to_device=source_to_device)
     request.update({key: graph[key] for key in ("placement", "source_to_device") if key in graph})

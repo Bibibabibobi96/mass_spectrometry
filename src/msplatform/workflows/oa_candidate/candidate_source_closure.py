@@ -98,7 +98,7 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/comsol/matlab/oatof_parse_field_idealization.m",
     "src/msplatform/backends/comsol/matlab/verify_oatof_comsol_sync.m",
     "src/msplatform/backends/comsol/matlab/oatof_assert_formal_write_authorized.m",
-    "src/msplatform/backends/simion/resources/generate_comsol_consistent_ions.ps1",
+    "src/msplatform/backends/simion/resources/generate_comsol_consistent_particles.ps1",
     "src/msplatform/backends/simion/resources/analyze_ideal_field_log.ps1",
     "src/msplatform/backends/simion/resources/build_formal_delivery.ps1",
     "src/msplatform/backends/simion/resources/build_formal_iob.lua",
@@ -449,7 +449,7 @@ def project_comsol_native_implementation(closure: dict[str, Any]) -> dict[str, d
     for role,name in names.items():
         identifier=prefix+name
         if identifier not in declared:
-            raise ValueError("Original native implementation has no comparable saved-stage fact; request the necessary new native stage or analyze sufficient sealed CSV with --postprocess-from")
+            raise ValueError("Original native implementation has no comparable saved-stage fact; request the necessary new native stage or analyze sufficient sealed CSV through msplatform.workflows.historical_comsol_detector")
         result[role]={key:declared[identifier][key] for key in ("source_id","bytes","sha256")}
     return result
 
@@ -510,7 +510,8 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
         or name.startswith(("src/msplatform/analysis/", "src/msplatform/io/"))))
     # Preserve the actual selected package and reader records without backfilling old closures.
     analysis_names += tuple(name for name in sources if name in (
-        "src/msplatform/results/__init__.py", "src/msplatform/results/single_reflection_particle_table.py"))
+        "src/msplatform/results/__init__.py", "src/msplatform/results/single_reflection_particle_table.py",
+        "src/msplatform/results/historical_comsol_request.py"))
     # Historical closures retain the source authority they actually froze.
     analysis_names += tuple(name for name in sources if name == "common/contracts/file_identity.py")
     analysis_names += (component_prefix+"config/analysis_contract.json",)

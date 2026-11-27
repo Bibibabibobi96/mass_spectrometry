@@ -288,7 +288,7 @@ class ResourceBudgetTests(unittest.TestCase):
             with (
                 mock.patch("msplatform.workflows.rf_resource_budget.resolve_runtime_profile", return_value=runtime),
                 mock.patch(
-                    "msplatform.ion_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
+                    "msplatform.particle_release.mt19937_disk_cone_rf_phase.generate_mt19937_disk_cone_rf_phase_states",
                     side_effect=AssertionError("budget sampled"),
                 ),
                 mock.patch(

@@ -23,7 +23,11 @@ def _positive(label: str, value: object) -> float:
 
 def load_baseline(path: Path) -> dict[str, Any]:
     """Load and minimally validate the version-1 author geometry."""
-    document = json.loads(path.read_text(encoding="utf-8-sig"))
+    return validate_baseline(json.loads(path.read_text(encoding="utf-8-sig")))
+
+
+def validate_baseline(document: dict[str, Any]) -> dict[str, Any]:
+    """Validate a baseline already captured by its source owner."""
     if document.get("schema_version") != 1 or document.get("role") != (
         "dual_cone_tandem_quadrupole_geometry_baseline"
     ):

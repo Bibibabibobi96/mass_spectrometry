@@ -6,10 +6,10 @@ from unittest.mock import patch
 
 from msplatform.contracts.clock import ClockIdentity
 from msplatform.contracts.particle_state import validate_component_particle_state_rows
-from msplatform.ion_release.authoring import author_release
-from msplatform.ion_release.release import generate_release_states
-from tests.ion_release.test_mt19937_disk_cone_rf_phase import _spec
-from tests.ion_release.test_cylinder import halton_spec
+from msplatform.particle_release.authoring import author_release
+from msplatform.particle_release.release import generate_release_states
+from tests.particle_release.test_mt19937_disk_cone_rf_phase import _spec
+from tests.particle_release.test_cylinder import halton_spec
 
 
 class ReleaseAuthoringTests(unittest.TestCase):
@@ -18,8 +18,8 @@ class ReleaseAuthoringTests(unittest.TestCase):
         from pathlib import Path
         import tempfile
         from msplatform.io.manifest_records import file_record
-        from msplatform.ion_release.authoring import load_recorded_release
-        from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+        from msplatform.particle_release.authoring import load_recorded_release
+        from msplatform.particle_release.cylinder import CANONICAL_COLUMNS
 
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'birth.csv'
@@ -35,9 +35,9 @@ class ReleaseAuthoringTests(unittest.TestCase):
             write(CANONICAL_COLUMNS, raw)
             clock = ClockIdentity('explicit-clock', 'a' * 64)
             args = dict(clock=clock, frame_id=_spec(3)['frame_id'], source_component_id='rf',
-                        species_id='declared', relative_weights={11: .5, 1009: 2., ids[2]: 3.},
+                        species_id='declared', species_kind='ion', relative_weights={11: .5, 1009: 2., ids[2]: 3.},
                         instrument_origin_us=12.5, expected_particle_ids=ids)
-            with patch('msplatform.ion_release.authoring.generate_release_states', side_effect=AssertionError('resampled')):
+            with patch('msplatform.particle_release.authoring.generate_release_states', side_effect=AssertionError('resampled')):
                 packet = load_recorded_release(file_record(source), **args)
             self.assertEqual(packet['role'], 'canonical_recorded_birth_realization')
             self.assertEqual(packet['clock'], {'clock_epoch_id': clock.clock_epoch_id, 'authority_sha256': clock.authority_sha256})
@@ -76,7 +76,7 @@ class ReleaseAuthoringTests(unittest.TestCase):
         raw = generate_release_states(spec)
         ids = [11, 1009, 2**60+1]
         weights = {11:.5, 1009:2., 2**60+1:3.}
-        with patch("msplatform.ion_release.authoring.generate_release_states", wraps=generate_release_states) as sample:
+        with patch("msplatform.particle_release.authoring.generate_release_states", wraps=generate_release_states) as sample:
             result = self.author(spec, particle_ids=ids, relative_weights=weights)
         sample.assert_called_once()
         self.assertEqual(spec, before)
@@ -163,12 +163,12 @@ class ReleaseAuthoringTests(unittest.TestCase):
         for changes in (dict(particle_count=0),dict(schema_version=99),dict(role="existing_handoff")):
             spec=_spec(3);spec.update(changes)
             with self.subTest(changes=changes),self.assertRaises(ValueError): self.author(spec)
-        with patch("msplatform.ion_release.authoring.generate_release_states",return_value=[]),self.assertRaises(ValueError): self.author(_spec(3))
+        with patch("msplatform.particle_release.authoring.generate_release_states",return_value=[]),self.assertRaises(ValueError): self.author(_spec(3))
 
     def test_snapshot_is_not_silently_reclassified_as_birth(self):
-        with patch("msplatform.ion_release.authoring.generate_release_states") as sample:
+        with patch("msplatform.particle_release.authoring.generate_release_states") as sample:
             with self.assertRaisesRegex(ValueError,"snapshot"):
-                self.author(dict(role="continuous_axial_volume_ion_beam_source"))
+                self.author(dict(role="continuous_axial_volume_particle_beam_source"))
         sample.assert_not_called()
 
 

@@ -1,10 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "project_id": "multi_reflection_tof",
   "family_id": "tof_mass_analyzers",
   "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
   "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
-  "lifecycle_status": "candidate",
   "toolchains": [
     "python",
     "simion",
@@ -23,7 +22,6 @@
     {
       "capability_id": "multiple_reflection_mass_analysis",
       "function": "mass_analysis",
-      "status": "candidate",
       "modes": [
         "native_condition"
       ],
@@ -37,17 +35,16 @@
       "design_variables": []
     }
   ],
-  "formal_assets": {
-    "status": "none",
-    "types": [],
-    "identity_contract": null
-  },
   "known_gaps": [
     "Resolved geometry is deterministically derived and frozen per run; no standalone checked-in resolved JSON is promoted as a second authority",
     "The native corridor PA family still requires real-build equivalence, IOB priority and end-to-end flight qualification",
     "No independent COMSOL field or trajectory model currently qualifies the three-dimensional SIMION candidate",
     "Manufacturing tolerances, complete source distributions, space charge and Formal performance acceptance remain open"
   ],
+  "asset_references": {
+    "types": [],
+    "identity_contract": null
+  },
   "retired_project_descriptors": [
     {
       "project_id": "parallel_mirror_dual_stripe_mr_tof",

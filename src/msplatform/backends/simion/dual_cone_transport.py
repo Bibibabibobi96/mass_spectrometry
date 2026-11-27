@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import re
 from pathlib import Path
+from importlib.resources import files
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import validate_file_record, record_path
-from msplatform.contracts.particle_physics import kinetic_energy_ev
-from msplatform.ion_release.release import materialize_release_from_file
+from msplatform.contracts.particle_physics import REFERENCE_DATASET_SHA256, kinetic_energy_ev
+from msplatform.particle_release.release import materialize_release_from_file
 from msplatform.backends.simion.source import render_standard_beams, render_source_states, lua_value, transform_source_rows
 from msplatform.backends.simion import dual_cone_geometry
 from msplatform.backends.simion.dual_cone_geometry import (
@@ -26,6 +28,58 @@ from msplatform.backends.simion.dual_cone_geometry import (
 
 SDS_FILES = ("collision_sds.lua", "mbmr.dat", "textfilelib.lua", "arraylib.lua", "m_defs.dat")
 SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")
+
+
+def admit_sds_gas_field(reference, *, environment_bytes: bytes, resolved: dict, interface: dict):
+    """Validate a real current CFD product and derive its typed gas environment.
+
+    This is a read-only admission, not an owner lease. The execution owner must
+    protect the producer and all consumed records for the complete native run.
+    """
+    from msplatform.contracts.gas_environment import GasEnvironment
+    from msplatform.contracts.gas_species import SDS_MODEL
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_environment import (
+        project_dual_cone_flow_science, resolve_dual_cone_conditions,
+    )
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_cfd_gas_field
+    from msplatform.results.gas_field import read_gas_field
+
+    if not isinstance(environment_bytes, bytes):
+        raise ValueError("SDS requires frozen environment author bytes")
+    opened = read_gas_field(reference)
+    artifact = opened.artifact
+    if artifact.metadata.get("legacy_manifest") or artifact.metadata.get("backend") != "comsol":
+        raise ValueError("SDS requires a current COMSOL gas_field product")
+    for name in ("environment", "science_author", "species_data", "constants_data", "transport_data"):
+        record = artifact.data_records.get(name)
+        if not isinstance(record, dict):
+            raise ValueError("SDS gas producer lacks its original " + name)
+        verify_record("gas producer " + name, dict(record, path=str(artifact.data_path(name))))
+    if artifact.data_path("environment").read_bytes() != environment_bytes:
+        raise ValueError("gas producer environment differs from frozen SDS author")
+    if opened.data.documents["geometry"] != resolved:
+        raise ValueError("gas producer geometry differs from selected Assembly")
+    author = json.loads(environment_bytes.decode("utf-8-sig"))
+    conditions = resolve_dual_cone_conditions(author, resolved)
+    science = opened.data.documents["science"]
+    science_author = json.loads(artifact.data_path("science_author").read_text(encoding="utf-8-sig"))
+    if project_dual_cone_flow_science(science_author, conditions) != science:
+        raise ValueError("gas producer science differs from the selected environment")
+    identity = science.get("gas_environment_identity", {})
+    for name, expected in (("species_data", conditions["species_data"]["dataset_sha256"]),
+                           ("constants_data", REFERENCE_DATASET_SHA256),
+                           ("transport_data", conditions["transport_data"]["dataset_sha256"])):
+        if artifact.data_records[name]["sha256"].upper() != expected.upper():
+            raise ValueError("gas producer authority differs: " + name)
+    if (identity.get("environment_id") != conditions["environment_id"]
+            or identity.get("species_sha256") != conditions["species_data"]["dataset_sha256"]
+            or identity.get("transport_sha256") != conditions["transport_data"]["dataset_sha256"]):
+        raise ValueError("gas producer resolved identity differs from selected environment")
+    field, metadata = prepare_cfd_gas_field(opened.data, interface=interface,
+        producer_reference=artifact.reference, source_records=artifact.data_records)
+    environment = GasEnvironment("gas", (field.spec,), ({"gas_field_id": field.spec.field_id,
+        "model_id": SDS_MODEL["model_id"], "version": SDS_MODEL["version"]},))
+    return opened, field, metadata, environment
 
 
 def _load(path: Path, role: str) -> dict[str, Any]:
@@ -57,6 +111,7 @@ def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[di
             or manifest["project_id"] != interface["project_id"]):
         raise ValueError("gas-field manifest identity differs")
     source_record = manifest["source"]
+    rebuilt_uniform = None
     if not isinstance(source_record, dict):
         raise ValueError("gas-field source record must be an object")
     source_kind = source_record.get("kind")
@@ -113,10 +168,21 @@ def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[di
         ):
             raise ValueError("COMSOL gas-field source-contract identities differ")
     else:
-        if set(source_record) != {"kind", "spec_record", "interface_record"}:
+        if set(source_record) != {"kind", "spec_record", "interface_record", "environment_record", "geometry_record", "environment_snapshot"}:
             raise ValueError("uniform gas-field source identities differ")
-        for name in ("spec_record", "interface_record"):
+        for name in ("spec_record", "interface_record", "environment_record", "geometry_record"):
             verify_record("uniform gas " + name, validate_file_record(source_record[name], name))
+        def source_document(name):
+            return json.loads(Path(source_record[name]["path"]).read_text(encoding="utf-8-sig"))
+        if source_document("interface_record") != interface:
+            raise ValueError("uniform gas interface differs from selected authority")
+        from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_uniform_rear_gas_field
+        rebuilt_uniform, rebuilt = prepare_uniform_rear_gas_field(source_document("spec_record"), interface=interface,
+            environment_author=source_document("environment_record"), geometry=source_document("geometry_record"),
+            environment_record=source_record["environment_record"], geometry_record=source_record["geometry_record"],
+            spec_record=source_record["spec_record"], interface_record=source_record["interface_record"])
+        if rebuilt["source"]["environment_snapshot"] != source_record["environment_snapshot"]:
+            raise ValueError("uniform gas environment snapshot differs from its authors")
     if manifest["coordinate_frame"] != interface["runtime_artifact_contract"]["coordinate_frame"]:
         raise ValueError("gas-field coordinate frame differs")
     if manifest["domain"] != interface["runtime_artifact_contract"]["domain"]:
@@ -145,6 +211,10 @@ def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[di
     for name in interface["runtime_artifact_contract"]["runtime_lua_required_functions"]:
         if not re.search(rf"\b{name}\s*=\s*function\b|\bfunction\s+[^\n]*\b{name}\b", source):
             raise ValueError(f"gas-field runtime Lua omits required function {name}")
+    if rebuilt_uniform is not None:
+        from msplatform.backends.simion.gas_runtime import compile_gas_runtime
+        if source != compile_gas_runtime(rebuilt_uniform):
+            raise ValueError("uniform gas runtime differs from its resolved environment")
     return manifest, runtime
 
 
@@ -284,7 +354,7 @@ def _materialize_gas_source(
     placement=None,
     source_to_device=None,
 ) -> tuple[Path, Path, dict[str, Any]]:
-    spec = _load(source_spec_path, "repository_ion_release")
+    spec = _load(source_spec_path, "repository_particle_release")
     geometry = spec["geometry"]
     radius = float(geometry["radius_mm"])
     z_max = float(geometry["center_mm"][2]) + 0.5 * float(geometry["height_mm"])
@@ -300,8 +370,8 @@ def _materialize_gas_source(
         if z_max >= float(first_cone["aperture_reference_z_mm"]):
             raise ValueError("cylindrical source must remain upstream of the first cone inside the PA")
 
-    source_csv = frozen / "cylindrical_ion_source.csv"
-    source_receipt = frozen / "cylindrical_ion_source_receipt.json"
+    source_csv = frozen / "cylindrical_particle_source.csv"
+    source_receipt = frozen / "cylindrical_particle_source_receipt.json"
     receipt = materialize_release_from_file(source_spec_path, source_csv, source_receipt)
     offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
     beams: list[dict[str, Any]] = []
@@ -376,6 +446,7 @@ def prepare_transport(
     science_path: Path,
     interface_path: Path,
     gas_science_path: Path,
+    environment_path: Path,
     source_spec_path: Path,
     gas_field_reference: dict | None = None,
     collision_sds_dir: Path | None = None,
@@ -402,9 +473,24 @@ def prepare_transport(
         raise ValueError("source_to_device does not apply to the fixed device-local C0 smoke source")
     resolved = _load(resolved_path, "dual_cone_tandem_quadrupole_resolved_geometry")
     numerics = _load(numerics_path, "dual_cone_simion_solver_numerics")
-    science = _load(science_path, "dual_cone_simion_ion_transport_science")
+    science_author = _load(science_path, "dual_cone_simion_ion_transport_science")
     interface = _load(interface_path, "dual_cone_simion_gas_field_interface")
-    gas_science = _load(gas_science_path, "dual_cone_axisymmetric_gas_flow_science_contract")
+    gas_science_author = _load(gas_science_path, "dual_cone_axisymmetric_gas_flow_science_contract")
+    if not Path(environment_path).is_absolute():
+        raise ValueError("dual-cone gas environment requires an absolute author path")
+    environment_bytes = Path(environment_path).read_bytes()
+    environment_author = json.loads(environment_bytes)
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_environment import (
+        project_dual_cone_flow_science, project_dual_cone_transport_science, resolve_dual_cone_conditions,
+    )
+    conditions = resolve_dual_cone_conditions(environment_author, resolved)
+    science = project_dual_cone_transport_science(science_author, conditions)
+    gas_science = gas_science_author
+    flow_sha256 = None
+    if conditions["outlet_pressure_pa"] > 0:
+        gas_science = project_dual_cone_flow_science(gas_science_author, conditions)
+        flow_bytes = (json.dumps(gas_science, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
+        flow_sha256 = hashlib.sha256(flow_bytes).hexdigest()
     if science.get("trajectory_authority") != "simion":
         raise ValueError("SIMION must remain the trajectory authority")
     for name in ("sample_interval_us", "maximum_step_us"):
@@ -417,7 +503,7 @@ def prepare_transport(
     if placement is not None or source_to_device is not None:
         placement = device_placement(resolved, numerics, placement).to_contract()
         if mode == "gas_assisted_transport":
-            source_placement(resolved, numerics, _load(source_spec_path, "repository_ion_release"),
+            source_placement(resolved, numerics, _load(source_spec_path, "repository_particle_release"),
                              placement=placement, source_to_device=source_to_device)
     if mode == "c0_gem_smoke":
         from .dual_cone_geometry import geometry_grid
@@ -432,6 +518,8 @@ def prepare_transport(
     rf_kernel = native_resource_path("rf_drive.lua")
     producer = None
     if gas_field_reference is not None:
+        if flow_sha256 is None:
+            raise ValueError("published CFD gas requires positive outlet pressure")
         if gas_field_manifest is not None:
             raise ValueError("Select one explicit gas field product or runtime manifest")
         from msplatform.results.gas_field import read_gas_field
@@ -440,13 +528,22 @@ def prepare_transport(
         opened_gas = read_gas_field(gas_field_reference)
         validate_gas_field_data(opened_gas.data)
         producer = opened_gas.artifact
-        selected = {"geometry": resolved_path, "science": gas_science_path}
+        selected = {"geometry": resolved_path, "science_author": gas_science_path}
         for name, path in selected.items():
             if file_sha256(path).upper() != producer.data_records[name]["sha256"].upper():
                 raise ValueError("Gas producer " + name + " differs from selected transport inputs")
+        if (producer.data_records.get("science", {}).get("sha256", "").lower() != flow_sha256
+                or producer.data_records.get("environment", {}).get("sha256", "").lower() != hashlib.sha256(environment_bytes).hexdigest()
+                or producer.data_records.get("species_data", {}).get("sha256", "").lower() != conditions["species_data"]["dataset_sha256"]
+                or producer.data_records.get("transport_data", {}).get("sha256", "").lower() != conditions["transport_data"]["dataset_sha256"]
+                or producer.data_records.get("constants_data", {}).get("sha256", "").upper() != REFERENCE_DATASET_SHA256):
+            raise ValueError("Gas producer environment or projected material differs from selected transport inputs")
     validated_gas: tuple[dict[str, Any], Path] | None = None
     validated_sds_root: Path | None = None
     if mode == "gas_assisted_transport":
+        source_spec = _load(source_spec_path, "repository_particle_release")
+        from msplatform.components.dual_cone_tandem_quadrupole.gas_environment import require_sds_positive_ion
+        require_sds_positive_ion(source_spec)
         if gas_field_manifest is None and producer is None:
             raise ValueError("gas-assisted preparation requires --gas-field-manifest")
         if collision_sds_dir is None:
@@ -455,11 +552,30 @@ def prepare_transport(
             validated_gas = validate_runtime_manifest(gas_field_manifest, interface)
             source = validated_gas[0]["source"]
             if source["kind"] == "validated_comsol_axisymmetric_rz":
+                if flow_sha256 is None:
+                    raise ValueError("published CFD gas requires positive outlet pressure")
                 hashes = source["source_contract_sha256"]
                 if hashes["resolved_geometry"].upper() != file_sha256(resolved_path).upper():
                     raise ValueError("Gas producer geometry differs from selected transport geometry")
-                if hashes["gas_flow_science"].upper() != file_sha256(gas_science_path).upper():
+                if hashes["gas_flow_science"].lower() != flow_sha256:
                     raise ValueError("Gas producer science differs from selected transport gas science")
+                if source["producer_reference"] is None:
+                    raise ValueError("current CFD gas input requires its published environment authority")
+                from msplatform.results.gas_field import read_gas_field
+                published = read_gas_field(source["producer_reference"]).artifact
+                if (published.data_records.get("environment", {}).get("sha256", "").lower()
+                        != hashlib.sha256(environment_bytes).hexdigest()
+                        or published.data_records.get("species_data", {}).get("sha256", "").lower()
+                        != conditions["species_data"]["dataset_sha256"]
+                        or published.data_records.get("transport_data", {}).get("sha256", "").lower()
+                        != conditions["transport_data"]["dataset_sha256"]
+                        or published.data_records.get("constants_data", {}).get("sha256", "").upper()
+                        != REFERENCE_DATASET_SHA256):
+                    raise ValueError("Gas producer environment differs from selected transport environment")
+            else:
+                if (source["environment_record"]["sha256"].lower() != hashlib.sha256(environment_bytes).hexdigest()
+                        or source["geometry_record"]["sha256"].lower() != file_sha256(resolved_path).lower()):
+                    raise ValueError("uniform gas environment or geometry differs from selected transport inputs")
         validated_sds_root = collision_sds_dir.resolve(strict=True)
         missing_sds = [name for name in SDS_FILES if not (validated_sds_root / name).is_file()]
         if missing_sds:
@@ -482,6 +598,21 @@ def prepare_transport(
         "rf_drive_kernel": freeze_file(rf_kernel, solver / "simion_rf_drive.lua"),
         "simion_program": freeze_file(program, solver / "gas_assisted_transport.lua"),
     }
+    environment_frozen = frozen / "gas_environment.json"
+    with environment_frozen.open("xb") as stream:
+        stream.write(environment_bytes)
+    inputs["gas_environment"] = {"path": str(environment_frozen.resolve()), "sha256": hashlib.sha256(environment_bytes).hexdigest()}
+    for name in ("nitrogen.json", "sds_model.json", "reference.json", "nitrogen_transport_300k.json"):
+        source = Path(str(files("msplatform").joinpath("physics/data/" + name)))
+        inputs["physics_" + name] = freeze_file(source, frozen / ("physics_" + name))
+    if (inputs["physics_nitrogen.json"]["sha256"].lower() != conditions["species_data"]["dataset_sha256"]
+            or inputs["physics_sds_model.json"]["sha256"].lower() != conditions["collision_model"]["dataset_sha256"]
+            or inputs["physics_nitrogen_transport_300k.json"]["sha256"].lower() != conditions["transport_data"]["dataset_sha256"]
+            or inputs["physics_reference.json"]["sha256"].upper() != REFERENCE_DATASET_SHA256):
+        raise ValueError("frozen physical datasets differ from the imported authorities")
+    transport_view = frozen / "ion_transport_science_resolved.json"
+    transport_view.write_text(json.dumps(science, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8", newline="\n")
+    inputs["ion_transport_science_resolved"] = {"path": str(transport_view.resolve()), "sha256": file_sha256(transport_view)}
 
     for name, value in (("placement", placement), ("source_to_device", source_to_device)):
         if value is not None:
@@ -591,14 +722,14 @@ def prepare_transport(
             placement=placement, source_to_device=source_to_device,
         )
         inputs["gas_flow_science"] = freeze_file(gas_science_path, frozen / "gas_flow_science.json")
-        inputs["cylindrical_ion_source_spec"] = freeze_file(source_spec_path, frozen / "cylindrical_ion_source.json")
-        inputs["cylindrical_ion_source_csv"] = {
-            "path": str((frozen / "cylindrical_ion_source.csv").resolve()),
-            "sha256": file_sha256(frozen / "cylindrical_ion_source.csv"),
+        inputs["cylindrical_particle_source_spec"] = freeze_file(source_spec_path, frozen / "cylindrical_particle_source.json")
+        inputs["cylindrical_particle_source_csv"] = {
+            "path": str((frozen / "cylindrical_particle_source.csv").resolve()),
+            "sha256": file_sha256(frozen / "cylindrical_particle_source.csv"),
         }
-        inputs["cylindrical_ion_source_receipt"] = {
-            "path": str((frozen / "cylindrical_ion_source_receipt.json").resolve()),
-            "sha256": file_sha256(frozen / "cylindrical_ion_source_receipt.json"),
+        inputs["cylindrical_particle_source_receipt"] = {
+            "path": str((frozen / "cylindrical_particle_source_receipt.json").resolve()),
+            "sha256": file_sha256(frozen / "cylindrical_particle_source_receipt.json"),
             "identity": source_receipt,
         }
         inputs["particle_fly2"] = {"path": str(source_fly2), "sha256": file_sha256(source_fly2)}
@@ -606,7 +737,7 @@ def prepare_transport(
 
     source_particle_ids = [1]
     if mode == "gas_assisted_transport":
-        with (frozen / "cylindrical_ion_source.csv").open(encoding="utf-8", newline="") as stream:
+        with (frozen / "cylindrical_particle_source.csv").open(encoding="utf-8", newline="") as stream:
             source_particle_ids = [int(row["particle_id"]) for row in csv.DictReader(stream)]
 
     run_config = solver / "run_config.lua"
@@ -671,7 +802,7 @@ def main() -> int:
     parser.add_argument("--mode", required=True, choices=("c0_gem_smoke", "gas_assisted_transport"))
     parser.add_argument("--placement", type=Path)
     parser.add_argument("--source-to-device", type=Path)
-    for name in ("resolved", "numerics", "science", "interface", "gas-science", "source-spec"):
+    for name in ("resolved", "numerics", "science", "interface", "gas-science", "source-spec", "environment"):
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--collision-sds-dir", type=Path)
     parser.add_argument("--gas-field-manifest", type=Path)
@@ -691,6 +822,7 @@ def main() -> int:
         science_path=args.science,
         interface_path=args.interface,
         gas_science_path=args.gas_science,
+        environment_path=args.environment,
         source_spec_path=args.source_spec,
         placement=None if args.placement is None else json.loads(args.placement.read_text(encoding="utf-8-sig")),
         source_to_device=None if args.source_to_device is None else json.loads(args.source_to_device.read_text(encoding="utf-8-sig")),

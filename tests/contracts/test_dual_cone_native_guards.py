@@ -14,7 +14,7 @@ from msplatform.execution.context import ExecutionContext
 from msplatform.execution.processes import run_observed_process, ProcessExecutionError
 from msplatform.execution.resources import resource_path
 from msplatform.io.manifest_records import file_record
-from tests.contracts.test_dual_cone_transport_execution import request
+from tests.contracts.test_support.dual_cone_transport import request
 from tests.simion.test_analyze_terminal_plane import HEADER
 
 

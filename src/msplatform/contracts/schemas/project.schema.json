@@ -10,16 +10,15 @@
     "family_id",
     "display_name",
     "purpose",
-    "lifecycle_status",
     "toolchains",
     "contracts",
     "capabilities",
-    "formal_assets",
+    "asset_references",
     "known_gaps"
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "project_id": {
       "$ref": "#/$defs/identifier"
@@ -84,9 +83,6 @@
     "purpose": {
       "type": "string",
       "minLength": 1
-    },
-    "lifecycle_status": {
-      "$ref": "#/$defs/lifecycle"
     },
     "toolchains": {
       "type": "array",
@@ -156,7 +152,6 @@
         "required": [
           "capability_id",
           "function",
-          "status",
           "modes",
           "metrics",
           "design_variables"
@@ -167,9 +162,6 @@
           },
           "function": {
             "$ref": "#/$defs/identifier"
-          },
-          "status": {
-            "$ref": "#/$defs/maturity"
           },
           "modes": {
             "type": "array",
@@ -196,39 +188,6 @@
             "type": "string",
             "minLength": 1
           }
-        }
-      }
-    },
-    "formal_assets": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "status",
-        "types",
-        "identity_contract"
-      ],
-      "properties": {
-        "status": {
-          "enum": [
-            "none",
-            "candidate",
-            "formal"
-          ]
-        },
-        "types": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "enum": [
-              "comsol_model",
-              "simion_package",
-              "cad",
-              "results"
-            ]
-          }
-        },
-        "identity_contract": {
-          "$ref": "#/$defs/nullablePath"
         }
       }
     },
@@ -323,29 +282,38 @@
           }
         }
       }
+    },
+    "asset_references": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "types",
+        "identity_contract"
+      ],
+      "properties": {
+        "types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "comsol_model",
+              "simion_package",
+              "cad",
+              "results"
+            ]
+          }
+        },
+        "identity_contract": {
+          "$ref": "#/$defs/nullablePath"
+        }
+      },
+      "description": "Historical asset identity references; no overall qualification is implied."
     }
   },
   "$defs": {
     "identifier": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
-    },
-    "maturity": {
-      "enum": [
-        "prototype",
-        "static",
-        "candidate",
-        "formal"
-      ]
-    },
-    "lifecycle": {
-      "enum": [
-        "prototype",
-        "static",
-        "candidate",
-        "formal",
-        "formal_revalidation_pending"
-      ]
     },
     "nullablePath": {
       "type": [

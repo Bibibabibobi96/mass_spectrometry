@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from msplatform import assembly, components
-from msplatform.ion_release import sample_release
+from msplatform.particle_release import sample_release
 from msplatform.workflows.comsol_tracing import compile_comsol_inputs, run_comsol_stages
 
 

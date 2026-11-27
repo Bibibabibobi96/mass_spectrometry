@@ -11,7 +11,6 @@ from scipy.constants import electron_volt
 from msplatform.analysis.mass_response import (export_response_figure as export_sampled_response_figure, prepare_response_analysis)
 from msplatform.components.rf_multipole import finite_length_transport as _transport
 from msplatform.components.rf_multipole import mass_filter_theory as _mathieu
-from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from . import reference as _reference
 
 if TYPE_CHECKING:
@@ -73,7 +72,7 @@ def _l1_particles_from_release(
     source: dict[str, Any], particle_count: int, random_seed: int
 ) -> dict[str, np.ndarray]:
     """Project the common source release to the L1 integrator's SI state."""
-    from msplatform.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
+    from msplatform.particle_release.numpy_box_cone import sample_numpy_box_cone_phase_space
 
     release = sample_numpy_box_cone_phase_space(
         source=source,
@@ -210,7 +209,7 @@ def _prepare_frozen_request(session: RunSession, scientific_records: dict) -> tu
     component_roots = [name.replace('.', '/') for name in provider_descriptor('rf_multipole').source_closure]
     selected = enumerate_python_sources(source_root, package_roots=[
         'msplatform/analysis', 'msplatform/contracts', 'msplatform/execution', 'msplatform/io',
-        'msplatform/ion_release', *component_roots, 'msplatform/workflows/rf_mass_filter',
+        'msplatform/particle_release', *component_roots, 'msplatform/workflows/rf_mass_filter',
     ], module_paths=['msplatform/components/catalog.py', 'msplatform/components/model.py',
                      'msplatform/components/registry.py'],
         provider_root=provider.name, resource_suffixes=('.json', '.ps1', '.lua', '.m', '.gem', '.iob'),
@@ -453,6 +452,73 @@ def _analysis_parent(manifest_path: Path) -> dict:
                 parent_run_id=manifest.get('run_id'))
 
 
+def _guard_analysis_parent(store, manifest_path):
+    """Hold the exact sealed L1 source records, without consulting the old ledger."""
+    from contextlib import ExitStack, contextmanager
+    from msplatform.io.file_identity import guarded_file_identity
+    from msplatform.io.manifest_records import file_record, record_path, validate_file_record
+    from msplatform.execution.owner import validate_writer_completion
+    from msplatform.execution.native_source_guard import guard_failed_store_evidence
+
+    @contextmanager
+    def guarded():
+        with ExitStack() as stack:
+            path = Path(manifest_path).resolve(strict=True)
+            required = ()
+            store_asset = None
+            if path.is_relative_to(store.root / 'assets' / 'native_stage'):
+                parts = path.relative_to(store.root).parts
+                if len(parts) < 6:
+                    raise ValueError('L1 Store source path differs')
+                store_asset = parts[3]
+                status = store.asset_status(store_asset)
+                if status['state'] not in {'ready', 'failed'}:
+                    raise ValueError('L1 Store source is not sealed')
+                if status['state'] == 'ready':
+                    root = stack.enter_context(store.claim_verified(store_asset))
+                    if not path.is_relative_to(root):
+                        raise ValueError('L1 Store source identity differs')
+                    required = (store_asset,)
+            manifest_record = file_record(path, 'required_evidence')
+            stack.enter_context(guarded_file_identity(path, expected_bytes=manifest_record['bytes'],
+                                                      expected_sha256=manifest_record['sha256']))
+            document = load_json(path)
+            def hold(record):
+                record = validate_file_record(record, 'L1 source evidence')
+                target = record_path(record, base_dir=path.parent).resolve(strict=True)
+                if not target.is_relative_to(path.parent):
+                    raise ValueError('L1 source evidence escapes its run')
+                stack.enter_context(guarded_file_identity(target, expected_bytes=record['bytes'],
+                                                          expected_sha256=record['sha256']))
+            hold(document['run_config'])
+            for name in ('baseline', 'resolved_design', 'mode', 'source', 'response_for_analysis'):
+                hold(document['inputs'][name])
+            outputs = document['outputs']
+            def unique(name):
+                found = [row for row in outputs if Path(row.get('path', '')).name == name]
+                if len(found) != 1:
+                    raise ValueError('L1 source lacks unique ' + name)
+                hold(found[0])
+                return found[0]
+            response = unique('mass-response__finite-length.csv')
+            unique('summary.json')
+            if document.get('status') == 'failed':
+                completion_record = unique('execution_completion.json')
+                if store_asset is not None:
+                    stack.enter_context(guard_failed_store_evidence(store, manifest_record, response))
+                else:
+                    completion = load_json(record_path(completion_record, base_dir=path.parent))
+                    summary = load_json(path.parent / 'summary.json')
+                    writer = completion['writer_completion']
+                    if completion.get('status') != 'failed' or summary.get('writers_stopped') is not True:
+                        raise ValueError('L1 failed source writer is not proved stopped')
+                    validate_writer_completion(writers_stopped=True,
+                        expected_operation_ids=tuple(item['operation_id'] for item in writer['operations']),
+                        operations=writer['operations'], resource_releases=writer['resource_releases'])
+            yield _analysis_parent(path), required
+    return guarded()
+
+
 def _analysis_action(session: RunSession, *, parent: dict, stage: dict) -> dict:
     """Copy sufficient sealed parent data and invoke only the existing analyzer."""
     from msplatform.execution.inputs import freeze_file
@@ -527,41 +593,41 @@ def _analysis_action(session: RunSession, *, parent: dict, stage: dict) -> dict:
         raise
 
 
-def analyze(context: ExecutionContext, *, parent_manifest_path: Path, run_id: str,
-            artifact_project_root: Path | None = None) -> dict:
+def analyze(context: ExecutionContext, *, parent_manifest_path: Path, run_id: str, artifact_store) -> dict:
     """Create a zero-simulation managed child from one sealed L1 parent."""
     from functools import partial
     from msplatform.execution.completion import no_particle_batch_completion_api
-    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.owner import run_managed_stage, standalone_native_store
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.io.manifest_records import file_record
 
-    expected_root = resolve_run_artifact_root(context.workspace / 'artifacts', owner_kind='component', owner_id='rf_multipole_ion_optics')
-    if artifact_project_root is not None and artifact_project_root.resolve() != expected_root.resolve():
-        raise ValueError(f'Explicit artifact root must use the selected managed research workspace: {expected_root}')
-    parent = _analysis_parent(Path(parent_manifest_path))
     policy, policy_record = read_stage_policy(context, 'rf_mass_filter_l1')
-    protected = [str(Path(row['path'])) for row in parent['records'].values()]
-    result = run_managed_stage(context, descriptor=dict(project='rf_multipole_ion_optics',
-        mode='mass_filter_reference', software=['Python solver-free quadrupole L1 analysis']), run_id=run_id,
-        payload=dict(model_level='L1', analysis_only=True, solver_rerun=False, simulation_calls=0,
-            lifecycle_stage='prepared', parent_run_id=parent['parent_run_id'],
-            parent_manifest=parent['manifest_record'], frozen_request_schema_version=2,
-            process_deadline_policy='engineering_warning_natural_drain'),
-        committed_new_bytes=policy['limits']['transient_run_directory_bytes'],
-        commitment_inputs=[policy_record, parent['manifest_record']], retention=policy['artifact_retention'],
-        expected_operation_ids=['analysis'], operation_dependencies={},
-        action=partial(_analysis_action, parent=parent, stage=policy),
-        action_record=file_record(Path(__file__).resolve(), 'required_evidence'),
-        source_references=[dict(manifest_record=parent['manifest_record'], protected_paths=protected)],
-        use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
+    budget = policy['limits']['transient_run_directory_bytes']
+    with _guard_analysis_parent(artifact_store, parent_manifest_path) as (parent, required):
+        protected = [str(Path(row['path'])) for row in parent['records'].values()]
+        with standalone_native_store(artifact_store, task_key='rf-l1-analysis:' + run_id,
+                                     budget=budget, required_assets=required) as scope:
+            result = run_managed_stage(context, descriptor=dict(project='rf_multipole_ion_optics',
+                mode='mass_filter_reference', software=['Python solver-free quadrupole L1 analysis']), run_id=run_id,
+                payload=dict(model_level='L1', analysis_only=True, solver_rerun=False, simulation_calls=0,
+                    lifecycle_stage='prepared', parent_run_id=parent['parent_run_id'],
+                    parent_manifest=parent['manifest_record'], frozen_request_schema_version=2,
+                    process_deadline_policy='engineering_warning_natural_drain'),
+                committed_new_bytes=budget, commitment_inputs=[policy_record, parent['manifest_record']],
+                retention=policy['artifact_retention'], expected_operation_ids=['analysis'], operation_dependencies={},
+                action=partial(_analysis_action, parent=parent, stage=policy),
+                action_record=file_record(Path(__file__).resolve(), 'required_evidence'),
+                source_references=[dict(manifest_record=parent['manifest_record'], protected_paths=protected)],
+                use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
+            scope['reported_status'] = result['status']
     if result['status'] == 'failed':
         raise RuntimeError('mass-filter L1 functional gate failed')
-    return result
+    return dict(result, store_run_id=scope['parent_run_id'],
+                store_run_path=str(scope['published_path']) if scope['published_path'] else None)
 
 
 def run(context: ExecutionContext, *, baseline_path: Path, resolved_path: Path, mode_path: Path,
-        source_path: Path, run_id: str, artifact_project_root: Path | None = None) -> dict:
+        source_path: Path, run_id: str, artifact_store) -> dict:
     """Execute explicit L1 inputs with one managed owner and one frozen package.
 
     Engineering policy must be selected in context. Its wall-clock values are
@@ -573,28 +639,29 @@ def run(context: ExecutionContext, *, baseline_path: Path, resolved_path: Path, 
     from msplatform.execution.completion import no_particle_batch_completion_api
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.io.manifest_records import file_record, verify_record
-    expected_root = resolve_run_artifact_root(context.workspace / 'artifacts', owner_kind='component', owner_id='rf_multipole_ion_optics')
-    if artifact_project_root is not None and artifact_project_root.resolve() != expected_root.resolve():
-        raise ValueError(f'Explicit artifact root must use the selected managed research workspace: {expected_root}')
+    from contextlib import ExitStack
+    from msplatform.io.file_identity import guarded_file_identity
     requested = dict(baseline=Path(baseline_path), resolved_design=Path(resolved_path),
                      mode=Path(mode_path), source=Path(source_path))
-    original = {name: file_record(path.resolve(), 'required_evidence') for name, path in requested.items()}
-    validate_l1_contract(*(load_json(requested[name]) for name in ('baseline', 'mode', 'source')))
-    for name, record in original.items():
-        verify_record(f'L1 scientific authority {name}', record)
-    policy, policy_record = read_stage_policy(context, 'rf_mass_filter_l1')
-    result = run_managed_stage(context, descriptor=dict(project='rf_multipole_ion_optics',
-        mode='mass_filter_reference', software=['Python solver-free quadrupole L1']), run_id=run_id,
-        payload=dict(model_level='L1', solver_rerun=False, lifecycle_stage='prepared',
-            requested_input_paths={name: str(path.resolve()) for name, path in requested.items()},
-            frozen_request_schema_version=2, process_deadline_policy='engineering_warning_natural_drain'),
-        committed_new_bytes=policy['limits']['transient_run_directory_bytes'],
-        commitment_inputs=[policy_record, *original.values()], retention=policy['artifact_retention'],
-        expected_operation_ids=['prepare', 'simulation', 'analysis'],
-        operation_dependencies={'simulation': ['prepare'], 'analysis': ['simulation']},
-        action=partial(_run_action, requested=requested, original_records=original, stage=policy),
-        action_record=file_record(Path(__file__).resolve(), 'required_evidence'),
-        use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
+    with ExitStack() as guards:
+        original = {name: file_record(path.resolve(), 'required_evidence') for name, path in requested.items()}
+        for name, record in original.items():
+            guards.enter_context(guarded_file_identity(record['path'], expected_bytes=record['bytes'], expected_sha256=record['sha256']))
+            verify_record(f'L1 scientific authority {name}', record)
+        validate_l1_contract(*(load_json(requested[name]) for name in ('baseline', 'mode', 'source')))
+        policy, policy_record = read_stage_policy(context, 'rf_mass_filter_l1')
+        result = run_managed_stage(context, descriptor=dict(project='rf_multipole_ion_optics',
+            mode='mass_filter_reference', software=['Python solver-free quadrupole L1']), run_id=run_id,
+            payload=dict(model_level='L1', solver_rerun=False, lifecycle_stage='prepared',
+                requested_input_paths={name: str(path.resolve()) for name, path in requested.items()},
+                frozen_request_schema_version=2, process_deadline_policy='engineering_warning_natural_drain'),
+            committed_new_bytes=policy['limits']['transient_run_directory_bytes'],
+            commitment_inputs=[policy_record, *original.values()], retention=policy['artifact_retention'],
+            expected_operation_ids=['prepare', 'simulation', 'analysis'],
+            operation_dependencies={'simulation': ['prepare'], 'analysis': ['simulation']},
+            action=partial(_run_action, requested=requested, original_records=original, stage=policy),
+            action_record=file_record(Path(__file__).resolve(), 'required_evidence'),
+            use_short_execution_path=True, completion_api=no_particle_batch_completion_api, artifact_store=artifact_store)
     if result['status'] == 'failed':
         raise RuntimeError('mass-filter L1 functional gate failed')
     return result

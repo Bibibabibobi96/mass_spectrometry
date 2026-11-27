@@ -13,7 +13,7 @@ import unittest
 from msplatform.execution.retention import file_record
 from msplatform.execution.retention import classify_file
 from msplatform.execution.artifact_retention import load_policy
-from msplatform.workflows.oa_formal.stage_formal_simion_runtime import (
+from msplatform.execution.diagnostic_inputs import (
     PROJECT_ID, stage_diagnostic_inputs,
 )
 
@@ -51,7 +51,69 @@ def source_fixture(root: Path) -> Path:
     return source
 
 
+def sweep_source_fixture(root: Path) -> tuple[Path, Path]:
+    source = root/'20261127_120000__test__simion__sweep__n2'
+    retention = dict(policy_version=load_policy()['schema_version'],
+                     **{'class':'solver_review'}, reason='inert terminal-source fixture')
+    case_path = source/'inputs/cases.json'
+    write(case_path, json.dumps({'particle_count': 2, 'cases': [{'id': 'actual', 'selector': 'real'},
+                                                               {'id': 'ideal', 'selector': 'ideal:drift.ez'}]}))
+    config = dict(schema_version=2, artifact_retention=retention, run_id=source.name,
+                  project=PROJECT_ID, mode='simion_field_idealization_sweep', particle_count=2,
+                  seed=17, inputs={'case_config': str(case_path)})
+    write(source/'run_config.json', json.dumps(config))
+    paths = [source/'logs/actual.log', source/'logs/ideal.log', source/'simion/oatof_N2.ion']
+    for path in paths[:-1]:
+        write(path, 'diagnostic log\n')
+    write(paths[-1], '0,524,1,0,0,0,0,0,5,1,0\n'*2)
+    outputs = [dict(file_record(path), retention_role=classify_file(path, bytes_count=path.stat().st_size))
+               for path in paths]
+    write(source/'run_manifest.json', json.dumps(dict(schema_version=2, artifact_retention=retention,
+        status='success', run_id=source.name, project=PROJECT_ID, mode=config['mode'],
+        run_config=file_record(source/'run_config.json'), inputs={'case_config': file_record(case_path)},
+        outputs=outputs)))
+    return source, case_path
+
+
 class DiagnosticInputTests(unittest.TestCase):
+    def test_sweep_freezes_authenticated_shared_source_and_rejects_tamper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, case_path = sweep_source_fixture(root)
+            original = {p: p.read_bytes() for p in source.rglob('*') if p.is_file()}
+            result = stage_diagnostic_inputs(source, root/'inputs/source', root/'inputs/receipt.json',
+                                             ['actual', 'ideal'])
+            self.assertEqual(result['particle_count'], 2)
+            self.assertEqual(result['inputs']['case_config.json']['sha256'], file_record(case_path)['sha256'])
+            self.assertEqual({p: p.read_bytes() for p in original}, original)
+            write(case_path, '{"cases":[]}')
+            with self.assertRaises((AssertionError, ValueError)):
+                stage_diagnostic_inputs(source, root/'second/source', root/'second/receipt.json',
+                                        ['actual', 'ideal'])
+            self.assertFalse((root/'second/source').exists())
+
+    def test_sweep_rejects_foreign_or_mismatched_case_authority(self):
+        for condition in ('foreign', 'case_order', 'unsafe_case'):
+            with self.subTest(condition=condition), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source, case_path = sweep_source_fixture(root)
+                cases = ['actual', 'ideal']
+                if condition == 'foreign':
+                    foreign = root/'foreign.json'
+                    foreign.write_bytes(case_path.read_bytes())
+                    manifest_path = source/'run_manifest.json'
+                    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+                    manifest['inputs']['case_config'] = file_record(foreign)
+                    write(manifest_path, json.dumps(manifest))
+                elif condition == 'case_order':
+                    cases.reverse()
+                else:
+                    cases[0] = '../outside'
+                destination = root/'new-inputs/source'
+                with self.assertRaises((ValueError, AssertionError)):
+                    stage_diagnostic_inputs(source, destination, root/'new-inputs/receipt.json', cases)
+                self.assertFalse(destination.exists())
+
     def test_freezes_only_actual_records_with_source_controls_and_no_formal_assets(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -151,7 +213,11 @@ function Start-Process {param($FilePath,$ArgumentList,$WorkingDirectory,$Redirec
 ''')
         lifecycle = (PROJECT.parents[1]/'workflows/resources/oatof_lifecycle_preflight.ps1').read_text(encoding='utf-8')
         readable_guard = lifecycle[:lifecycle.index('function New-OaTofFormalSimionRuntime')]
-        write(project/'config/project.json', json.dumps({'lifecycle_status': 'formal'}))
+        write(project/'config/project.json', json.dumps({
+            'schema_version': 2,
+            'project_id': PROJECT_ID,
+            'asset_references': {'identity_contract': 'config/formal_assets.json'},
+        }))
         write(repo/'src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1', readable_guard + r'''
 function New-OaTofFormalSimionRuntime {param($ProjectRoot,$ArtifactRoot,$PythonExe,$Destination,$Receipt)
  Add-Content $env:DIAGNOSTIC_TRACE 'prepare_runtime';New-Item -ItemType Directory $Destination -Force|Out-Null;'inert'|Set-Content (Join-Path $Destination 'oatof_ideal_grounded.iob');'{}'|Set-Content $Receipt;return $Destination
@@ -163,7 +229,7 @@ param($PreparedRuntime,$SimionExe,$RuntimeReportPath)
 if(-not$PreparedRuntime-or-not(Test-Path (Join-Path $PreparedRuntime 'oatof_ideal_grounded.iob'))){throw 'validation used another runtime'}
 Add-Content $env:DIAGNOSTIC_TRACE 'validate_actual_runtime';'STATUS=PASS'|Set-Content $RuntimeReportPath
 ''')
-        write(script.parent/'generate_comsol_consistent_ions.ps1', r'''
+        write(script.parent/'generate_comsol_consistent_particles.ps1', r'''
 param($N,$Seed,$HalfWidthXmm,$HalfWidthYmm,$HalfWidthZmm,$EnergyStdEv,$Output,[switch]$AllowNonstandardDiagnosticCount)
 Add-Content $env:DIAGNOSTIC_TRACE 'generate_ion';'inert'|Set-Content $Output
 ''')
@@ -171,7 +237,7 @@ Add-Content $env:DIAGNOSTIC_TRACE 'generate_ion';'inert'|Set-Content $Output
 param($Log,$IonFile,$Mode,$Distribution,$ParticleCsv)
 if(-not(Test-Path $Log)-or-not(Test-Path $IonFile)){throw 'actual consumed records missing'}
 'inert'|Set-Content $ParticleCsv
-return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyPct=0;MeanTofUs=$null;StdTofNs=$null;GaussianProxyFwhmTofNs=$null;GaussianProxyTimeEquivalentResolution=$null;MaxCrossingRadiusMm=$null}
+return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Emitted=2;Hit=0;EfficiencyPct=0;MeanTofUs=$null;StdTofNs=$null;GaussianProxyFwhmTofNs=$null;GaussianProxyTimeEquivalentResolution=$null;MaxCrossingRadiusMm=$null}
 ''')
         for name in ('artifact_naming.py',):
             write(repo/'common/contracts'/name, '# inert outer lifecycle adapter\n')
@@ -184,6 +250,33 @@ return [pscustomobject]@{Distribution=$Distribution;Mode=$Mode;Hit=0;EfficiencyP
                     MASS_SPECTROMETRY_ARTIFACT_ROOT=str(root/'artifacts'),
                     MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'configured-execution'),
                     MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'configured-host.sqlite3'))
+
+    def test_sweep_restores_parent_host_context_on_rejected_selector(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, repo = self.fixture(root)
+            script = repo/'src/msplatform/workflows/resources/run_field_idealization_sweep.ps1'
+            write(script, (ROOT/'src/msplatform/workflows/resources/run_field_idealization_sweep.ps1').read_text(encoding='utf-8'))
+            lease = repo/'src/msplatform/execution/resources/host_execution_lease.ps1'
+            with lease.open('a', encoding='utf-8') as stream:
+                stream.write("\n$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON='fixture-mutated'\n")
+            invalid = root/'invalid.json'
+            write(invalid, json.dumps({'cases': [{'id': 'bad', 'selector': 'ideal:stage1.ex'}]}))
+            wrapper = root/'wrapper.ps1'
+            write(wrapper, r'''
+param($Entry,$Workspace,$Artifact,$Science,$CaseConfig)
+$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON='parent-value'
+$caught=$false
+try { & $Entry -WorkspaceRoot $Workspace -ArtifactRootPath $Artifact -ScienceRoot $Science -CaseConfig $CaseConfig -ValidateConfigOnly }
+catch { $caught=$_.Exception.Message -match 'supports composable Ez only' }
+if(-not$caught){throw 'invalid selector was not rejected'}
+if($env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON-cne'parent-value'){throw 'host context was not restored'}
+''')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(wrapper), str(script), str(repo),
+                str(root/'artifacts'), str(repo/'projects'/PROJECT_ID), str(invalid)], cwd=root,
+                timeout=30, env=self.environment(root, root/'trace.txt'), capture_output=True,
+                text=True, encoding='utf-8', errors='replace')
+            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
     def test_analyze_only_never_admits_simion_prepares_runtime_or_generates_particles(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -290,7 +383,9 @@ foreach($name in $names){if([Environment]::GetEnvironmentVariable($name)-cne$bef
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script, repo = self.fixture(root)
-            write(repo/'projects'/PROJECT_ID/'config/project.json', json.dumps({'lifecycle_status': 'formal_revalidation_pending'}))
+            write(repo/'projects'/PROJECT_ID/'config/project.json', json.dumps({
+                'schema_version': 1, 'lifecycle_status': 'formal_revalidation_pending',
+            }))
             trace = root/'trace.txt'
             result = subprocess.run(['pwsh','-NoProfile','-File',str(script),'-N','2',
                 '-WorkspaceRoot',str(repo),'-ArtifactRootPath',str(root/'artifacts'),

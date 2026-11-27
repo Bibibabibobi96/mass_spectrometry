@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.standalone_pa_response_set import ResponseExport, write_standalone_pa_response_set
-from msplatform.workflows.oa_focus_pa_cache import identity
+from msplatform.backends.simion.oa_focus_identity import identity
 from msplatform.workflows.oa_focus_mr_runtime_receipt import (
     MrRuntimeReceiptError, project, write_receipt,
 )

@@ -21,7 +21,7 @@ from msplatform.components.rf_multipole.family_contract import (
 from msplatform.workflows.rf_design_profiles import resolve_design_profile
 from msplatform.analysis.mass_response import aggregate_response, evaluate_functional_contrast, load_terminal_statuses
 from msplatform.components.rf_multipole.ideal_transport import source_particles
-from msplatform.ion_release.paired_mass_scan import build_paired_ion_rows
+from msplatform.particle_release.paired_mass_scan import build_paired_particle_rows
 
 
 REPO_ROOT = Path(__file__).parents[4]
@@ -194,7 +194,7 @@ class MultipoleFamilyContractTests(unittest.TestCase):
 class MultipoleMassResponseTests(unittest.TestCase):
     def test_paired_rows_change_only_mass(self) -> None:
         source = [["0", "100", "1", "0", "0.1", "0.2", "0", "0", "2", "1", "3"]]
-        rows = build_paired_ion_rows(source, [90.0, 100.0, 110.0])
+        rows = build_paired_particle_rows(source, [90.0, 100.0, 110.0])
         self.assertEqual([float(row[1]) for row in rows], [90.0, 100.0, 110.0])
         self.assertEqual(rows[0][2:], rows[1][2:])
 

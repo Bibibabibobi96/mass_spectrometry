@@ -154,15 +154,15 @@ def _instrument_split_scalar(program: str, basis: dict, adapter: str, composer: 
     if program.count(missing) != 1:
         raise ValueError('scalar selected-instance boundary differs')
     program = program.replace(missing, "  assert(instance~=nil,'selected instance required')\n", 1)
-    anchor = '  end\nend\nfunction segment.instance_adjust()'
+    anchor = '  local state={z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,\n'
     if program.count(anchor) != 1:
         raise ValueError('scalar callback boundary differs')
     sample = '  ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu=single_flight_scalar(instance,ion_px_mm,ion_py_mm,ion_pz_mm,time)\n'
-    return program.replace(anchor, '  end\n' + sample + 'end\nfunction segment.instance_adjust()', 1)
+    return program.replace(anchor, sample + anchor, 1)
 
 
 def _instrument_common_scalar(program: str, basis: dict, adapter: str, composer: str, observed: bool) -> str:
-    """Install the admitted world-scalar composition after existing region effects."""
+    """Install the admitted scalar composition at its verified callback boundary."""
     if not isinstance(adapter, str) or not isinstance(composer, str):
         raise ValueError('frozen scalar runtime sources required')
     if basis.get('role') == 'split_off_on_scalar_binding':
@@ -1280,7 +1280,24 @@ def validate_native_flight(flight: Mapping[str, Any] | None, *, requires_rf: boo
     return dict(flight)
 
 
-def _bound_tracking_model(prepared_model, multipoles, oatof, geometry, design, flight):
+def discovery_pilot_pulse(discovery, reference_pulse):
+    """Derive a held-off pilot from an explicit author and the bound field pulse."""
+    if (not isinstance(discovery, Mapping) or set(discovery) != {'phase', 'author'}
+            or discovery['phase'] != 'discovery'):
+        raise ValueError('only an explicit discovery pilot is accepted without a verified decision')
+    author = discovery['author']
+    checked = validate_native_flight(dict(pulse=author, maximum_flight_us=1.,
+        maximum_step_us=1., trajectory_quality=0), requires_rf=False, allow_discovery=True)
+    if checked['pulse']['mode'] != 'discover':
+        raise ValueError('discovery pilot requires the explicit candidate author')
+    expected = dict(mode='timed', time_us=author['candidate_times_us'][0], width_us=author['width_us'])
+    if reference_pulse != expected:
+        raise ValueError('field model pulse must be the first candidate with the authored width')
+    return {'mode': 'held_off'}
+
+
+def _bound_tracking_model(prepared_model, multipoles, oatof, geometry, design, flight, pulse_discovery=None,
+                          field_manifest_identity=None, field_product_id=None):
     """Verify the sole model compiler's complete geometry/mapping/drive snapshot."""
     import hashlib
     from .model import require_prepared_model, model_geometry, compile_prepared_model
@@ -1315,13 +1332,24 @@ def _bound_tracking_model(prepared_model, multipoles, oatof, geometry, design, f
     if (geometry != actual_geometry.frontend_geometry or oatof != document['components_resolved'][tof]
             or multipoles != {key:document['components_resolved'][key] for key in upstream}):
         raise ValueError('tracking providers or compiled geometry differ from bound model')
-    if dict(flight['pulse']) != document['drive']['pulse']:
+    reference_pulse = document['drive']['pulse']
+    if pulse_discovery is None:
+        expected_pulse = reference_pulse
+    elif pulse_discovery.get('phase') == 'discovery':
+        expected_pulse = discovery_pilot_pulse(pulse_discovery, reference_pulse)
+    else:
+        from .tracking_execution import resolve_discovery_selection
+        if field_manifest_identity is None:
+            raise ValueError('selected discovery requires the actual field manifest identity')
+        expected_pulse = resolve_discovery_selection(pulse_discovery, prepared_model,
+            field_manifest_record=field_manifest_identity, field_product_id=field_product_id)['effective_pulse']
+    if dict(flight['pulse']) != expected_pulse:
         raise ValueError('tracking pulse differs from bound model drive')
     numerics = {row['domain_id']:{'refine_convergence_v':row['refine_convergence_v']} for row in design['domains']}
     if split:
         expected_design = prepare_split_field_design(document['components_resolved'], geometry,
             physics=document['physics'], frontend_domains=numerics,
-            electrical_projection=document['electrical_projection'], pulse=flight['pulse'],
+            electrical_projection=document['electrical_projection'], pulse=reference_pulse,
             rf_reference_voltage_v=design.get('rf_reference_voltage_v'))
     else:
         expected_design = prepare_field_design(multipoles,oatof,geometry,
@@ -1375,6 +1403,10 @@ def build_successor_program(
     scalar_field_basis: dict | None = None,
     scalar_adapter_source: str | None = None,
     scalar_composer_source: str | None = None,
+    field_intervention: Mapping[str, Any] | None = None,
+    pulse_discovery: Mapping[str, Any] | None = None,
+    field_manifest_identity: Mapping[str, Any] | None = None,
+    field_product_id: str | None = None,
 ) -> str:
     """Assemble native full-flight callbacks from frozen source and field contracts."""
     from msplatform.backends.simion.frontend import frontend_electrode_maps
@@ -1397,10 +1429,25 @@ def build_successor_program(
         raise ValueError("native field design requires its explicit frontend_geometry")
     if standalone_dynamic_field_bank is None or downstream_static_fields is None:
         raise ValueError("native full flight requires explicit frontend and downstream standalone field assets")
-    model_document = (_bound_tracking_model(prepared_model,multipoles_by_instance,oatof,frontend_geometry,native_design,flight)
+    if pulse_discovery is not None and (prepared_model is None or frontend_geometry.get('role') != 'simion_split_oa_tof_geometry'):
+        raise ValueError('pulse discovery requires its bound split field model')
+    model_document = (_bound_tracking_model(prepared_model,multipoles_by_instance,oatof,frontend_geometry,native_design,flight,
+                                           pulse_discovery,field_manifest_identity,field_product_id)
                       if prepared_model is not None else None)
     frontend, native_analyzer_config = _native_field_analyzer_config(multipoles_by_instance, native_design, frontend_geometry, oatof,
                                                                   model_document=model_document)
+    if field_intervention is not None:
+        from .field_intervention import _case
+        if frontend_geometry.get('role') != 'simion_split_oa_tof_geometry' or set(field_intervention) != {'id', 'selector'}:
+            raise ValueError('field intervention requires an explicit split OA–TOF case')
+        _, flags = _case(field_intervention)
+        modes = native_analyzer_config['field_modes']
+        modes.update(ideal_accelerator_axial=bool(flags['A']), ideal_drift_axial=bool(flags['D']),
+                     ideal_reflectron_stage1_axial=bool(flags['S1']), ideal_reflectron_stage2_axial=bool(flags['S2']),
+                     ideal_reflectron_stage1=bool(flags.get('S1_FULL', 0)),
+                     ideal_reflectron_stage2=bool(flags.get('S2_FULL', 0)))
+        if build_metadata is not None:
+            build_metadata['field_intervention'] = dict(field_intervention)
     if not birth_times_us or any(isinstance(item, bool) or not isinstance(item, (int, float))
             or not math.isfinite(item) for item in birth_times_us):
         raise ValueError("canonical instrument clock requires finite absolute birth times")

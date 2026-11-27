@@ -33,16 +33,19 @@ def exercise_published_ip_mr_tracking(test, fields, context, tmp):
     from unittest.mock import patch
     from msplatform.backends.simion import operations
     from msplatform.backends.simion.ip_mr_tracking_admission import admit_ip_mr_tracking_fields
-    from msplatform import examples as example_api, ion_release as ion_release_api
-    from msplatform.contracts.gas import BoxDomain,GasFieldSpec,GasSource,GasSpecies,GasState
+    from msplatform import examples as example_api, particle_release as particle_release_api
+    from msplatform.contracts.gas import BoxDomain
     from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
     root=Path(tmp)/'public_tracking_fixture';root.mkdir()
-    ref=fields.reference;ad=admit_ip_mr_tracking_fields(ref);baseline=ad['model'].document['drive']['ip_schedule']['baseline']
+    ref=fields.reference;admit_ip_mr_tracking_fields(ref)
     box=lambda lo,hi:BoxDomain(lo,hi,(True,True,True),(True,True,True))
-    outer=GasFieldSpec(field_id='outer',frame_id=baseline['clock']['frame_id'],representation='uniform',composition_id='ion_processor_explicit_single_gas',composition=(GasSpecies('ion_processor_model_gas',baseline['gas']['mass_amu'],1),),domain=box((-10000,-10000,-10000),(10000,10000,10000)),source=GasSource('prescribed','test',()),uniform_state=GasState('gas',4,baseline['gas']['temperature_k'],(1,2,3)))
-    packet=ion_release_api.sample_release(example_api.load_example('rf_oatof_functional_v1').release).to_dict()
+    packet=particle_release_api.sample_release(example_api.load_example('rf_oatof_functional_v1').release).to_dict()
     vendor=root/'vendor.lua';vendor.write_text(HS1_SOURCE_FIXTURE,encoding='utf8')
-    request=dict(bath_domain=box((0,-10,-10),(211,10,10)),outer=outer,vendor_record=file_record(vendor),numerics=dict(seed=40,hs1_steps_per_mfp=20))
+    environment_source=Path(__file__).resolve().parents[2]/'src/msplatform/components/ion_processor/config/gas_environment.json'
+    author=json.loads(environment_source.read_text(encoding='utf8'));author['outer_state']=dict(pressure_pa=4,temperature_k=300,bulk_velocity_m_s=[1,2,3])
+    environment=root/'environment.json';environment.write_text(json.dumps(author),encoding='utf8')
+    request=dict(bath_domain=box((0,-10,-10),(211,10,10)),outer_domain=box((-10000,-10000,-10000),(10000,10000,10000)),vendor_record=file_record(vendor),
+                 environment_record=file_record(environment),environment_instance_id='ion_processor',numerics=dict(seed=40,hs1_steps_per_mfp=20))
     propagation=dict(schema_version=1,scope='continuous_assembly',dynamics=dict(kinematics='nonrelativistic',collisions='hs1',space_charge='none'),end_policy=dict(maximum_particle_age_us=200.),consumed_plane_events=[],stop=None)
     numerics=dict(maximum_step_us=.001,trajectory_quality=17,rf_steps_per_period=80,grouped=0)
     from msplatform.execution.run_session import RunSession

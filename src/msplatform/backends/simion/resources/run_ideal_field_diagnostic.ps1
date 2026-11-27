@@ -109,7 +109,7 @@ if (-not $AnalyzeOnly) {
     -RuntimeReportPath (Join-Path $logDir 'actual_runtime_geometry.txt') | ForEach-Object { Write-Host $_ }
 }
 
-$generator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
+$generator = Join-Path $PSScriptRoot 'generate_comsol_consistent_particles.ps1'
 $analyzer = Join-Path $PSScriptRoot 'analyze_ideal_field_log.ps1'
 $distributions = @(
   @{ Name='all';         HX=0.5; HY=0.5; HZ=0.5; ES=0.4 },
@@ -132,8 +132,8 @@ if ($AnalyzeOnly) {
   $SourceRunPath = (Resolve-Path -LiteralPath $SourceRunPath).Path
   $sourceGuard = Enter-RunTerminalConsumptionGuard -RunDirectory $SourceRunPath
   try {
-    $freezeArguments = @('-I','-B','-m','msplatform.workflows.oa_formal.stage_formal_simion_runtime',
-      '--artifact-root',$artifactRoot,'--analysis-source-run',$SourceRunPath,
+    $freezeArguments = @('-I','-B','-m','msplatform.execution.diagnostic_inputs',
+      '--source-run',$SourceRunPath,
       '--destination',(Join-Path $inputDir 'diagnostic_source'),'--receipt',(Join-Path $inputDir 'analysis_source_receipt.json'))
     foreach ($d in $distributions) { foreach ($m in $modes) { $freezeArguments += @('--case',($d.Name+'__'+$m.Name)) } }
     $sourceErrorLog = Join-Path $artifactLogDir 'analysis_source_validation.stderr.log'
@@ -199,6 +199,7 @@ try {
         -Budget (Get-HostResourceBudget -Role $hostRole -Stage postprocess) -RetainedMemoryBytes 0
     }
     $summary = & $analyzer -Log $stdout -IonFile $ionFiles[$d.Name] -Mode $m.Name -Distribution $d.Name -ParticleCsv $particleCsv
+    if ([int]$summary.Emitted -ne $N) { throw 'Diagnostic source particle count differs from its frozen run control.' }
     $summaries.Add($summary)
     }
   }

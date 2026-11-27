@@ -4,7 +4,6 @@ import copy
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -15,34 +14,7 @@ from msplatform.io.manifest_records import file_record
 from msplatform.backends.simion.dual_cone_transport_execution import plan_transport_operations
 from msplatform.backends.simion.resources import native_resource_path
 
-ROOT = Path(__file__).resolve().parents[3]
-CONFIG = ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config"
-LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
-
-
-def request():
-    names = dict(
-        resolved="resolved_geometry",
-        numerics="simion_solver_numerics",
-        science="ion_transport_science",
-        source_spec="cylindrical_ion_source",
-    )
-    return {name: json.loads((CONFIG / (filename + ".json")).read_text()) for name, filename in names.items()}
-
-
-def terminal_log(particle_ids, native_run, *, increment_time=False):
-    from tests.contracts.test_terminal_evidence import row, wire
-
-    lines = []
-    for ion, particle_id in enumerate(particle_ids, 1):
-        elapsed = 10. + (ion - 1 if increment_time else 0)
-        values = dict(particle_id=particle_id, ion=ion, native_run=native_run, ion_run=1,
-                      raw_birth_us=3., source_origin_us=3., raw_step_us=None,
-                      x_mm=25.5, y_mm=25.5, z_mm=121.75, vx_mm_per_us=0., vy_mm_per_us=0., vz_mm_per_us=1.)
-        lines.append(wire(row("initialize", 1, **values, raw_tof_us=0., pipeline_clock_us=3., instrument_time_us=3.)))
-        lines.append(wire(row("terminate", 2, **values, raw_tof_us=elapsed,
-                              pipeline_clock_us=3. + elapsed, instrument_time_us=3. + elapsed)))
-    return lines
+from tests.contracts.test_support.dual_cone_transport import CONFIG, LUA, request, terminal_log
 
 
 class TransportPlanTests(unittest.TestCase):
@@ -119,7 +91,7 @@ class TransportPlanTests(unittest.TestCase):
                 prepare_transport(output,mode="c0_gem_smoke",resolved_path=CONFIG/"resolved_geometry.json",
                     numerics_path=numerics,science_path=CONFIG/"ion_transport_science.json",
                     interface_path=CONFIG/"gas_field_interface.json",gas_science_path=CONFIG/"gas_flow_science.json",
-                    source_spec_path=CONFIG/"cylindrical_ion_source.json")
+                    source_spec_path=CONFIG/"cylindrical_particle_source.json", environment_path=CONFIG/"gas_environment.json")
             self.assertFalse(output.exists())
 
     def test_grid_changes_invalidate_actual_spatial_basis_but_source_does_not(self):
@@ -177,6 +149,14 @@ class TransportPlanTests(unittest.TestCase):
             values = copy.deepcopy(base)
             mutation(values)
             with self.subTest(values=values), self.assertRaises(ValueError):
+                plan_transport_operations(**values)
+
+    def test_sds_rejects_negative_ions_and_electrons_before_operations(self):
+        from msplatform.physics import ELECTRON_CONSTANTS
+        for kind, mass in (("ion", 500.0), ("electron", ELECTRON_CONSTANTS["mass_u"])):
+            values = request()
+            values["source_spec"]["species"].update(species_kind=kind, mass_amu=mass, charge_state=-1)
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "explicitly positive ions"):
                 plan_transport_operations(**values)
 
     @unittest.skipUnless(LUA.is_file(), "plain Lua unavailable; no native fallback")
@@ -388,11 +368,9 @@ class ManagedTransportTests(unittest.TestCase):
         import os
         from dataclasses import replace
         from unittest.mock import patch
-        from msplatform.io.manifest_records import file_record
         from msplatform.execution.capacity_protection import load_capacity_protection_leases
         from msplatform.workflows.dual_cone_transport import run_gas_assisted_transport
         from tests.contracts.test_execution_runtime import NormalOwnerTests
-        from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import _write_fixture
 
         for scenario in (
             "valid",
@@ -423,75 +401,15 @@ class ManagedTransportTests(unittest.TestCase):
                 initialize_capacity_ledger(artifact_root, objects=[])
                 source = (
                     context.workspace
-                    / "artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/runs/inert-gas-source"
+                    / "artifacts/components/dual_cone_tandem_quadrupole/runs/inert-gas-source"
                 )
-                source.mkdir(parents=True)
-                csv_path, metadata = _write_fixture(source)
-                # Explicit inert gas data covers the unchanged governed transport
-                # domain. This is a software fixture, not a CFD solve or tolerance.
-                import csv, hashlib
+                from tests.contracts.test_support.dual_cone_transport import write_published_gas_fixture
 
-                with csv_path.open(newline="") as stream:
-                    reader = csv.DictReader(stream)
-                    names = reader.fieldnames
-                    rows = list(reader)
-                interface = json.loads((CONFIG / "gas_field_interface.json").read_text())
-                domain = interface["runtime_artifact_contract"]["domain"]
-                radii = [
-                    domain["minimum_radius_mm"] + (domain["maximum_radius_mm"] - domain["minimum_radius_mm"]) * i / 9
-                    for i in range(10)
-                ]
-                axial = [
-                    domain["minimum_z_mm"] + (domain["maximum_z_mm"] - domain["minimum_z_mm"]) * i / 9
-                    for i in range(10)
-                ]
-                if scenario == "insufficient_gas_coverage":
-                    axial = list(range(10))
-                for row in rows:
-                    row["r_mm"] = radii[int(row["r_index"])]
-                    row["z_mm"] = axial[int(row["z_index"])]
-                with csv_path.open("w", newline="") as stream:
-                    writer = csv.DictWriter(stream, fieldnames=names)
-                    writer.writeheader()
-                    writer.writerows(rows)
-                meta = json.loads(metadata.read_text())
-                meta["grid"] = {"r_values_mm": radii, "z_values_mm": axial}
-                meta["field_csv_sha256"] = hashlib.sha256(csv_path.read_bytes()).hexdigest()
-                if scenario == "bad_gas_quality":
-                    meta["solution_summary"]["mass_balance_relative_error"] = 1.0
-                metadata.write_text(json.dumps(meta))
-                identity = dict(
-                    project="dual_cone_tandem_quadrupole",
-                    run_id=source.name,
-                    mode="axisymmetric_gas_flow_screening",
-                )
-                config = source / "run_config.json"
-                config.write_text(json.dumps(identity))
-                inputs = {}
-                for key, filename in (
-                    ("gas_flow_science", "gas_flow_science.json"),
-                    ("comsol_solver_numerics", "comsol_solver_numerics.json"),
-                    ("resolved_geometry", "resolved_geometry.json"),
-                ):
-                    path = source / filename
-                    path.write_bytes((CONFIG / filename).read_bytes())
-                    inputs[key] = file_record(path, "required_evidence")
-                manifest = source / "run_manifest.json"
-                manifest.write_text(
-                    json.dumps(
-                        dict(
-                            schema_version=2,
-                            role="simulation_run_manifest",
-                            status="success",
-                            **identity,
-                            run_config=file_record(config, "required_evidence"),
-                            inputs=inputs,
-                            outputs=[
-                                file_record(csv_path, "required_evidence"),
-                                file_record(metadata, "required_evidence"),
-                            ],
-                        )
-                    )
+                fixture = write_published_gas_fixture(
+                    source,
+                    cover_transport_domain=scenario != "insufficient_gas_coverage",
+                    mass_balance_relative_error=1.0 if scenario == "bad_gas_quality" else None,
+                    artifact_root=artifact_root,
                 )
                 record_capacity_object(
                     artifact_root,
@@ -501,7 +419,7 @@ class ManagedTransportTests(unittest.TestCase):
                     status="ready",
                     owner="inert-gas-fixture",
                 )
-                reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
+                reference = fixture["reference"]
                 sds = root / "sds"
                 sds.mkdir()
                 for name in ("collision_sds.lua", "mbmr.dat", "textfilelib.lua", "arraylib.lua", "m_defs.dat"):
@@ -649,7 +567,7 @@ class ManagedTransportTests(unittest.TestCase):
                             "compiled_gas_field.lua",
                             "collision_sds_binding.lua",
                             "gas_source_states.lua",
-                            "cylindrical_ion_source.csv",
+                            "cylindrical_particle_source.csv",
                             "collision_sds.lua",
                             "mbmr.dat",
                             "textfilelib.lua",
@@ -722,7 +640,8 @@ class ManagedTransportTests(unittest.TestCase):
                                 science_path=CONFIG / "ion_transport_science.json",
                                 interface_path=CONFIG / "gas_field_interface.json",
                                 gas_science_path=CONFIG / "gas_flow_science.json",
-                                source_spec_path=CONFIG / "cylindrical_ion_source.json",
+                                environment_path=CONFIG / "gas_environment.json",
+                                source_spec_path=CONFIG / "cylindrical_particle_source.json",
                                 gas_field_reference=reference,
                                 collision_sds_dir=sds,
                                 context=context,
@@ -743,7 +662,8 @@ class ManagedTransportTests(unittest.TestCase):
                                 science_path=CONFIG / "ion_transport_science.json",
                                 interface_path=CONFIG / "gas_field_interface.json",
                                 gas_science_path=CONFIG / "gas_flow_science.json",
-                                source_spec_path=CONFIG / "cylindrical_ion_source.json",
+                                environment_path=CONFIG / "gas_environment.json",
+                                source_spec_path=CONFIG / "cylindrical_particle_source.json",
                                 gas_field_reference=reference,
                                 collision_sds_dir=sds,
                                 context=context,
@@ -760,7 +680,8 @@ class ManagedTransportTests(unittest.TestCase):
                                 science_path=CONFIG / "ion_transport_science.json",
                                 interface_path=CONFIG / "gas_field_interface.json",
                                 gas_science_path=CONFIG / "gas_flow_science.json",
-                                source_spec_path=CONFIG / "cylindrical_ion_source.json",
+                                environment_path=CONFIG / "gas_environment.json",
+                                source_spec_path=CONFIG / "cylindrical_particle_source.json",
                                 gas_field_reference=reference,
                                 collision_sds_dir=sds,
                                 context=context,
@@ -776,7 +697,8 @@ class ManagedTransportTests(unittest.TestCase):
                                 science_path=CONFIG / "ion_transport_science.json",
                                 interface_path=CONFIG / "gas_field_interface.json",
                                 gas_science_path=CONFIG / "gas_flow_science.json",
-                                source_spec_path=CONFIG / "cylindrical_ion_source.json",
+                                environment_path=CONFIG / "gas_environment.json",
+                                source_spec_path=CONFIG / "cylindrical_particle_source.json",
                                 gas_field_reference=reference,
                                 collision_sds_dir=sds,
                                 context=context,
@@ -799,7 +721,8 @@ class ManagedTransportTests(unittest.TestCase):
                             science_path=CONFIG / "ion_transport_science.json",
                             interface_path=CONFIG / "gas_field_interface.json",
                             gas_science_path=CONFIG / "gas_flow_science.json",
-                            source_spec_path=CONFIG / "cylindrical_ion_source.json",
+                            environment_path=CONFIG / "gas_environment.json",
+                            source_spec_path=CONFIG / "cylindrical_particle_source.json",
                             gas_field_reference=reference,
                             collision_sds_dir=sds,
                             context=context,
@@ -837,7 +760,8 @@ class TimeStepContractTests(unittest.TestCase):
                         science_path=CONFIG / "ion_transport_science.json",
                         interface_path=CONFIG / "gas_field_interface.json",
                         gas_science_path=CONFIG / "gas_flow_science.json",
-                        source_spec_path=CONFIG / "cylindrical_ion_source.json",
+                        source_spec_path=CONFIG / "cylindrical_particle_source.json",
+                        environment_path=CONFIG / "gas_environment.json",
                     )
                 self.assertFalse(output.exists())
 
@@ -847,8 +771,13 @@ class TimeStepContractTests(unittest.TestCase):
 
         for maximum in (0.0125, 0.03):
             with self.subTest(maximum=maximum), tempfile.TemporaryDirectory() as directory:
+                from msplatform.components.dual_cone_tandem_quadrupole.gas_environment import (
+                    project_dual_cone_transport_science, resolve_dual_cone_conditions,
+                )
                 root = Path(directory)
                 values = request()
+                values["science"] = project_dual_cone_transport_science(values["science"],
+                    resolve_dual_cone_conditions(values["environment"], values["resolved"]))
                 values["numerics"]["trajectory"]["maximum_step_us"] = maximum
                 config = root / "run.lua"
                 config.write_text(

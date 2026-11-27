@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import math
 from pathlib import Path
@@ -47,8 +48,13 @@ def _validate_theory_seed(campaign: dict[str, Any], layout: dict[str, Any]) -> d
     ring_count = int(layout["ring_count"])
     if len(voltages) != 4 + ring_count:
         raise ComponentFocusPAPlanError("campaign voltage count differs from the geometry profile")
+    # The authored finite-3D gain correction shifts repeller and grid1
+    # together.  Validate the unchanged one-dimensional seed before that
+    # explicit correction; keep the actual applied voltages for the model and
+    # for the separate ring-interpolation check below.
+    correction = float(campaign["operating_point"]["finite_3d_gain_correction_v"])
     state = accelerator_state(
-        voltages[1], voltages[2], gap_1, gap_2,
+        voltages[1] - correction, voltages[2] - correction, gap_1, gap_2,
         exit_v=voltages[3], release_position_mm=release_position,
     )
     expected_focus = -float(campaign["operating_point"]["focus_plane_offset_from_exit_mm"])
@@ -73,7 +79,14 @@ def derive(campaign_path: Path, *, geometry_profile: Mapping[str, float | int], 
     downstream focus plane.  The positive-z padding protects the closed cap.
     Both values are numerical-domain requirements, never geometry knobs.
     """
-    campaign = validate_campaign(json.loads(campaign_path.read_text(encoding="utf-8")), geometry_profile=geometry_profile)
+    return derive_campaign(json.loads(campaign_path.read_text(encoding="utf-8")),campaign_path=campaign_path,
+                           geometry_profile=geometry_profile,mesh_mm_per_gu=mesh_mm_per_gu)
+
+
+def derive_campaign(campaign: Mapping[str, Any], *, campaign_path: Path,
+                    geometry_profile: Mapping[str, float | int], mesh_mm_per_gu: list[float]) -> dict[str, Any]:
+    """Derive the same native plan from an already frozen campaign value."""
+    campaign = validate_campaign(copy.deepcopy(dict(campaign)), geometry_profile=geometry_profile)
     projection = campaign["simion_projection"]
     required = {
         "source_frame", "workbench_mapping", "local_pa_span_mm", "iob_origin_rule",

@@ -1,7 +1,12 @@
 ## Installed recorded-focus analysis and bounded adjustment
 
-The sole recorded closed-two-zone focus analyzer is `msplatform.workflows.oa_focus_analysis`;
-its bounded voltage-decision state machine is `msplatform.workflows.oa_focus_fast_adjust`.
+The historical closed-two-zone recorded analyzer remains `msplatform.workflows.oa_focus_analysis`;
+its existing workflow is `msplatform.workflows.oa_focus_fast_adjust`. The current public Store path
+uses `msplatform.workflows.oa_focus_store_analysis` for cold SI analysis and bounded decision steps.
+The original numerical theory and bounded update now reside in the OA component, and a guarded
+original-birth packet is available to continuous consumers. Software-only Store tests and an inert
+public owner run cover this path; native scientific validation, complete multi-round adjustment,
+field contrast and retirement of the legacy runners remain open.
 Current analyzer and controller-state records use protocol revision 2. Their
 validated profile-content SHA is a scientific authority bound at initialization and
 checked when consuming state or analysis. Revision-1 historical files are retained
@@ -188,13 +193,13 @@ regression is separate from native occupancy and field qualification.
 
 ### 组件工作流与验收
 
-`msplatform.backends.simion.oa_focus_source` 直接调用 `msplatform.ion_release` 的释放校验、
+`msplatform.backends.simion.oa_focus_source` 直接调用 `msplatform.particle_release` 的释放校验、
 `msplatform.contracts.particle_physics` 的动能函数及 `msplatform.io.file_identity` 的文件身份函数；
 相邻测试核对实际函数来源。组件聚焦CSV writer现直接冻结安装SIMION backend的`scientific_event_csv.lua`；
 列顺序、精度和原文件身份保持，不再读取旧common/simion副本。跨 RF、OA、布局适配和 MR 的 78 项行为测试通过（7.326 秒），
 布局及 MR 同时验证拒绝旧桥后仍能执行真实计算；本轮未新增原生求解或科学资格。
 
-源投影的软件回归在 `test_component_focus_simion_source.py` 使用规范 `msplatform.ion_release` 的七粒子受控输入，
+源投影的软件回归在 `test_component_focus_simion_source.py` 使用规范 `msplatform.particle_release` 的七粒子受控输入，
 逐行核对原ID、非零出生时间的秒到微秒换算、三维速度的 m/s 到 mm/μs 换算、出口平移、
 真实 FLY2/Lua 文本和来源/输出字节身份；campaign 或 provider 不一致仍拒绝。
 该文件六项测试通过，仅证明软件投影与身份保持，不替代下述 N100 原生组件验收。

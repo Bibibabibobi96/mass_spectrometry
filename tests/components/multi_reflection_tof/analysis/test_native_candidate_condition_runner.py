@@ -506,9 +506,9 @@ New-Item -ItemType Directory -Path $run -Force|Out-Null
                 "accelerator": {"focus_y_anchor": {"project_y_mm": 0}},
             }), encoding="utf-8")
             release = root / "release.json"
-            release.write_text(json.dumps({
-                "role": "repository_ion_release",
-                "species": {"charge_state": 1, "mass_amu": 524.0},
+            release.write_text(json.dumps({'schema_version': 2,
+                "role": 'repository_particle_release',
+                "species": {'species_kind': 'ion', "charge_state": 1, "mass_amu": 524.0},
                 "sampling": {
                     "kinetic_energy": {"center_ev": 1.0, "full_width_ev": 0.2},
                     "nominal_direction": [0.0, 1.0, 0.0], "angular_full_width_deg": 0.0,

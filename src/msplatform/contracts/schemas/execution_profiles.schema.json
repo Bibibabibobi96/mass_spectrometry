@@ -12,7 +12,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "role": {
       "const": "project_execution_profiles"
@@ -41,8 +41,7 @@
           "purpose",
           "action",
           "tools",
-          "model",
-          "qualification_support"
+          "model"
         ],
         "properties": {
           "profile_id": {
@@ -261,18 +260,6 @@
           "model": {
             "type": "string",
             "minLength": 1
-          },
-          "qualification_support": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true,
-            "items": {
-              "enum": [
-                "none",
-                "candidate",
-                "formal"
-              ]
-            }
           },
           "scientific_status": {
             "const": "not_evaluated"

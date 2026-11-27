@@ -8,14 +8,13 @@ from __future__ import annotations
 import copy
 import math
 import re
-import tomllib
-from dataclasses import dataclass
 from decimal import Decimal
-from pathlib import Path
 from typing import Any, Mapping
 
+from . import assembly_name
 from msplatform.io.file_identity import canonical_json_sha256
 from msplatform.physics import CONSTANTS, GasEnvironment, normalize_charge_c
+from msplatform.contracts.species import validate_species
 
 
 def _keys(value: Any, required: set[str], optional: set[str] = frozenset()) -> None:
@@ -42,13 +41,6 @@ def _identity(value: Any, name: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", value):
         raise ValueError(f"{name} must be a lowercase ASCII identifier")
     return value
-
-
-def assembly_name(component_ids: list[str]) -> str:
-    """Generate the v1 name of a single ordered sequence, including repeats."""
-    if not isinstance(component_ids, list) or not component_ids:
-        raise ValueError("a nonempty component sequence is required")
-    return "__".join(_identity(c, "component_id") for c in component_ids)
 
 
 def _quantity(row: dict, choices: dict[str, str], name: str, vector: bool = False) -> Any:
@@ -86,25 +78,23 @@ def _surface(row: dict) -> dict:
     return surface
 
 
-def _particle(row: dict) -> dict:
-    required = {"particle_id", "species_id", "velocity_m_s", "charge_state", "weight"}
-    choices = {"position_m", "position_mm", "time_s", "time_us", "mass_kg", "mass_u", "charge_c"}
+def _particle(row: dict, species_by_id: dict[str, dict]) -> dict:
+    required = {"particle_id", "species_id", "velocity_m_s", "weight"}
+    choices = {"position_m", "position_mm", "time_s", "time_us"}
     _keys(row, required, choices)
     if type(row["particle_id"]) is not int or not 0 < row["particle_id"] <= 2**63 - 1:
         raise ValueError("particle_id must be a positive int64")
-    charge = row["charge_state"]
-    if type(charge) is not int or charge == 0 or not -(2**63) <= charge < 2**63:
-        raise ValueError("charge_state must be a nonzero signed int64")
-    charge_c = charge * CONSTANTS["elementary_charge_c"]
-    if "charge_c" in row:
-        charge_c = normalize_charge_c(charge, row["charge_c"])
+    species_id = _identity(row["species_id"], "species_id")
+    if species_id not in species_by_id:
+        raise ValueError("particle refers to unknown species")
+    species = species_by_id[species_id]
     result = {"particle_id": row["particle_id"], "species_id": _identity(row["species_id"], "species_id"),
               "parent_particle_id": None, "lineage_status": "unavailable_initial_snapshot",
               "position_m": _quantity(row, {"position_m": "1", "position_mm": "0.001"}, "position", True),
               "velocity_m_s": _vector(row["velocity_m_s"], "velocity_m_s"),
               "time_s": _quantity(row, {"time_s": "1", "time_us": "0.000001"}, "time"),
-              "mass_kg": _quantity(row, {"mass_kg": "1", "mass_u": str(CONSTANTS["atomic_mass_constant_kg"])}, "mass"),
-              "charge_state": charge, "charge_c": charge_c,
+              "mass_kg": species["mass_kg"],
+              "charge_state": species["charge_state"], "charge_c": species["charge_c"],
               "weight": _number(row["weight"], "weight")}
     if result["mass_kg"] <= 0 or result["weight"] <= 0 or result["time_s"] < 0:
         raise ValueError("mass and weight must be positive; relative time must be nonnegative")
@@ -125,10 +115,10 @@ def _numerics(row: dict, states: list[dict]) -> dict:
     return result
 
 
-def _resolve(raw: dict) -> dict:
-    keys = {"schema_version", "label", "frame_id", "particle_tracer", "assembly", "clock", "gas_environment", "field_source", "initial_states", "numerics", "surfaces", "recording"}
+def resolve_reference(raw: dict) -> dict:
+    keys = {"schema_version", "label", "frame_id", "particle_tracer", "assembly", "clock", "gas_environment", "field_source", "species", "initial_states", "numerics", "surfaces", "recording"}
     _keys(raw, keys)
-    if type(raw["schema_version"]) is not int or raw["schema_version"] != 1:
+    if type(raw["schema_version"]) is not int or raw["schema_version"] != 3:
         raise ValueError("unsupported recipe schema_version")
     if not isinstance(raw["label"], str) or not raw["label"].strip():
         raise ValueError("label must be nonempty")
@@ -153,7 +143,26 @@ def _resolve(raw: dict) -> dict:
              "magnetic_field_t": _vector(field["magnetic_field_t"], "magnetic field")}
     if not isinstance(raw["initial_states"], list) or not raw["initial_states"]:
         raise ValueError("initial_states must be nonempty")
-    states = [_particle(p) for p in raw["initial_states"]]
+    if not isinstance(raw["species"], list) or not raw["species"]:
+        raise ValueError("species must be a nonempty array")
+    species = []
+    for row in raw["species"]:
+        _keys(row, {"species_id", "species_kind", "charge_state"}, {"mass_kg", "mass_u", "charge_c", "mass_data_version", "mass_data_sha256", "atomic_mass_constant_version"})
+        charge = row["charge_state"]
+        if type(charge) is not int or charge == 0:
+            raise ValueError("charge_state must be a nonzero signed integer")
+        record = {"species_id": row["species_id"], "species_kind": row["species_kind"],
+                  "mass_kg": _quantity(row, {"mass_kg": "1", "mass_u": str(CONSTANTS["atomic_mass_constant_kg"])}, "mass"),
+                  "charge_state": charge,
+                  "charge_c": row.get("charge_c", charge * CONSTANTS["elementary_charge_c"])}
+        for key in ("mass_data_version", "mass_data_sha256", "atomic_mass_constant_version"):
+            if key in row:
+                record[key] = row[key]
+        species.append(validate_species(record))
+    species_by_id = {row["species_id"]: row for row in species}
+    if len(species_by_id) != len(species):
+        raise ValueError("species IDs must be unique")
+    states = [_particle(p, species_by_id) for p in raw["initial_states"]]
     if len({p["particle_id"] for p in states}) != len(states):
         raise ValueError("particle IDs must be unique")
     if not isinstance(raw["surfaces"], list):
@@ -172,7 +181,7 @@ def _resolve(raw: dict) -> dict:
                                "rotation_matrix": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]}],
                 "connections": [], "surfaces": surfaces}
     assembly = {**physical, "name_version": 1, "name": name, "assembly_id": canonical_json_sha256(physical)}
-    result = {"schema_version": 1, "label": raw["label"], "assembly": assembly,
+    result = {"schema_version": 3, "label": raw["label"], "assembly": assembly, "species": species,
               "frame_id": raw["frame_id"], "clock": {"basis": "experiment_relative", "unit": "s"},
               "constants": dict(CONSTANTS), "gas_environment": gas, "field_source": field,
               "particle_tracer": raw["particle_tracer"], "initial_states": states,
@@ -182,35 +191,15 @@ def _resolve(raw: dict) -> dict:
     return result
 
 
-@dataclass(frozen=True, init=False)
-class SimulationRecipe:
-    """Validated resolved recipe and optional immutable author byte snapshot.
-
-    ``load_recipe`` supplies source_bytes from its single external read. Source
-    bytes are provenance, separate from the resolved scientific identity.
-    """
-    _document: dict
-    source_bytes: bytes | None
-
-    def __init__(self, resolved: Mapping[str, Any], *, source_bytes: bytes | None = None):
-        object.__setattr__(self, "_document", validate_recipe(resolved))
-        object.__setattr__(self, "source_bytes", source_bytes)
-
-    def to_dict(self) -> dict:
-        return copy.deepcopy(self._document)
-
-
-def validate_recipe(resolved: Mapping[str, Any]) -> dict:
+def validate_reference(resolved: Mapping[str, Any]) -> dict:
     """Validate an SI resolved document, its identities and capability claims."""
-    if isinstance(resolved, Mapping) and resolved.get("schema_version") == 2:
-        from .native import validate_native
-        return validate_native(resolved)
     data = copy.deepcopy(dict(resolved))
-    _keys(data, {"schema_version", "label", "assembly", "recipe_id", "frame_id", "clock", "constants", "gas_environment", "field_source", "particle_tracer", "initial_states", "numerics", "surfaces", "recording"})
+    _keys(data, {"schema_version", "label", "assembly", "recipe_id", "frame_id", "clock", "constants", "gas_environment", "field_source", "particle_tracer", "species", "initial_states", "numerics", "surfaces", "recording"})
     if data["constants"] != CONSTANTS or data["gas_environment"] != GasEnvironment("vacuum").to_dict() or data["clock"] != {"basis": "experiment_relative", "unit": "s"}:
         raise ValueError("unsupported constants, gas or clock")
     raw = {k: data[k] for k in ("schema_version", "label", "frame_id", "particle_tracer", "field_source", "numerics", "surfaces", "recording")}
     raw.update(assembly={"component_ids": data["assembly"]["component_ids"]}, clock={"basis": "experiment_relative"}, gas_environment={"status": "vacuum"})
+    raw["species"] = copy.deepcopy(data["species"])
     raw["initial_states"] = []
     for particle in data["initial_states"]:
         _keys(particle, {"particle_id", "species_id", "position_m", "velocity_m_s", "time_s", "mass_kg", "charge_state", "charge_c", "weight", "parent_particle_id", "lineage_status"})
@@ -218,18 +207,10 @@ def validate_recipe(resolved: Mapping[str, Any]) -> dict:
         if p.pop("parent_particle_id") is not None or p.pop("lineage_status") != "unavailable_initial_snapshot":
             raise ValueError("initial snapshot lineage is unavailable")
         particle["charge_c"] = normalize_charge_c(p["charge_state"], p.pop("charge_c"))
+        p.pop("charge_state")
+        p.pop("mass_kg")
         raw["initial_states"].append(p)
-    expected = _resolve(raw)
+    expected = resolve_reference(raw)
     if data != expected:
         raise ValueError("resolved recipe differs from its validated contents or identity")
     return expected
-
-
-def load_recipe(path: str | Path) -> SimulationRecipe:
-    """Snapshot TOML once, parse exact decimals and compile to SI float64 values."""
-    source = Path(path).read_bytes()
-    raw = tomllib.loads(source.decode("utf-8"), parse_float=Decimal)
-    if raw.get("schema_version") == 2:
-        from .native import resolve_native
-        return SimulationRecipe(resolve_native(raw, Path(path)), source_bytes=source)
-    return SimulationRecipe(_resolve(raw), source_bytes=source)

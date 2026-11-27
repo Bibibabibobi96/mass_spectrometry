@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from msplatform.ion_release.paired_mass_scan import generate_paired_case_tables
+from msplatform.particle_release.paired_mass_scan import generate_paired_case_tables
 from msplatform.workflows.rf_mass_filter import (
     evaluate_comsol as module,
 )

@@ -14,7 +14,7 @@ from typing import Any, Mapping
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from msplatform.ion_release.release import validate_materialized_release
+from msplatform.particle_release.release import validate_materialized_release
 from msplatform.backends.simion.source import render_source_states, render_standard_beams
 
 

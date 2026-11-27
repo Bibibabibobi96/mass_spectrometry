@@ -101,7 +101,7 @@ class CanonicalNeutralScheduleTests(unittest.TestCase):
          path=Path(temp)/'probe.lua';path.write_text(prefix+'\n'+rendered['program'].replace('adjustable ','')+suffix,encoding='utf8');run=subprocess.run([lua,str(path)],cwd=temp,capture_output=True,text=True,encoding='utf8',timeout=30);print(run.stdout,run.stderr,flush=True);assert run.returncode==0
 
         # Real original release and public planning, no field read or owner.
-        from msplatform import examples as example_api,ion_release as release_api
+        from msplatform import examples as example_api,particle_release as release_api
         from msplatform.io.manifest_records import file_record
         from msplatform.backends.simion.tracking_execution import plan_tracking_execution
         packet=release_api.sample_release(example_api.load_example('rf_oatof_functional_v1').release).to_dict()

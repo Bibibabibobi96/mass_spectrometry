@@ -12,7 +12,7 @@ from msplatform.workflows.ion_processor import preparation
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.backends.simion.collision_hs1 import adapt_hs1_for_repeat_fly
 from msplatform.backends.simion.ip_geometry import render_gem
-from msplatform.ion_release.release import generate_release_states
+from msplatform.particle_release.release import generate_release_states
 from tests.components.ion_processor.test_functional import load_config, HS1_SOURCE_FIXTURE
 
 
@@ -25,7 +25,7 @@ class IpPreparationTests(unittest.TestCase):
         self.run.mkdir()
         self.config = load_config()
         self.authorities = {}
-        for name in ("baseline", "numerics", "source", "acceptance", "native_operating_point"):
+        for name in ("baseline", "gas_environment", "numerics", "source", "acceptance", "native_operating_point"):
             path = self.root / (name + ".json")
             path.write_text(json.dumps(self.config[name]), encoding="utf-8")
             self.authorities[name] = path
@@ -35,6 +35,18 @@ class IpPreparationTests(unittest.TestCase):
     def materialize(self) -> dict:
         return preparation.materialize_inputs(self.run, self.config,
             configuration_files=self.authorities, hs1_source=self.vendor)
+
+    def test_environment_and_baseline_use_the_captured_author_bytes(self) -> None:
+        original = {name: self.authorities[name].read_bytes() for name in ("baseline", "gas_environment")}
+        real_compile = preparation.compile_source
+        def mutate_after_snapshot(config, *, admission=None):
+            self.authorities["gas_environment"].write_text("{}", encoding="utf-8")
+            return real_compile(config, admission=admission)
+        with patch.object(preparation, "compile_source", side_effect=mutate_after_snapshot):
+            result = self.materialize()
+        for name in original:
+            self.assertEqual((self.run / "inputs" / (name + ".json")).read_bytes(), original[name])
+        self.assertEqual(result["config"]["baseline"]["gas"]["mass_amu"], 28.0134)
 
     def test_source_compilation_needs_no_vendor_seed_field_or_file_writes(self) -> None:
         before = copy.deepcopy(self.config)
@@ -127,18 +139,18 @@ class IpPreparationTests(unittest.TestCase):
         self.assertEqual(list(self.run.iterdir()), [])
 
     def test_explicit_zero_pressure_materializes_without_relaxing_other_gas_constraints(self) -> None:
-        self.config["baseline"]["gas"]["hp_pressure_pa"] = 0
-        self.authorities["baseline"].write_text(json.dumps(self.config["baseline"]), encoding="utf-8")
+        self.config["gas_environment"]["regions"][0]["pressure_pa"] = 0
+        self.authorities["gas_environment"].write_text(json.dumps(self.config["gas_environment"]), encoding="utf-8")
         compiled = self.materialize()
         self.assertEqual(compiled["config"]["baseline"]["gas"]["hp_pressure_pa"], 0)
-        for key in ("temperature_k", "mass_amu", "cross_section_m2"):
+        for key in ("temperature_k",):
             broken = copy.deepcopy(self.config)
-            broken["baseline"]["gas"][key] = 0
-            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "nonpositive"):
+            broken["gas_environment"][key] = 0
+            with self.subTest(key=key), self.assertRaises(ValueError):
                 preparation.validate_configs(broken)
         for pressure in (-1, float("nan"), float("inf")):
             broken = copy.deepcopy(self.config)
-            broken["baseline"]["gas"]["lp_pressure_pa"] = pressure
+            broken["gas_environment"]["regions"][1]["pressure_pa"] = pressure
             with self.subTest(pressure=pressure), self.assertRaises(ValueError):
                 preparation.validate_configs(broken)
 

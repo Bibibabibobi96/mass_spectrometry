@@ -393,7 +393,7 @@ def require_geometry_product(reference):
 def _product_clock(product, projection):
     # Reuse the canonical read-only clock-data validator; no owner or machine
     # configuration is loaded. Preserve the contract's original relative path.
-    from msplatform.execution.clock_authority import validate_clock_authority
+    from msplatform.io.clock_authority import validate_clock_authority
     from msplatform.contracts.clock import ClockIdentity, require_same_clock
 
     contract_path = product.data_locations["clock_authority"]
@@ -505,7 +505,7 @@ def plan_saved_fly_inputs(
     source_to_device=None,
 ) -> dict:
     """Validate the same explicit Fly inputs before a future field publication."""
-    from msplatform.ion_release.release import validate_release_spec
+    from msplatform.particle_release.release import validate_release_spec
     from msplatform.results.gas_field import read_gas_field
     from .dual_cone_transport import SDS_FILES
 
@@ -517,8 +517,16 @@ def plan_saved_fly_inputs(
     gas_geometry = json.loads(gas.data_path("geometry").read_text(encoding="utf-8-sig"))
     if gas_geometry != model["geometry"]["resolved"]:
         raise ValueError("gas producer geometry differs from selected saved fields")
-    if collision_science["collision_model"] != "simion_official_collision_sds":
-        raise ValueError("tracking requires explicit official SDS collision science")
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_environment import (
+        project_dual_cone_transport_science, resolve_dual_cone_conditions,
+    )
+    try:
+        environment_author = json.loads(gas.data_path("environment").read_text(encoding="utf-8-sig"))
+    except KeyError as error:
+        raise ValueError("tracking requires the current published gas environment authority") from error
+    conditions = resolve_dual_cone_conditions(environment_author, gas_geometry)
+    model_science = {"schema_version": 2, "role": "dual_cone_simion_ion_transport_science", "gas": dict(collision_science)}
+    collision_science = project_dual_cone_transport_science(model_science, conditions)["gas"]
     collision = {}
     for name in ("collision_gas_mass_amu", "collision_gas_diameter_nm"):
         value = _finite(collision_science[name], name)
@@ -529,6 +537,8 @@ def plan_saved_fly_inputs(
         raise ValueError("collision diffusion_enabled must be boolean")
     collision["diffusion_enabled"] = collision_science["diffusion_enabled"]
     validate_release_spec(source_spec)
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_environment import require_sds_positive_ion
+    require_sds_positive_ion(source_spec)
     placement = model.get("placement") if placement is None else placement
     if placement is not None or source_to_device is not None:
         from .dual_cone_transport import source_placement
@@ -550,6 +560,9 @@ def plan_saved_fly_inputs(
         gas_field_reference=gas.reference,
         source_count=source_spec["particle_count"],
         collision=collision,
+        sds_source_identities={name: {"bytes": collision_sds_records[name]["bytes"],
+                                      "sha256": collision_sds_records[name]["sha256"].upper()}
+                               for name in SDS_FILES},
         refine_calls=0,
         geometry_build_calls=0,
         field_recomputed=False,
@@ -591,3 +604,217 @@ def require_trajectory_product(reference: Mapping | OpenedArtifact) -> OpenedArt
     for name in ("final_state", "metrics", "preparation_receipt", "source_csv"):
         product.data_path(name)
     return product
+
+
+def _payload(value):
+    if hasattr(value, "reference"):
+        return value.reference
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _payload(item) for key, item in value.items()}
+    return value
+
+
+def _run(context, action, ids, implementation, arguments, sources, kind):
+    from datetime import datetime
+    from functools import partial
+    from uuid import uuid4
+    from msplatform.backends.simion import native_completion
+    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.stage_policy import read_stage_policy
+    from msplatform.io.manifest_records import file_record
+
+    stage, authority = read_stage_policy(context, action, required_roles=("solver_native_binary",))
+    runtime = stage.get("runtime", {})
+    if set(runtime) - {"simion_allow_asynchronous_io"} or (
+        "simion_allow_asynchronous_io" in runtime and type(runtime["simion_allow_asynchronous_io"]) is not bool
+    ):
+        raise ValueError("SIMION stage runtime only accepts explicit boolean simion_allow_asynchronous_io")
+    if "simion" not in context.tools or not context.tools["simion"].is_file():
+        raise ValueError("stage requires an explicit available SIMION executable")
+    sources = list({str(source.manifest_location): source for source in sources}.values())
+    result = run_managed_stage(
+        context,
+        descriptor=dict(project="dual_cone_tandem_quadrupole", mode=action, software=["SIMION"]),
+        run_id=datetime.now().strftime("%Y%m%d_%H%M%S")
+        + "__sim__simion__"
+        + action.replace("_", "-")
+        + "-"
+        + uuid4().hex[:12],
+        payload=dict(action=action, stage_policy=stage, request=_payload(arguments)),
+        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
+        commitment_inputs=[authority],
+        retention=stage["artifact_retention"],
+        expected_operation_ids=tuple(ids),
+        operation_dependencies={name: [ids[i - 1]] for i, name in enumerate(ids) if i},
+        action=partial(
+            implementation,
+            **arguments,
+            limits=stage["limits"],
+            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"),
+        ),
+        action_record=file_record(Path(implementation.__code__.co_filename), "required_evidence"),
+        source_references=[dict(manifest_record=source.reference["manifest"]) for source in sources],
+        use_short_execution_path=True,
+        completion_api=lambda: native_completion,
+    )
+    return open_artifact(
+        dict(manifest=result["manifest"], product_id="trajectory" if kind == "trajectory_result" else "stage"),
+        expected_kind=kind,
+    )
+
+
+def build_geometry(*, resolved, numerics, context, placement=None):
+    """Build/save/reopen zero-source unsolved geometry; no gas/source/Refine."""
+    from .dual_cone_stage_execution import execute_geometry
+
+    plan = plan_geometry_stage(resolved=resolved, numerics=numerics, placement=placement)
+    result = _run(
+        context,
+        "dual_cone_geometry",
+        plan["expected_operation_ids"],
+        execute_geometry,
+        dict(plan=plan),
+        [],
+        "geometry_artifact",
+    )
+    return require_geometry_product(result)
+
+
+def prepare_model(geometry_reference, *, electric_field, clock, physics, clock_authority_reference, context, placement=None):
+    """Bind drive to an independently materialized raw geometry; no particles."""
+    from .dual_cone_stage_execution import execute_model
+
+    source = require_geometry_product(geometry_reference)
+    geometry = json.loads(source.data_path("compiled_geometry").read_text(encoding="utf-8-sig"))
+    placement = source.metadata.get("placement") if placement is None else placement
+    plan = plan_model_stage(geometry, electric_field=electric_field, clock=clock, physics=physics, placement=placement)
+    from msplatform.backends.simion.model_execution import _clock_reference
+
+    _clock_reference(dict(drive=dict(clock=plan["projection"]["clock"])), clock_authority_reference)
+    result = _run(
+        context,
+        "dual_cone_model",
+        plan["expected_operation_ids"],
+        execute_model,
+        dict(source=source, model=plan["projection"], clock_reference=clock_authority_reference),
+        [source],
+        "prepared_model",
+    )
+    return require_model_product(result)
+
+
+def solve_fields(model_reference, *, numerics, context, reuse_fields_reference=None):
+    """Copy only unsolved raw geometry, then Refine/audit an independent family."""
+    from .dual_cone_stage_execution import execute_fields
+
+    source = require_model_product(model_reference)
+    model = json.loads(source.data_path("compiled_model").read_text(encoding="utf-8-sig"))
+    # Validate the selected refinement before owner admission or native I/O.
+    from msplatform.backends.simion.dual_cone_stages import require_field_numerics
+
+    require_field_numerics(model, numerics)
+    reuse_source, reuse_producer = (
+        (None, None) if reuse_fields_reference is None else require_fields_product(reuse_fields_reference)
+    )
+    if (
+        reuse_source is not None
+        and reuse_source.metadata["spatial_identity"]["geometry_identity_sha256"]
+        != model["geometry"]["identity_sha256"]
+    ):
+        raise ValueError("saved basis geometry differs from selected new model")
+    result = _run(
+        context,
+        "dual_cone_fields",
+        ["materialize_geometry", "refine_fields", "audit_fields"] if reuse_source is None else ["audit_fields"],
+        execute_fields,
+        dict(source=source, model=model, numerics=numerics, reuse_source=reuse_source, reuse_producer=reuse_producer),
+        [source] + ([] if reuse_source is None else [reuse_source, reuse_producer]),
+        "field_bundle",
+    )
+    return require_fields_product(result)[0]
+
+
+def track_fields(
+    fields_reference,
+    *,
+    gas_field_reference,
+    source_spec_path,
+    numerics_path,
+    collision_science,
+    interface_path,
+    collision_sds_dir,
+    context,
+    placement=None,
+    source_to_device=None,
+    canonical_result=None,
+    expected_gas_environment=None,
+    expected_sds_records=None,
+    frozen_environment_bytes=None,
+):
+    """Prepare the selected source/gas and Fly original published fields directly."""
+    from msplatform.backends.simion.dual_cone_stages import plan_saved_field_fly
+    from msplatform.backends.simion.dual_cone_stage_execution import execute_saved_fly
+    from msplatform.backends.simion.dual_cone_transport import SDS_FILES
+    from msplatform.io.manifest_records import file_record
+    from msplatform.results.gas_field import read_gas_field
+
+    fields, producer = require_fields_product(fields_reference)
+    model = json.loads(fields.data_path("compiled_model").read_text(encoding="utf-8-sig"))
+    source = json.loads(Path(source_spec_path).read_text(encoding="utf-8-sig"))
+    numerics = json.loads(Path(numerics_path).read_text(encoding="utf-8-sig"))
+    # A source/observation change cannot silently redefine the published PA domain.
+    selected_geometry = plan_geometry_stage(resolved=model["geometry"]["resolved"], numerics=numerics)["projection"]
+    if selected_geometry != model["geometry"]:
+        raise ValueError("tracking numerics redefine the selected saved geometry")
+    sds = {name: file_record(Path(collision_sds_dir) / name, "required_evidence") for name in SDS_FILES}
+    if canonical_result is not None:
+        if (expected_gas_environment is None or not isinstance(frozen_environment_bytes, bytes)
+                or not isinstance(expected_sds_records, Mapping) or set(expected_sds_records) != set(SDS_FILES)):
+            raise ValueError("canonical SDS tracking requires frozen gas and five SDS sources")
+        for name in SDS_FILES:
+            actual, expected = sds[name], expected_sds_records[name]
+            if actual["bytes"] != expected["bytes"] or actual["sha256"].upper() != expected["sha256"].upper():
+                raise ValueError("SDS file differs from the frozen recipe: " + name)
+    plan = plan_saved_field_fly(
+        fields_reference=fields,
+        gas_field_reference=gas_field_reference,
+        source_spec=source,
+        numerics=numerics,
+        collision_science=collision_science,
+        collision_sds_records=sds,
+        placement=placement, source_to_device=source_to_device,
+    )
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import validate_gas_field_data
+    opened_gas = read_gas_field(gas_field_reference)
+    validate_gas_field_data(opened_gas.data)
+    gas = opened_gas.artifact
+    if canonical_result is not None:
+        from .dual_cone_transport import admit_sds_gas_field
+        interface = json.loads(Path(interface_path).read_text(encoding="utf-8-sig"))
+        _, _, _, actual = admit_sds_gas_field(gas_field_reference, environment_bytes=frozen_environment_bytes,
+                                               resolved=model["geometry"]["resolved"], interface=interface)
+        if actual.to_dict() != expected_gas_environment:
+            raise ValueError("published CFD field differs from admitted GasEnvironment")
+    request = dict(
+        gas_field_reference=gas.reference,
+        source_spec_path=Path(source_spec_path),
+        numerics_path=Path(numerics_path),
+        collision_science=collision_science,
+        interface_path=Path(interface_path),
+        collision_sds_dir=Path(collision_sds_dir),
+        **({"canonical_result": canonical_result, "expected_gas_environment": expected_gas_environment}
+           if canonical_result is not None else {}),
+        **({"placement": plan["placement"]} if "placement" in plan else {}),
+        **({"source_to_device": plan["source_to_device"]} if "source_to_device" in plan else {}),
+    )
+    return _run(
+        context,
+        "dual_cone_saved_fly",
+        plan["expected_operation_ids"],
+        execute_saved_fly,
+        dict(fields=fields, producer=producer, plan=plan, request=request, model=model),
+        [fields, producer, gas],
+        "trajectory_result",
+    )

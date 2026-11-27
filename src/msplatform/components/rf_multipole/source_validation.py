@@ -22,8 +22,8 @@ ENERGY_BOUND_TOLERANCE_EV = 2e-9
 
 def load_release_spec(path: Path, resolved: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Validate a complete planar release authority without generating states."""
-    from msplatform.ion_release.release import validate_release_spec
-    from msplatform.ion_release.mt19937_disk_cone_rf_phase import STRATEGY
+    from msplatform.particle_release.release import validate_release_spec
+    from msplatform.particle_release.mt19937_disk_cone_rf_phase import STRATEGY
 
     data = path.read_bytes()
     spec = json.loads(data.decode("utf-8-sig"))
@@ -51,7 +51,7 @@ def materialize_source_release(
     spec_path: Path, source_path: Path, receipt_path: Path, resolved: dict[str, Any]
 ) -> None:
     """Generate once from the frozen authority; never overwrite a run input."""
-    from msplatform.ion_release.release import materialize_release
+    from msplatform.particle_release.release import materialize_release
 
     if source_path.exists() or receipt_path.exists():
         raise ValueError("refuse to overwrite a materialized source release")
@@ -133,10 +133,15 @@ def _load_volume_snapshot_receipt(path: Path | None, source_sha256: str) -> dict
         receipt = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("volume-source receipt is not readable JSON") from exc
+    # Earlier immutable volume receipts remain CSV evidence, never a second
+    # authoring API. New materialization uses the version2 particle contract.
+    identity = {
+        1: ("continuous_axial_volume_ion_beam_source", "independent_spatial_velocity_ion_source_snapshot_v1", "ion_source_volume_cylinder_v1"),
+        2: ("continuous_axial_volume_particle_beam_source", "independent_spatial_velocity_particle_source_snapshot_v2", "particle_source_volume_cylinder_v2"),
+    }
     if not isinstance(receipt, dict) or (
-        receipt.get("role") != "continuous_axial_volume_ion_beam_source"
-        or receipt.get("method") != "independent_spatial_velocity_ion_source_snapshot_v1"
-        or receipt.get("source_region_model") != "ion_source_volume_cylinder_v1"
+        (receipt.get("role"), receipt.get("method"), receipt.get("source_region_model"))
+        != identity.get(receipt.get("schema_version"))
         or receipt.get("source_frame_id") != "multipole_cartesian_z_axis_v1"
         or receipt.get("phase_space_assumption")
         != "spatial_density_and_velocity_distribution_are_independent; no_z_vz_correlation_prescribed"
@@ -225,8 +230,8 @@ def load_validated_source(
         receipt = json.loads(release_receipt_path.read_text(encoding="utf-8-sig"))
         table = receipt.get("state_table", {})
         if (
-            receipt.get("schema_version") != 1
-            or receipt.get("role") != "repository_ion_release"
+            receipt.get("schema_version") != 2
+            or receipt.get("role") != "repository_particle_release"
             or receipt.get("status") != "materialized"
             or receipt.get("release_spec") != release
             or receipt.get("source_spec") != spec_record

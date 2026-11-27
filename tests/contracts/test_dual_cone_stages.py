@@ -11,7 +11,7 @@ from unittest.mock import patch
 from msplatform.backends.simion import dual_cone_stages as stages
 from msplatform.backends.simion.model import RF_PHYSICS
 from msplatform.io.manifest_records import file_record
-from tests.contracts.test_dual_cone_transport_execution import request, ROOT
+from tests.contracts.test_support.dual_cone_transport import request, ROOT
 
 
 CLOCK = dict(
@@ -152,7 +152,7 @@ class IndependentStageTests(unittest.TestCase):
             patch.object(Path, "mkdir", side_effect=AssertionError("pure stage attempted directory creation")),
             patch("subprocess.Popen", side_effect=AssertionError("pure stage attempted process launch")),
             patch(
-                "msplatform.ion_release.release.generate_release_states",
+                "msplatform.particle_release.release.generate_release_states",
                 side_effect=AssertionError("source-free stage sampled particles"),
             ),
         ):
@@ -270,8 +270,7 @@ class IndependentStageTests(unittest.TestCase):
                     stages.require_fields_product(reference, expected_spatial_identity=identity)
 
     def test_saved_field_fly_requires_explicit_gas_source_sds_and_collision_inputs(self):
-        from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import _write_fixture
-        from tests.contracts.test_dual_cone_transport_execution import CONFIG
+        from tests.contracts.test_support.dual_cone_transport import write_published_gas_fixture
         from msplatform.backends.simion.dual_cone_transport import SDS_FILES
 
         with tempfile.TemporaryDirectory() as directory:
@@ -279,35 +278,10 @@ class IndependentStageTests(unittest.TestCase):
             reference, _ = fields_fixture(root / "field")
             gas = root / "gas"
             gas.mkdir()
-            csv_path, metadata = _write_fixture(gas)
-            inputs = {}
-            for key, name in (
-                ("gas_flow_science", "gas_flow_science.json"),
-                ("comsol_solver_numerics", "comsol_solver_numerics.json"),
-                ("resolved_geometry", "resolved_geometry.json"),
-            ):
-                path = gas / name
-                path.write_bytes((CONFIG / name).read_bytes())
-                inputs[key] = file_record(path, "required_evidence")
+            fixture = write_published_gas_fixture(gas)
+            metadata = fixture["metadata_path"]
             manifest = gas / "run_manifest.json"
-            manifest.write_text(
-                json.dumps(
-                    dict(
-                        schema_version=2,
-                        role="simulation_run_manifest",
-                        status="success",
-                        project="dual_cone_tandem_quadrupole",
-                        mode="axisymmetric_gas_flow_screening",
-                        run_id="inert",
-                        inputs=inputs,
-                        outputs=[
-                            file_record(csv_path, "required_evidence"),
-                            file_record(metadata, "required_evidence"),
-                        ],
-                    )
-                )
-            )
-            gas_reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
+            gas_reference = fixture["reference"]
             values = request()
             sds = {name: record(root, name) for name in SDS_FILES}
             kwargs = dict(
@@ -327,7 +301,7 @@ class IndependentStageTests(unittest.TestCase):
             self.assertEqual(graph["source_count"], 100)
             with self.assertRaisesRegex(ValueError, "five-file"):
                 stages.plan_saved_field_fly(**dict(kwargs, collision_sds_records={}))
-            with self.assertRaisesRegex(ValueError, "positive"):
+            with self.assertRaisesRegex(ValueError, "must not duplicate"):
                 stages.plan_saved_field_fly(
                     **dict(kwargs, collision_science=dict(values["science"]["gas"], collision_gas_mass_amu=0))
                 )
@@ -336,6 +310,7 @@ class IndependentStageTests(unittest.TestCase):
             metadata.write_text(json.dumps(recorded))
             producer = json.loads(manifest.read_text())
             producer["outputs"][1] = file_record(metadata, "required_evidence")
+            producer["products"]["gas_field"]["data"]["field_metadata"] = producer["outputs"][1]
             manifest.write_text(json.dumps(producer))
             limited_reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
             from msplatform.results.gas_field import read_gas_field
@@ -547,7 +522,7 @@ class NamedTargetPlanningTests(unittest.TestCase):
                     sampled_particles=0, field_status="not_solved", source_status="not_requested"))
                 fields, _identity = fields_fixture(root / name / "fields", placement=placement)
                 products[name] = dict(geometry=geometry_reference, model=model_reference, fields=fields)
-            with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as owner:
+            with patch("msplatform.execution.owner.run_managed_stage") as owner:
                 for name in ("legacy", "default", "placed"):
                     with self.subTest(matching=name):
                         plan = plan_to(target="fields", available=products[name])
@@ -599,7 +574,7 @@ class NamedTargetPlanningTests(unittest.TestCase):
         values = request()
         numerics = {key: values["numerics"][key] for key in ("schema_version", "role", "pa", "workbench")}
         selected = dict(geometry=dict(resolved=values["resolved"], numerics=numerics))
-        with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as owner:
+        with patch("msplatform.execution.owner.run_managed_stage") as owner:
             plan = plan_to(target="geometry", request=selected)
             self.assertEqual(plan["stages"], ["geometry"])
             self.assertEqual(plan["request_authorities"], [])
@@ -624,7 +599,7 @@ class NamedTargetPlanningTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fields, _identity = fields_fixture(root / "fields")
-            with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as owner:
+            with patch("msplatform.execution.owner.run_managed_stage") as owner:
                 plan = plan_to(target="fields", available={"fields": fields})
                 self.assertEqual(plan["stages"], [])
                 values = request()

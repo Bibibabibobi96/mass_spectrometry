@@ -20,7 +20,7 @@ import unittest
 import zipfile
 
 from tests.assembly.test_resolve_assembly import direct_fixture
-from tests.ion_release.test_cylinder import halton_spec
+from tests.particle_release.test_cylinder import halton_spec
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -59,7 +59,7 @@ def section_timing(section, case):
 
 import numpy as np
 from urllib.parse import urljoin
-from msplatform.ion_release.release import generate_release_states, materialize_release, validate_materialized_release
+from msplatform.particle_release.release import generate_release_states, materialize_release, validate_materialized_release
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from msplatform.workflows.connection_inputs import resolve_assembly_recipe, verify_composition_plan
 from msplatform.analysis.peak_metrics import AnalysisSettings, compute_time_peak_metrics, half_height_width
@@ -184,6 +184,47 @@ with section_timing('reference_tracing', sys.argv[2]):
     reference_x = reference_initial['position_m'][0] + reference_velocity*reference_dt + .5*reference_acceleration*reference_dt**2
     assert np.max(np.abs(reference_track['position_m'][:, 0] - reference_x)) < 1e-10
     assert int(reference_track['particle_id'][0]) == reference_initial['particle_id']
+    from msplatform.physics import ELECTRON_CONSTANTS
+    from importlib.resources import files as reference_files
+    assert hashlib.sha256(reference_files('msplatform.physics').joinpath('data/electron.json').read_bytes()).hexdigest() == ELECTRON_CONSTANTS['dataset_sha256'].lower()
+    three_author = reference_recipe.read_text(encoding='utf-8')
+    species_start = three_author.index('[[species]]')
+    particle_end = three_author.index('[numerics]')
+    three_species = ''.join(f"""[[species]]
+species_id = "{name}"
+species_kind = "{kind}"
+mass_kg = {mass!r}
+charge_state = {charge}
+
+""" for name, kind, mass, charge in (
+        ('positive_ion', 'ion', reference_initial['mass_kg'], 1),
+        ('negative_ion', 'ion', reference_initial['mass_kg'], -1),
+        ('electron', 'electron', ELECTRON_CONSTANTS['mass_kg'], -1)))
+    three_particles = ''.join(f"""[[initial_states]]
+particle_id = {pid}
+species_id = "{name}"
+position_m = [0.0, 0.0, 0.0]
+velocity_m_s = [0.0, 0.0, 0.0]
+time_s = 0.0
+weight = {weight}
+
+""" for pid, name, weight in ((1, 'positive_ion', 2.0), (2, 'negative_ion', 0.5), (3, 'electron', 4.0)))
+    three_author = three_author[:species_start] + three_species + three_particles + three_author[particle_end:]
+    three_author = three_author.replace('[2000.0, 0.0, 0.0]', '[1.0, 0.0, 0.0]').replace(
+        'end_time_s = 0.000001', 'end_time_s = 1e-9').replace('max_step_s = 1e-8', 'max_step_s = 1e-10')
+    three_path = root / ('reference-three-' + sys.argv[2] + '.toml')
+    three_path.write_text(three_author, encoding='utf-8')
+    three_run = json.loads(reference_command([str(reference_console), 'run', str(three_path),
+                                               '--artifact-root', str(reference_artifacts)]))
+    three_data = reference_read(pathlib.Path(three_run['run_path']))
+    assert [row['species_kind'] for row in three_data['metadata']['species']] == ['ion', 'ion', 'electron']
+    assert [row['weight'] for row in three_data['initial_states']] == [2.0, 0.5, 4.0]
+    for initial, terminal in zip(three_data['initial_states'], three_data['terminal_states'], strict=True):
+        acceleration = initial['charge_c'] / initial['mass_kg']
+        expected_position = .5 * acceleration * terminal['time_s']**2
+        assert math.isclose(terminal['position_m'][0], expected_position, rel_tol=1e-10, abs_tol=1e-16)
+        assert math.isclose(terminal['velocity_m_s'][0], acceleration * terminal['time_s'], rel_tol=1e-10, abs_tol=1e-10)
+    print('INSTALLED_REFERENCE_THREE_SPECIES=PASS ion_positive=1 ion_negative=1 electron=1 independent_e_oracle=1 cold_read=1', flush=True)
     print('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1 author_snapshot=1', flush=True)
     print('REFERENCE_RESULT=' + json.dumps({'run_id': reference_first['run_id'],
         'author_sha256': reference_inspected['provenance']['author_sha256'],
@@ -193,10 +234,10 @@ with section_timing('reference_tracing', sys.argv[2]):
 # REFERENCE_TRACING_INSTALLED_END
 # B_NATIVE_PREFLIGHT_INSTALLED_BEGIN
 with section_timing('b_native_preflight', sys.argv[2]):
+    import importlib.util
     from importlib.resources import files as installed_files
     from msplatform import assembly as installed_assembly, components as installed_components, examples as installed_examples
     from msplatform.backends import simion as installed_simion
-    from msplatform.backends.simion.mass_spectrum import run_mixed_species_fly as installed_retired_fly
     from msplatform.contracts.machine_contracts import ContractError as InstalledContractError
     from msplatform.recipes import load_recipe as installed_load_recipe
     from msplatform.workflows.mass_scan import prepare_mass_scan as installed_prepare_mass_scan
@@ -204,6 +245,27 @@ with section_timing('b_native_preflight', sys.argv[2]):
     installed_expected = json.loads((root / 'installed_b_resource_hashes.json').read_text(encoding='utf-8'))
     installed_package = installed_files('msplatform.examples')
     installed_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
+    for module_name, symbols in {
+        'msplatform.workflows.historical_oa_focus_receipt': ('read_historical_oa_mr_receipt',),
+        'msplatform.workflows.oa_focus_store_analysis': ('publish_focus_analysis', 'recover_focus_analysis_publication', 'guard_focus_analysis'),
+        'msplatform.workflows.historical_comsol_detector': ('publish_historical_comsol_report', 'publish_failed_historical_comsol_report', 'publish_failed_extracted_comsol_report', 'publish_extracted_comsol_report'),
+        'msplatform.backends.comsol.historical_detector_extraction': ('extract_historical_detector',),
+        'msplatform.workflows.native_detector_analysis': ('publish_native_detector_peak', 'publish_public_run_detector_peak'),
+        'msplatform.analysis.native_detector_peak': ('analyze_native_detector_peak',),
+        'msplatform.results.public_detector_contract': ('read_public_detector_contract',),
+    }.items():
+        module = importlib.import_module(module_name)
+        assert pathlib.Path(module.__file__).resolve().is_relative_to(installed_purelib)
+        assert all(callable(getattr(module, symbol)) for symbol in symbols)
+    from msplatform.backends.comsol.resources import native_resource_path as installed_comsol_resource
+    from msplatform.backends.simion.resources import native_resource_path as installed_simion_resource
+    focus_observer_resource = installed_simion_resource('oa_focus_observer.lua')
+    assert focus_observer_resource.is_file() and focus_observer_resource.resolve().is_relative_to(installed_purelib)
+    for resource_name in ('reextract_oatof_saved_solution.m', 'oatof_postprocess_saved_solution.m',
+                          'oatof_export_detector_events.m', 'oatof_particle_plot_view.m',
+                          'oatof_create_result_nodes.m', 'oatof_validate_candidate_solution.m'):
+        resource_path = installed_comsol_resource(resource_name)
+        assert resource_path.is_file() and resource_path.resolve().is_relative_to(installed_purelib)
     for installed_name in ('oa_split_tof_native_small_v1', 'rf_split_oatof_native_small_v1',
                            'oa_split_tof_mass_scan_small_v1'):
         for installed_ext in ('toml', 'json'):
@@ -231,6 +293,57 @@ with section_timing('b_native_preflight', sys.argv[2]):
             assert [row['particle_weight'] for row in installed_rows] == [1., 1., 1., .5, .5]
             assert {row['mass_amu'] for row in installed_rows} == {100.}
             print('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', flush=True)
+    # Explicit recorded-birth author, resolved and consumed through the current
+    # public recipe. This software probe does not invoke a native tracer.
+    import base64 as recorded_base64, copy as recorded_copy, csv as recorded_csv, re as recorded_re
+    from msplatform.particle_release import sample_release as recorded_sample_release
+    from msplatform.particle_release.cylinder import CANONICAL_COLUMNS as recorded_columns
+    from msplatform.workflows.native_tracing import _realizations as recorded_realizations
+    recorded_root = root / ('public-recorded-birth-' + sys.argv[2]); recorded_root.mkdir()
+    recorded_name = 'oa_split_tof_native_small_v1'
+    recorded_study = json.loads(installed_package.joinpath(recorded_name + '.json').read_bytes())
+    recorded_release = recorded_study['release']
+    recorded_rows = recorded_sample_release(recorded_release).to_dict()['realization']['generator_rows']
+    recorded_source = recorded_root / 'birth.csv'
+    with recorded_source.open('w', encoding='utf-8', newline='') as recorded_stream:
+        recorded_writer = recorded_csv.DictWriter(recorded_stream, fieldnames=recorded_columns,
+                                                  extrasaction='ignore', lineterminator='\n')
+        recorded_writer.writeheader(); recorded_writer.writerows(recorded_rows)
+    recorded_payload = recorded_source.read_bytes()
+    recorded_study['release'] = dict(schema_version=1, role='canonical_recorded_birth_request',
+        source_record=dict(path='birth.csv', bytes=len(recorded_payload),
+                           sha256=hashlib.sha256(recorded_payload).hexdigest().upper()),
+        clock=recorded_release['clock'], instrument_origin_us=1.25, species_id=recorded_release['species_id'],
+        species=recorded_release['release_spec']['species'], source_component_id=recorded_release['source_component_id'],
+        frame_id=recorded_release['release_spec']['frame_id'], relative_weights=recorded_release['relative_weights'],
+        particle_ids=[row['particle_id'] for row in recorded_rows])
+    recorded_study_bytes = json.dumps(recorded_study).encode('utf-8')
+    (recorded_root / (recorded_name + '.json')).write_bytes(recorded_study_bytes)
+    recorded_toml = installed_package.joinpath(recorded_name + '.toml').read_text(encoding='utf-8')
+    recorded_toml = recorded_re.sub(r'(?m)^sha256 = "[a-fA-F0-9]{64}"',
+        'sha256 = "' + hashlib.sha256(recorded_study_bytes).hexdigest() + '"', recorded_toml, count=1)
+    recorded_author = recorded_root / (recorded_name + '.toml'); recorded_author.write_text(recorded_toml, encoding='utf-8')
+    recorded_recipe = installed_load_recipe(recorded_author).to_dict()
+    recorded_capability = installed_preflight(recorded_recipe)
+    assert recorded_capability['implemented'] is True and recorded_capability['native_verified'] is False
+    recorded_cli = json.loads(reference_command([str(reference_console), 'validate', str(recorded_author)]))
+    assert recorded_cli == {'resolved': recorded_recipe, 'capabilities': recorded_capability}
+    recorded_frozen = recorded_root / 'frozen'; recorded_frozen.mkdir()
+    (recorded_frozen / 'recorded_birth.csv').write_bytes(recorded_base64.b64decode(
+        recorded_recipe['resource_snapshots']['recorded_birth.csv']['bytes_base64'], validate=True))
+    recorded_packet = recorded_realizations(recorded_study['release'], resource_root=recorded_frozen)[0]
+    assert recorded_packet['recorded_source']['species_kind'] == 'ion'
+    assert [row['particle_id'] for row in recorded_packet['rows']] == [1, 2, 3]
+    assert all(row['state_event'] == 'source_birth' and row['instrument_time_us'] == 1.25 for row in recorded_packet['rows'])
+    recorded_bad = recorded_copy.deepcopy(recorded_study['release']); recorded_bad['species']['mass_amu'] *= 2
+    try: recorded_realizations(recorded_bad, resource_root=recorded_frozen)
+    except ValueError as error: assert 'rows differ from the explicit species' in str(error)
+    else: raise AssertionError('recorded source accepted an inconsistent species')
+    recorded_source.write_bytes(recorded_payload + b'tamper')
+    try: installed_load_recipe(recorded_author)
+    except ValueError as error: assert 'source bytes differ' in str(error)
+    else: raise AssertionError('recorded source accepted tampered author bytes')
+    print('INSTALLED_PUBLIC_RECORDED_BIRTH=PASS ids=1,2,3 origin_us=1.25 tamper_rejected=1 native=none', flush=True)
     def installed_missing_module(name):
         try:
             return importlib.util.find_spec(name) is None
@@ -238,9 +351,20 @@ with section_timing('b_native_preflight', sys.argv[2]):
             if error.name and name.startswith(error.name + '.'):
                 return True
             raise
+    assert installed_missing_module('msplatform.workflows.single_reflection_flight.recorded_birth')
+    assert installed_missing_module('msplatform.workflows.prepared_joint.source')
+    assert installed_missing_module('msplatform.workflows.prepared_joint.flight')
+    assert not (installed_purelib / 'msplatform/workflows/resources/single_reflection_flight.ps1').exists()
     assert installed_missing_module('msplatform.workflows.oa_formal')
     assert installed_missing_module('msplatform.workflows.oa_formal.prepare_formal_promotion')
     assert installed_missing_module('msplatform.workflows.oa_formal.verify_geometry_derivation')
+    assert installed_missing_module('msplatform.execution.clock_authority')
+    from msplatform.io import clock_authority as installed_clock_authority
+    assert pathlib.Path(installed_clock_authority.__file__).resolve().is_relative_to(installed_purelib)
+    assert installed_clock_authority.SCHEMA_PATH.is_file()
+    from msplatform.components.single_reflection_oa_tof import geometry_derivation
+    assert pathlib.Path(geometry_derivation.__file__).resolve().is_relative_to(installed_purelib)
+    assert callable(geometry_derivation.verify_geometry_derivation)
     installed_old = installed_examples.load_example('rf_oatof_functional_v1')
     installed_parts = {name: installed_components.resolve_component(value) for name, value in installed_old.component_requests.items()}
     installed_old_assembly = installed_assembly.assemble(installed_old.recipe, installed_parts)
@@ -250,16 +374,8 @@ with section_timing('b_native_preflight', sys.argv[2]):
         assert 'historical read-only' in str(error)
     else:
         raise AssertionError('legacy composite accepted for new native execution')
-    try:
-        installed_retired_fly(None, operation_id='', simion_executable=pathlib.Path('x'), artifact_project_root=pathlib.Path('x'),
-            project_id='', combined_ion=pathlib.Path('x'), total_particles=1, max_tof_us=1., output_csv=pathlib.Path('x'),
-            summary_path=pathlib.Path('x'), runtime_receipt=pathlib.Path('x'), limits={}, immutable_input_records=[])
-    except ValueError as error:
-        assert 'mass_scan' in str(error)
-    else:
-        raise AssertionError('retired legacy mass-spectrum Fly accepted')
-    for installed_name in ('msplatform.workflows.native_tracing','msplatform.workflows.mass_scan','msplatform.backends.simion.operations',
-                           'msplatform.backends.simion.mass_spectrum'):
+    assert importlib.util.find_spec('msplatform.backends.simion.mass_spectrum') is None
+    for installed_name in ('msplatform.workflows.native_tracing','msplatform.workflows.mass_scan','msplatform.backends.simion.operations'):
         assert pathlib.Path(sys.modules[installed_name].__file__).resolve().is_relative_to(installed_purelib), installed_name
     from msplatform.workflows.single_reflection_flight import continuation as installed_continuation
     import inspect as installed_inspect
@@ -281,6 +397,75 @@ with section_timing('b_native_preflight', sys.argv[2]):
     print('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', flush=True)
     print('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', flush=True)
 # B_NATIVE_PREFLIGHT_INSTALLED_END
+# HISTORICAL_MASS_ANALYSIS_INSTALLED_BEGIN
+with section_timing('historical_mass_analysis', sys.argv[2]):
+    from msplatform.execution.context import ExecutionContext as history_context
+    from msplatform.execution.resources import resource_path as history_resource
+    from msplatform.results.historical_mass_spectrum import OUTPUT_NAMES as history_outputs
+    from msplatform.storage import ArtifactStore as history_store
+    from msplatform.workflows.historical_mass_analysis import analyze_recorded_mass_spectrum as history_analyze
+    history_fixture = json.loads((root / 'installed_history_fixture.json').read_text(encoding='utf-8'))
+    history_source = pathlib.Path(history_fixture['source'])
+    history_before = {str(path.relative_to(history_source)): hashlib.sha256(path.read_bytes()).hexdigest()
+                      for path in history_source.rglob('*') if path.is_file()}
+    history_workspace = root / ('history-workspace-' + sys.argv[2]); history_workspace.mkdir()
+    history_stage = root / 'installed_history_stage.json'
+    history_ctx = history_context(workspace=history_workspace, python_executable=pathlib.Path(sys.executable),
+        powershell_executable=pathlib.Path(history_fixture['powershell']), tools={},
+        host_state_path=pathlib.Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']),
+        policy_path=history_resource('host_resource_policy.json'),
+        execution_root=root / ('history-aliases-' + sys.argv[2]), stage_policy_path=history_stage)
+    history_artifacts = history_store(root / ('history-store-' + sys.argv[2]))
+    history_result = history_analyze(history_ctx, source_manifest=history_source / 'run_manifest.json',
+        run_id='20261127_100000__analysis__python__installedhistory', artifact_store=history_artifacts,
+        committed_new_bytes=268435456)
+    assert (history_result['status'], history_result['stage'], history_result['writers_confirmed']) == ('success','complete',True)
+    history_run = pathlib.Path(history_result['run_directory'])
+    assert all((history_run / 'results' / name).is_file() for name in history_outputs)
+    history_completion = json.loads((history_run / 'results/execution_completion.json').read_text(encoding='utf-8'))
+    assert history_completion['summary']['solver_native_calls'] == 0
+    assert history_completion['summary']['pa_materializations'] == 0
+    history_process = json.loads((history_run / 'logs/operation_0001.process.json').read_text(encoding='utf-8'))
+    assert history_process['observation']['exit_code'] == 0
+    assert history_process['host_release']['result']['status'] == 'released'
+    with history_artifacts._db() as history_db:
+        assert history_db.execute('SELECT COUNT(*) FROM reservations').fetchone()[0] == 0
+        assert history_db.execute("SELECT COUNT(*) FROM native_bindings WHERE state='active'").fetchone()[0] == 0
+    assert history_artifacts.inspect_run(history_result['store_run_id']) == pathlib.Path(history_result['store_run_path'])
+    assert history_before == {str(path.relative_to(history_source)): hashlib.sha256(path.read_bytes()).hexdigest()
+                              for path in history_source.rglob('*') if path.is_file()}
+    print('INSTALLED_HISTORICAL_MASS_ANALYSIS=PASS real_store=1 cold_read=1 source_unchanged=1 no_native=1', flush=True)
+# HISTORICAL_MASS_ANALYSIS_INSTALLED_END
+# HISTORICAL_FIELD_ANALYSIS_INSTALLED_BEGIN
+with section_timing('historical_field_analysis', sys.argv[2]):
+    from msplatform.storage import ArtifactStore as sweep_store_type
+    from msplatform.workflows.historical_field_diagnostic import analyze_recorded_field_sweep as sweep_analyze
+    sweep_input = json.loads((root / 'installed_sweep_fixture.json').read_text(encoding='utf-8'))
+    sweep_source = pathlib.Path(sweep_input['source'])
+    sweep_before = {str(path.relative_to(sweep_source)): hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in sweep_source.rglob('*') if path.is_file()}
+    sweep_store = sweep_store_type(root / ('sweep-store-' + sys.argv[2]))
+    sweep_result = sweep_analyze(source_manifest=sweep_source / 'run_manifest.json',
+                                 artifact_store=sweep_store, budget_bytes=4*1024*1024)
+    sweep_run = sweep_store.inspect_run(sweep_result['store_run_id'])
+    sweep_summary = json.loads((sweep_run / 'summary.json').read_text(encoding='utf-8'))
+    assert [(case['case_id'], case['detected']) for case in sweep_summary['cases']] == [('actual', 1), ('ideal', 0)]
+    assert sweep_summary['cases'][1]['mean_tof_us'] is None and sweep_summary['cases'][1]['tof_std_ns'] is None
+    assert sweep_summary['cases'][1]['solve_seconds'] is None
+    assert (sweep_run / 'inputs/source.ion').read_bytes() == (sweep_source / 'simion/oatof_N2.ion').read_bytes()
+    assert sweep_before == {str(path.relative_to(sweep_source)): hashlib.sha256(path.read_bytes()).hexdigest()
+                            for path in sweep_source.rglob('*') if path.is_file()}
+    with sweep_store._db() as sweep_db:
+        assert sweep_db.execute('SELECT COUNT(*) FROM reservations').fetchone()[0] == 0
+    bad_sweep_store = sweep_store_type(root / ('bad-sweep-store-' + sys.argv[2]))
+    try: sweep_analyze(source_manifest=pathlib.Path(sweep_input['tampered']) / 'run_manifest.json',
+                       artifact_store=bad_sweep_store, budget_bytes=4*1024*1024)
+    except (ValueError, FileNotFoundError): pass
+    else: raise AssertionError('tampered historical field sweep was accepted')
+    with bad_sweep_store._db() as sweep_db:
+        assert sweep_db.execute('SELECT COUNT(*) FROM runs').fetchone()[0] == 0
+    print('INSTALLED_HISTORICAL_FIELD_SWEEP=PASS cold_read=1 zero_hit=1 tamper_rejected=1 no_native=1', flush=True)
+# HISTORICAL_FIELD_ANALYSIS_INSTALLED_END
 # STRICT_JSON_INSTALLED_BEGIN
 import runpy
 strict_json_probe = runpy.run_path(str(root / 'installed_strict_json_probe.py'))
@@ -294,157 +479,27 @@ workbench_seed_probe['run'](fixture, root, blocked_source_roots, sys.argv[2], se
 static_field_probe = runpy.run_path(str(root / 'installed_static_field_probe.py'))
 static_field_probe['run_static_field_probe'](fixture, root, blocked_source_roots, sys.argv[2], section_timing)
 # STATIC_FIELD_COMPARISON_INSTALLED_END
-# MR_MEASURED_SOURCE_INSTALLED_BEGIN
-with section_timing('mr_measured_source', sys.argv[2]):
-    from msplatform.workflows.prepared_joint import source as mr_source_owner
-    from msplatform.backends.simion.resources import native_resource_path as mr_resource_path
-    from msplatform.contracts.particle_physics import kinetic_energy_ev as mr_kinetic_energy
-    mr_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
-    mr_owner_file = pathlib.Path(mr_source_owner.__file__).resolve()
-    assert mr_owner_file == mr_purelib / 'msplatform/workflows/prepared_joint/source.py'
-    for mr_dependency in ('msplatform.workflows.prepared_joint.ip_mr_connection', 'msplatform.io.strict_json',
-            'msplatform.execution.clock_authority', 'msplatform.contracts.particle_state',
-            'msplatform.backends.simion.source', 'msplatform.backends.simion.resources'):
-        assert pathlib.Path(sys.modules[mr_dependency].__file__).resolve().is_relative_to(mr_purelib), mr_dependency
-    mr_lua_file = pathlib.Path(mr_resource_path('mrtof_measured_source_runtime.lua')).resolve()
-    assert mr_lua_file.is_relative_to(mr_purelib)
-    mr_lua_bytes = mr_lua_file.read_bytes()
-    assert hashlib.sha256(mr_lua_bytes).hexdigest() == '251daa47d2fe1aa219c1bc6c24a5f2e464f3db4335298507ade475fb072a4343'
+# MR_HISTORICAL_CAPTURE_INSTALLED_BEGIN
+with section_timing('mr_historical_capture', sys.argv[2]):
+    import base64 as mr_history_base64
+    import csv as mr_history_csv
     mr_witness = fixture['mr_measured_source_old_witness']
-    mr_handoff = pathlib.Path(fixture['mr_measured_handoff'])
-    mr_original_root = mr_handoff.parent.parent
-    mr_arm_root = root / ('mr-measured-' + sys.argv[2]); mr_arm_root.mkdir()
-    mr_population_dir = mr_arm_root / 'source_prepared'
-    def mr_verify_record(record, path):
-        assert set(record) == {'path', 'bytes', 'sha256'}, record
-        assert pathlib.Path(record['path']).resolve() == path.resolve()
-        data = path.read_bytes()
-        assert record['bytes'] == len(data) and record['sha256'].lower() == hashlib.sha256(data).hexdigest(), record
-    def mr_verify_stage(stage, report, directory, input_paths, source_receipt=None):
-        expected = mr_witness['stages'][stage]
-        expected_keys = set(expected['semantic_report']) | {'outputs'}
-        if expected['input_record_keys'] is not None:
-            expected_keys.add('inputs')
-            assert set(report['inputs']) == set(expected['input_record_keys']) == set(input_paths)
-            for key, path in input_paths.items(): mr_verify_record(report['inputs'][key], path)
-        else:
-            assert not input_paths
-        if expected['has_source_receipt']:
-            expected_keys.add('source_receipt'); mr_verify_record(report['source_receipt'], source_receipt)
-        assert set(report) == expected_keys
-        assert {k: report[k] for k in expected['semantic_report']} == expected['semantic_report']
-        artifacts = expected['artifacts']
-        assert set(path.name for path in directory.iterdir()) == set(artifacts) | {'source_receipt.json'}
-        assert set(report['outputs']) == set(expected['output_record_keys'])
-        by_stem = {pathlib.Path(name).stem: directory/name for name in artifacts}
-        assert set(by_stem) == set(report['outputs'])
-        for key, record in report['outputs'].items(): mr_verify_record(record, by_stem[key])
-        for name, original in artifacts.items():
-            data = (directory/name).read_bytes()
-            assert data == base64.b64decode(original['base64'], validate=True), (stage, name)
-            assert len(data) == original['bytes'] and hashlib.sha256(data).hexdigest() == original['sha256']
-        assert json.loads((directory/'source_receipt.json').read_text(encoding='utf-8')) == report
-    mr_handoff_document = json.loads(mr_handoff.read_text(encoding='utf-8'))
-    mr_handoff_inputs = {'component_receipt': 'component_exit_receipt.json', 'trajectory_contract': 'trajectory.json',
-        'accelerator_provider_receipt': 'provider.json', 'request': 'request.json', 'composition_plan': 'recipe.json'}
-    mr_handoff_outputs = {'component_particle_state': 'prepared/component_particle_state.csv',
-        'source_census': 'prepared/source_census.csv', 'matching_request_resolved': 'prepared/matching_request_resolved.json'}
-    assert set(mr_handoff_document['inputs']) == set(mr_handoff_inputs)
-    assert set(mr_handoff_document['outputs']) == set(mr_handoff_outputs)
-    for key, name in mr_handoff_inputs.items(): mr_verify_record(mr_handoff_document['inputs'][key], mr_original_root/name)
-    for key, name in mr_handoff_outputs.items(): mr_verify_record(mr_handoff_document['outputs'][key], mr_original_root/name)
-    mr_producer = json.loads((mr_original_root/'component_exit_receipt.json').read_text(encoding='utf-8'))
-    mr_producer_inputs = {'inputs/resolved_model.json': 'resolved_model.json',
-        'inputs/clock_authority.json': 'inputs/clock_authority.json', 'inputs/instrument_epoch.json': 'inputs/instrument_epoch.json'}
-    mr_producer_outputs = {'component_states': 'source.csv', 'mother_census': 'census.csv'}
-    assert set(mr_producer['inputs']) == set(mr_producer_inputs) and set(mr_producer['outputs']) == set(mr_producer_outputs)
-    for key, name in mr_producer_inputs.items(): mr_verify_record(mr_producer['inputs'][key], mr_original_root/name)
-    for key, name in mr_producer_outputs.items(): mr_verify_record(mr_producer['outputs'][key], mr_original_root/name)
-    mr_population = mr_source_owner.materialize_measured_source(mr_handoff, mr_population_dir)
-    mr_verify_stage('population', mr_population, mr_population_dir,
-        {'handoff_receipt': mr_handoff, 'upstream_clock': mr_original_root/'inputs/clock_authority.json'})
-    assert (mr_population_dir/'source_runtime.lua').read_bytes() == mr_lua_bytes
-    mr_lua_provider = fixture['scalar_adapter']['executable']
-    mr_lua_executable = pathlib.Path(mr_lua_provider['path'])
-    mr_provider_bytes = mr_lua_executable.read_bytes()
-    assert len(mr_provider_bytes) == mr_lua_provider['bytes'] and hashlib.sha256(mr_provider_bytes).hexdigest() == mr_lua_provider['sha256']
-    mr_callback = mr_arm_root/'original_read_only_tof_fixture.lua'
-    mr_callback.write_text(fixture['mr_measured_callback'], encoding='utf-8', newline='\n')
-    mr_run = subprocess.run([str(mr_lua_executable), str(mr_callback), str(mr_population_dir)], cwd=mr_arm_root,
-        capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
-    assert mr_run.returncode == 0 and 'READ_ONLY_TOF=PASS' in mr_run.stdout, mr_run.stdout + mr_run.stderr
-    mr_state = mr_population_dir/'component_particle_state.csv'
-    with mr_state.open(encoding='utf-8', newline='') as stream: mr_rows = list(csv.DictReader(stream))
-    for row in mr_rows: row['position_z_mm'] = '0.0'
-    mr_rows[0]['velocity_x_m_s'] = '321'
-    mr_rows[0]['kinetic_energy_eV'] = str(mr_kinetic_energy(float(mr_rows[0]['mass_amu']),
-        *(float(mr_rows[0][f'velocity_{axis}_m_s']) for axis in 'xyz')))
-    write_component_particle_state_csv(mr_state, mr_rows)
-    mr_receipt = mr_population_dir/'source_receipt.json'
-    mr_receipt_data = json.loads(mr_receipt.read_text(encoding='utf-8'))
-    mr_receipt_data['outputs']['component_particle_state'] = dict(path=str(mr_state), bytes=mr_state.stat().st_size,
-        sha256=hashlib.sha256(mr_state.read_bytes()).hexdigest().upper())
-    mr_receipt.write_text(json.dumps(mr_receipt_data)+'\n', encoding='utf-8')
-    mr_centroid_dir = mr_arm_root/'probe'
-    mr_centroid = mr_source_owner.materialize_centroid_probe(mr_population_dir, mr_centroid_dir)
-    mr_verify_stage('centroid', mr_centroid, mr_centroid_dir, {'mother_source_receipt': mr_receipt})
-    mr_slice_dir = mr_arm_root/'slice'
-    mr_slice = mr_source_owner.materialize_measured_source_slice(mr_population_dir, mr_slice_dir, 2, 2)
-    mr_verify_stage('slice', mr_slice, mr_slice_dir, {}, mr_receipt)
-    def mr_observe(call):
-        try: call()
-        except Exception as exc: return {'type': type(exc).__module__+'.'+type(exc).__qualname__, 'message': str(exc)}
-        raise AssertionError('expected measured-source failure')
-    mr_negative = mr_witness['negatives']
-    def mr_expect(name, call, expected_path=None):
-        expected = dict(mr_negative[name]['exception'])
-        if expected['type'] == 'common.contracts.strict_json.StrictJsonError': expected['type'] = 'msplatform.io.strict_json.StrictJsonError'
-        if expected_path is not None: expected['message'] = expected['message'].replace('<INPUT_ROOT>'+expected_path[0], str(expected_path[1]))
-        assert mr_observe(call) == expected
-    mr_expect('existing_output', lambda: mr_source_owner.materialize_measured_source(mr_handoff, mr_population_dir),
-        ('\\source_prepared', mr_population_dir))
-    mr_expect('invalid_ordinal', lambda: mr_source_owner.materialize_measured_source_slice(mr_population_dir, mr_arm_root/'bad_slice', 0, 1))
-    mr_handoff_bytes = mr_handoff.read_bytes()
-    try:
-        mr_handoff.write_bytes(b'{"schema_version":3,' + mr_handoff_bytes.lstrip()[1:])
-        mr_expect('duplicate_json', lambda: mr_source_owner.materialize_measured_source(mr_handoff, mr_arm_root/'bad_json'),
-            ('\\prepared\\handoff_receipt.json', mr_handoff))
-    finally: mr_handoff.write_bytes(mr_handoff_bytes)
-    mr_state_bytes = mr_state.read_bytes()
-    try:
-        mr_state.write_bytes(mr_state_bytes+b'tamper')
-        mr_expect('tampered_state', lambda: mr_source_owner.materialize_centroid_probe(mr_population_dir, mr_arm_root/'bad_probe'),
-            ('\\source_prepared\\component_particle_state.csv', mr_state))
-    finally: mr_state.write_bytes(mr_state_bytes)
-    mr_child = r"""import importlib.abc,json,os,pathlib,sys
-blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
-def deny(event,args):
- if event=='open' and args and isinstance(args[0],(str,bytes)):
-  p=pathlib.Path(os.fsdecode(args[0])).resolve()
-  if any(p.is_relative_to(b) for b in blocked): raise AssertionError('author access: '+str(p))
-sys.addaudithook(deny)
-class Deny(importlib.abc.MetaPathFinder):
- def find_spec(self,fullname,path=None,target=None):
-  if fullname.split('.')[0] in {'common','projects','integrations'}: raise AssertionError('author import: '+fullname)
-sys.meta_path.insert(0,Deny())
-import msplatform.workflows.prepared_joint.source as owner
-if sys.argv[2]=='resource': owner.materialize_measured_source(pathlib.Path(sys.argv[3]),pathlib.Path(sys.argv[4]))
-"""
-    mr_connection_file = pathlib.Path(sys.modules['msplatform.workflows.prepared_joint.ip_mr_connection'].__file__).resolve()
-    for mr_missing_path, mr_kind in ((mr_owner_file, 'owner'), (mr_connection_file, 'connection'), (mr_lua_file, 'resource')):
-        mr_original = mr_missing_path.read_bytes(); mr_held = mr_missing_path.with_suffix(mr_missing_path.suffix+'.held')
-        assert not mr_held.exists(); mr_missing_path.rename(mr_held)
-        try:
-            mr_missing = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8', '-c', mr_child,
-                json.dumps([str(path) for path in blocked_source_roots]), mr_kind, str(mr_handoff), str(mr_arm_root/'missing-resource')],
-                cwd=mr_arm_root, capture_output=True, text=True, encoding='utf-8', timeout=30, check=False)
-            assert mr_missing.returncode != 0
-            if mr_kind == 'owner': assert "No module named 'msplatform.workflows.prepared_joint.source'" in mr_missing.stderr, mr_missing.stderr
-            elif mr_kind == 'connection': assert "No module named 'msplatform.workflows.prepared_joint.ip_mr_connection'" in mr_missing.stderr, mr_missing.stderr
-            else: assert 'mrtof_measured_source_runtime.lua' in mr_missing.stderr and ('FileNotFoundError' in mr_missing.stderr), mr_missing.stderr
-        finally: mr_held.rename(mr_missing_path)
-        assert mr_missing_path.read_bytes() == mr_original
-# MR_MEASURED_SOURCE_INSTALLED_END
+    mr_history_root = root / ('mr-history-' + sys.argv[2]); mr_history_root.mkdir()
+    for mr_stage in ('population', 'centroid', 'slice'):
+        mr_stage_root = mr_history_root / mr_stage; mr_stage_root.mkdir()
+        for mr_name, mr_record in mr_witness['stages'][mr_stage]['artifacts'].items():
+            mr_payload = mr_history_base64.b64decode(mr_record['base64'], validate=True)
+            assert len(mr_payload) == mr_record['bytes']
+            assert hashlib.sha256(mr_payload).hexdigest() == mr_record['sha256'].lower()
+            (mr_stage_root / mr_name).write_bytes(mr_payload)
+        mr_rows = load_component_particle_state_csv(mr_stage_root / 'component_particle_state.csv').rows
+        with (mr_stage_root / 'source_census.csv').open(newline='', encoding='utf-8-sig') as mr_stream:
+            mr_census = list(mr_history_csv.DictReader(mr_stream))
+        assert len({row['particle_id'] for row in mr_rows}) == len(mr_rows)
+        assert len({int(row['particle_id']) for row in mr_census}) == len(mr_census)
+    assert len(load_component_particle_state_csv(mr_history_root / 'centroid/component_particle_state.csv').rows) == 1
+    print('MR_HISTORICAL_CAPTURE_INSTALLED=PASS frozen_bytes=1 read_only=1 no_source_producer=1', flush=True)
+# MR_HISTORICAL_CAPTURE_INSTALLED_END
 # RF_EVENT_PROTOCOL_INSTALLED_BEGIN
 with section_timing('rf_event_protocol', sys.argv[2]):
     import errno
@@ -920,11 +975,13 @@ with section_timing('tof_mass_spectrum', sys.argv[2]):
     import base64 as tms_base64
     import platform as tms_platform
     import pandas as tms_pd
-    from msplatform.workflows import single_reflection_mass_spectrum as tms_owner
+    from msplatform.analysis import mass_spectrum as tms_fit
+    from msplatform.results import historical_mass_spectrum as tms_owner
     from msplatform.results import single_reflection_particle_table as tms_reader
     tms_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
-    tms_names = ('msplatform.workflows.single_reflection_mass_spectrum', 'msplatform.results.single_reflection_particle_table')
-    tms_modules = (tms_owner, tms_reader)
+    tms_names = ('msplatform.results.historical_mass_spectrum', 'msplatform.results.single_reflection_particle_table', 'msplatform.analysis.mass_spectrum')
+    assert importlib.util.find_spec('msplatform.workflows.single_reflection_mass_spectrum') is None
+    tms_modules = (tms_owner, tms_reader, tms_fit)
     tms_files = tuple(pathlib.Path(module.__file__).resolve() for module in tms_modules)
     for name, path in zip(tms_names, tms_files, strict=True):
         assert path == tms_purelib.joinpath(*name.split('.')).with_suffix('.py'), (name,path)
@@ -964,7 +1021,8 @@ with section_timing('tof_mass_spectrum', sys.argv[2]):
         assert len(data) == record['bytes'] and hashlib.sha256(data).hexdigest() == record['sha256']
     tms_root = root/('tof-mass-spectrum-'+sys.argv[2]);tms_root.mkdir()
     tms_output = tms_root/'output'
-    tms_result = tms_owner.analyze_mass_spectrum(tms_mode,tms_comsol,tms_simion,tms_output,tms_geometry)
+    tms_result = tms_fit.analyze_mass_spectrum(**tms_owner.read_mass_spectrum_inputs(tms_mode,tms_comsol,tms_simion,tms_geometry),
+        output_dir=tms_output,python_version=tms_platform.python_version())
     tms_metrics_raw = (tms_output/'mass_spectrum_metrics.json').read_bytes()
     assert json.loads(tms_metrics_raw) == tms_result
     assert tms_result['python'] == tms_platform.python_version()
@@ -994,11 +1052,12 @@ with section_timing('tof_mass_spectrum', sys.argv[2]):
     print('TOF_MASS_SPECTRUM_PYTHON='+json.dumps(dict(original=tms_expected['python'],installed=tms_result['python'])),flush=True)
     for name,tof,mz in (('rank',[10.,10.,10.],[1.,4.,9.]),('negative',[1.,2.,3.],[1.,-4.,9.]),
                         ('overflow',[1e308,1.1e308,1.2e308],[1.,4.,9.])):
-        try: tms_owner.fit_calibration(np.asarray(tof),np.asarray(mz))
+        try: tms_fit.fit_calibration(np.asarray(tof),np.asarray(mz))
         except Exception as exc:
             assert {'type':type(exc).__module__+'.'+type(exc).__qualname__,'message':str(exc)} == tms_old['failures'][name]
         else: raise AssertionError('calibration refusal missing: '+name)
-    try: tms_owner.analyze_mass_spectrum(tms_mode,tms_comsol,tms_simion,tms_root/'missing-geometry-output',tms_root/'missing-geometry.json')
+    try: tms_fit.analyze_mass_spectrum(**tms_owner.read_mass_spectrum_inputs(tms_mode,tms_comsol,tms_simion,tms_root/'missing-geometry.json'),
+        output_dir=tms_root/'missing-geometry-output',python_version=tms_platform.python_version())
     except FileNotFoundError as exc: assert pathlib.Path(exc.filename) == tms_root/'missing-geometry.json'
     else: raise AssertionError('missing explicit geometry accepted')
     assert not (tms_root/'missing-geometry-output').exists()
@@ -1009,7 +1068,8 @@ with section_timing('tof_mass_spectrum', sys.argv[2]):
         tms_case_simion = tms_case/'simion.csv';shutil.copyfile(tms_simion,tms_case_simion)
         tms_bad = tms_case_comsol/(str(tms_mode_doc['species'][0]['species_id'])+'.csv') if solver == 'COMSOL' else tms_case_simion
         tms_frame = tms_pd.read_csv(tms_bad,dtype=str);tms_frame.loc[0,'Ion']='1.9';tms_frame.to_csv(tms_bad,index=False)
-        try: tms_owner.analyze_mass_spectrum(tms_mode,tms_case_comsol,tms_case_simion,tms_case/'output',tms_geometry)
+        try: tms_fit.analyze_mass_spectrum(**tms_owner.read_mass_spectrum_inputs(tms_mode,tms_case_comsol,tms_case_simion,tms_geometry),
+            output_dir=tms_case/'output',python_version=tms_platform.python_version())
         except ValueError as exc: assert 'particle ID' in str(exc) or 'particle_id' in str(exc),str(exc)
         else: raise AssertionError('invalid original particle ID accepted: '+solver)
         assert not (tms_case/'output').exists()
@@ -1039,36 +1099,32 @@ importlib.import_module(sys.argv[2])
 # TOF_MASS_SPECTRUM_INSTALLED_END
 # TOF_MASS_STUDY_INSTALLED_BEGIN
 with section_timing('tof_mass_study', sys.argv[2]):
-    from msplatform.workflows import single_reflection_mass_spectrum_study as mass_study
-    from msplatform.workflows import single_reflection_mass_spectrum_worker as mass_worker
-    from msplatform.backends.comsol import oatof_retrace
-    from msplatform.backends.simion.formal_runtime import stage_verified_simion_runtime
-    from msplatform.backends.simion.ion_table import read_ion_table
+    from msplatform.workflows import historical_mass_analysis as mass_study
+    from msplatform.execution import historical_mass_spectrum_worker as mass_worker
+    from msplatform.results import historical_mass_spectrum as mass_reader
+    from msplatform.backends.simion.runtime_materialization import stage_verified_simion_runtime
+    runtime_purelib = pathlib.Path(sysconfig.get_path('purelib'))
+    assert not (runtime_purelib / 'msplatform/backends/simion/formal_runtime.py').exists()
+    assert not (runtime_purelib / 'msplatform/workflows/oa_formal/stage_formal_simion_runtime.py').exists()
     installed_root = pathlib.Path(sysconfig.get_path('purelib')).resolve()
-    for module in (mass_study, mass_worker, oatof_retrace):
+    for module in (mass_study, mass_worker, mass_reader):
         assert pathlib.Path(module.__file__).resolve().is_relative_to(installed_root)
     assert (installed_root/'msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1').is_file()
     study_root = root/('tof-mass-study-'+sys.argv[2]);study_root.mkdir()
-    mode_path = study_root/'mode.json'
-    mode_path.write_text(json.dumps(dict(schema_version=1,role='oa_tof_candidate_mass_spectrum_mode',
-        mode='mass_spectrum_candidate',particle_source=dict(initial_energy_mean_ev=5.0,
-            initial_energy_sigma_ev=0.4,shared_seed=20260713),species=[dict(
-                species_id=f'mz{mass}_z1',mass_amu=mass,charge_state=1,mz=mass,
-                particle_count=100,relative_abundance=1.0) for mass in (10,100,500,1000,2000)])),encoding='utf-8')
-    policy_path = installed_root/'msplatform/contracts/particle_count_policy.json'
-    cohort = mass_study.build_source_cohort(mode_path,tms_geometry,policy_path,
-        study_root/'ions',study_root/'logs')
-    assert cohort['total_particles'] == 500 and len(cohort['individual']) == 5
-    for selected,parent in zip(cohort['individual'],cohort['parents'],strict=True):
-        assert selected.read_bytes() == b'\r\n'.join(parent.read_bytes().split(b'\r\n')[:100])+b'\r\n'
-    assert read_ion_table(cohort['mixed'])['Ion'].tolist() == list(range(1,501))
+    for retired in ('msplatform.workflows.single_reflection_mass_spectrum_study',
+                    'msplatform.workflows.single_reflection_mass_spectrum_worker',
+                    'msplatform.backends.comsol.oatof_retrace', 'msplatform.backends.simion.mass_spectrum'):
+        assert importlib.util.find_spec(retired) is None, retired
     completion_path = study_root/'completion.json'
     completion_path.write_text(json.dumps(dict(schema_version=1,role='comsol_launcher_completion',
         run_id='installed-study',operations=[dict(observation=dict(exit_confirmed=True,returncode=0,
             process_id=17,process_started_at_utc_ticks=1))],host_release=dict(
                 inherited=True,token='installed-fixture',error=None))),encoding='utf-8')
-    completion = oatof_retrace.load_launcher_completion(completion_path,run_id='installed-study')
-    assert oatof_retrace.completion_successful(completion)
+    completion = mass_reader._historical_comsol_completion(completion_path,run_id='installed-study')
+    assert completion['role'] == 'comsol_launcher_completion'
+    try: mass_reader._historical_comsol_completion(completion_path,run_id='wrong-run')
+    except ValueError: pass
+    else: raise AssertionError('historical completion accepted wrong run identity')
     formal_project = study_root/'formal-project';(formal_project/'formal/simion').mkdir(parents=True)
     iob = formal_project/'formal/simion/oatof_ideal_grounded.iob';iob.write_bytes(b'installed IOB fixture')
     iob_record = dict(bytes=len(iob.read_bytes()),sha256=hashlib.sha256(iob.read_bytes()).hexdigest().upper())
@@ -1092,7 +1148,7 @@ with section_timing('tof_mass_study', sys.argv[2]):
 # TOF_MASS_STUDY_INSTALLED_END
 # Retained single-reflection checkpoint diagnostics are installed independently
 # of the withdrawn local frontend. Preserve its physically missing-module check.
-from msplatform.workflows.single_reflection_flight import checkpoint_diagnostics
+from msplatform.analysis import flight_checkpoint_diagnostics as checkpoint_diagnostics
 checkpoint_path = pathlib.Path(checkpoint_diagnostics.__file__).resolve()
 assert checkpoint_path.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
 checkpoint_original = checkpoint_path.read_bytes()
@@ -1101,12 +1157,13 @@ assert not checkpoint_held.exists()
 checkpoint_path.rename(checkpoint_held)
 try:
     fresh = subprocess.run([sys.executable,'-I','-B','-c',
-        'import importlib; importlib.import_module("msplatform.workflows.single_reflection_flight.checkpoint_diagnostics")'],
+        'import importlib; importlib.import_module("msplatform.analysis.flight_checkpoint_diagnostics")'],
         cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-    assert fresh.returncode != 0 and 'checkpoint_diagnostics' in fresh.stderr
+    assert fresh.returncode != 0 and 'flight_checkpoint_diagnostics' in fresh.stderr
 finally:
     checkpoint_held.rename(checkpoint_path)
 assert checkpoint_path.read_bytes() == checkpoint_original
+assert installed_missing_module('msplatform.workflows.single_reflection_flight.checkpoint_diagnostics')
 
 # Withdrawn local and cooled workflows have no installed executable modules.
 from importlib.util import find_spec as installed_find_spec
@@ -1243,7 +1300,7 @@ for name, module in tuple(sys.modules.items()):
         assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve()), (name, origin)
         origins[name] = str(origin)
 assert {'msplatform.workflows.connection_inputs', 'msplatform.backends.simion.rf_observations',
-        'msplatform.ion_release.release', 'msplatform.assembly.resolve_assembly',
+        'msplatform.particle_release.release', 'msplatform.assembly.resolve_assembly',
         'msplatform.analysis.peak_metrics', 'msplatform.contracts.machine_contracts',
         'msplatform.analysis.particle_census', 'msplatform.analysis.pulse_selection',
         'msplatform.contracts.particle_state', 'msplatform.assembly.electrode_binding',
@@ -1518,7 +1575,7 @@ dual_source_receipt=dual_cone_transport.prepare_transport(dual_source_only,mode=
 assert 'gem' not in dual_source_receipt['inputs']
 assert not list(dual_source_only.rglob('*.gem')) and not list(dual_source_only.rglob('*.pa*'))
 import csv as dual_source_csv_reader
-with (dual_source_only/'input/cylindrical_ion_source.csv').open(newline='') as stream:
+with (dual_source_only/'input/cylindrical_particle_source.csv').open(newline='') as stream:
     dual_source_rows=list(dual_source_csv_reader.DictReader(stream))
 assert len(dual_source_rows)==100 and [int(row['particle_id']) for row in dual_source_rows]==list(range(1,101))
 for name in ('model_drive.lua','single_flight_pulse_hook.lua','voltage_waveforms.lua'):
@@ -1534,7 +1591,7 @@ placed_receipt=dual_cone_transport.prepare_transport(placed_source_only,mode='ga
     gas_science_path=cone_input/'gas_flow_science.json',source_spec_path=cone_input/'source_spec.json',
     gas_field_manifest=root/'uniform-manifest.json',collision_sds_dir=dual_sds,
     materialize_geometry=False,model_projection=placed_model,source_to_device=registration.to_contract())
-assert (placed_source_only/'input/cylindrical_ion_source.csv').read_bytes()==(dual_source_only/'input/cylindrical_ion_source.csv').read_bytes()
+assert (placed_source_only/'input/cylindrical_particle_source.csv').read_bytes()==(dual_source_only/'input/cylindrical_particle_source.csv').read_bytes()
 assert json.loads((placed_source_only/'input/placement.json').read_text())==placed_transform.to_contract()
 assert json.loads((placed_source_only/'input/source_to_device.json').read_text())==registration.to_contract()
 assert 'device_placement=' in (placed_source_only/'solver/simion/run_config.lua').read_text()
@@ -1547,7 +1604,17 @@ assert callable(corridor_field.compile_request)
 from msplatform.backends.comsol import rf_stationary_field
 assert callable(rf_stationary_field.run_field_operations)
 from msplatform.workflows import rf_stationary
-assert 'solve-comsol' in rf_stationary._build_parser().format_help()
+from msplatform.workflows.rf_mass_filter import research as rf_filter_research
+from msplatform import cli as installed_cli
+assert not hasattr(rf_stationary, 'main') and not hasattr(rf_stationary, '_build_parser')
+assert not hasattr(rf_filter_research, 'main') and not hasattr(rf_filter_research, '_build_parser')
+rf_parser_args = ['rf-stationary', 'solve-comsol']
+for flag in ('budget', 'run-id', 'source-id', 'workspace', 'python', 'powershell', 'host-state', 'policy',
+             'artifact-root', 'resolved-runtime', 'preregistration', 'science-task', 'sampling-plan',
+             'comsol-launcher', 'matlab-root'):
+    rf_parser_args.extend(['--'+flag, 'explicit-fixture'])
+rf_parsed = installed_cli._build_parser().parse_args(rf_parser_args)
+assert rf_parsed.command == 'rf-stationary' and rf_parsed.stationary_command == 'solve-comsol'
 from msplatform.backends.comsol.resources import native_resource_directory, native_resource_path, native_resource_text
 import msplatform.backends.comsol as comsol_backend
 matlab_directory = native_resource_directory().resolve()
@@ -1927,6 +1994,11 @@ from msplatform.contracts.rigid_transform import RigidTransform
 guide = export_guide_contract(dict(ip['model'], native_projection=projection), ip['identities'])
 assert len(guide['rod_array']['rods']) == 8
 from msplatform.backends.comsol.paired_static_field import prepare as prepare_paired_field
+from msplatform.workflows.paired_accelerator_static_field import store_workflow as paired_store
+assert pathlib.Path(paired_store.__file__).resolve().is_relative_to(installed_purelib)
+assert callable(paired_store.run_paired_static_comparison) and callable(paired_store.recover_paired_static_publication)
+assert installed_missing_module('msplatform.workflows.paired_accelerator_static_field.runtime')
+assert not (installed_purelib/'msplatform/workflows/resources/paired_accelerator_static_field.ps1').exists()
 paired = fixture['paired_static']
 assert prepare_paired_field(root/'paired-request.json', root/'paired-installed') == paired['expected_plan']
 
@@ -2090,15 +2162,15 @@ assert reference_count > 0
 # The real new user slice runs from installed providers and package resources.
 from unittest.mock import patch
 from msplatform import assembly as assembly_api, components as component_api, examples as example_api
-from msplatform import ion_release as ion_release_api
+from msplatform import particle_release as particle_release_api
 from msplatform.backends import simion as simion_api
 with patch('subprocess.Popen', side_effect=AssertionError('hidden native action')), \
      patch.object(pathlib.Path, 'mkdir', side_effect=AssertionError('hidden workspace creation')), \
      patch.object(pathlib.Path, 'write_text', side_effect=AssertionError('hidden file write')):
     import importlib.util
     study = example_api.load_example('rf_oatof_functional_v1')
-    release = ion_release_api.sample_release(study.release)
-    assert len(release.rows) == 100 and isinstance(release, ion_release_api.ReleaseRealization)
+    release = particle_release_api.sample_release(study.release)
+    assert len(release.rows) == 100 and isinstance(release, particle_release_api.ReleaseRealization)
     assert importlib.util.find_spec('msplatform.api') is None
     actual_components = {name:component_api.resolve_component(request) for name,request in study.component_requests.items()}
     actual_assembly = assembly_api.assemble(study.recipe, actual_components)
@@ -2799,79 +2871,75 @@ finally:
 rf_continuation_probe = runpy.run_path(str(root / 'installed_rf_continuation_probe.py'))
 rf_continuation_probe['run'](root, sys.argv[2], section_timing, blocked_source_roots)
 
+rf_ip_probe = runpy.run_path(str(root / 'rf_ip_installed_probe.py'))
+rf_ip_leaf = runpy.run_path(str(root / 'rf_ip_inert_leaf.py'))
+with section_timing('rf_ip_continuous_owner', sys.argv[2]):
+    rf_ip_probe['run'](fixture['rf_ip_inert_fixtures'][int(sys.argv[2])], rf_ip_leaf['inert_native_leaf'])
+ip_mr_probe=runpy.run_path(str(root/'installed_ip_mr_tracking_probe.py'))
+with section_timing('ip_mr_sampled_public_planning',sys.argv[2]):
+    ip_mr_probe['run'](dict(fixture['ip_mr_installed_fixture'],arm=sys.argv[2]))
+# Exercise the installed offline owner twice using the same published raw carrier.
+with section_timing('offline_scalar_support',sys.argv[2]):
+    from msplatform.backends.comsol import assembly_field_export as offline_export, assembly_scalar_fill as offline_fill
+    from msplatform.execution.context import ExecutionContext as OfflineContext
+    from msplatform.execution.resources import resource_path as offline_resource
+    from msplatform.execution.run_session import RunSession as OfflineSession
+    from msplatform.results.artifacts import open_artifact as offline_open
+    from unittest.mock import patch as offline_patch
+    for offline_module in (offline_export,offline_fill):
+        assert pathlib.Path(offline_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+    entry=fixture['ip_mr_installed_fixture']; settings=entry['context']
+    no_mph=[True]
+    def reject_mph(event,args):
+        if no_mph[0] and event=='open' and args and isinstance(args[0],(str,bytes)):
+            if pathlib.Path(os.fsdecode(args[0])).suffix.lower()=='.mph':
+                raise AssertionError('offline derivation opened an MPH')
+    sys.addaudithook(reject_mph)
+    source=offline_open(entry['raw_scalar_reference'],expected_kind='scalar_field_samples')
+    raw_names=('field_v','field_valid')
+    raw_before={name:hashlib.sha256(source.data_path(name).read_bytes()).hexdigest() for name in raw_names}
+    offline_context=OfflineContext(workspace=pathlib.Path(settings['workspace'])/('offline-scalar-'+sys.argv[2]),
+        python_executable=pathlib.Path(sys.executable),powershell_executable=pathlib.Path(settings['powershell_executable']),
+        tools={},host_state_path=pathlib.Path(settings['host_state_path']),
+        policy_path=offline_resource('host_resource_policy.json'),
+        capacity_policy_path=pathlib.Path(settings['capacity_policy_path']),
+        stage_policy_path=pathlib.Path(entry['offline_stage_policy_path']))
+    try:
+        with offline_patch.object(OfflineSession,'run_process',side_effect=AssertionError('native process forbidden')):
+            first=offline_export.derive_world_scalar_support(entry['raw_scalar_reference'],context=offline_context,publish_prepared_support=True)
+            second=offline_export.derive_world_scalar_support(entry['raw_scalar_reference'],context=offline_context,prepared_support=first.reference)
+        first=offline_open(first.reference,expected_kind='scalar_field_samples')
+        second=offline_open(second.reference,expected_kind='scalar_field_samples')
+        assert first.data_path('prepared_support_labels').is_file()
+        first_support=json.loads(first.data_path('conductor_support').read_text(encoding='utf8'))
+        second_support=json.loads(second.data_path('conductor_support').read_text(encoding='utf8'))
+        assert first_support['prepared_identity']
+        # The shared carrier fixture is all-valid; this checks delivery, not fill mathematics.
+        raw_report=json.loads(source.data_path('report').read_text(encoding='utf8'))
+        assert raw_report['fem_valid']==27 and raw_report['invalid_count']==0
+        assert first_support['result']['filled_conductor_count']==0
+        assert second_support['result']['prepared_support_manifest']['sha256']==first.reference['manifest']['sha256']
+        for name in ('field_v','field_valid'):
+            assert first.data_path(name).read_bytes()==second.data_path(name).read_bytes()
+            assert second.data_records['sampled_'+name]['sha256']==source.data_records[name]['sha256']
+            assert hashlib.sha256(source.data_path(name).read_bytes()).hexdigest()==raw_before[name]
+        for artifact in (first,second):
+            assert artifact.metadata['original_samples_reference']==source.reference
+            report=json.loads(artifact.data_path('derivation_report').read_text(encoding='utf8'))
+            assert report['source_samples']==source.reference
+            assert report['native_operations']==0 and report['compute_calls']==0
+    finally:
+        no_mph[0]=False
+    print('INSTALLED_OFFLINE_SCALAR_SUPPORT=PASS labels=reused native=0 qualification=none',flush=True)
+generic_probe=runpy.run_path(str(root/'installed_generic_geometry_probe.py'))
+with section_timing('registered_generic_geometry',sys.argv[2]):
+    generic_probe['run'](root, fixture['scalar_adapter']['executable'])
+    generic_probe['run_neutral_ip'](root, fixture['scalar_adapter']['executable'])
+
 for case in fixture['single_reflection_workflow']:
     prepared_run = root / ('installed-sfi-' + case['kind'] + '-' + sys.argv[2])
     (prepared_run/'inputs').mkdir(parents=True)
     receipt = sfi_prepare.prepare(pathlib.Path(case['request']),prepared_run)
-    if case['kind'] == 'recorded_birth':
-        recorded_birth_probe = runpy.run_path(str(root / 'installed_recorded_birth_probe.py'))
-        recorded_birth_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing)
-        sfi_consumer_probe = runpy.run_path(str(root / 'installed_sfi_consumer_probe.py'))
-        sfi_consumer_probe['run'](receipt, prepared_run, case['particle_ids'], sys.argv[2], section_timing, blocked_source_roots)
-        rf_ip_probe = runpy.run_path(str(root / 'rf_ip_installed_probe.py'))
-        rf_ip_leaf = runpy.run_path(str(root / 'rf_ip_inert_leaf.py'))
-        with section_timing('rf_ip_continuous_owner', sys.argv[2]):
-            rf_ip_probe['run'](fixture['rf_ip_inert_fixtures'][int(sys.argv[2])], rf_ip_leaf['inert_native_leaf'])
-        ip_mr_probe=runpy.run_path(str(root/'installed_ip_mr_tracking_probe.py'))
-        with section_timing('ip_mr_sampled_public_planning',sys.argv[2]):
-            ip_mr_probe['run'](dict(fixture['ip_mr_installed_fixture'],arm=sys.argv[2]))
-        # Exercise the installed offline owner twice using the same published raw carrier.
-        with section_timing('offline_scalar_support',sys.argv[2]):
-            from msplatform.backends.comsol import assembly_field_export as offline_export, assembly_scalar_fill as offline_fill
-            from msplatform.execution.context import ExecutionContext as OfflineContext
-            from msplatform.execution.resources import resource_path as offline_resource
-            from msplatform.execution.run_session import RunSession as OfflineSession
-            from msplatform.results.artifacts import open_artifact as offline_open
-            from unittest.mock import patch as offline_patch
-            for offline_module in (offline_export,offline_fill):
-                assert pathlib.Path(offline_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
-            entry=fixture['ip_mr_installed_fixture']; settings=entry['context']
-            no_mph=[True]
-            def reject_mph(event,args):
-                if no_mph[0] and event=='open' and args and isinstance(args[0],(str,bytes)):
-                    if pathlib.Path(os.fsdecode(args[0])).suffix.lower()=='.mph':
-                        raise AssertionError('offline derivation opened an MPH')
-            sys.addaudithook(reject_mph)
-            source=offline_open(entry['raw_scalar_reference'],expected_kind='scalar_field_samples')
-            raw_names=('field_v','field_valid')
-            raw_before={name:hashlib.sha256(source.data_path(name).read_bytes()).hexdigest() for name in raw_names}
-            offline_context=OfflineContext(workspace=pathlib.Path(settings['workspace'])/('offline-scalar-'+sys.argv[2]),
-                python_executable=pathlib.Path(sys.executable),powershell_executable=pathlib.Path(settings['powershell_executable']),
-                tools={},host_state_path=pathlib.Path(settings['host_state_path']),
-                policy_path=offline_resource('host_resource_policy.json'),
-                capacity_policy_path=pathlib.Path(settings['capacity_policy_path']),
-                stage_policy_path=pathlib.Path(entry['offline_stage_policy_path']))
-            try:
-                with offline_patch.object(OfflineSession,'run_process',side_effect=AssertionError('native process forbidden')):
-                    first=offline_export.derive_world_scalar_support(entry['raw_scalar_reference'],context=offline_context,publish_prepared_support=True)
-                    second=offline_export.derive_world_scalar_support(entry['raw_scalar_reference'],context=offline_context,prepared_support=first.reference)
-                first=offline_open(first.reference,expected_kind='scalar_field_samples')
-                second=offline_open(second.reference,expected_kind='scalar_field_samples')
-                assert first.data_path('prepared_support_labels').is_file()
-                first_support=json.loads(first.data_path('conductor_support').read_text(encoding='utf8'))
-                second_support=json.loads(second.data_path('conductor_support').read_text(encoding='utf8'))
-                assert first_support['prepared_identity']
-                # The shared carrier fixture is all-valid; this checks delivery, not fill mathematics.
-                raw_report=json.loads(source.data_path('report').read_text(encoding='utf8'))
-                assert raw_report['fem_valid']==27 and raw_report['invalid_count']==0
-                assert first_support['result']['filled_conductor_count']==0
-                assert second_support['result']['prepared_support_manifest']['sha256']==first.reference['manifest']['sha256']
-                for name in ('field_v','field_valid'):
-                    assert first.data_path(name).read_bytes()==second.data_path(name).read_bytes()
-                    assert second.data_records['sampled_'+name]['sha256']==source.data_records[name]['sha256']
-                    assert hashlib.sha256(source.data_path(name).read_bytes()).hexdigest()==raw_before[name]
-                for artifact in (first,second):
-                    assert artifact.metadata['original_samples_reference']==source.reference
-                    report=json.loads(artifact.data_path('derivation_report').read_text(encoding='utf8'))
-                    assert report['source_samples']==source.reference
-                    assert report['native_operations']==0 and report['compute_calls']==0
-            finally:
-                no_mph[0]=False
-            print('INSTALLED_OFFLINE_SCALAR_SUPPORT=PASS labels=reused native=0 qualification=none',flush=True)
-        generic_probe=runpy.run_path(str(root/'installed_generic_geometry_probe.py'))
-        with section_timing('registered_generic_geometry',sys.argv[2]):
-            generic_probe['run'](root, fixture['scalar_adapter']['executable'])
-            generic_probe['run_neutral_ip'](root, fixture['scalar_adapter']['executable'])
     assert receipt['particle_count'] == case['particle_count']
     projected = prepared_run/'inputs/projected_source.csv'
     assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
@@ -2892,7 +2960,7 @@ for case in fixture['single_reflection_workflow']:
     assert not (prepared_run/'simion').exists()
     assert hashlib.sha256(projected.read_bytes()).hexdigest()==case['projected_sha256']
     workflow_modes.append(case['kind'])
-assert workflow_modes == ['recorded_birth','release_spec','recorded_pre_pulse_state']
+assert workflow_modes == ['release_spec','recorded_pre_pulse_state']
 producer_path=pathlib.Path(frontend_fields.__file__)
 producer_backup=producer_path.with_suffix('.absent')
 producer_path.rename(producer_backup)
@@ -3003,7 +3071,7 @@ for case in fixture['prepared_joint_diagnostics']:
         finally:backup.rename(trajectory)
 
 # Actual paired source generation and response readback from the installed owners.
-from msplatform.ion_release import paired_mass_scan as paired_scan
+from msplatform.particle_release import paired_mass_scan as paired_scan
 from msplatform.analysis import mass_response as response_analysis
 for module in (paired_scan,response_analysis):
     assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
@@ -3012,8 +3080,8 @@ mass_scan_root=pathlib.Path(tempfile.mkdtemp(prefix='paired-mass-scan-',dir=root
 scan_source=mass_scan_root/'source.ion'
 scan_source.write_text('0,100,1,0,0,0,0,0,1,0,1\n0,100,1,1,0,0,0,0,1,0,1\n0,100,1,2,0,0,0,0,1,0,1\n',encoding='utf-8')
 scan_table=mass_scan_root/'scan.ion';scan_metadata=mass_scan_root/'scan.json'
-scan=paired_scan.generate_paired_ion_table(scan_source,scan_table,scan_metadata,[96.,100.,104.],3,{'scope':'installed_software_fixture'})
-scan_rows=paired_scan.load_ion_rows(scan_table)
+scan=paired_scan.generate_paired_particle_table(scan_source,scan_table,scan_metadata,[96.,100.,104.],3,{'scope':'installed_software_fixture'})
+scan_rows=paired_scan.load_particle_rows(scan_table)
 assert scan['particles']==9 and scan['particles_per_mass']==3 and scan['charge_state']==1
 assert scan['source_sha256']==hashlib.sha256(scan_source.read_bytes()).hexdigest().upper()
 assert scan['particle_table_sha256']==hashlib.sha256(scan_table.read_bytes()).hexdigest().upper()
@@ -3242,6 +3310,7 @@ class DenyRepository(importlib.abc.MetaPathFinder):
   if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('repository import: '+fullname)
 sys.meta_path.insert(0,DenyRepository())
 from msplatform.backends.simion import ion_table
+from msplatform.contracts.particle_identity import parse_charge_state
 origin=pathlib.Path(ion_table.__file__).resolve()
 assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
 def failure(error):return {'exception_type':type(error).__module__+'.'+type(error).__qualname__,'exception_message':str(error)}
@@ -3257,7 +3326,7 @@ values=(1,-2,1.0,1.5,True,np.bool_(True),np.int64(-3),0,float('inf'),'1e0','1.00
 assert len(q['charge_cases'])==len(values)==11
 for case,value in zip(q['charge_cases'],values):
  assert case['input_type']==type(value).__module__+'.'+type(value).__qualname__ and case['input_repr']==repr(value)
- try:actual={'return':ion_table._validated_charge_state(value)}
+ try:actual={'return':parse_charge_state(value)}
  except Exception as error:actual=failure(error)
  assert actual==case['outcome'],(case,actual)
 print(json.dumps({'origin':str(origin),'cases':len(q['cases']),'charges':len(values)}))
@@ -4088,7 +4157,7 @@ for label, missing_path, action in (
         except FileNotFoundError: missing_rejected.append(label)
         else: raise AssertionError('missing installed resource accepted: ' + label)
     finally: hidden_path.rename(missing_path)
-workflow_request = json.loads(pathlib.Path(fixture['single_reflection_workflow'][1]['request']).read_text(encoding='utf-8'))
+workflow_request = json.loads(pathlib.Path(fixture['single_reflection_workflow'][0]['request']).read_text(encoding='utf-8'))
 workflow_schema = {9: sfi_prepare.SCHEMA, 10: sfi_prepare.SCHEMA_V10, 11: sfi_prepare.SCHEMA_V11}[workflow_request['schema_version']]
 hidden_workflow_schema = workflow_schema.with_name(workflow_schema.name+'.missing')
 workflow_schema.rename(hidden_workflow_schema)
@@ -4096,7 +4165,7 @@ try:
     import subprocess
     failed = subprocess.run([sys.executable,'-I','-c',
         "import json,sys;from pathlib import Path;from msplatform.workflows.single_reflection_flight.prepare import validate_preparation_request;validate_preparation_request(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')))",
-        fixture['single_reflection_workflow'][1]['request']], cwd=root,capture_output=True,timeout=30)
+        fixture['single_reflection_workflow'][0]['request']], cwd=root,capture_output=True,timeout=30)
     failed_output = (failed.stdout+failed.stderr).decode('utf-8',errors='backslashreplace')
     assert failed.returncode != 0 and workflow_schema.name in failed_output, failed_output
     missing_rejected.append('workflow_schema')
@@ -4513,78 +4582,42 @@ assert ipread_path.read_bytes()==ipread_original
 print('INSTALLED_IP_CONTINUATION_READER=PASS')
 # RF_IP_INSTALL_PROBE_END
 # REFLECTRON_FIT_INSTALLED_BEGIN
-from msplatform.backends.simion import optimize_reflectron_ring_voltages as reflectron_fit
+from msplatform.analysis import reflectron_voltage_fit as reflectron_math
+from msplatform.analysis import reflectron_compensation as reflectron_compensation_analysis
+from msplatform.workflows import reflectron_compensation as reflectron_compensation_workflow
+from msplatform.backends.simion import reflectron_response_binding as reflectron_response
 reflectron_fixture = fixture['reflectron_fit']
-reflectron_module = pathlib.Path(reflectron_fit.__file__).resolve()
-assert reflectron_module.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
-assert hashlib.sha256(reflectron_module.read_bytes()).hexdigest() == reflectron_fixture['module_sha256']
+for reflectron_module in (reflectron_math, reflectron_compensation_analysis,
+                         reflectron_compensation_workflow, reflectron_response):
+    assert pathlib.Path(reflectron_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
+assert hashlib.sha256(pathlib.Path(reflectron_math.__file__).read_bytes()).hexdigest() == reflectron_fixture['analysis_sha256']
+for retired in ('msplatform.backends.simion.optimize_reflectron_ring_voltages',
+                'msplatform.workflows.oa_candidate.run_compensation'):
+    assert installed_missing_module(retired), retired
+assert not (installed_purelib / 'msplatform/workflows/resources/execute_oatof_compensation.ps1').exists()
+assert callable(reflectron_compensation_analysis.compile_compensated_study)
+assert callable(reflectron_compensation_workflow.compare_compensated_runs)
+assert callable(reflectron_compensation_workflow.run_compensation_study)
+assert callable(reflectron_response.sample_response_axis) and callable(reflectron_response.fit_sampled_axis)
 reflectron_root = root / ('reflectron-fit-' + sys.argv[2]); reflectron_root.mkdir()
 reflectron_files = {}
 for reflectron_probe_name, reflectron_probe_record in reflectron_fixture['files'].items():
     reflectron_probe_data = bytes.fromhex(reflectron_probe_record['bytes_hex'])
     assert len(reflectron_probe_data) == reflectron_probe_record['bytes'] and hashlib.sha256(reflectron_probe_data).hexdigest() == reflectron_probe_record['sha256']
     reflectron_probe_path = reflectron_root / reflectron_probe_name; reflectron_probe_path.write_bytes(reflectron_probe_data); reflectron_files[reflectron_probe_name] = reflectron_probe_path
-reflectron_cli = """import importlib.abc,importlib.util,json,os,pathlib,runpy,sys
-blocked=[pathlib.Path(x).resolve() for x in json.loads(sys.argv[1])]
-def deny(event,args):
- if event=='open' and args and isinstance(args[0],(str,bytes)):
-  p=pathlib.Path(os.fsdecode(args[0])).resolve()
-  if any(p.is_relative_to(x) for x in blocked):raise AssertionError('author tree accessed')
-class NoRepo(importlib.abc.MetaPathFinder):
- def find_spec(self,fullname,path=None,target=None):
-  if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('repository import attempted')
-sys.addaudithook(deny);sys.meta_path.insert(0,NoRepo())
-name='msplatform.backends.simion.optimize_reflectron_ring_voltages'
-expected=pathlib.Path(sys.argv[2]).resolve()
-spec=importlib.util.find_spec(name)
-if spec is None:raise ModuleNotFoundError(f"No module named {name!r}", name=name)
-assert pathlib.Path(spec.origin).resolve()==expected
-sys.argv=[name,*sys.argv[3:]]
-executed=runpy.run_module(name,run_name='__main__',alter_sys=True)
-assert pathlib.Path(executed['__file__']).resolve()==expected
-if executed.get('__spec__') is not None:
- assert pathlib.Path(executed['__spec__'].origin).resolve()==expected
-"""
-def reflectron_run(reflectron_probe_label, reflectron_probe_option):
-    reflectron_probe_output=reflectron_root/(reflectron_probe_label+'-actual.json'); reflectron_probe_lua=reflectron_root/(reflectron_probe_label+'-actual.lua')
-    reflectron_probe_args=[sys.executable,'-I','-B','-X','utf8','-c',reflectron_cli,
-          json.dumps([str(p) for p in blocked_source_roots]),str(reflectron_module),
-          '--basis-csv',str(reflectron_files['synthetic_axis_basis.csv']),
-          '--contract',str(reflectron_files['synthetic_contract.json']),
-          '--output',str(reflectron_probe_output),'--lua-output',str(reflectron_probe_lua)]
-    if reflectron_probe_option is not None: reflectron_probe_args.extend(('--regularization',reflectron_probe_option))
-    reflectron_probe_result=subprocess.run(reflectron_probe_args,cwd=reflectron_root,capture_output=True,text=True,encoding='utf-8',timeout=60,check=False)
-    return reflectron_probe_result,reflectron_probe_output,reflectron_probe_lua
-for reflectron_probe_label, reflectron_probe_option in (('omitted',None),('zero','0'),('default_explicit','0.0001'),('nondefault','0.25')):
-    reflectron_probe_result,reflectron_probe_output,reflectron_probe_lua=reflectron_run(reflectron_probe_label,reflectron_probe_option)
-    assert reflectron_probe_result.returncode==0,reflectron_probe_result.stdout+reflectron_probe_result.stderr
-    assert json.loads(reflectron_probe_output.read_text(encoding='utf-8'))==json.loads(reflectron_files[reflectron_probe_label+'.json'].read_text(encoding='utf-8'))
-    assert reflectron_probe_lua.read_bytes()==reflectron_files[reflectron_probe_label+'.lua'].read_bytes()
-reflectron_resource=reflectron_module.parent/'resources/reflectron_voltage_fit_authoring.json'
-assert reflectron_resource.is_file()
-reflectron_probe_resource_bytes=reflectron_resource.read_bytes(); reflectron_probe_resource_held=reflectron_resource.with_suffix('.json.withheld')
-try:
-    reflectron_resource.rename(reflectron_probe_resource_held)
-    reflectron_probe_missing,reflectron_probe_missing_output,reflectron_probe_missing_lua=reflectron_run('missing-default',None)
-    assert reflectron_probe_missing.returncode!=0 and not reflectron_probe_missing_output.exists() and not reflectron_probe_missing_lua.exists()
-    assert 'reflectron_voltage_fit_authoring.json' in reflectron_probe_missing.stderr
-    reflectron_probe_explicit,reflectron_probe_explicit_output,reflectron_probe_explicit_lua=reflectron_run('missing-explicit','0')
-    assert reflectron_probe_explicit.returncode==0,reflectron_probe_explicit.stdout+reflectron_probe_explicit.stderr
-    assert json.loads(reflectron_probe_explicit_output.read_text(encoding='utf-8'))==json.loads(reflectron_files['zero.json'].read_text(encoding='utf-8'))
-    assert reflectron_probe_explicit_lua.read_bytes()==reflectron_files['zero.lua'].read_bytes()
-finally: reflectron_probe_resource_held.rename(reflectron_resource)
-assert reflectron_resource.read_bytes()==reflectron_probe_resource_bytes
-reflectron_probe_module_bytes=reflectron_module.read_bytes(); reflectron_probe_module_held=reflectron_module.with_suffix('.py.withheld')
-try:
-    reflectron_module.rename(reflectron_probe_module_held)
-    reflectron_probe_missing,reflectron_probe_missing_output,reflectron_probe_missing_lua=reflectron_run('missing-module','0')
-    assert reflectron_probe_missing.returncode!=0 and not reflectron_probe_missing_output.exists() and not reflectron_probe_missing_lua.exists()
-    assert 'optimize_reflectron_ring_voltages' in reflectron_probe_missing.stderr,reflectron_probe_missing.stdout+reflectron_probe_missing.stderr
-finally: reflectron_probe_module_held.rename(reflectron_module)
-assert reflectron_module.read_bytes()==reflectron_probe_module_bytes
-try:importlib.import_module('projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectron_ring_voltages')
-except (ModuleNotFoundError,AssertionError):pass
-else:raise AssertionError('retired project fitter imported')
+import csv
+with reflectron_files['synthetic_axis_basis.csv'].open('r', encoding='utf-8', newline='') as stream:
+    reflectron_rows = list(csv.DictReader(stream))
+reflectron_columns = [name for name in reflectron_rows[0] if name.startswith('basis_')]
+reflectron_x = np.asarray([float(row['x_mm']) for row in reflectron_rows])
+reflectron_basis = np.asarray([[float(row[name]) / 10000.0 for name in reflectron_columns] for row in reflectron_rows])
+reflectron_contract = json.loads(reflectron_files['synthetic_contract.json'].read_text(encoding='utf-8'))
+for reflectron_label, reflectron_regularization in (('zero', 0.), ('default_explicit', .0001), ('nondefault', .25)):
+    reflectron_parameters = reflectron_math.compile_fit_parameters(reflectron_contract, reflectron_regularization)
+    reflectron_result = reflectron_math.optimize(reflectron_x, reflectron_basis, **reflectron_parameters)
+    assert reflectron_result == json.loads(reflectron_files[reflectron_label+'.json'].read_text(encoding='utf-8'))
+    assert np.all(np.diff(reflectron_result['stage1_ring_voltages_V']) >= 0)
+    assert np.all(np.diff(reflectron_result['stage2_ring_voltages_V']) >= 0)
 missing_rejected.append('reflectron_fit')
 print('INSTALLED_REFLECTRON_FIT=PASS')
 # REFLECTRON_FIT_INSTALLED_END
@@ -6172,29 +6205,6 @@ class InstalledScientificCoreTests(unittest.TestCase):
         print(f'INSTALLED_CORE_COMMAND_SECONDS={time.perf_counter() - started:.3f} COMMAND={arguments[:3]}')
         return stdout
 
-    def test_reflectron_installed_child_reports_the_full_missing_module(self) -> None:
-        import ast
-
-        tree = ast.parse(INSTALLED_PROBE)
-        child = next(node.value.value for node in tree.body if isinstance(node, ast.Assign)
-                     and any(isinstance(target, ast.Name) and target.id == "reflectron_cli"
-                             for target in node.targets))
-        module = "msplatform.backends.simion.optimize_reflectron_ring_voltages"
-        with tempfile.TemporaryDirectory(prefix="reflectron_missing_module_") as directory:
-            root = Path(directory)
-            for package in ("msplatform", "msplatform/backends", "msplatform/backends/simion"):
-                path = root / package
-                path.mkdir(parents=True, exist_ok=True)
-                (path / "__init__.py").write_text("", encoding="utf-8")
-            code = "import sys\nsys.path.insert(0, sys.argv.pop(1))\n" + child
-            result = subprocess.run(
-                [sys.executable, "-I", "-S", "-B", "-c", code, str(root),
-                 json.dumps([str(REPO_ROOT)]), str(root.joinpath(*module.split(".")).with_suffix(".py"))],
-                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30, check=False)
-            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("ModuleNotFoundError", result.stderr)
-            self.assertIn(module, result.stderr)
-
     def test_installed_sections_resolve_shared_imports(self) -> None:
         """Catch shared names lost when an installed section moves or retires."""
         result = subprocess.run(
@@ -6545,20 +6555,14 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def single_reflection_workflow_probe_fixture(self, root: Path) -> list[dict]:
         from msplatform.io.manifest_records import file_record
         from tests.workflows.single_reflection.test_single_reflection_preparation import (
-            fixture, release_fixture, scientific_preparation_fixture, RecordedPrePulsePreparationTests, write_json,
+            fixture, release_fixture, RecordedPrePulsePreparationTests, write_json,
         )
         from msplatform.workflows.single_reflection_flight.prepare import prepare
         cases = []
-        for kind in ('recorded_birth', 'release_spec', 'recorded_pre_pulse_state'):
+        for kind in ('release_spec', 'recorded_pre_pulse_state'):
             case_root = root / ('workflow-input-' + kind)
             case_root.mkdir()
-            if kind == 'recorded_birth':
-                request_path, baseline_run, request = scientific_preparation_fixture(case_root, recorded_birth=True)
-                from msplatform import examples as example_api
-                request['flight'] = dict(pulse=example_api.load_example('rf_oatof_functional_v1').drive['pulse'],
-                    maximum_flight_us=200., maximum_step_us=.001, trajectory_quality=17, rf_steps_per_period=80)
-                write_json(request_path, request)
-            elif kind == 'release_spec':
+            if kind == 'release_spec':
                 request_path, baseline_run, request, _ = release_fixture(case_root)
             else:
                 _, _, _, collection, decision, manifest = RecordedPrePulsePreparationTests()._winner(case_root)
@@ -7200,6 +7204,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         from unittest import mock
         from tests.components.orthogonal_accelerator.analysis import test_component_focus_workflow as fixtures
         from msplatform.backends.simion import pa_family_cache as cache
+        from msplatform.backends.simion import pa_identity
         work.mkdir(parents=True, exist_ok=False)
         base = work / 'fixture'
         base.mkdir()
@@ -7231,8 +7236,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         (generation / 'export_standalone_pa.lua').unlink()
         old = json.loads((generation / 'cache_manifest.json').read_text(encoding='utf-8'))
         records = sorted(old['files'], key=lambda entry: entry['name'])
-        identity = {name: 'synthetic-software-fixture' for name in cache.CACHE_KEY_FIELDS}
-        key = cache.canonical_pa_family_cache_key(identity)
+        identity = {name: 'synthetic-software-fixture' for name in pa_identity.CACHE_KEY_FIELDS}
+        key = pa_identity.canonical_pa_family_cache_key(identity)
         manifest = cache._manifest(key, identity, records)
         (generation / 'cache_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
         generation = generation.rename(base / manifest['generation_sha256'])
@@ -7488,6 +7493,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                                     for name in filter(None, tracked) if (source / name).is_file()}
                 self.assertIn('recipes/reference/uniform_e.toml', source_inventory)
                 self.assertIn('src/msplatform/physics/data/reference.json', source_inventory)
+                self.assertIn('src/msplatform/physics/data/electron.json', source_inventory)
                 for name in b_resources:
                     self.assertEqual(source_inventory['src/msplatform/examples/' + name], b_hashes[name])
             builder = root / 'builder'
@@ -7518,6 +7524,40 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             sdist, = output.glob('*.tar.gz')
             expected_schemas = self.inspect_wheel(wheel)
             rebuilt_wheel = self.rebuild_sdist(sdist, wheel, root, build_python, environment)
+            history_fixture_rel = 'tests/contracts/test_support/historical_mass_fixture.py'
+            history_fixture_bytes = (source / history_fixture_rel).read_bytes()
+            if reference_only:
+                self.assertEqual(hashlib.sha256(history_fixture_bytes).hexdigest(), source_inventory[history_fixture_rel])
+            self.assertEqual(history_fixture_bytes, (REPO_ROOT / history_fixture_rel).read_bytes())
+            history_geometry_rel = 'src/msplatform/components/single_reflection_oa_tof/config/resolved_geometry.json'
+            self.assertEqual((source / history_geometry_rel).read_bytes(), (REPO_ROOT / history_geometry_rel).read_bytes())
+            if reference_only:
+                self.assertEqual(hashlib.sha256((source / history_geometry_rel).read_bytes()).hexdigest(), source_inventory[history_geometry_rel])
+            from tests.contracts.test_support.historical_mass_fixture import sealed_mass_source
+            history_fixture_root = root / 'historical-mass-fixture'
+            _, history_source, _, _ = sealed_mass_source(history_fixture_root)
+            history_powershell = shutil.which('pwsh')
+            self.assertIsNotNone(history_powershell, 'PowerShell 7 is required for the managed historical analysis')
+            (root / 'installed_history_fixture.json').write_text(json.dumps(dict(
+                source=str(history_source), powershell=str(Path(history_powershell).resolve()))), encoding='utf-8')
+            history_limits = dict(wall_clock_seconds=120, transient_run_directory_bytes=268435456,
+                process_tree_working_set_bytes=2147483648, minimum_system_available_memory_bytes=1,
+                compact_final_retained_bytes=67108864, automatic_retry_count=0)
+            (root / 'installed_history_stage.json').write_text(json.dumps(dict(schema_version=1,
+                role='execution_stage_policy', stages={'oa_tof_mass_spectrum': dict(limits=history_limits,
+                    artifact_retention={'policy_version': 1, 'class': 'solver_review', 'reason': 'installed historical fixture'})})), encoding='utf-8')
+            sweep_fixture_files = ('tests/contracts/test_historical_field_diagnostic.py',
+                'tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_ideal_field_diagnostic_runner.py')
+            for fixture_name in sweep_fixture_files:
+                self.assertEqual((source / fixture_name).read_bytes(), (REPO_ROOT / fixture_name).read_bytes())
+                if reference_only:
+                    self.assertEqual(hashlib.sha256((source / fixture_name).read_bytes()).hexdigest(), source_inventory[fixture_name])
+            from tests.contracts.test_historical_field_diagnostic import sealed_sweep
+            sweep_source = sealed_sweep(root / 'historical-sweep-fixture')
+            sweep_bad = sealed_sweep(root / 'historical-sweep-tampered')
+            (sweep_bad / 'logs/actual.log').write_text('tampered', encoding='utf-8')
+            (root / 'installed_sweep_fixture.json').write_text(json.dumps(dict(source=str(sweep_source),
+                tampered=str(sweep_bad))), encoding='utf-8')
             if reference_only:
                 recipe_source = source / 'recipes/reference/uniform_e.toml'
                 recipe_bytes = recipe_source.read_bytes()
@@ -7527,6 +7567,10 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     '# REFERENCE_TRACING_INSTALLED_END', 1)[0]
                 section += INSTALLED_PROBE.split('# B_NATIVE_PREFLIGHT_INSTALLED_BEGIN\n', 1)[1].split(
                     '# B_NATIVE_PREFLIGHT_INSTALLED_END', 1)[0]
+                section += INSTALLED_PROBE.split('# HISTORICAL_MASS_ANALYSIS_INSTALLED_BEGIN\n', 1)[1].split(
+                    '# HISTORICAL_MASS_ANALYSIS_INSTALLED_END', 1)[0]
+                section += INSTALLED_PROBE.split('# HISTORICAL_FIELD_ANALYSIS_INSTALLED_BEGIN\n', 1)[1].split(
+                    '# HISTORICAL_FIELD_ANALYSIS_INSTALLED_END', 1)[0]
                 prelude = r"""import hashlib, json, math, os, pathlib, subprocess, sys, sysconfig, time
 from contextlib import contextmanager
 import numpy as np
@@ -7568,9 +7612,13 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                          cwd=root, environment=environment, timeout=300)
                         probe_environment = dict(environment, PATH=str(Path(consumer_python).parent))
                         evidence = self.run_command([consumer_python, '-I', str(probe), blocked, str(index)],
-                                                    cwd=root, environment=probe_environment, timeout=180)
+                                                    cwd=root, environment=probe_environment, timeout=300)
                         self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', evidence)
+                        self.assertIn('INSTALLED_REFERENCE_THREE_SPECIES=PASS ion_positive=1 ion_negative=1 electron=1 independent_e_oracle=1 cold_read=1', evidence)
                         self.assertIn('INSTALLED_REFERENCE_ORIGINS=PASS', evidence)
+                        self.assertIn('INSTALLED_PUBLIC_RECORDED_BIRTH=PASS ids=1,2,3 origin_us=1.25 tamper_rejected=1 native=none', evidence)
+                        self.assertIn('INSTALLED_HISTORICAL_MASS_ANALYSIS=PASS real_store=1 cold_read=1 source_unchanged=1 no_native=1', evidence)
+                        self.assertIn('INSTALLED_HISTORICAL_FIELD_SWEEP=PASS cold_read=1 zero_hit=1 tamper_rejected=1 no_native=1', evidence)
                         self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', evidence)
                         self.assertIn('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', evidence)
                         self.assertIn('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', evidence)
@@ -7599,7 +7647,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 return
             recipe, components = direct_fixture()
             spec = halton_spec(7)
-            from msplatform.ion_release.release import generate_release_states
+            from msplatform.particle_release.release import generate_release_states
             from msplatform.components.rf_multipole.design_request_files import compile_design_request
             from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
             from tests.components.rf_multipole_ion_optics.domain.test_compile_design_request import design_request
@@ -7662,24 +7710,27 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
             from msplatform.backends.simion.dual_cone_geometry import render_gem
             from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_uniform_rear_gas_field
             from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
-            from msplatform.contracts.gas import GasSpecies
             cone_config = REPO_ROOT / 'src/msplatform/components/dual_cone_tandem_quadrupole/config'
             dual_cone = {name: json.loads((cone_config / filename).read_text(encoding='utf-8'))
                 for name, filename in (('baseline', 'baseline.json'), ('resolved', 'resolved_geometry.json'),
                     ('numerics', 'simion_solver_numerics.json'), ('uniform_rear_gas_field', 'uniform_rear_gas_field.json'),
-                    ('gas_field_interface', 'gas_field_interface.json'), ('ion_transport_science','ion_transport_science.json'),
-                    ('gas_flow_science','gas_flow_science.json'), ('source_spec','cylindrical_ion_source.json'))}
+                    ('gas_field_interface', 'gas_field_interface.json'), ('gas_environment','gas_environment.json'),
+                    ('ion_transport_science','ion_transport_science.json'),
+                    ('gas_flow_science','gas_flow_science.json'), ('source_spec','cylindrical_particle_source.json'))}
             dual_cone['gem'] = render_gem(dual_cone['resolved'], dual_cone['numerics'])
-            for name in ('uniform_rear_gas_field', 'gas_field_interface'):
+            for name in ('uniform_rear_gas_field', 'gas_field_interface', 'gas_environment', 'resolved'):
                 (root/(name+'.json')).write_text(json.dumps(dual_cone[name]), encoding='utf-8')
             from msplatform.io.manifest_records import file_record as gas_file_record
             dual_cone['uniform_source_records'] = dict(
                 spec=gas_file_record(root/'uniform_rear_gas_field.json','required_evidence'),
-                interface=gas_file_record(root/'gas_field_interface.json','required_evidence'))
+                interface=gas_file_record(root/'gas_field_interface.json','required_evidence'),
+                environment=gas_file_record(root/'gas_environment.json','required_evidence'),
+                geometry=gas_file_record(root/'resolved.json','required_evidence'))
             field, runtime_metadata = prepare_uniform_rear_gas_field(dual_cone['uniform_rear_gas_field'],
                 interface=dual_cone['gas_field_interface'],
-                composition=(GasSpecies(dual_cone['gas_flow_science']['physics']['gas_species']['species_id'],
-                    dual_cone['ion_transport_science']['gas']['collision_gas_mass_amu'],1.),),
+                environment_author=dual_cone['gas_environment'], geometry=dual_cone['resolved'],
+                environment_record=dual_cone['uniform_source_records']['environment'],
+                geometry_record=dual_cone['uniform_source_records']['geometry'],
                 spec_record=dual_cone['uniform_source_records']['spec'],
                 interface_record=dual_cone['uniform_source_records']['interface'])
             materialize_gas_runtime(field,root/'fixture-uniform.lua',root/'fixture-uniform-manifest.json',manifest_metadata=runtime_metadata)
@@ -7776,17 +7827,6 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
             mr_operator_root = root / 'mr-prepared-field-operator'
             mr_operator_root.mkdir()
             _, mr_operator_binding_path, _ = IonProcessorNativeBindingTest().fixture(mr_operator_root)
-            import ast
-            from tests.components.multi_reflection_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
-            mr_measured_fixture = MeasuredComponentSourceTests('test_irregular_ids_birth_offsets_and_exact_six_dimensions')
-            mr_measured_fixture.setUp()
-            self.addCleanup(mr_measured_fixture.doCleanups)
-            mr_measured_inputs = {path: path.read_bytes() for path in mr_measured_fixture.root.rglob('*') if path.is_file()}
-            mr_test_path = REPO_ROOT / 'tests/components/multi_reflection_tof/analysis/test_measured_component_source.py'
-            mr_test_ast = ast.parse(mr_test_path.read_text(encoding='utf-8'))
-            mr_callbacks = [node.value for node in ast.walk(mr_test_ast) if isinstance(node, ast.Constant)
-                            and isinstance(node.value, str) and 'READ_ONLY_TOF=PASS' in node.value and 'setfenv(chunk' in node.value]
-            self.assertEqual(len(mr_callbacks), 1)
             # Existing five-species software fixture; preserve its explicit selected input bytes.
             from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_peak_metrics import SourceMappingAndBootstrapTest
             tof_spectrum_root = root / 'tof-mass-spectrum-inputs'
@@ -7876,8 +7916,6 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                               rf_event_old_capture=json.loads((REPO_ROOT / 'tests/components/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json').read_text(encoding='utf-8')),
                                               ip_analyzer_old_witness=json.loads((REPO_ROOT / 'tests/components/ion_processor/fixtures/ip_analyzer_old_witness.json').read_text(encoding='utf-8')),
                                               ip_exporters_old_witness=json.loads((REPO_ROOT / 'tests/components/ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8')),
-                                              mr_measured_handoff=str(mr_measured_fixture.handoff),
-                                              mr_measured_callback=mr_callbacks[0],
                                               mr_measured_source_old_witness=json.loads((REPO_ROOT / 'tests/components/multi_reflection_tof/fixtures/mr_measured_source_old_witness.json').read_text(encoding='utf-8')),
                                               strict_json_old_witness=json.loads((REPO_ROOT / 'tests/contracts/fixtures/strict_json_old_witness.json').read_text(encoding='utf-8')),
                                               mr_prepared_field_old_witness=json.loads((REPO_ROOT / 'tests/components/multi_reflection_tof/fixtures/mr_prepared_field_old_witness.json').read_text(encoding='utf-8')),
@@ -7902,7 +7940,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                               rf_response_comparison=self.rf_response_comparison_probe_fixture(root),
                                               rf_convergence=rfconv_fixture, ip_reader=ipread_oracle,
                                               reflectron_fit={**json.loads((REPO_ROOT / 'tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/reflectron_fit_capture.json').read_text(encoding='utf-8')),
-                                                  'module_sha256': hashlib.sha256((REPO_ROOT / 'src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py').read_bytes()).hexdigest()},
+                                                  'analysis_sha256': hashlib.sha256((REPO_ROOT / 'src/msplatform/analysis/reflectron_voltage_fit.py').read_bytes()).hexdigest()},
                                               rf_transport_comparison=json.loads((REPO_ROOT / 'tests/components/rf_multipole_ion_optics/fixtures/rf_transport_comparison_old_witness.json').read_text(encoding='utf-8')),
                                               exported_axis_transport=self.exported_axis_transport_probe_fixture(),
                                               mr_cad_parts=self.mr_cad_parts_probe_fixture(),
@@ -7931,15 +7969,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
             static_probe_bytes = static_probe_source.read_bytes()
             shutil.copyfile(static_probe_source, root / 'installed_static_field_probe.py')
             self.assertEqual((root / 'installed_static_field_probe.py').read_bytes(), static_probe_bytes)
-            recorded_probe_source = source / 'tests/contracts/test_support/installed_recorded_birth_probe.py'
-            recorded_probe_bytes = recorded_probe_source.read_bytes()
-            shutil.copyfile(recorded_probe_source, root / 'installed_recorded_birth_probe.py')
-            self.assertEqual((root / 'installed_recorded_birth_probe.py').read_bytes(), recorded_probe_bytes)
-            sfi_consumer_source = source / 'tests/contracts/test_support/installed_sfi_consumer_probe.py'
-            sfi_consumer_bytes = sfi_consumer_source.read_bytes()
-            shutil.copyfile(sfi_consumer_source, root / 'installed_sfi_consumer_probe.py')
-            self.assertEqual((root / 'installed_sfi_consumer_probe.py').read_bytes(), sfi_consumer_bytes)
-            for name in ('installed_sfi_scalar_probe.py', 'sfi_scalar_owner_fixture.py', 'terminal_evidence_fixture.py'):
+            for name in ('sfi_scalar_owner_fixture.py', 'terminal_evidence_fixture.py'):
                 helper_source = source / 'tests/contracts/test_support' / name
                 shutil.copyfile(helper_source, root / name)
                 self.assertEqual((root / name).read_bytes(), helper_source.read_bytes())
@@ -8020,11 +8050,16 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 result = self.run_command([consumer_python, '-I', str(probe_path), str(fixture), str(index)],
                                           cwd=root, environment=probe_environment, timeout=900)
                 self.assertIn('INSTALLED_REFERENCE_TRACING=PASS real_dop853=1 independent_e_oracle=1 complete_readback=1 reuse=1', result)
+                self.assertIn('INSTALLED_REFERENCE_THREE_SPECIES=PASS ion_positive=1 ion_negative=1 electron=1 independent_e_oracle=1 cold_read=1', result)
+                self.assertIn('INSTALLED_PUBLIC_RECORDED_BIRTH=PASS ids=1,2,3 origin_us=1.25 tamper_rejected=1 native=none', result)
+                self.assertIn('INSTALLED_HISTORICAL_MASS_ANALYSIS=PASS real_store=1 cold_read=1 source_unchanged=1 no_native=1', result)
+                self.assertIn('INSTALLED_HISTORICAL_FIELD_SWEEP=PASS cold_read=1 zero_hit=1 tamper_rejected=1 no_native=1', result)
+                self.assertIn('MR_HISTORICAL_CAPTURE_INSTALLED=PASS frozen_bytes=1 read_only=1 no_source_producer=1', result)
                 self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', result)
                 self.assertIn('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', result)
                 self.assertIn('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', result)
                 self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), reference_fixture_bytes)
-                self.assertIn('INSTALLED_RF_IP_CONTINUOUS_OWNER=PASS native=INERT ids=7,91', result)
+                self.assertIn('INSTALLED_RF_IP_TRACKING_OWNER=PASS native=INERT ids=7,91', result)
                 self.assertIn('INSTALLED_IP_MR_PUBLIC_ADMISSION=PASS basis=17 priority=5 negatives=3 owner=planning_only',result)
                 self.assertIn('INSTALLED_GENERIC_REGISTERED_GEOMETRY=PASS instances=2 renamed=1 capability_rejected=1 pure_compile=1',result)
                 self.assertIn('INSTALLED_GENERIC_STATIC_PLANNING=PASS groups=2 births=2 outside_refused=1 native=none',result)
@@ -8037,7 +8072,6 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 self.assertIn('INSTALLED_PUBLIC_OBSERVATION=PASS valid=1 default=1 invalid=4 eligible_units=1 missing_module=1 collection=1 missing_parser=1 static_render=1 static_collection=1', observation)
                 self.assertEqual((root / 'installed_observation_fixture.json').read_bytes(), observation_fixture_bytes)
                 self.assertTrue(all(path.read_bytes() == data for path, data in tof_spectrum_input_bytes.items()))
-                self.assertTrue(all(path.read_bytes() == data for path, data in mr_measured_inputs.items()))
             if retained:
                 files = []
                 for label, artifact in (('wheel', wheel), ('sdist', sdist), ('sdist-rebuilt-wheel', rebuilt_wheel)):
@@ -8053,10 +8087,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                     'tests/contracts/test_support/installed_strict_json_probe.py',
                     'tests/contracts/test_support/installed_workbench_seed_probe.py',
                     'tests/contracts/test_support/installed_static_field_probe.py',
-                    'tests/contracts/test_support/installed_recorded_birth_probe.py',
-                    'tests/contracts/test_support/installed_sfi_consumer_probe.py',
                     'tests/contracts/test_support/installed_rf_continuation_probe.py',
-                    'tests/contracts/test_support/installed_sfi_scalar_probe.py',
                     'tests/contracts/test_support/sfi_scalar_owner_fixture.py',
                     'tests/contracts/test_support/terminal_evidence_fixture.py',
                     'tests/contracts/test_sfi_scalar_binding.py',

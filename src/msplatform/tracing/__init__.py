@@ -17,6 +17,7 @@ from scipy.integrate import solve_ivp
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.fields import FieldProvider, UniformField
 from msplatform.physics import CONSTANTS, GasEnvironment, normalize_charge_c
+from msplatform.contracts.species import validate_species
 from msplatform.results.model import TraceResult as TraceResult
 
 
@@ -59,9 +60,9 @@ def preflight(recipe: Mapping[str, Any]) -> UniformField:
     if not isinstance(recipe, Mapping):
         raise ValueError("resolved recipe must be a mapping")
     _required(recipe, {"schema_version", "frame_id", "clock", "constants", "gas_environment", "field_source",
-                       "particle_tracer", "initial_states", "numerics", "surfaces", "recording"}, "recipe",
+                       "particle_tracer", "species", "initial_states", "numerics", "surfaces", "recording"}, "recipe",
               frozenset({"label", "assembly", "recipe_id", "particle_field_coupling"}))
-    if recipe["schema_version"] != 1 or not isinstance(recipe["frame_id"], str) or not recipe["frame_id"]:
+    if recipe["schema_version"] != 3 or not isinstance(recipe["frame_id"], str) or not recipe["frame_id"]:
         raise ValueError("unsupported schema or missing frame")
     if any(k in recipe for k in ("transport_mode", "particle_tracker")):
         raise ValueError("legacy transport/tracker selection is unsupported")
@@ -94,6 +95,12 @@ def preflight(recipe: Mapping[str, Any]) -> UniformField:
         raise ValueError("rtol must be less than one")
     if type(num["sample_count"]) is not int or num["sample_count"] < 2:
         raise ValueError("sample_count must be an integer at least 2")
+    if not isinstance(recipe["species"], list) or not recipe["species"]:
+        raise ValueError("species registry must be nonempty")
+    species = [validate_species(row) for row in recipe["species"]]
+    species_by_id = {row["species_id"]: row for row in species}
+    if len(species_by_id) != len(species):
+        raise ValueError("species IDs must be unique")
     particles = recipe["initial_states"]
     if not isinstance(particles, list) or not particles:
         raise ValueError("initial_states must be a nonempty list")
@@ -114,7 +121,11 @@ def preflight(recipe: Mapping[str, Any]) -> UniformField:
             raise ValueError("end_time_s must follow every initial time")
         _number(p["mass_kg"], "mass_kg", positive=True)
         _number(p["weight"], "weight", positive=True)
-        normalize_charge_c(p["charge_state"], p["charge_c"])
+        normalized_charge = normalize_charge_c(p["charge_state"], p["charge_c"])
+        selected = species_by_id.get(p["species_id"])
+        if (selected is None or p["mass_kg"] != selected["mass_kg"]
+                or p["charge_state"] != selected["charge_state"] or normalized_charge != selected["charge_c"]):
+            raise ValueError("particle mass and charge must match the declared species")
     surfaces = recipe["surfaces"]
     if not isinstance(surfaces, list):
         raise ValueError("surfaces must be a list")

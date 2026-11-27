@@ -8,7 +8,8 @@ from tests.contracts import test_neutral_ip_primitives as fixture
 from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
 from msplatform.backends.simion.model import RF_PHYSICS, compile_prepared_model
 from msplatform.backends.simion.rf_tracking_execution import prepare_neutral_ip_hs1
-from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
+from msplatform.contracts.gas import BoxDomain
+from tests.contracts.test_support.ip_hs1_author import environment_record
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import file_record
 
@@ -31,13 +32,11 @@ class NeutralCanonicalHs1Tests(unittest.TestCase):
         keyed_drive=copy.deepcopy(drive)
         keyed_drive['ip_schedules']={'ion_processor':keyed_drive.pop('ip_schedule')}
         keyed_model=compile_prepared_model(geometry,assembly.components_resolved,drive=keyed_drive,physics=RF_PHYSICS)
-        baseline=model.document['drive']['ip_schedule']['baseline']
-        outer=GasFieldSpec(field_id='outer',frame_id=baseline['clock']['frame_id'],representation='uniform',composition_id='ion_processor_explicit_single_gas',composition=(GasSpecies('ion_processor_model_gas',baseline['gas']['mass_amu'],1),),domain=box((-10000,-10000,-10000),(10000,10000,10000)),source=GasSource('prescribed','test',()),uniform_state=GasState('vacuum',0,baseline['gas']['temperature_k'],(0,0,0)))
         domain=geometry.frontend_geometry['domain']
         grid={'frame_id':domain['frame_id'],'origin_mm':domain['minimum_mm'],'pitch_mm':[b-a for a,b in zip(domain['minimum_mm'],domain['maximum_mm'],strict=True)],'dimensions':[2,2,2]}
         with tempfile.TemporaryDirectory() as directory:
             vendor=Path(directory)/'vendor.lua';vendor.write_text(HS1_SOURCE_FIXTURE,encoding='utf8')
-            request={'bath_domain':box((0,-10,-10),(211,10,10)),'outer':outer,'vendor_record':file_record(vendor),'numerics':{'seed':42,'hs1_steps_per_mfp':20}}
+            request={'bath_domain':box((0,-10,-10),(211,10,10)),'outer_domain':box((-10000,-10000,-10000),(10000,10000,10000)),'vendor_record':file_record(vendor),'numerics':{'seed':42,'hs1_steps_per_mfp':20},'environment_record':environment_record(directory,pressure_pa=0,temperature_k=300,bulk_velocity_m_s=[0,0,0]),'environment_instance_id':'ion_processor'}
             result=prepare_neutral_ip_hs1(model,request,basis={'grid':grid})
             self.assertEqual(result['identity']['numerics'],request['numerics'])
             keyed_result=prepare_neutral_ip_hs1(keyed_model,request,basis={'grid':grid})
@@ -45,19 +44,18 @@ class NeutralCanonicalHs1Tests(unittest.TestCase):
             self.assertEqual(keyed_result['bath_runtime'],result['bath_runtime'])
             self.assertEqual(keyed_result['outer_runtime'],result['outer_runtime'])
             # An admitted active window beyond the base still needs explicit outer gas.
-            from dataclasses import replace
             base_grid={'frame_id':domain['frame_id'],'origin_mm':[-1,-1,-1],'pitch_mm':[1,1,1],'dimensions':[3,3,3]}
             level={'grid':{'frame_id':domain['frame_id']},'active_box_mm':[[4,6],[-1,1],[-1,1]]}
             routed={'grid':base_grid,'bases':{'sample':{'refinement_windows':[level]}}}
             expanded=prepare_neutral_ip_hs1(model,request,basis=routed)
             self.assertEqual(expanded['identity']['common_world_domain']['maximum_mm'][0],6)
-            too_small=dict(request,outer=replace(outer,domain=box((-1,-1,-1),(1,1,1))))
+            too_small=dict(request,outer_domain=box((-1,-1,-1),(1,1,1)))
             with self.assertRaisesRegex(ValueError,'complete parent box'):
                 prepare_neutral_ip_hs1(model,too_small,basis=routed)
             from unittest.mock import patch
-            from msplatform import examples, ion_release
+            from msplatform import examples, particle_release
             from msplatform.backends.simion.tracking_execution import plan_tracking_execution
-            packet=ion_release.sample_release(examples.load_example('rf_oatof_functional_v1').release).to_dict()
+            packet=particle_release.sample_release(examples.load_example('rf_oatof_functional_v1').release).to_dict()
             for source_row in packet['rows']:
                 source_row['source_component_id']=source_row['target_component_id']='ion_processor'
                 source_row['frame_id']='dual_pressure_ion_processor_local_v1'
@@ -94,6 +92,7 @@ class NeutralCanonicalHs1Tests(unittest.TestCase):
             row={'particle_id':7,'instrument_time_us':0.,'particle_birth_time_us':0.,'velocity_x_m_s':1.,'velocity_y_m_s':2.,'velocity_z_m_s':3.}
             row2=dict(row,particle_id=91)
             plan={'flight':{'tracking_kind':'neutral_sampled','has_ip_schedule':True,'has_hs1':True,'maximum_step_us':1.,'rf_steps_per_period':80,'trajectory_quality':17,'grouped':0},'rows':[row,row2],'absolute_deadlines_us_by_particle_id':{7:200.,91:200.},'hs1':{'vendor_path':str(vendor),'bath_path':str(Path(directory)/'bath.lua'),'outer_path':str(Path(directory)/'outer.lua'),'query_frame_id':domain['frame_id'],'numerics':request['numerics']},'observations':{'plane_observations':[]},'propagation':{'consumed_plane_events':[],'stop':None}}
+            plan['hs1_identity']=result['identity']
             rendered=render_rf_controls(model,plan,assets={},native_sources=resources,scalar_bindings=binding,slot_domains=[None,'world'])
             self.assertIn('joint_hs1.install(',rendered['program'])
             self.assertIn('single_flight_canonical_particle_id',rendered['program'])

@@ -648,7 +648,7 @@ def prepare_candidate_run(
                 "pending_output": str(candidate_ion),
                 "entrypoint": frozen_source_path(
                     source_closure,
-                    "src/msplatform/backends/simion/resources/generate_comsol_consistent_ions.ps1",
+                    "src/msplatform/backends/simion/resources/generate_comsol_consistent_particles.ps1",
                 ),
                 "arguments": {
                     "N": 100,
@@ -1016,55 +1016,6 @@ def candidate_native_execution_relative_paths(closure: dict, *, code_relative_ro
 
 
 
-def prepare_postprocess_request(parent: Path, run_id: str, *, science_root: Path, host_context: dict) -> dict:
-    """Freeze only an explicit COMSOL postprocessing child, using the public owner."""
-    if not isinstance(host_context, dict) or not host_context:
-        raise ValueError("postprocessing requires an explicit host_context")
-    from msplatform.execution.resources.workspace_paths import resolve_workspace_paths
-    from msplatform.execution.retention import file_record
-    science = CandidateSciencePaths(science_root)
-    REPO_ROOT = science.root
-    PROJECT_ROOT = science.project_root
-    validate_run_id(run_id)
-    paths = resolve_workspace_paths(REPO_ROOT)
-    artifact_root = Path(paths["artifact_root"])
-    selection = select_postprocess_parent(parent, artifact_root)
-    project_root = resolve_run_artifact_root(artifact_root, owner_kind="component", owner_id=PROJECT_ID)
-    run_root = project_root / "runs" / run_id
-    if run_root.exists():
-        raise FileExistsError(f"New postprocessing run already exists: {run_root}")
-    planning = project_root / "scratch" / f"{run_id}__postprocess-inputs"
-    if planning.exists():
-        raise FileExistsError(f"Postprocessing frozen preparation already exists: {planning}")
-    planning.mkdir(parents=True)
-    closure = freeze_candidate_source_closure(planning / "code", project_root, science_root=science_root,
-        resolved_contract=Path(selection["inputs"]["contract_path"]["path"]),
-        analysis_contract=PROJECT_ROOT / "config/analysis_contract.json")
-    selection_path = planning / "source_selection.json"
-    selection_path.write_text(json.dumps(selection, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
-    module = "msplatform.workflows.oa_candidate.run_candidate_workflow"
-    entrypoint = Path(frozen_source_path(closure, "src/msplatform/workflows/oa_candidate/run_candidate_workflow.py"))
-    prepared = {"module": module, "function": "execute_prepared_run", "import_root": str(Path(closure["code_root"]) / "src"),
-                "entrypoint": file_record(entrypoint)}
-    if selection["exports"] is None:
-        prepared["native_input_paths"] = [selection["model_record"]["path"], selection["context_record"]["path"]]
-    return {"schema_version": 1, "role": "run_artifact_workflow_request",
-            "repository_root": str(REPO_ROOT), "python_executable": closure["runtime"]["python_executable"],
-            "host_context": host_context, "execution_run_directory": str(run_root),
-            "package": {"project": PROJECT_ID, "run_id": run_id, "mode": "candidate_comsol_postprocess",
-                        "artifact_project_root": str(project_root), "software": ["COMSOL 6.4", "MATLAB R2025b", "Python 3.11"],
-                        "retention_class": "compact", "retention_reason": "",
-                        **({"expected_execution_relative_paths": candidate_native_execution_relative_paths(
-                            closure, code_relative_root=Path("inputs/code"), cold=True)}
-                           if selection["exports"] is None else {})},
-            "capacity": {"committed_new_bytes": selection["new_bytes"],
-                         "commitment_inputs": [file_record(selection_path),
-                                               {key: selection["budget_record"][key]
-                                                for key in ("path", "exists", "bytes", "sha256")}],
-                         "protected_paths": [str(planning)], "protected_cache_keys": [],
-                         "source_references": selection["source_references"]},
-            "prepared": prepared,
-            "payload": {"postprocess_selection": file_record(selection_path), "execution_source_closure": closure}}
 
 
 def _select_postprocess_child_exports(parent: Path, manifest_record: dict, manifest: dict,

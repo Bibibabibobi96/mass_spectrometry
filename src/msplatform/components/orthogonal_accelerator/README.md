@@ -37,6 +37,16 @@
 组件聚焦合同见[封闭二区 campaign](config/two_zone_component_focus_campaign.json)，自动入口为
 [`../../backends/simion/resources/run_component_focus_workflow.ps1`](../../backends/simion/resources/run_component_focus_workflow.ps1)；
 `msplatform.workflows.oa_focus_analysis`只消费公共释放凭据和原生日志。
+`msplatform.workflows.oa_focus_store_analysis.run_focus_recipe` 使用公共 Recipe 执行并接续焦点分析；
+`publish_focus_analysis` 可冷读已发布的公共 Store 焦点运行，
+核对原 campaign、组件合同、模型与同次出生群后发布分析；`guard_focus_analysis` 为消费者持权核验该分析及原运行，
+`recover_focus_analysis_publication` 使用 Store 既有发布恢复。
+目前此路径已有惰性软件夹具，真实 SIMION 焦点场和公共运行仍须验证，旧入口尚未退役。
+组件的 `focus_theory`、`focus_result` 和 `focus_voltage_adjustment` 拥有对应理论、SI 结果及有界电压计算。
+`initialize_focus_adjustment` 和 `advance_focus_adjustment` 从受保护的同出生群 Store 分析推进单次数值决策；
+它们返回工作态及下一次 campaign；`publish_focus_adjustment_step` 可将单步决策发布到 Store，
+并用 `recover_focus_adjustment_publication` 恢复中断的发布。它们不启动求解，完整多轮执行仍待迁移。
+`msplatform.analysis.oa_focus_contrast` 提供四种独立OA场模式的同源对照数学；公共四case运行与Store适配仍在迁移。
 具体工作流、输入冻结与验收边界见[组件工作流与验收](docs/PROJECT.md#组件工作流与验收)。
 
 ## 所有权
@@ -44,7 +54,7 @@
 组件根拥有器件理论、几何派生和科研配置；`msplatform.workflows.oa_focus_*`拥有聚焦编排与分析，
 `msplatform.backends`拥有SIMION/COMSOL资源，`tests/components/orthogonal_accelerator/`拥有独立回归。
 共享运行、IOB基础机制、坐标与证据工具继续使用根`common/`。不保留另一份`common/accelerator/`领域实现。
-离子释放、粒子状态和 FLY2 序列化是共享层职责；本组件只声明源包络与组件验收，不得复制释放器。
+粒子释放、粒子状态和 FLY2 序列化是共享层职责；本组件只声明源包络与组件验收，不得复制释放器。
 
 仪器项目通过明确接口复用本组件，保留系统布局约束、联合聚焦与整机科学验收；
 [统一集成](../../../../docs/ASSEMBLY.md)拥有组件实例装配、跨组件执行及冻结依赖，不保存第二份加速器模型。

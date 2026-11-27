@@ -19,6 +19,23 @@ from .model_execution import _protected_source, _clock_reference
 from .resources import native_resource_path, structural_seed_path
 
 
+def _protect_product(session, product, *, required_paths=()):
+    """Hold the selected Store product or verify the existing legacy lease."""
+    from msplatform.execution.owner import current_managed_native_store
+
+    scope = current_managed_native_store()
+    if scope is None:
+        return _protected_source(session, product.reference["manifest"], required_paths=required_paths)
+    from msplatform.execution.native_source_guard import guard_native_source
+
+    guarded = scope["lifetime"].enter_context(guard_native_source(product.reference,
+        expected_kind=product.kind, expected_artifact_root=session.context.workspace / "artifacts",
+        artifact_store=scope["store"]))
+    bound = {Path(path).resolve() for path in guarded.data_locations.values()}
+    if any(Path(path).resolve() not in bound for path in required_paths):
+        raise ValueError("dual-cone Store source member is not bound by the protected product")
+
+
 def _record(session, path, role="required_evidence"):
     return file_record(session.canonical_path(path), role)
 
@@ -57,7 +74,7 @@ def _copy_raw(session, product, *, limits):
         name: dict(product.data_records[name], path=str(product.data_path(name)))
         for name in ("raw_geometry", "fractional_surface", "surface_witnesses")
     }
-    _protected_source(session, product.reference["manifest"], required_paths=[row["path"] for row in selected.values()])
+    _protect_product(session, product, required_paths=[row["path"] for row in selected.values()])
     solver = session.run_dir / "simion"
     solver.mkdir(parents=True)
     copies = [dict(source_record=row, destination=str(solver / Path(row["path"]).name)) for row in selected.values()]
@@ -356,8 +373,8 @@ def execute_fields(
             name: dict(source.data_records[name], path=str(source.data_path(name)))
             for name in ("raw_geometry", "fractional_surface", "surface_witnesses")
         }
-        _protected_source(
-            session, source.reference["manifest"], required_paths=[row["path"] for row in records.values()]
+        _protect_product(
+            session, source, required_paths=[row["path"] for row in records.values()]
         )
     raw = Path(records["raw_geometry"]["path"])
     solver = raw.parent
@@ -410,9 +427,9 @@ def execute_fields(
             name: dict(reuse_producer.data_records[name], path=str(reuse_producer.data_path(name))) for name in keys
         }
         for selected_source in (reuse_source, reuse_producer):
-            _protected_source(
+            _protect_product(
                 session,
-                selected_source.reference["manifest"],
+                selected_source,
                 required_paths=[row["path"] for row in external.values()],
             )
         for name, record in external.items():
@@ -516,6 +533,15 @@ def execute_fields(
 
 def execute_saved_fly(session, *, fields, producer, plan, request, model, limits, allow_asynchronous_io):
     """Track over original published fields directly; never copy or Refine them."""
+    if request.get("canonical_result") is not None:
+        if not isinstance(request["canonical_result"], dict) or set(request["canonical_result"]) != {"species", "frame_id", "clock"}:
+            raise ValueError("canonical result requires explicit species, frame and clock")
+        expected_clock = {"basis": "experiment_relative", "unit": "s",
+            **{key: model["clock"][key] for key in ("clock_epoch_id", "authority_sha256")}}
+        if request["canonical_result"].get("clock") != expected_clock:
+            raise ValueError("canonical result clock differs from the saved model clock")
+        if "expected_gas_environment" not in request or "sds_source_identities" not in plan:
+            raise ValueError("canonical SDS results require the admitted gas and SDS source closure")
     from .dual_cone_transport_execution import (
         _prepare_execution_inputs,
         build_transport_tracking_model,
@@ -531,7 +557,7 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
     ]
     guards = [dict(producer.data_records[name], path=str(producer.data_path(name))) for name in names]
     for selected in (fields, producer):
-        _protected_source(session, selected.reference["manifest"], required_paths=[row["path"] for row in guards])
+        _protect_product(session, selected, required_paths=[row["path"] for row in guards])
     from msplatform.results.gas_field import read_gas_field
 
     from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import validate_gas_field_data
@@ -544,7 +570,7 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
             request[key] = plan[key]
     request["resolved_path"] = _document(session, "saved_field_geometry", model["geometry"]["resolved"])
     science = dict(
-        schema_version=1,
+        schema_version=2,
         role="dual_cone_simion_ion_transport_science",
         project_id="dual_cone_tandem_quadrupole",
         trajectory_authority="simion",
@@ -552,7 +578,8 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
         electric_field=model["electric_field"],
     )
     request["science_path"] = _document(session, "saved_model_transport_science", science)
-    request["gas_science_path"] = gas.data_path("science")
+    request["gas_science_path"] = gas.data_path("science_author")
+    request["environment_path"] = gas.data_path("environment")
     plan, values, prepared, records, sources, path_helper = _prepare_execution_inputs(
         session, request=request, selected_plan=plan, model_projection=model
     )
@@ -604,6 +631,7 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
         audit=audit,
         limits=limits,
         allow_asynchronous_io=allow_asynchronous_io,
+        canonical_result=request.get("canonical_result"),
     )
     metadata = result["summary"]
     metadata.update(

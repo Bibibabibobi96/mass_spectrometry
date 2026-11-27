@@ -18,6 +18,15 @@ from .rf_electrode_mapping import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
 from .two_zone_candidate import ResolvedClosedTwoZoneElectrodes, render_closed_two_zone_electrode_body
 
 
+def _is_x_symmetric(shape):
+    if shape['kind'] == 'difference':
+        return _is_x_symmetric(shape['base']) and all(_is_x_symmetric(x) for x in shape['tools'])
+    if shape['kind'] == 'union':
+        return all(_is_x_symmetric(x) for x in shape['parts'])
+    center = shape.get('center_mm')
+    return isinstance(center, (list, tuple)) and len(center) == 3 and center[0] == 0
+
+
 def _samples(members, mapping, domain):
     """Require actual represented metal for every member, including ideal sheets."""
     origin, pitch, dimensions = (domain[k] for k in ('instance_origin_mm', 'cell_mm_xyz', 'dimensions'))
@@ -45,6 +54,8 @@ def _samples(members, mapping, domain):
             values = sorted(cuts[axis])
             candidates.append(values if len(values) == 1 else [(a+b)/2 for a,b in zip(values,values[1:])])
         for point in product(*candidates):
+            if domain.get('symmetry') == 'mirror_x':
+                point = (abs(point[0]), *point[1:])
             gu, snapped = sample_node(point, [[1,0,0],[0,1,0],[0,0,1]], [0,0,0], origin, pitch, dimensions)
             if _inside(shape, snapped):
                 samples.append(dict(label=member['member_id'], electrode_id=mapping[member['electrode_group_id']], gu=gu))
@@ -183,13 +194,21 @@ def compile_independent_accelerators(assembly, *, numerics):
                 len(set(mapping.values()))!=len(mapping)):
             raise ValueError('OA native IDs must uniquely cover every scientific group')
         domain = numerics['component_domains'][name]
-        if not isinstance(domain,Mapping) or set(domain)!={'cell_mm_xyz','pa_bounds_mm'}:
+        if not isinstance(domain,Mapping) or set(domain) not in ({'cell_mm_xyz','pa_bounds_mm'}, {'cell_mm_xyz','pa_bounds_mm','symmetry','surface'}):
             raise ValueError('OA domain requires explicit cell_mm_xyz and pa_bounds_mm')
+        mirrored = 'symmetry' in domain
+        if mirrored and (len(selected) != 1 or domain['symmetry'] != 'mirror_x' or domain['surface'] != 'none'
+                         or plan['components'][name]['variant_id'] != 'two_zone' or design.get('side_entry') is not None):
+            raise ValueError('OA mirrored focus grid requires closed two-zone geometry, mirror_x and surface none')
         cell = normalize_cell_mm_xyz(domain['cell_mm_xyz'])
         bounds = domain['pa_bounds_mm']
         if (not isinstance(bounds,Mapping) or set(bounds)!={a+s for a in 'xyz' for s in ('_min','_max')} or
                 any(type(v) not in (int,float) or not math.isfinite(v) for v in bounds.values())):
             raise ValueError('OA PA bounds require six finite coordinates')
+        if mirrored and bounds['x_min'] != 0:
+            raise ValueError('OA mirror_x grid must start on the x=0 symmetry plane')
+        if mirrored and any(not _is_x_symmetric(member['shape']) for member in members):
+            raise ValueError('OA mirror_x requires symmetric physical CSG')
         dimensions = {}
         for a in 'xyz':
             n = (bounds[a+'_max']-bounds[a+'_min'])/cell[a]
@@ -198,12 +217,19 @@ def compile_independent_accelerators(assembly, *, numerics):
             dimensions['n'+a] = round(n)+1
         for member in members:
             for axis,(lo,hi) in zip('xyz',_extent(member['shape']),strict=True):
+                if mirrored and axis == 'x':
+                    if not math.isclose(lo, -hi, rel_tol=0., abs_tol=1e-12):
+                        raise ValueError('OA mirror_x requires symmetric physical members')
+                    lo = 0.
                 if lo<bounds[axis+'_min'] or hi>bounds[axis+'_max']:
                     raise ValueError('OA PA bounds do not contain actual mechanics')
         origin = {a:bounds[a+'_min'] for a in 'xyz'}
         domains[name] = dict(dimensions=dimensions,cell_mm_xyz=cell,instance_origin_mm=origin,bounds_mm=dict(bounds))
+        if mirrored:
+            domains[name].update(symmetry='mirror_x',surface='none')
         body = render_accelerator_body(design, plan['components'][name]['variant_id'], mapping, cell)
-        header = f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{cell['x']:.12g},{cell['y']:.12g},{cell['z']:.12g},surface=fractional)"
+        symmetry, surface = ('x','none') if mirrored else ('none','fractional')
+        header = f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,{symmetry},electrostatic,,{cell['x']:.12g},{cell['y']:.12g},{cell['z']:.12g},surface={surface})"
         gems[name] = '\n'.join([header,f"locate({-origin['x']:.12g},{-origin['y']:.12g},{-origin['z']:.12g}) {{",*body,'}',''])
         witnesses[name] = _samples(members,mapping,domains[name])
         opening = design.get('side_entry') if plan['components'][name]['variant_id']=='two_zone' else design['port']

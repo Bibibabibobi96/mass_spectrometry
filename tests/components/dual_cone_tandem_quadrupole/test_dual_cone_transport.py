@@ -11,7 +11,7 @@ class MismatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import (
-                _write_fixture, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH,
+                _write_fixture, NUMERICS_PATH, GEOMETRY_PATH,
             )
             from msplatform.contracts.gas_field import read_gas_field_data
             from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_cfd_gas_field
@@ -22,13 +22,14 @@ class MismatchTests(unittest.TestCase):
             interface["runtime_artifact_contract"]["domain"] = dict(minimum_z_mm=0, maximum_z_mm=9,
                 minimum_radius_mm=0, maximum_radius_mm=9)
             csv_path, metadata_path = _write_fixture(root)
+            science_path = root / "science_resolved.json"
             changed_geometry = root / "other_geometry.json"
             changed_geometry.write_bytes(GEOMETRY_PATH.read_bytes() + b" ")
             metadata = json.loads(metadata_path.read_text())
             metadata["source_contract_sha256"]["resolved_geometry"] = hashlib.sha256(changed_geometry.read_bytes()).hexdigest()
             metadata_path.write_text(json.dumps(metadata))
-            data = read_gas_field_data(csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, changed_geometry)
-            files = dict(field_csv=csv_path, field_metadata=metadata_path, science=SCIENCE_PATH,
+            data = read_gas_field_data(csv_path, metadata_path, science_path, NUMERICS_PATH, changed_geometry)
+            files = dict(field_csv=csv_path, field_metadata=metadata_path, science=science_path,
                          numerics=NUMERICS_PATH, geometry=changed_geometry)
             field, manifest = prepare_cfd_gas_field(data, interface=interface,
                 source_records={name: file_record(path, "required_evidence") for name,path in files.items()})
@@ -48,12 +49,13 @@ class MismatchTests(unittest.TestCase):
                     collision_sds_dir=sds, interface_path=selected_interface,
                     resolved_path=config/"resolved_geometry.json", numerics_path=config/"simion_solver_numerics.json",
                     science_path=config/"ion_transport_science.json", gas_science_path=config/"gas_flow_science.json",
-                    source_spec_path=config/"cylindrical_ion_source.json")
+                    environment_path=config/"gas_environment.json",
+                    source_spec_path=config/"cylindrical_particle_source.json")
 
 
 class OriginalParticleIdentityTests(unittest.TestCase):
     def test_actual_program_preserves_sparse_ids_and_rejects_missing_mapping(self):
-        from tests.components.dual_cone_tandem_quadrupole.test_dual_cone_transport_execution import LUA, request
+        from tests.contracts.test_support.dual_cone_transport import LUA, native_request
         from msplatform.backends.simion.dual_cone_transport_execution import DUAL_CONE_TERMINAL_CALLBACKS
         from msplatform.backends.simion.dual_cone_transport import _render_run_config
         from msplatform.backends.simion.resources import native_resource_path
@@ -67,7 +69,7 @@ class OriginalParticleIdentityTests(unittest.TestCase):
             solver.mkdir(parents=True)
             (solver.parents[1] / "results").mkdir()
             (solver / "simion_rf_drive.lua").write_bytes(native_resource_path("rf_drive.lua").read_bytes())
-            values = request()
+            values = native_request()
             config = root / "run.lua"
             config.write_text(_render_run_config(
                 mode="c0_gem_smoke", science=values["science"], numerics=values["numerics"],
@@ -240,14 +242,22 @@ class PublishedGasPreparationTests(unittest.TestCase):
             root = Path(temp)
             csv_path, metadata_path = _write_fixture(root)
             config = PROJECT / "config"
+            from msplatform.backends.comsol.gas_flow import resolve_gas_flow_request
+
+            source_request = resolve_gas_flow_request(*(config / name for name in (
+                "baseline.json", "resolved_geometry.json", "gas_flow_science.json",
+                "comsol_solver_numerics.json", "gas_environment.json")))
             paths = dict(
-                science=config / "gas_flow_science.json",
+                science=root / "science_resolved.json",
                 numerics=config / "comsol_solver_numerics.json",
                 geometry=config / "resolved_geometry.json",
                 field_csv=csv_path,
                 field_metadata=metadata_path,
             )
-            records = {name: file_record(path, "required_evidence") for name, path in paths.items()}
+            records = dict(source_request["inputs"])
+            records.update({name: file_record(path, "required_evidence") for name, path in paths.items()})
+            records["science_author"] = source_request["inputs"]["science"]
+            inputs = dict(source_request["inputs"], science_resolved=records["science"])
             producer = dict(
                 schema_version=2,
                 role="simulation_run_manifest",
@@ -255,14 +265,14 @@ class PublishedGasPreparationTests(unittest.TestCase):
                 run_id="explicit-inert-gas-fixture",
                 mode="axisymmetric_gas_flow_screening",
                 status="success",
-                inputs={name: records[name] for name in ("science", "numerics", "geometry")},
+                inputs=inputs,
                 outputs=[records["field_csv"], records["field_metadata"]],
                 products=dict(
                     gas_field=dict(
                         schema_version=1,
                         kind="gas_field",
                         status="complete",
-                        metadata=dict(claim_scope="INERT_PREPARATION_FIXTURE_NOT_NATIVE"),
+                        metadata=dict(backend="comsol", claim_scope="INERT_PREPARATION_FIXTURE_NOT_NATIVE"),
                         data=records,
                     )
                 ),
@@ -286,8 +296,9 @@ class PublishedGasPreparationTests(unittest.TestCase):
                 numerics_path=config / "simion_solver_numerics.json",
                 science_path=config / "ion_transport_science.json",
                 interface_path=interface_path,
-                gas_science_path=paths["science"],
-                source_spec_path=config / "cylindrical_ion_source.json",
+                gas_science_path=config / "gas_flow_science.json",
+                environment_path=config / "gas_environment.json",
+                source_spec_path=config / "cylindrical_particle_source.json",
                 gas_field_reference=reference,
                 collision_sds_dir=sds,
             )
@@ -297,7 +308,7 @@ class PublishedGasPreparationTests(unittest.TestCase):
             for name in ("science", "numerics", "geometry"):
                 self.assertEqual(receipt["inputs"]["gas_producer_" + name]["sha256"], records[name]["sha256"])
             self.assertEqual(list((root / "positive").rglob("*.pa*")), [])
-            self.assertEqual(receipt["inputs"]["cylindrical_ion_source_receipt"]["identity"]["particle_count"], 100)
+            self.assertEqual(receipt["inputs"]["cylindrical_particle_source_receipt"]["identity"]["particle_count"], 100)
             altered = root / "changed-geometry.json"
             altered.write_bytes(paths["geometry"].read_bytes() + b" ")
             kwargs["resolved_path"] = altered
@@ -313,17 +324,18 @@ class PublishedGasPreparationTests(unittest.TestCase):
         from msplatform.contracts.gas_field import read_gas_field_data
         from msplatform.io.manifest_records import file_record
         from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import (
-            _write_fixture, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH,
+            _write_fixture, NUMERICS_PATH, GEOMETRY_PATH,
         )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             csv_path, metadata_path = _write_fixture(root)
+            science_path = root / "science_resolved.json"
             interface = json.loads(GAS_INTERFACE.read_text())
             interface["runtime_artifact_contract"]["domain"] = dict(
                 minimum_z_mm=0., maximum_z_mm=9., minimum_radius_mm=0., maximum_radius_mm=9.)
-            data = read_gas_field_data(csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH, GEOMETRY_PATH)
+            data = read_gas_field_data(csv_path, metadata_path, science_path, NUMERICS_PATH, GEOMETRY_PATH)
             records = {name: file_record(path, "required_evidence") for name, path in dict(
-                field_csv=csv_path, field_metadata=metadata_path, science=SCIENCE_PATH,
+                field_csv=csv_path, field_metadata=metadata_path, science=science_path,
                 numerics=NUMERICS_PATH, geometry=GEOMETRY_PATH).items()}
             field, metadata = prepare_cfd_gas_field(data, interface=interface, source_records=records)
             runtime, manifest_path = root / "direct.lua", root / "direct.json"
@@ -365,27 +377,22 @@ class LargeGasRuntimeFreezeTests(unittest.TestCase):
     def test_public_preparation_freezes_large_valid_runtime_with_original_receipt_shape(self):
         from msplatform.backends.simion.dual_cone_transport import prepare_transport, SDS_FILES
         from tests.components.dual_cone_tandem_quadrupole.test_simion_layer import PROJECT
-        from tests.components.dual_cone_tandem_quadrupole.test_simion_layer import write_uniform_gas_fixture
         from msplatform.io.file_identity import file_sha256
+        from msplatform.workflows.dual_cone_transport import prepare_published_gas_runtime
+        from tests.contracts.test_support.dual_cone_transport import write_published_gas_fixture
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             config = PROJECT / "config"
-            runtime = root / "large-field.lua"
-            manifest_path = root / "field.json"
-            write_uniform_gas_fixture(
-                runtime,
-                manifest_path,
-                spec_path=config / "uniform_rear_gas_field.json",
-                interface_path=config / "gas_field_interface.json",
+            fixture = write_published_gas_fixture(
+                root / "source", cover_transport_domain=True, grid_size=(1024, 1024)
             )
-            # A valid Lua comment makes this real public input cross the existing
-            # 8MiB file-identity tier without inventing a native result.
-            runtime.write_bytes(b"--" + b"x" * (8 * 1024 * 1024) + b"\n" + runtime.read_bytes())
+            manifest_path = prepare_published_gas_runtime(
+                fixture["reference"], interface_path=config / "gas_field_interface.json", output_dir=root
+            )
+            runtime = root / "gas_field_runtime.lua"
             original = runtime.read_bytes()
-            manifest = json.loads(manifest_path.read_text())
-            manifest["runtime_lua"]["sha256"] = file_sha256(runtime).lower()
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertGreater(len(original), 8 * 1024 * 1024)
             sds = root / "sds"
             sds.mkdir()
             for name in SDS_FILES:
@@ -399,7 +406,8 @@ class LargeGasRuntimeFreezeTests(unittest.TestCase):
                 science_path=config / "ion_transport_science.json",
                 interface_path=config / "gas_field_interface.json",
                 gas_science_path=config / "gas_flow_science.json",
-                source_spec_path=config / "cylindrical_ion_source.json",
+                environment_path=config / "gas_environment.json",
+                source_spec_path=config / "cylindrical_particle_source.json",
                 collision_sds_dir=sds,
                 gas_field_manifest=manifest_path,
             )
@@ -421,7 +429,6 @@ class ExplicitUniformStudyTests(unittest.TestCase):
         from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
         from msplatform.backends.simion.resources import native_resource_path
         from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_uniform_rear_gas_field
-        from msplatform.contracts.gas import GasSpecies
         from msplatform.io.manifest_records import file_record
         from tests.contracts.test_simion_prepared_model import LUA
         from tests.components.dual_cone_tandem_quadrupole.test_simion_layer import PROJECT
@@ -431,26 +438,32 @@ class ExplicitUniformStudyTests(unittest.TestCase):
         source = json.loads((config / "uniform_rear_gas_field.json").read_text(encoding="utf8"))
         interface_path = config / "gas_field_interface.json"
         interface = json.loads(interface_path.read_text(encoding="utf8"))
-        science = json.loads((config / "ion_transport_science.json").read_text(encoding="utf8"))
-        composition = (GasSpecies("N2", science["gas"]["collision_gas_mass_amu"], 1.),)
+        author = json.loads((config / "gas_environment.json").read_text(encoding="utf8"))
+        geometry_path = config / "resolved_geometry.json"
+        geometry = json.loads(geometry_path.read_text(encoding="utf8"))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             spec_path = root / "explicit-study.json"
-            def construct(value):
+            environment_path = root / "gas-environment.json"
+            def construct(value, selected_author):
                 spec_path.write_text(json.dumps(value), encoding="utf8")
-                return prepare_uniform_rear_gas_field(value, interface=interface, composition=composition,
+                environment_path.write_text(json.dumps(selected_author), encoding="utf8")
+                return prepare_uniform_rear_gas_field(value, interface=interface,
+                    environment_author=selected_author, geometry=geometry, geometry_record=file_record(geometry_path,"required_evidence"),
+                    environment_record=file_record(environment_path,"required_evidence"),
                     spec_record=file_record(spec_path,"required_evidence"),
                     interface_record=file_record(interface_path,"required_evidence"))
             changed = json.loads(json.dumps(source))
-            changed["rear_region"]["pressure_pa"] = 125.
-            with self.assertRaisesRegex(ValueError, "frozen minimal prototype requires a 400 Pa"):
-                construct(changed)
+            changed["rear_region"] = {"pressure_pa": 125.}
+            with self.assertRaisesRegex(ValueError, "must not duplicate"):
+                construct(changed, author)
             for pressure in (125., 0.):
                 with self.subTest(pressure_pa=pressure):
                     value = json.loads(json.dumps(source))
                     value["model_id"] = "explicit_" + str(pressure) + "_pa_rear_study"
-                    value["rear_region"]["pressure_pa"] = pressure
-                    field, metadata = construct(value)
+                    selected_author = json.loads(json.dumps(author))
+                    selected_author["outlet_pressure_pa"] = pressure
+                    field, metadata = construct(value, selected_author)
                     runtime, manifest = root / (str(pressure)+".lua"), root / (str(pressure)+".json")
                     materialize_gas_runtime(field,runtime,manifest,manifest_metadata=metadata)
                     sds = root / ("sds-"+str(pressure)); sds.mkdir()
@@ -458,12 +471,12 @@ class ExplicitUniformStudyTests(unittest.TestCase):
                     output = root / ("prepared-"+str(pressure))
                     arguments=dict(mode="gas_assisted_transport",resolved_path=config/"resolved_geometry.json",
                         numerics_path=config/"simion_solver_numerics.json",science_path=config/"ion_transport_science.json",
-                        interface_path=interface_path,gas_science_path=config/"gas_flow_science.json",
-                        source_spec_path=config/"cylindrical_ion_source.json",gas_field_manifest=manifest,collision_sds_dir=sds)
+                        interface_path=interface_path,gas_science_path=config/"gas_flow_science.json",environment_path=environment_path,
+                        source_spec_path=config/"cylindrical_particle_source.json",gas_field_manifest=manifest,collision_sds_dir=sds)
                     receipt=prepare_transport(output,**arguments)
                     self.assertFalse(receipt["qualified_evidence"])
                     self.assertEqual(list(output.rglob("*.pa*")),[])
-                    self.assertEqual(receipt["inputs"]["cylindrical_ion_source_receipt"]["identity"]["particle_count"],100)
+                    self.assertEqual(receipt["inputs"]["cylindrical_particle_source_receipt"]["identity"]["particle_count"],100)
                     if LUA.is_file():
                         harness=root/(str(pressure)+"-program.lua")
                         harness.write_text(r"""local load=loadfile;local config=assert(load(arg[1]))()
@@ -559,10 +572,10 @@ assert(installs==1 and seeds==1);print('SDS_COVERAGE_PROGRAM=PASS')
             for pressure in (-1.,float("nan"),float("inf"),True):
                 with self.subTest(invalid_pressure=pressure):
                     value=json.loads(json.dumps(source));value["model_id"]="explicit_invalid_pressure"
-                    value["rear_region"]["pressure_pa"]=pressure
-                    with self.assertRaises(ValueError):construct(value)
+                    selected_author=json.loads(json.dumps(author));selected_author["outlet_pressure_pa"]=pressure
+                    with self.assertRaises(ValueError):construct(value,selected_author)
             for model_id in ("",None,True):
                 with self.subTest(invalid_model_id=model_id):
                     value=json.loads(json.dumps(source));value["model_id"]=model_id
                     with self.assertRaisesRegex(ValueError,"explicit uniform gas study model_id"):
-                        construct(value)
+                        construct(value,author)

@@ -8,9 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from msplatform.contracts.particle_physics import kinetic_energy_ev, speed_m_s_from_kinetic_energy_ev
-from msplatform.ion_release.release import generate_release_states, materialize_release
+from msplatform.particle_release.release import generate_release_states, materialize_release
 from msplatform.components.orthogonal_accelerator.accelerator_time_focus import time_to_fixed_plane_s
-from msplatform.workflows.oa_focus_analysis import ComponentFocusError, _ideal_two_zone_contrast, analyze
+from msplatform.workflows.oa_focus_analysis import ComponentFocusError, analyze
+from msplatform.components.orthogonal_accelerator.focus_theory import _ideal_two_zone_contrast
 
 REPO = Path(__file__).resolve().parents[4]
 ROOT = REPO / "src/msplatform/components/orthogonal_accelerator"
@@ -222,7 +223,7 @@ class ComponentFocusAnalysisTests(unittest.TestCase):
             if calls == 2:
                 raise ValueError("test-only no ideal crossing")
             return real(*args, **kwargs)
-        with patch("msplatform.workflows.oa_focus_analysis.time_to_fixed_plane_s", side_effect=propagate):
+        with patch("msplatform.components.orthogonal_accelerator.focus_theory.time_to_fixed_plane_s", side_effect=propagate):
             result = analyze(self.write_events(), self.receipt, self.campaign, geometry_profile=_geometry_profile())
         contrast = result["ideal_field_contrast"]
         self.assertEqual(contrast["status"], "incomplete_ideal_propagation")

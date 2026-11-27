@@ -5,10 +5,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import numpy as np
 
-from tests.ion_release.test_mt19937_disk_cone_rf_phase import _spec
+from tests.particle_release.test_mt19937_disk_cone_rf_phase import _spec
 from tests.contracts import test_simion_particle_data as particle_fixture
 from msplatform.backends.simion.particle_data import adapt_native_results
 from msplatform.physics import CONSTANTS
+from tests.contracts.test_support.species import fixture_ion_species
 from msplatform.results.particle_data import read_particle_data, write_particle_data
 from msplatform.workflows.mass_scan import prepare_mass_scan, merge_mass_scan, analyze_mass_scan
 
@@ -35,7 +36,7 @@ class MassScanTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             root = Path(folder)
             write_particle_data(root, merged, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
-                frame_id='world', clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64)))
+                frame_id='world', clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64), species=fixture_ion_species(merged.initial_states)))
             data = read_particle_data(root)
             analysis = analyze_mass_scan(data)
         self.assertEqual([row['detected_count'] for row in analysis['species']], [1, 0, 0])
@@ -64,7 +65,7 @@ class MassScanTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             root = Path(folder)
             write_particle_data(root, merged, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
-                frame_id='world', clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64)))
+                frame_id='world', clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64), species=fixture_ion_species(merged.initial_states)))
             data = read_particle_data(root)
             analysis = analyze_mass_scan(data)
         self.assertEqual(analysis['summary']['detector_observation']['status'], 'unavailable')
@@ -116,7 +117,7 @@ class MassScanTests(unittest.TestCase):
                 boundary_policy='metal_and_outer_freeze_ideal_pass')
             merged = merge_mass_scan([result])
             write_particle_data(root, merged, metadata=dict(schema_version=2, initial_state_basis='native_birth_verified',
-                frame_id='world', clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64)))
+                frame_id='world', clock=dict(clock_epoch_id='epoch', authority_sha256='a'*64), species=fixture_ion_species(merged.initial_states)))
             analysis = analyze_mass_scan(read_particle_data(root))
         self.assertEqual(analysis['summary']['census']['counts']['unknown'], 1)
         self.assertIsNone(analysis['summary']['detection_efficiency'])
@@ -130,7 +131,7 @@ class MassScanTests(unittest.TestCase):
         artifact = SimpleNamespace(kind='trajectory_result', data_path=lambda name: Path('execution.json'))
         with patch('msplatform.workflows.native_tracing.read_particle_data') as read:
             for status in ('unavailable', 'not_requested', 'incomplete', None):
-                read.return_value = {'execution_status': 'succeeded', 'data_integrity': {
+                read.return_value = {'execution_status': 'succeeded', 'metadata': {'species': [{'species_id': 'fixture'}]}, 'data_integrity': {
                     'status': 'complete', 'detector_observation': {'status': status}}}
                 self.assertFalse(_complete_trajectory(artifact))
             read.return_value['data_integrity']['detector_observation']['status'] = 'complete'

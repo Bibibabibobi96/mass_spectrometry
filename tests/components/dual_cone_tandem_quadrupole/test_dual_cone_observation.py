@@ -19,7 +19,8 @@ class ObservationCadenceTests(unittest.TestCase):
             science_path=config / "ion_transport_science.json",
             interface_path=config / "gas_field_interface.json",
             gas_science_path=config / "gas_flow_science.json",
-            source_spec_path=config / "cylindrical_ion_source.json",
+            environment_path=config / "gas_environment.json",
+            source_spec_path=config / "cylindrical_particle_source.json",
         )
 
     def test_explicit_one_and_two_change_only_rendered_observation_interval(self):

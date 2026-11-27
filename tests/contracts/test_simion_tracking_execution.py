@@ -82,7 +82,7 @@ def tracking_action_fixture(self, root):
     metadata=dict(origin_meta,ground_representation='analytic_zero_on_native_geometry',
         ground_boundary_condition='ground_dirichlet_zero_outer_homogeneous_neumann',
         ground_refine_calls=0,ground_fly_calls=0,ground_source_reference=origin_ref,native_assets=assets)
-    artifact=OpenedArtifact(kind='field_bundle',product_id='fields',reference={'manifest':{'path':str(producer/'derived_manifest.json'),'bytes':123,'sha256':'D'*64}},
+    artifact=OpenedArtifact(kind='field_bundle',product_id='fields',reference={'manifest':{'path':str(producer/'derived_manifest.json'),'bytes':123,'sha256':'D'*64},'product_id':'fields'},
         metadata=metadata,records=records,paths={key:Path(row['path']) for key,row in records.items()},producer={})
     class Session:
         run_dir=root/'run'
@@ -174,7 +174,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             authority = {'manifest': file_record(producer/'run_manifest.json'), 'records': records}
             packet = load_recorded_release(records['source'], clock=ClockIdentity(**self.packet['clock']),
                 frame_id=self.case.release['release_spec']['frame_id'], source_component_id='multipole',
-                species_id='explicit', relative_weights=None, instrument_origin_us=0., expected_particle_ids=ids)
+                species_id='explicit', species_kind='ion', relative_weights=None, instrument_origin_us=0., expected_particle_ids=ids)
             session = Session()
             limits = {'transient_run_directory_bytes': 1}
             stage = {'limits': limits, 'artifact_retention': {}}
@@ -232,7 +232,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             authority = {'manifest': file_record(producer/'run_manifest.json'), 'records': authority_records}
             packet = load_recorded_release(selected, clock=ClockIdentity(**self.packet['clock']),
                 frame_id=self.case.release['release_spec']['frame_id'], source_component_id='multipole',
-                species_id='declared', relative_weights={11: .5, 1009: 2., 2001: 3.},
+                species_id='declared', species_kind='ion', relative_weights={11: .5, 1009: 2., 2001: 3.},
                 instrument_origin_us=12.5, expected_particle_ids=ids)
             from msplatform.execution.inputs import freeze_file
             manifest_path = producer/'run_manifest.json'
@@ -618,7 +618,7 @@ class TrackingExecutionPlanTests(unittest.TestCase):
             source_mother=HandoffMother({row['particle_id']:row for row in collection['original_mother']['mother_records']},
                 collection['original_mother']['mother_fates'])
             empty=HandoffResult((),(),tuple(source_mother.records),source_mother,HandoffClock(clock,clock),'time_snapshot')
-            parent=OpenedArtifact(kind='trajectory_result',product_id='trajectory',reference={'manifest':{'path':str(session.run_dir/'manifest.json')}},
+            parent=OpenedArtifact(kind='trajectory_result',product_id='trajectory',reference={'manifest':{'path':str(session.run_dir/'manifest.json')},'product_id':'trajectory'},
                 metadata=product['metadata'],records=product['data'],paths={key:Path(row['path']) for key,row in product['data'].items()},producer={})
             zero=Session(root/'zero');zero.expected_operation_ids=();zero.operation_dependencies={}
             with patch('msplatform.backends.simion.model_execution._protected_source'), \

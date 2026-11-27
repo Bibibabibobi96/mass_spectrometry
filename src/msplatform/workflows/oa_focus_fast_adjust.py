@@ -3,17 +3,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 from pathlib import Path
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
+from msplatform.components.orthogonal_accelerator.focus_voltage_adjustment import (
+    ComponentFocusFastAdjustError, _number, _parameters, _candidate_campaign,
+    advance_adjustment_state,
+)
 from msplatform.workflows.oa_focus_analysis import _load_campaign
 from msplatform.components.orthogonal_accelerator.focus_campaign import geometry_profile_identity
 
 
-class ComponentFocusFastAdjustError(ValueError):
-    """Raised when the bounded accelerator correction cannot continue."""
 
 
 _ROLE = "orthogonal_accelerator_component_focus_fast_adjust_controller"
@@ -22,60 +23,12 @@ _STATE_KEYS = {
     "records", "next_parameters", "phase", "geometry_profile_sha256", "base_record_index", "probe_relative_step",
     "best_record_index",
 }
-_TIERS = ((2.0, 0.0005), (10.0, 0.0025), (math.inf, 0.01))
 
 
-def _number(value: object, label: str) -> float:
-    if isinstance(value, bool):
-        raise ComponentFocusFastAdjustError(f"{label} must be finite")
-    try:
-        result = float(value)
-    except (TypeError, ValueError) as error:
-        raise ComponentFocusFastAdjustError(f"{label} must be finite") from error
-    if not math.isfinite(result):
-        raise ComponentFocusFastAdjustError(f"{label} must be finite")
-    return result
 
 
-def _parameters(campaign: dict[str, Any]) -> dict[str, float]:
-    point = campaign["operating_point"]
-    return {
-        "instance_center_y_mm": _number(point["instance_center_y_mm"], "instance center y"),
-        "finite_3d_gain_correction_v": _number(
-            point["finite_3d_gain_correction_v"], "finite-3D gain correction",
-        ),
-    }
 
 
-def _candidate_campaign(campaign: dict[str, Any], parameters: dict[str, float], *, geometry_profile: dict[str, Any]) -> dict[str, Any]:
-    """Change only runtime placement and voltages; PA geometry remains untouched."""
-    profile = geometry_profile
-    gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
-    ring_count = int(profile["ring_count"])
-    center_z = _number(campaign["release_spec"]["geometry"]["center_mm"][2], "release centre z")
-    release_position = gap1 + gap2 - center_z
-    if not 0.0 < release_position < gap1:
-        raise ComponentFocusFastAdjustError("release centre is outside provider first acceleration gap")
-    base = campaign["operating_point"]["electrode_voltages_v"]
-    drop = _number(base[1], "repeller voltage") - _number(base[2], "grid1 voltage")
-    base_correction = _number(
-        campaign["operating_point"]["finite_3d_gain_correction_v"], "base finite-3D gain correction",
-    )
-    theoretical_energy = _number(base[1], "repeller voltage") - drop * release_position / gap1 - base_correction
-    correction = _number(parameters["finite_3d_gain_correction_v"], "candidate finite-3D gain correction")
-    applied_energy = theoretical_energy + correction
-    repeller = applied_energy + drop * release_position / gap1
-    grid1 = repeller - drop
-    candidate = json.loads(json.dumps(campaign))
-    candidate["operating_point"]["instance_center_y_mm"] = _number(
-        parameters["instance_center_y_mm"], "candidate instance center y",
-    )
-    candidate["operating_point"]["finite_3d_gain_correction_v"] = correction
-    candidate["operating_point"]["electrode_voltages_v"] = [
-        0.0, repeller, grid1, 0.0,
-        *(grid1 * index / (ring_count + 1) for index in range(ring_count, 0, -1)),
-    ]
-    return candidate
 
 
 def _load_analysis(path: Path, *, geometry_profile: dict[str, Any]) -> dict[str, Any]:
@@ -144,43 +97,12 @@ def _load_analysis(path: Path, *, geometry_profile: dict[str, Any]) -> dict[str,
     }
 
 
-def _tier(maximum_normalized_residual: float) -> float:
-    return next(step for limit, step in _TIERS if maximum_normalized_residual <= limit)
 
 
-def _scale(campaign: dict[str, Any], *, geometry_profile: dict[str, Any]) -> float:
-    profile = geometry_profile
-    base = campaign["operating_point"]["electrode_voltages_v"]
-    gap1, gap2 = float(profile["gap_1_mm"]), float(profile["gap_2_mm"])
-    release_z = _number(campaign["release_spec"]["geometry"]["center_mm"][2], "release centre z")
-    release_position = gap1 + gap2 - release_z
-    correction = _number(campaign["operating_point"]["finite_3d_gain_correction_v"], "finite-3D gain correction")
-    target = _number(base[1], "repeller voltage") - (_number(base[1], "repeller voltage") - _number(base[2], "grid1 voltage")) * release_position / gap1 - correction
-    return abs(target)
 
 
-def _probe(base: dict[str, float], relative_step: float, scale: float) -> dict[str, float]:
-    result = dict(base)
-    result["finite_3d_gain_correction_v"] += relative_step * scale
-    return result
 
 
-def _solution(records: list[dict[str, Any]], base_index: int, relative_step: float, scale: float) -> dict[str, float]:
-    base, gain_probe = records[base_index:base_index + 2]
-    if gain_probe["kind"] != "gain_probe":
-        raise ComponentFocusFastAdjustError("real-flight axial-voltage probe is incomplete")
-    r0, rg = base["residuals"][0], gain_probe["residuals"][0]
-    dg = gain_probe["parameters"]["finite_3d_gain_correction_v"] - base["parameters"]["finite_3d_gain_correction_v"]
-    derivative = (rg - r0) / dg
-    if abs(derivative) <= 1.0e-12:
-        raise ComponentFocusFastAdjustError("real-flight axial-voltage response is singular")
-    delta_gain = -r0 / derivative
-    trust_gain = relative_step * scale
-    delta_gain = max(-trust_gain, min(trust_gain, delta_gain))
-    return {
-        "instance_center_y_mm": base["parameters"]["instance_center_y_mm"],
-        "finite_3d_gain_correction_v": base["parameters"]["finite_3d_gain_correction_v"] + delta_gain,
-    }
 
 
 def initialize(campaign_path: Path, maximum_trials: int, *, geometry_profile: dict[str, Any]) -> dict[str, Any]:
@@ -204,32 +126,7 @@ def record_analysis(state: dict[str, Any], analysis_path: Path, campaign: dict[s
     if state["status"] != "running" or not isinstance(state["next_parameters"], dict):
         raise ComponentFocusFastAdjustError("controller has no pending candidate")
     record = {"kind": state["phase"], "parameters": state["next_parameters"], **_load_analysis(analysis_path, geometry_profile=geometry_profile)}
-    records = state["records"]
-    records.append(record)
-    best = state["best_record_index"]
-    if record["valid"] and (best is None or record["score"] < records[best]["score"]):
-        state["best_record_index"] = len(records) - 1
-    if record["accepted"]:
-        state["status"], state["next_parameters"] = "accepted", None
-        return state
-    if not record["geometry_acceptable"] or record["center_axial_energy_passed"]:
-        state["status"], state["next_parameters"] = "exhausted", None
-        return state
-    if len(records) >= state["maximum_trials"]:
-        state["status"], state["next_parameters"] = "exhausted", None
-        return state
-    scale = _scale(campaign, geometry_profile=geometry_profile)
-    if state["phase"] in {"base", "solution"}:
-        state["base_record_index"] = len(records) - 1
-        state["probe_relative_step"] = _tier(record["maximum_normalized_residual"])
-        state["next_parameters"] = _probe(record["parameters"], state["probe_relative_step"], scale)
-        state["phase"] = "gain_probe"
-    elif state["phase"] == "gain_probe":
-        state["next_parameters"] = _solution(records, state["base_record_index"], state["probe_relative_step"], scale)
-        state["phase"] = "solution"
-    else:
-        raise ComponentFocusFastAdjustError("controller phase is invalid")
-    return state
+    return advance_adjustment_state(state, record, campaign, geometry_profile=geometry_profile)
 
 
 def _write_campaign(path: Path, campaign: dict[str, Any], parameters: dict[str, float], *, geometry_profile: dict[str, Any]) -> None:

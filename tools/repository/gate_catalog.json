@@ -1017,21 +1017,165 @@
         "dependencies": [
           {
             "matches": [
-              {"exact": "src/msplatform/results/cross_solver_history.py", "reason": "cross_solver_record_reader_changed"},
-              {"exact": "src/msplatform/analysis/cross_solver_validation.py", "reason": "cross_solver_metrics_changed"}
+              {
+                "regex": "^src/msplatform/(?:analysis/mass_spectrum|results/historical_mass_spectrum|execution/historical_mass_spectrum_worker|workflows/historical_mass_analysis|contracts/particle_identity)\\.py$",
+                "reason": "historical_mass_pipeline_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/single_reflection_mass_spectrum_study.py",
+                "reason": "retired_mass_producer_deleted"
+              },
+              {
+                "exact": "src/msplatform/workflows/resources/run_mass_spectrum_candidate.ps1",
+                "reason": "retired_mass_entry_deleted"
+              }
             ],
-            "modules": ["tests/contracts/test_cross_solver_validation.py"],
+            "modules": [
+              "tests/contracts/test_historical_mass_analysis.py",
+              "tests/contracts/test_retired_comsol_execution.py"
+            ],
             "dependency_profile": "locked"
           },
           {
             "matches": [
-              {"prefix": "recipes/reference/", "reason": "reference_recipe_changed"},
-              {"regex": "^src/msplatform/(?:physics|recipes|fields|tracing|storage)/.*\\.py$", "reason": "reference_chain_changed"},
-              {"exact": "src/msplatform/results/particle_data.py", "reason": "reference_chain_changed"},
-              {"exact": "src/msplatform/contracts/particle_physics.py", "reason": "reference_constants_changed"},
-              {"exact": "src/msplatform/workflows/reference_tracing.py", "reason": "reference_chain_changed"},
-              {"exact": "src/msplatform/cli.py", "reason": "reference_chain_changed"},
-              {"exact": "src/msplatform/__main__.py", "reason": "reference_chain_changed"}
+              {
+                "regex": "^src/msplatform/(?:workflows/reflectron_compensation|analysis/reflectron_compensation|analysis/reflectron_voltage_fit|backends/simion/reflectron_response_binding)\\.py$",
+                "reason": "current_reflectron_pipeline_changed"
+              },
+              {
+                "exact": "src/msplatform/backends/simion/resources/export_axis_basis.lua",
+                "reason": "axis_sample_export_changed"
+              }
+            ],
+            "modules": [
+              "tests/contracts/test_reflectron_response_binding.py",
+              "tests/contracts/test_reflectron_compensation_analysis.py",
+              "tests/contracts/test_compensation_recipe_guard.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "prefix": "src/msplatform/storage/",
+                "reason": "store_lifecycle_changed"
+              },
+              {
+                "regex": "^src/msplatform/execution/(?:owner|run_session|processes|native_source_guard)\\.py$",
+                "reason": "store_native_owner_changed"
+              }
+            ],
+            "modules": [
+              "tests/contracts/test_artifact_store.py",
+              "tests/contracts/test_store_run_identity.py",
+              "tests/contracts/test_store_accounting_boundaries.py",
+              "tests/contracts/test_release_evidence.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/results/release_evidence.py",
+                "reason": "historical_release_decoder_changed"
+              }
+            ],
+            "modules": [
+              "tests/contracts/test_release_evidence.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/cli.py",
+                "reason": "public_cli_validation_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/tracing.py",
+                "reason": "public_recipe_dispatch_changed"
+              },
+              {
+                "exact": "src/msplatform/recipes/__init__.py",
+                "reason": "public_recipe_loading_changed"
+              }
+            ],
+            "modules": [
+              "tests/contracts/test_cli_validation.py",
+              "tests/contracts/test_public_recipe_entry.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/results/cross_solver_history.py",
+                "reason": "cross_solver_record_reader_changed"
+              },
+              {
+                "exact": "src/msplatform/analysis/cross_solver_validation.py",
+                "reason": "cross_solver_metrics_changed"
+              }
+            ],
+            "modules": [
+              "tests/contracts/test_cross_solver_validation.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "exact": "src/msplatform/analysis/reflectron_compensation.py",
+                "reason": "reflectron_analysis_changed"
+              },
+              {
+                "exact": "src/msplatform/analysis/reflectron_voltage_fit.py",
+                "reason": "reflectron_analysis_changed"
+              }
+            ],
+            "modules": [
+              "tests/contracts/test_reflectron_compensation_analysis.py"
+            ],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
+              {
+                "prefix": "recipes/reference/",
+                "reason": "reference_recipe_changed"
+              },
+              {
+                "regex": "^src/msplatform/(?:physics|recipes|fields|tracing|storage)/.*\\.py$",
+                "reason": "reference_chain_changed"
+              },
+              {
+                "exact": "src/msplatform/results/particle_data.py",
+                "reason": "reference_chain_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/particle_physics.py",
+                "reason": "reference_constants_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/reference_tracing.py",
+                "reason": "reference_chain_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/tracing.py",
+                "reason": "public_tracing_changed"
+              },
+              {
+                "exact": "src/msplatform/results/model.py",
+                "reason": "trace_batch_merge_changed"
+              },
+              {
+                "exact": "src/msplatform/cli.py",
+                "reason": "reference_chain_changed"
+              },
+              {
+                "exact": "src/msplatform/__main__.py",
+                "reason": "reference_chain_changed"
+              }
             ],
             "modules": [
               "tests/contracts/test_reference_recipe.py",
@@ -1815,7 +1959,7 @@
           {
             "matches": [
               {
-                "regex": "^src/msplatform/(?:api\\.py|ion_release/(?:authoring|release|cylinder|mt19937_disk_cone_rf_phase)\\.py|contracts/(?:clock|particle_state|particle_physics)\\.py)$",
+                "regex": "^src/msplatform/(?:api\\.py|particle_release/(?:authoring|release|cylinder|mt19937_disk_cone_rf_phase)\\.py|contracts/(?:clock|particle_state|particle_physics)\\.py)$",
                 "reason": "canonical_birth_authoring_changed"
               }
             ],
@@ -2061,11 +2205,11 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/ion_release/authoring.py",
+                "exact": "src/msplatform/particle_release/authoring.py",
                 "reason": "recorded_birth_tracking_consumer_changed"
               },
               {
-                "exact": "src/msplatform/ion_release/__init__.py",
+                "exact": "src/msplatform/particle_release/__init__.py",
                 "reason": "recorded_birth_tracking_consumer_changed"
               }
             ],
@@ -2390,7 +2534,7 @@
           "test_execution_compiler": 49.236107,
           "test_expected_values": 0.011924,
           "test_file_identity": 0.558169,
-          "test_formal_asset_manifest": 0.024940,
+          "test_formal_asset_manifest": 0.02494,
           "test_frozen_inputs": 2.684207,
           "test_gate_unittest": 1.514529,
           "test_historical_source_scratch_retirement": 0.144069,
@@ -2398,7 +2542,7 @@
           "test_legacy_owner_disposition": 9.300078,
           "test_machine_contracts_paths": 0.065246,
           "test_multipole_project_variants": 11.067008,
-          "test_native_execution_paths": 8.570970,
+          "test_native_execution_paths": 8.57097,
           "test_parallel_gate_support": 413.097816,
           "test_particle_count_policy": 0.028809,
           "test_particle_physics": 0.000373,
@@ -2418,7 +2562,7 @@
           "test_run_terminal_publication": 0.039793,
           "test_shared_artifact_contracts": 0.224465,
           "test_simion_refine_policy": 0.088739,
-          "test_solver_review_retirement": 103.585330,
+          "test_solver_review_retirement": 103.58533,
           "test_stage_reuse": 1.345681,
           "test_strict_json": 0.021968,
           "test_terminal_publication_lock": 11.462797,
@@ -2433,9 +2577,9 @@
           "test_artifact_reader": 0.322105,
           "test_assembly_scalar_fill": 0.012372,
           "test_assembly_scalar_owner_fill": 1.159023,
-          "test_bare_frontend_geometry": 3.947070,
+          "test_bare_frontend_geometry": 3.94707,
           "test_cad_contact_geometry": 0.031972,
-          "test_cad_execution": 0.512800,
+          "test_cad_execution": 0.5128,
           "test_canonical_manifest_policy": 0.263561,
           "test_canonical_rf_free_assembly": 176.104462,
           "test_capacity_deployment": 1.687474,
@@ -2459,7 +2603,7 @@
           "test_dual_cone_managed_stages": 103.655661,
           "test_dual_cone_native_guards": 12.189015,
           "test_dual_cone_observation": 0.093619,
-          "test_dual_cone_placement": 0.304870,
+          "test_dual_cone_placement": 0.30487,
           "test_dual_cone_stages": 10.808248,
           "test_dual_cone_transport": 1.387459,
           "test_dual_cone_transport_execution": 32.949803,
@@ -2477,7 +2621,7 @@
           "test_gate_outcome_report": 0.010824,
           "test_generic_collision_geometry": 0.730718,
           "test_generic_connected_consumer": 180.767631,
-          "test_generic_dynamic_model": 0.346750,
+          "test_generic_dynamic_model": 0.34675,
           "test_generic_registered_collision": 31.271531,
           "test_generic_scalar_binding": 2.189609,
           "test_generic_scalar_derived_tracking_managed": 206.243136,
@@ -2487,7 +2631,7 @@
           "test_generic_scalar_tracking_renamed": 190.911115,
           "test_geometry_execution": 1.486279,
           "test_geometry_members": 2.745068,
-          "test_handoff": 0.671810,
+          "test_handoff": 0.67181,
           "test_host_context_transport": 1.358922,
           "test_immutable_input_process": 79.906717,
           "test_inert_tracking_grouping": 0.011374,
@@ -2519,10 +2663,10 @@
           "test_ip_preparation": 0.611897,
           "test_ip_step_projection": 2.887538,
           "test_joint_geometry_iob": 0.132236,
-          "test_joint_geometry_plan": 49.349400,
+          "test_joint_geometry_plan": 49.3494,
           "test_joint_ip_model": 5.668773,
           "test_mr_step_projection": 166.531767,
-          "test_native_io": 0.331470,
+          "test_native_io": 0.33147,
           "test_native_surface_state": 0.008981,
           "test_native_terminal_recording": 0.013998,
           "test_neutral_assembly_gem": 0.427103,
@@ -2543,7 +2687,7 @@
           "test_neutral_sampled_renamed_managed": 127.166113,
           "test_numerical_background": 0.077253,
           "test_oa_fields": 5.345607,
-          "test_oa_geometry_compiler": 2.960370,
+          "test_oa_geometry_compiler": 2.96037,
           "test_oa_mr_model": 1.310355,
           "test_oa_tracking": 12.543636,
           "test_offline_scalar_managed": 40.549947,
@@ -2551,9 +2695,9 @@
           "test_owner_action_freeze": 5.713944,
           "test_payload_materialization": 16.248852,
           "test_platform_api": 9.343721,
-          "test_platform_capabilities": 3.704880,
+          "test_platform_capabilities": 3.70488,
           "test_prepared_scalar_support": 2.090027,
-          "test_process_family_identity": 6.434600,
+          "test_process_family_identity": 6.4346,
           "test_propagation_comparison": 0.549811,
           "test_provider_registration": 0.138907,
           "test_provider_schema_version": 21.735111,
@@ -2575,7 +2719,7 @@
           "test_sfi_scalar_refinement": 54.983852,
           "test_sfi_scalar_runtime": 0.012883,
           "test_sfi_scalar_sheets": 0.103668,
-          "test_sfi_scalar_tracking": 51.030360,
+          "test_sfi_scalar_tracking": 51.03036,
           "test_shape_query": 0.509799,
           "test_simion_birth_admission": 0.569099,
           "test_simion_field_guards": 2.376303,
@@ -2589,7 +2733,7 @@
           "test_simion_prepared_model": 1.845202,
           "test_simion_rf_fields": 54.369465,
           "test_simion_rf_prepared_model": 3.800345,
-          "test_simion_rf_tracking": 79.832660,
+          "test_simion_rf_tracking": 79.83266,
           "test_simion_tracking_execution": 20.834632,
           "test_simion_tracking_units": 198.063039,
           "test_simion_trajectory_analysis": 1.084604,
@@ -2602,7 +2746,7 @@
           "test_static_world_model": 0.867843,
           "test_step_export": 0.969704,
           "test_step_probe_culling": 0.000493,
-          "test_step_probe_culling_kernel": 0.000046,
+          "test_step_probe_culling_kernel": 4.6e-05,
           "test_surface_validator_source": 0.012406,
           "test_terminal_evidence": 0.031578,
           "test_tracking_field_observation": 0.546296,
@@ -2902,7 +3046,7 @@
           "reason": "migrated_actual_consumer_changed"
         },
         {
-          "exact": "src/msplatform/ion_release/paired_mass_scan.py",
+          "exact": "src/msplatform/particle_release/paired_mass_scan.py",
           "reason": "installed_paired_mass_response_changed"
         },
         {
@@ -3232,7 +3376,7 @@
           "reason": "accelerator_interface_inputs_changed"
         },
         {
-          "prefix": "tests/ion_release/",
+          "prefix": "tests/particle_release/",
           "reason": "source_release_dependency_changed"
         },
         {
@@ -3284,7 +3428,7 @@
           "reason": "guide_shared_test_support_changed"
         },
         {
-          "prefix": "src/msplatform/ion_release/",
+          "prefix": "src/msplatform/particle_release/",
           "reason": "source_release_dependency_changed"
         },
         {
@@ -3352,7 +3496,7 @@
           "reason": "installed_measured_source_consumer_changed"
         },
         {
-          "exact": "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+          "exact": "src/msplatform/assembly/ip_mr_connection.py",
           "reason": "installed_measured_source_consumer_changed"
         },
         {
@@ -3579,7 +3723,7 @@
                 "reason": "installed_measured_source_consumer_changed"
               },
               {
-                "exact": "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+                "exact": "src/msplatform/assembly/ip_mr_connection.py",
                 "reason": "installed_measured_source_consumer_changed"
               },
               {
@@ -4004,7 +4148,7 @@
           "reason": "installed_mr_event_analysis_changed"
         },
         {
-          "exact": "src/msplatform/workflows/prepared_joint/ion_processor_assembly.py",
+          "regex": "^src/msplatform/(?:assembly/geometry_primitives|components/ion_processor/assembly_geometry|components/multi_reflection_tof/interface_clearance|backends/simion/ip_mr_geometry)\\.py$",
           "reason": "installed_mr_ip_assembly_changed"
         },
         {
@@ -4100,7 +4244,7 @@
           "reason": "installed_measured_source_consumer_changed"
         },
         {
-          "exact": "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+          "exact": "src/msplatform/assembly/ip_mr_connection.py",
           "reason": "installed_measured_source_consumer_changed"
         },
         {
@@ -4337,7 +4481,7 @@
                 "reason": "installed_measured_source_consumer_changed"
               },
               {
-                "exact": "src/msplatform/workflows/prepared_joint/ip_mr_connection.py",
+                "exact": "src/msplatform/assembly/ip_mr_connection.py",
                 "reason": "installed_measured_source_consumer_changed"
               },
               {
@@ -4896,7 +5040,7 @@
           "reason": "installed_detector_census_consumer_changed"
         },
         {
-          "exact": "src/msplatform/workflows/single_reflection_mass_spectrum.py",
+          "exact": "src/msplatform/analysis/mass_spectrum.py",
           "reason": "migrated_actual_consumer_changed"
         },
         {
@@ -5010,6 +5154,14 @@
         {
           "exact": "src/msplatform/backends/comsol/matlab/read_comsol_mesh_size_controls.m",
           "reason": "installed_comsol_mesh_consumer_changed"
+        },
+        {
+          "regex": "^src/msplatform/analysis/reflectron_(?:voltage_fit|compensation)\\.py$",
+          "reason": "current_reflectron_scientific_owner_changed"
+        },
+        {
+          "exact": "src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py",
+          "reason": "retired_reflectron_implementation_deleted"
         }
       ],
       "command": {
@@ -5038,8 +5190,6 @@
             "modules": [
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_solver_diagnostics.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_radial_compaction_campaign.py",
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
@@ -5076,7 +5226,7 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/single_reflection_mass_spectrum.py",
+                "exact": "src/msplatform/analysis/mass_spectrum.py",
                 "reason": "migrated_actual_consumer_changed"
               },
               {
@@ -5141,8 +5291,7 @@
             "modules": [
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_workflow.py",
               "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_causal_workflow.py",
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py",
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_candidate_postprocess_workflow.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5163,6 +5312,14 @@
           {
             "matches": [
               {
+                "exact": "src/msplatform/analysis/reflectron_voltage_fit.py",
+                "reason": "reflectron_analysis_changed"
+              },
+              {
+                "exact": "src/msplatform/analysis/reflectron_compensation.py",
+                "reason": "reflectron_analysis_changed"
+              },
+              {
                 "exact": "src/msplatform/backends/simion/optimize_reflectron_ring_voltages.py",
                 "reason": "installed_reflectron_voltage_fit_changed"
               },
@@ -5172,9 +5329,7 @@
               }
             ],
             "modules": [
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_fit.py",
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_compensation.py",
-              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_compensation_powershell_adapter.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_reflectron_voltage_fit.py"
             ],
             "dependency_profile": "locked"
           },
@@ -5226,7 +5381,6 @@
           "test_candidate_legacy_reuse": 0.051711,
           "test_candidate_workflow": 430.257898,
           "test_compare_vector_field_samples": 4.123447,
-          "test_compensation_powershell_adapter": 46.598018,
           "test_comsol_accelerator_projection": 0.011699,
           "test_experiment_campaign": 8.129428,
           "test_exported_axis_field_integrator": 0.340755,
@@ -5234,7 +5388,7 @@
           "test_finite_interval_design_compiler": 0.640038,
           "test_formal_reference_workflow_layout": 1.754742,
           "test_frozen_bytecode_reuse": 0.197355,
-          "test_generate_ion_source": 0.181856,
+          "test_generate_particle_source": 0.181856,
           "test_governed_run_entrypoints": 0.002178,
           "test_host_resource_entrypoints": 21.315039,
           "test_ideal_acceptance_300mm_simion_candidate": 4.271372,
@@ -5271,7 +5425,6 @@
           "test_publish_formal_release": 2.828896,
           "test_publish_ideal_acceptance_aperture_comparison": 1.029891,
           "test_radial_compaction_campaign": 44.900854,
-          "test_reflectron_voltage_compensation": 8.152272,
           "test_required_component_port": 0.018715,
           "test_simion_component_pa_plan": 0.140915,
           "test_simion_delivery_source": 9.917197,
@@ -5362,7 +5515,7 @@
           "reason": "installed_rf_transport_comparison_changed"
         },
         {
-          "exact": "src/msplatform/ion_release/paired_mass_scan.py",
+          "exact": "src/msplatform/particle_release/paired_mass_scan.py",
           "reason": "installed_paired_mass_response_changed"
         },
         {
@@ -6322,11 +6475,11 @@
           "reason": "shared_lifecycle_test_fixture_changed"
         },
         {
-          "exact": "src/msplatform/ion_release/release.py",
+          "exact": "src/msplatform/particle_release/release.py",
           "reason": "shared_release_changed"
         },
         {
-          "exact": "src/msplatform/ion_release/cylinder.py",
+          "exact": "src/msplatform/particle_release/cylinder.py",
           "reason": "shared_cylinder_release_changed"
         },
         {

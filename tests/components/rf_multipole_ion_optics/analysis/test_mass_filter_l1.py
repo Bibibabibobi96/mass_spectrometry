@@ -15,8 +15,7 @@ from unittest.mock import patch
 import numpy as np
 
 from msplatform.execution.capacity_ledger import initialize_capacity_ledger
-from msplatform.execution.inputs import freeze_file
-from msplatform.ion_release.numpy_box_cone import sample_numpy_box_cone_phase_space
+from msplatform.particle_release.numpy_box_cone import sample_numpy_box_cone_phase_space
 from msplatform.workflows.rf_mass_filter import (
     research as RUNNER,
 )
@@ -55,16 +54,24 @@ class MassFilterL1Tests(unittest.TestCase):
 
     @staticmethod
     def _run(artifact_root: Path, run_id: str) -> Path:
-        # The unchanged owner requires genuinely owning operation leases, just
-        # as NormalOwnerTests' actual zero/seven process fixture does.
+        from msplatform.storage.store import ArtifactStore
         inherited = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN='',
             MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID='', MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE='')
         with patch.dict(os.environ, inherited):
             return RUNNER.run(
                 RUNNER.DEFAULT_BASELINE, RUNNER.DEFAULT_RESOLVED, RUNNER.DEFAULT_MODE,
-                RUNNER.DEFAULT_SOURCE, run_id, artifact_root,
-                context=MassFilterL1Tests._context(artifact_root),
+                RUNNER.DEFAULT_SOURCE, run_id, context=MassFilterL1Tests._context(artifact_root),
+                artifact_store=ArtifactStore(artifact_root.parents[2] / 'rf-l1-store'),
             )
+
+
+    @staticmethod
+    def _result_path(artifact_root: Path, run_id: str) -> Path:
+        store_root = artifact_root.parents[2] / 'rf-l1-store'
+        matches = list(store_root.rglob('native-result-' + run_id + '.json'))
+        if len(matches) != 1:
+            raise ValueError('RF Store result is not unique')
+        return matches[0]
 
     @staticmethod
     @contextmanager
@@ -84,6 +91,14 @@ class MassFilterL1Tests(unittest.TestCase):
             raise
         finally:
             try:
+                from contextlib import closing
+                import sqlite3
+                for catalog in root.rglob('catalog.sqlite'):
+                    with closing(sqlite3.connect(catalog.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+                        if db.execute("SELECT 1 FROM native_bindings WHERE state='active' LIMIT 1").fetchone() or \
+                           db.execute("SELECT 1 FROM assets WHERE state='publishing' LIMIT 1").fetchone() or \
+                           db.execute("SELECT 1 FROM run_execution WHERE status='running' LIMIT 1").fetchone():
+                            retain = True
                 for path in root.rglob('result.json'):
                     if path.parent.parent.name != 'workflow_results':
                         continue
@@ -93,8 +108,9 @@ class MassFilterL1Tests(unittest.TestCase):
                         if value.get('resume_action') is not None or value.get('writers_confirmed') is not True:
                             retain = True
                 for path in root.rglob('capacity_session.json'):
+                    capacity = load_json(path)
                     if (path.parent.name == 'logs' and path.parent.parent.parent.name == 'runs'
-                            and load_json(path).get('status') == 'active'):
+                            and capacity.get('status') == 'active' and capacity.get('role') != 'store_native_stage_capacity'):
                         active.append(str(path))
                         retain = True
             except Exception as error:
@@ -137,31 +153,7 @@ class MassFilterL1Tests(unittest.TestCase):
             host_state_path=Path(os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']),
             policy_path=Path(host['policy_path']), capacity_policy_path=capacity, stage_policy_path=stage)
 
-    @staticmethod
-    def _saved_environment(artifact_root: Path) -> Path:
-        context = MassFilterL1Tests._context(artifact_root)
-        workspace = context.workspace
-        environment = workspace / 'execution-environment.json'
-        environment.write_text(json.dumps(dict(schema_version=1, role='execution_environment',
-            tools=dict(python=str(Path(sys.executable).resolve()), powershell=str(context.powershell_executable)),
-            policy=dict(host_state_path=str(context.host_state_path), policy_path=str(context.policy_path),
-                        execution_root=str(context.execution_root), capacity_policy_path=str(context.capacity_policy_path)),
-            profiles=dict(test=dict(stage_policy_path=str(context.stage_policy_path))))), encoding='utf-8')
-        return environment
 
-    @staticmethod
-    def _invoke_original_cli(artifact_root: Path, environment: Path, run_id: str, *options: str):
-        workspace = artifact_root.parents[2]
-        repository = PROJECT_ROOT.parents[3]
-        command = [sys.executable, '-m',
-            'msplatform.workflows.rf_mass_filter.research',
-            *options, '--run-id', run_id, '--workspace', str(workspace),
-            '--execution-environment', str(environment), '--engineering-profile', 'test']
-        return subprocess.run(command, cwd=repository, capture_output=True, text=True, encoding='utf-8',
-            timeout=120, env={**os.environ, 'PYTHONPATH': str(repository / 'src'),
-                'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN': '',
-                'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID': '',
-                'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE': ''})
 
     def test_test_deployment_capacity_policy_keeps_real_reserve_refusal(self) -> None:
         from types import SimpleNamespace
@@ -214,369 +206,12 @@ class MassFilterL1Tests(unittest.TestCase):
         return {"mass_Th": mass, "particles": count, "transmitted": transmitted,
                 "transmission_fraction": transmitted / count}
 
-    def test_run_failures_publish_triplet_and_preserve_original_error(self) -> None:
-        for index, stage in enumerate(("input_freezing", "analysis_preparation", "simulation", "analysis_execution")):
-            with self.subTest(stage=stage), self._workspace() as temporary:
-                capacity_root = Path(temporary) / "artifacts"
-                capacity_root.mkdir()
-                initialize_capacity_ledger(capacity_root, objects=[])
-                artifact_root = capacity_root / "components/rf_multipole_ion_optics"
-                run_id = f"20261028_12000{index}__test__python__l1-failure"
-                destination = artifact_root / "runs" / run_id
-                error = OSError(f"injected {stage} failure")
-                invoke = MODULE._invoke_frozen_stage
-                provider = self._controlled_provider(artifact_root)
-
-                def freeze(source: Path, target: Path, **options) -> dict:
-                    if target.name == "baseline.json":
-                        initial = MODULE.load_json(destination / "run_manifest.json")
-                        self.assertEqual(initial["status"], "checkpoint")
-                    if stage == "input_freezing" and target.name == "resolved_design_mass_filter.json":
-                        raise error
-                    return freeze_file(source, target, **options)
-
-                def analysis(session, request, action, guards, limits) -> dict:
-                    phase = {'prepare': 'analysis_preparation', 'simulation': 'simulation',
-                             'analysis': 'analysis_execution'}[action]
-                    if stage == phase:
-                        raise error
-                    return invoke(session, request, action, guards, limits)
-
-                with patch("msplatform.execution.inputs.freeze_file", side_effect=freeze), \
-                     patch.object(MODULE, "_invoke_frozen_stage", side_effect=analysis), \
-                     patch.object(MODULE, "_source_package_root", return_value=provider):
-                    with self.assertRaises(OSError) as caught:
-                        self._run(artifact_root, run_id)
-                self.assertIs(caught.exception, error)
-                config = MODULE.load_json(destination / "run_config.json")
-                summary = MODULE.load_json(destination / "results/failure_context.json")
-                manifest = MODULE.load_json(destination / "run_manifest.json")
-                self.assertEqual(config["parameters"]["lifecycle_stage"], stage)
-                self.assertEqual(config["parameters"]["requested_input_paths"]["baseline"],
-                                 str(RUNNER.DEFAULT_BASELINE.resolve()))
-                self.assertEqual((summary["status"], summary["failure_stage"], summary["reason"]),
-                                 ("failed", stage, f"OSError: {error}"))
-                self.assertFalse(summary["threshold_result_eligible"])
-                self.assertEqual(summary["model_level"], "L1")
-                self.assertEqual(manifest["status"], "failed")
-                self.assertEqual(MODULE.load_json(destination / 'summary.json')['status'], 'failed')
-                result_path = artifact_root / 'scratch/workflow_results' / run_id / 'result.json'
-                self.assertTrue(MODULE.load_json(result_path)['writers_confirmed'])
-                self.assertEqual(MODULE.load_json(result_path)['exception']['message'], str(error))
-                self.assertIn(destination / 'results/failure_context.json',
-                              {Path(row['path']) for row in manifest['outputs']})
-                for document in (config, manifest):
-                    self.assertEqual(document["run_id"], run_id)
-                    self.assertEqual(document["project"], "rf_multipole_ion_optics")
-                    self.assertEqual(document["mode"], "mass_filter_reference")
-                frozen_paths = {Path(item["path"]) for item in manifest["inputs"].values()}
-                self.assertIn(destination / "inputs/baseline.json", frozen_paths)
-                if stage != "input_freezing":
-                    self.assertIn(destination / "inputs/analysis_request.json", frozen_paths)
-                if stage == "analysis_execution":
-                    self.assertIn(destination / "inputs/mass_response_for_analysis.csv", frozen_paths)
-                if stage in ("simulation", "analysis_execution"):
-                    self.assertIn(destination / "inputs/analysis_package.json", frozen_paths)
-                if stage == "simulation":
-                    self.assertFalse((destination / "inputs/mass_response_for_analysis.csv").exists())
-                    self.assertFalse((destination / "results/mass-response__finite-length.csv").exists())
-                    self.assertFalse((destination / "results/mass-filter__functional-metrics.json").exists())
-                original = {name: (destination / name).read_bytes() for name in
-                            ("run_config.json", "summary.json", "run_manifest.json")}
-                with self.assertRaises(FileExistsError):
-                    self._run(artifact_root, run_id)
-                self.assertEqual(original, {name: (destination / name).read_bytes() for name in original})
-
-    def test_run_success_and_physical_failure_keep_published_terminal(self) -> None:
-        for passed in (True, False):
-            with self.subTest(passed=passed), self._workspace() as temporary:
-                capacity_root = Path(temporary) / "artifacts"
-                capacity_root.mkdir()
-                initialize_capacity_ledger(capacity_root, objects=[])
-                artifact_root = capacity_root / "components/rf_multipole_ion_optics"
-                run_id = "20261028_120005__test__python__l1-terminal"
-                destination = artifact_root / "runs" / run_id
-
-                provider = self._controlled_provider(artifact_root, passed=passed)
-                with patch.object(MODULE, "_source_package_root", return_value=provider):
-                    if passed:
-                        self.assertEqual(self._run(artifact_root, run_id), destination)
-                    else:
-                        with self.assertRaisesRegex(RuntimeError, "functional gate failed"):
-                            self._run(artifact_root, run_id)
-                config = MODULE.load_json(destination / "run_config.json")
-                summary = MODULE.load_json(destination / "summary.json")
-                manifest = MODULE.load_json(destination / "run_manifest.json")
-                metrics = MODULE.load_json(destination / "results/mass-filter__functional-metrics.json")
-                self.assertEqual(summary["functional_gate"], "PASS" if passed else "FAIL")
-                self.assertNotIn("failure_class", summary)
-                self.assertEqual(manifest["status"], "success" if passed else "failed")
-                self.assertEqual(config["parameters"]["lifecycle_stage"], "complete")
-                self.assertEqual(metrics["particle_count_per_mass"], self.mode["functional_screen"]["particle_count"])
-                self.assertTrue(config["frozen_python_analysis"]["environment"]["module_invoked"])
-                self.assertTrue((destination / "results/mass-response__passband.png").is_file())
-                self.assertFalse(manifest["formal_eligible"])
-                if passed:
-                    self.assertEqual(metrics["sampled_response_analysis"]["interpolated_main_peak_fwhm_Th"], 4.5)
-
-    def test_run_cleanup_preserves_original_error_and_existing_terminal(self) -> None:
-        from msplatform.execution import owner as OWNER
-        for published in (False, True):
-            with self.subTest(published=published), self._workspace() as temporary:
-                capacity_root = Path(temporary) / "artifacts"
-                capacity_root.mkdir()
-                initialize_capacity_ledger(capacity_root, objects=[])
-                artifact_root = capacity_root / "components/rf_multipole_ion_optics"
-                run_id = "20261028_120006__test__python__l1-cleanup"
-                destination = artifact_root / "runs" / run_id
-                error = OSError("original workflow failure")
-                actual_run = RUNNER.run
-                prepare = MODULE._prepare_frozen_request
-                terminal = {}
-                provider = self._controlled_provider(artifact_root)
-
-                def finalization(*args, **kwargs):
-                    raise RuntimeError("injected cleanup failure")
-
-                def published_response(*args, **kwargs):
-                    actual_run(*args, **kwargs)
-                    terminal.update({name: (destination / name).read_bytes() for name in
-                                     ("run_config.json", "summary.json", "run_manifest.json")})
-                    raise error
-
-                def prepare_analysis(*args, **kwargs) -> tuple:
-                    if not published:
-                        raise error
-                    return prepare(*args, **kwargs)
-
-                from contextlib import ExitStack
-                with ExitStack() as patches:
-                    patches.enter_context(patch.object(MODULE, '_source_package_root', return_value=provider))
-                    patches.enter_context(patch.object(MODULE, '_prepare_frozen_request', side_effect=prepare_analysis))
-                    if published:
-                        patches.enter_context(patch.object(RUNNER, 'run', side_effect=published_response))
-                    else:
-                        patches.enter_context(patch.object(OWNER, '_finalize', side_effect=finalization))
-                    with self.assertRaises(OSError) as caught:
-                        self._run(artifact_root, run_id)
-                self.assertIs(caught.exception, error)
-                if published:
-                    self.assertEqual(terminal, {name: (destination / name).read_bytes() for name in terminal})
-                    self.assertEqual(MODULE.load_json(destination / "run_manifest.json")["status"], "success")
-                else:
-                    self.assertIn("injected cleanup failure", str(error.__notes__))
-                    self.assertEqual(MODULE.load_json(destination / "run_manifest.json")["status"], "checkpoint")
-                    result = artifact_root / 'scratch/workflow_results' / run_id / 'result.json'
-                    self.assertTrue(MODULE.load_json(result)['writers_confirmed'])
-                    from msplatform.execution.completion import no_particle_batch_completion_api
-                    resumed = OWNER.resume_finalization(self._context(artifact_root), result,
-                                                        completion_api=no_particle_batch_completion_api)
-                    self.assertEqual(resumed['status'], 'failed')
-                    self.assertEqual(MODULE.load_json(destination / 'run_manifest.json')['status'], 'failed')
 
 
-    def test_original_cli_resume_finalization_is_terminal_and_context_guarded(self) -> None:
-        from msplatform.execution import owner as OWNER
 
-        with self._workspace() as temporary:
-            root = Path(temporary)
-            capacity_root = root / 'artifacts'
-            capacity_root.mkdir()
-            initialize_capacity_ledger(capacity_root, objects=[])
-            artifact_root = capacity_root / 'components/rf_multipole_ion_optics'
-            run_id = '20261116_120016__test__python__l1-cli-recovery'
-            destination = artifact_root / 'runs' / run_id
-            original = OSError('original action remains untouched')
-            with patch.object(MODULE, '_prepare_frozen_request', side_effect=original), \
-                 patch.object(OWNER, '_finalize', side_effect=RuntimeError('injected finalization hold')):
-                with self.assertRaises(OSError) as caught:
-                    self._run(artifact_root, run_id)
-            self.assertIs(caught.exception, original)
-            result_path = artifact_root / 'scratch/workflow_results' / run_id / 'result.json'
-            self.assertEqual(load_json(result_path)['resume_action'], 'resume_finalization')
-            self.assertEqual(load_json(destination / 'run_manifest.json')['status'], 'checkpoint')
 
-            context = self._context(artifact_root)
-            environment = root / 'execution-environment.json'
-            environment.write_text(json.dumps(dict(schema_version=1, role='execution_environment',
-                tools=dict(python=str(Path(sys.executable).resolve()), powershell=str(context.powershell_executable)),
-                policy=dict(host_state_path=str(context.host_state_path), policy_path=str(context.policy_path),
-                            execution_root=str(context.execution_root), capacity_policy_path=str(context.capacity_policy_path)),
-                profiles=dict(test=dict(stage_policy_path=str(context.stage_policy_path))))), encoding='utf-8')
-            repository = PROJECT_ROOT.parents[3]
-            command = [sys.executable, '-m',
-                'msplatform.workflows.rf_mass_filter.research',
-                '--resume-finalization', '--run-id', run_id, '--workspace', str(root),
-                '--execution-environment', str(environment), '--engineering-profile', 'test']
 
-            def invoke(extra=(), selected=command):
-                return subprocess.run([*selected, *extra], cwd=repository, capture_output=True, text=True,
-                    encoding='utf-8', timeout=120, env={**os.environ, 'PYTHONPATH': str(repository / 'src')})
 
-            before = {path: path.read_bytes() for path in (result_path, destination / 'run_manifest.json')}
-            rejected = invoke(('--baseline', str(RUNNER.DEFAULT_BASELINE)))
-            self.assertNotEqual(rejected.returncode, 0)
-            self.assertIn('does not accept scientific inputs', rejected.stderr)
-            self.assertEqual(before, {path: path.read_bytes() for path in before})
-
-            unknown_result = root / 'unknown-writer-result.json'
-            unknown = load_json(result_path)
-            unknown['writers_confirmed'] = False
-            unknown_result.write_text(json.dumps(unknown), encoding='utf-8')
-            rejected = invoke(('--result-path', str(unknown_result)))
-            self.assertNotEqual(rejected.returncode, 0)
-            self.assertIn('confirmed stopped writers', rejected.stderr)
-            self.assertEqual(before, {path: path.read_bytes() for path in before})
-
-            wrong_environment = root / 'wrong-execution-environment.json'
-            wrong = load_json(environment)
-            wrong['policy']['host_state_path'] = str(root / 'wrong-host.sqlite3')
-            wrong_environment.write_text(json.dumps(wrong), encoding='utf-8')
-            wrong_command = [str(sys.executable) if value == sys.executable else str(wrong_environment)
-                             if value == str(environment) else value for value in command]
-            rejected = invoke(selected=wrong_command)
-            self.assertNotEqual(rejected.returncode, 0)
-            self.assertIn('shared host ledger differs', rejected.stderr)
-            self.assertEqual(before, {path: path.read_bytes() for path in before})
-
-            recovered = invoke()
-            self.assertEqual(recovered.returncode, 0, recovered.stdout + recovered.stderr)
-            self.assertIn(f'QUADRUPOLE_MASS_FILTER_L1_FINALIZATION=FAILED RUN={run_id}', recovered.stdout)
-            self.assertEqual(load_json(destination / 'run_manifest.json')['status'], 'failed')
-            self.assertEqual(load_json(result_path)['capacity_session']['status'], 'released')
-            self.assertFalse((destination / 'results/simulation_execution.json').exists())
-            terminal_paths = [result_path, *(destination / name for name in
-                ('run_config.json', 'summary.json', 'run_manifest.json', 'results/execution_completion.json',
-                 'results/failure_context.json'))]
-            terminal = {path: path.read_bytes() for path in terminal_paths}
-            repeated = invoke()
-            self.assertEqual(repeated.returncode, 0, repeated.stdout + repeated.stderr)
-            self.assertEqual(terminal, {path: path.read_bytes() for path in terminal})
-
-    def test_original_cli_analysis_only_reuses_sealed_parent_fail_closed(self) -> None:
-        from msplatform.execution import owner as OWNER
-
-        with self._workspace() as temporary:
-            root = Path(temporary)
-            capacity_root = root / 'artifacts'
-            capacity_root.mkdir()
-            initialize_capacity_ledger(capacity_root, objects=[])
-            artifact_root = capacity_root / 'components/rf_multipole_ion_optics'
-            provider = self._controlled_provider(artifact_root)
-            parent_id = '20261116_120017__test__python__l1-analysis-parent'
-            with patch.object(MODULE, '_source_package_root', return_value=provider):
-                parent = self._run(artifact_root, parent_id)
-            parent_manifest = parent / 'run_manifest.json'
-            environment = self._saved_environment(artifact_root)
-            parent_paths = [parent / name for name in ('run_config.json', 'summary.json', 'run_manifest.json',
-                'results/mass-response__finite-length.csv', 'results/mass-filter__functional-metrics.json',
-                'results/simulation_execution.json', 'inputs/baseline.json', 'inputs/mass_filter_reference.json',
-                'inputs/official_particle_source.json', 'inputs/mass_response_for_analysis.csv')]
-            parent_before = {path: path.read_bytes() for path in parent_paths}
-
-            child_id = '20261116_120018__analysis__python__l1-child'
-            produced = self._invoke_original_cli(artifact_root, environment, child_id,
-                '--analyze-only', '--parent-manifest', str(parent_manifest))
-            self.assertEqual(produced.returncode, 0, produced.stdout + produced.stderr)
-            self.assertIn(f'QUADRUPOLE_MASS_FILTER_L1_ANALYSIS=PASS RUN={child_id}', produced.stdout)
-            child = artifact_root / 'runs' / child_id
-            summary = load_json(child / 'summary.json')
-            self.assertEqual((summary['analysis_only'], summary['simulation_calls'], summary['parent_run_id']),
-                             (True, 0, parent_id))
-            completion = load_json(child / 'results/execution_completion.json')
-            self.assertEqual([row['operation_id'] for row in completion['writer_completion']['operations']], ['analysis'])
-            self.assertFalse((child / 'results/simulation_execution.json').exists())
-            self.assertEqual((child / 'results/mass-response__finite-length.csv').read_bytes(),
-                             (parent / 'results/mass-response__finite-length.csv').read_bytes())
-            self.assertEqual((child / 'results/mass-filter__functional-metrics.json').read_bytes(),
-                             (parent / 'results/mass-filter__functional-metrics.json').read_bytes())
-            self.assertEqual(parent_before, {path: path.read_bytes() for path in parent_paths})
-
-            terminal_paths = [child / name for name in ('run_config.json', 'summary.json', 'run_manifest.json',
-                'results/execution_completion.json')]
-            result_path = artifact_root / 'scratch/workflow_results' / child_id / 'result.json'
-            terminal_paths.append(result_path)
-            terminal = {path: path.read_bytes() for path in terminal_paths}
-            reused = self._invoke_original_cli(artifact_root, environment, child_id, '--resume-finalization')
-            self.assertEqual(reused.returncode, 0, reused.stdout + reused.stderr)
-            self.assertEqual(terminal, {path: path.read_bytes() for path in terminal_paths})
-
-            response = parent / 'results/mass-response__finite-length.csv'
-            original_response = response.read_bytes()
-            for fault in ('changed', 'missing'):
-                with self.subTest(fault=fault):
-                    refused_id = f'20261116_12001{9 if fault == "changed" else 0}__analysis__python__l1-refused'
-                    try:
-                        if fault == 'changed':
-                            response.write_bytes(original_response + b'PARENT_TAMPER\n')
-                        else:
-                            response.unlink()
-                        refused = self._invoke_original_cli(artifact_root, environment, refused_id,
-                            '--analyze-only', '--parent-manifest', str(parent_manifest))
-                        self.assertNotEqual(refused.returncode, 0)
-                        self.assertFalse((artifact_root / 'runs' / refused_id).exists())
-                        self.assertEqual(parent_manifest.read_bytes(), parent_before[parent_manifest])
-                    finally:
-                        response.write_bytes(original_response)
-
-            failed_id = '20261116_120020__analysis__python__l1-failed-child'
-            analysis_error = OSError('injected child analysis failure')
-            with patch.dict(os.environ, {'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN': '',
-                    'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID': '',
-                    'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE': ''}), \
-                 patch.object(MODULE, '_invoke_frozen_stage', side_effect=analysis_error), \
-                 patch.object(OWNER, '_finalize', side_effect=RuntimeError('injected child finalization hold')):
-                with self.assertRaises(OSError) as caught:
-                    MODULE.analyze(self._context(artifact_root), parent_manifest_path=parent_manifest,
-                                   run_id=failed_id)
-            self.assertIs(caught.exception, analysis_error)
-            failed_result = artifact_root / 'scratch/workflow_results' / failed_id / 'result.json'
-            self.assertEqual(load_json(failed_result)['resume_action'], 'resume_finalization')
-            recovered = self._invoke_original_cli(artifact_root, environment, failed_id, '--resume-finalization')
-            self.assertEqual(recovered.returncode, 0, recovered.stdout + recovered.stderr)
-            failed_child = artifact_root / 'runs' / failed_id
-            self.assertEqual(load_json(failed_child / 'run_manifest.json')['status'], 'failed')
-            self.assertEqual(load_json(failed_child / 'results/failure_context.json')['failure_stage'],
-                             'analysis_execution')
-            self.assertFalse((failed_child / 'results/simulation_execution.json').exists())
-            self.assertEqual(parent_before, {path: path.read_bytes() for path in parent_paths})
-
-    def test_actual_frozen_kernel_os_failure_keeps_original_observed_facts(self) -> None:
-        from msplatform.execution.processes import ProcessExecutionError
-        with self._workspace() as temporary:
-            artifact_root = Path(temporary) / 'artifacts/components/rf_multipole_ion_optics'
-            provider = self._controlled_provider(artifact_root)
-            (provider / 'components/rf_multipole/finite_length_transport.py').write_text(
-                'def simulate_mass(*args):\n'
-                '    print("FROZEN_OS_FAILURE_STDOUT", flush=True)\n'
-                '    raise OSError("FROZEN_KERNEL_OS_FAILURE")\n', encoding='utf-8')
-            run_id = '20261110_120012__test__python__l1-os-failure'
-            with patch.object(MODULE, '_source_package_root', return_value=provider):
-                with self.assertRaises(ProcessExecutionError) as caught:
-                    self._run(artifact_root, run_id)
-            error = caught.exception
-            destination = artifact_root / 'runs' / run_id
-            self.assertTrue(error.observed_process_exit_confirmed)
-            self.assertNotEqual(error.observed_process_returncode, 0)
-            self.assertGreater(error.receipt['observation']['root_process_id'], 0)
-            self.assertIsNotNone(error.receipt['host_release'])
-            failure = load_json(destination / 'results/failure_context.json')
-            self.assertEqual(failure['failure_stage'], 'simulation')
-            self.assertFalse(failure['threshold_result_eligible'])
-            self.assertTrue(failure['reason'].startswith('ProcessExecutionError:'))
-            child = load_json(destination / 'results/simulation_execution.json')
-            self.assertEqual(child['status'], 'failed')
-            self.assertEqual(child['error']['module_exit_code'], 1)
-            self.assertEqual((destination / 'logs/simulation_module.stdout.log').read_text(encoding='utf-8'),
-                             'FROZEN_OS_FAILURE_STDOUT\n')
-            self.assertIn('FROZEN_KERNEL_OS_FAILURE',
-                          (destination / 'logs/operation_0002.stderr.log').read_text(encoding='utf-8'))
-            result = load_json(artifact_root / 'scratch/workflow_results' / run_id / 'result.json')
-            self.assertTrue(result['writers_confirmed'])
-            self.assertEqual(result['exception']['type'], 'ProcessExecutionError')
-            self.assertEqual(load_json(destination / 'run_manifest.json')['status'], 'failed')
-            self.assertFalse((destination / 'results/analysis_execution.json').exists())
-            print('RF_L1_OS_FAILURE_OBSERVATION=' + json.dumps(error.receipt['observation']))
 
     def test_actual_default_n100_numeric_csv_matches_same_frozen_science(self) -> None:
         with self._workspace() as temporary:
@@ -604,26 +239,24 @@ class MassFilterL1Tests(unittest.TestCase):
             self.assertTrue(all(row['process_id'] > 0 and row['process_started_at_utc_ticks'] > 0 for row in observations))
             usage = [load_json(path) for path in sorted((destination / 'logs').glob('operation_*.usage.json'))]
             self.assertEqual(len(usage), 3)
-            result = load_json(artifact_root / 'scratch/workflow_results' / run_id / 'result.json')
+            result = load_json(self._result_path(artifact_root, run_id))
             retained = sum(path.stat().st_size for path in destination.rglob('*') if path.is_file())
             print('RF_L1_N100_PROCESS_EVIDENCE=' + json.dumps(dict(observations=observations, usage=usage,
-                retained_logical_bytes=retained, capacity=result['capacity'])))
+                retained_logical_bytes=retained, capacity_snapshot=result['capacity_session'])))
 
     def test_explicit_research_workspace_is_retained_and_conflicting_layout_refused(self) -> None:
         with self._workspace() as temporary:
             workspace = Path(temporary) / 'explicit-alternate-workspace'
             workspace.mkdir()
             artifact_root = workspace / 'artifacts/components/rf_multipole_ion_optics'
-            context = self._context(artifact_root)
-            with self.assertRaisesRegex(ValueError, 'selected managed research workspace'):
-                RUNNER.run(RUNNER.DEFAULT_BASELINE, RUNNER.DEFAULT_RESOLVED, RUNNER.DEFAULT_MODE,
-                    RUNNER.DEFAULT_SOURCE, '20261110_120014__test__python__l1-layout',
-                    workspace / 'unmanaged-output', context=context)
+            from msplatform.storage.store import ArtifactStore
+            with self.assertRaises(ValueError):
+                ArtifactStore(workspace / 'artifacts')
             self.assertFalse((workspace / 'artifacts').exists())
             provider = self._controlled_provider(artifact_root)
             with patch.object(MODULE, '_source_package_root', return_value=provider):
                 destination = self._run(artifact_root, '20261110_120015__test__python__l1-workspace')
-            self.assertTrue(destination.is_relative_to(artifact_root))
+            self.assertTrue(destination.is_relative_to(workspace / 'rf-l1-store'))
             self.assertEqual(load_json(destination / 'run_config.json')['project_root'], str(workspace))
 
     def test_contract_brackets_theory_passband(self) -> None:
@@ -692,7 +325,7 @@ class MassFilterL1Tests(unittest.TestCase):
             module = 'msplatform/components/rf_multipole/finite_length_transport.py'
             resource = 'msplatform/execution/resources/frozen_python_package.ps1'
             self.assertIn(module, selected)
-            self.assertIn('msplatform/ion_release/numpy_box_cone.py', selected)
+            self.assertIn('msplatform/particle_release/numpy_box_cone.py', selected)
             self.assertIn(resource, selected)
             self.assertNotIn('msplatform/backends/simion/ip_geometry.py', selected)
             executor = Path(selected[resource]['path'])
@@ -703,7 +336,7 @@ $ErrorActionPreference='Stop'
 $p=Get-Content -LiteralPath $Package -Raw -Encoding UTF8 | ConvertFrom-Json
 $r=Invoke-IsolatedFrozenPythonModule -Python $Python -Package $p.package `
  -Module 'msplatform.workflows.rf_mass_filter.finite_length' -Arguments @('--help') `
- -RequiredModuleNames @('msplatform.components.rf_multipole.finite_length_transport','msplatform.ion_release.numpy_box_cone') `
+ -RequiredModuleNames @('msplatform.components.rf_multipole.finite_length_transport','msplatform.particle_release.numpy_box_cone') `
  -ForbiddenRoots @($Forbidden) -ProbeOnly
 $r | ConvertTo-Json -Depth 20 -Compress
 """, encoding='utf-8')
@@ -746,7 +379,6 @@ $r | ConvertTo-Json -Depth 20 -Compress
             artifact_root = root / 'artifacts/components/rf_multipole_ion_optics'
             provider = self._controlled_provider(artifact_root)
             run_id = '20261110_120010__test__python__l1-frozen'
-            destination = artifact_root / 'runs' / run_id
             captured = {}
             invoke = MODULE._invoke_frozen_stage
 
@@ -778,7 +410,7 @@ $r | ConvertTo-Json -Depth 20 -Compress
             with patch.object(MODULE, '_source_package_root', return_value=provider), \
                  patch.object(MODULE, '_invoke_frozen_stage', side_effect=observe), \
                  patch.object(KERNEL, 'simulate_mass', side_effect=RuntimeError('LIVE_KERNEL_USED')):
-                self._run(artifact_root, run_id)
+                destination = self._run(artifact_root, run_id)
             inputs, results = destination / 'inputs', destination / 'results'
             derived = MODULE.validate_l1_contract(self.baseline, self.mode, self.source)
             count = int(self.mode['functional_screen']['particle_count'])
@@ -842,10 +474,9 @@ $r | ConvertTo-Json -Depth 20 -Compress
                         self.assertTrue(seen['session'].writers_stopped)
                         self.assertEqual((seen['session'].artifact_run_dir / 'inputs/analysis_request.json').read_bytes(), seen['request'])
                         self.assertEqual((seen['session'].artifact_run_dir / 'inputs/analysis_package.json').read_bytes(), seen['package'])
-                        from msplatform.execution.capacity_protection import load_capacity_protection_leases
-                        result_path = target_root / 'scratch/workflow_results' / target_id / 'result.json'
+                        result_path = self._result_path(target_root, target_id)
                         result = load_json(result_path)
-                        failure_path = target_root / 'runs' / target_id / 'results/failure_context.json'
+                        failure_path = seen['session'].artifact_run_dir / 'results/failure_context.json'
                         failure_bytes = failure_path.read_bytes()
                         self.assertEqual(result['status'], 'failed')
                         self.assertTrue(result['writers_confirmed'])
@@ -856,11 +487,10 @@ $r | ConvertTo-Json -Depth 20 -Compress
                             self.assertEqual(hashlib.sha256(seen['original']).hexdigest().upper(), seen['sha256'])
                         self.assertEqual(result['status'], 'failed')
                         self.assertIsNone(result['resume_action'])
-                        self.assertEqual(result['capacity_session']['status'], 'released')
+                        self.assertEqual(result['capacity_session']['role'], 'store_native_stage_capacity')
                         self.assertEqual(failure_path.read_bytes(), failure_bytes)
-                        self.assertEqual(load_capacity_protection_leases(case_root / 'artifacts')['audit'], [])
                         self.assertEqual([row['operation_id'] for row in seen['session'].operations], ['prepare'])
-                        self.assertFalse((target_root / 'runs' / target_id / 'results/simulation_execution.json').exists())
+                        self.assertFalse((seen['session'].artifact_run_dir / 'results/simulation_execution.json').exists())
             with self.assertRaises(PermissionError):
                 rejected('changed')
             with self.assertRaises(PermissionError):

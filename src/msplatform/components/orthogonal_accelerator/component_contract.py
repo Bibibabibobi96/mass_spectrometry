@@ -98,7 +98,7 @@ def load_component_contract(
         },
         "fixed_topology": "solid_positive_z_repeller_and_grounded_cap__negative_z_exit_grid",
         "source_shape": "cylinder",
-        "flight_source": "caller_supplied_repository_ion_release_spec__run_input_only__excluded_from_pa_geometry_identity",
+        "flight_source": "caller_supplied_repository_particle_release_spec__run_input_only__excluded_from_pa_geometry_identity",
         "compaction_objective": "minimize_y_z_subject_to_focus",
         "geometry_authority": "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement",
         "exit_energy_acceptance": "caller_supplied_positive_Ex_Ey_Ez_and_signed_x_velocity_bias_tolerances__center_and_complete_release_cohort_must_pass_at_true_exit_plane",

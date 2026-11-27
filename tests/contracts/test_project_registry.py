@@ -178,7 +178,7 @@ class ProjectRegistryTests(unittest.TestCase):
         for previous in retired:
             with self.subTest(project_id=previous["project_id"]):
                 self.assertIsNone(previous["contracts"]["baseline"])
-                validate_schema(previous, "project.schema.json")
+                validate_schema(previous, "project_v1.schema.json")
 
         registry = load_json(REPO_ROOT / "config/project_registry.json")
         active = {item["project_id"]: item for item in registry["projects"]}
@@ -203,14 +203,14 @@ class ProjectRegistryTests(unittest.TestCase):
             REPO_ROOT
             / "src/msplatform/components/multi_reflection_tof/config/project.json"
         )
-        self.assertEqual(descriptor["lifecycle_status"], "candidate")
+        self.assertNotIn("lifecycle_status", descriptor)
         self.assertEqual(
             descriptor["contracts"]["baseline"],
             "src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json",
         )
         self.assertIsNone(descriptor["contracts"]["resolved"])
         self.assertIn("simion", descriptor["toolchains"])
-        self.assertEqual(descriptor["capabilities"][0]["status"], "candidate")
+        self.assertNotIn("status", descriptor["capabilities"][0])
 
     def test_descriptor_must_have_canonical_component_owner(self) -> None:
         path = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof" / "config" / "project.json"
@@ -263,12 +263,12 @@ class ProjectRegistryTests(unittest.TestCase):
     def test_formal_project_retains_contracts_and_identity_requirement(self) -> None:
         path = REPO_ROOT / "src/msplatform/components/single_reflection_oa_tof" / "config" / "project.json"
         descriptor = copy.deepcopy(load_json(path))
-        self.assertEqual(descriptor["lifecycle_status"], "formal")
+        self.assertNotIn("lifecycle_status", descriptor)
         self.assertIn("science", descriptor["contracts"])
         self.assertIn("solver_numerics", descriptor["contracts"])
         validate_descriptor(descriptor, path, REPO_ROOT)
 
-        descriptor["formal_assets"]["identity_contract"] = None
+        descriptor["asset_references"]["identity_contract"] = None
         with self.assertRaisesRegex(ContractError, "identity contract"):
             validate_descriptor(descriptor, path, REPO_ROOT)
 

@@ -116,11 +116,11 @@ def direct_request(root, sources):
         adapter_materialization="instrument_time_us_equals_authority_epoch_plus_solver_elapsed_once",
         handoff_policy="preserve_instrument_time_us_and_clock_epoch_id", legacy_new_campaign_allowed=False))
     release = author / "release.json"
-    write_json(release, dict(schema_version=1, role="repository_ion_release", frame_id="oatof_global",
+    write_json(release, dict(schema_version=2, role="repository_particle_release", frame_id="oatof_global",
         particle_count=100, mother_particle_count=100, common_time_of_birth_s=42.125e-6,
         geometry=dict(shape="cylinder", center_mm=[3.5,1.25,
             oatof["accelerator_topology"]["planes_global_z_mm"]["repeller"]+2.75],
-            axis="z", radius_mm=.05, height_mm=.1), species=dict(mass_amu=524., charge_state=1),
+            axis="z", radius_mm=.05, height_mm=.1), species=dict(species_kind="ion", mass_amu=524., charge_state=1),
         sampling=dict(strategy="center_first_halton_cylinder_v1",
             kinetic_energy=dict(center_ev=2., full_width_ev=.2), nominal_direction=[1.,2.,3.], angular_full_width_deg=5.)))
     domains = copy.deepcopy(options["numerical_domains"])

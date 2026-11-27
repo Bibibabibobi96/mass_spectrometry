@@ -124,5 +124,5 @@ recovery. Its explicit collision-free dynamics, RF timestep, clock, observations
 validation boundary are recorded in [PROJECT](docs/PROJECT.md#independent-rf-tracking).
 
 Paired ION11 mass-scan construction and sampled response aggregation use the installed
-`msplatform.ion_release.paired_mass_scan` and `msplatform.analysis.mass_response` owners;
+`msplatform.particle_release.paired_mass_scan` and `msplatform.analysis.mass_response` owners;
 see [scope and validation](docs/PROJECT.md#installed-paired-mass-scans-and-sampled-responses).

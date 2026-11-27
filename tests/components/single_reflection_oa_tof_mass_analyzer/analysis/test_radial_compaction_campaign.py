@@ -1323,7 +1323,7 @@ def run(case_root, run_id, context, managed):
 
     @unittest.skipUnless(shutil.which("pwsh"), "Production ION generator requires PowerShell")
     def test_campaign_source_rebuilds_its_named_mother_population(self) -> None:
-        from msplatform.ion_release.dotnet_gaussian_box_ion11 import generate_ion_source, _serialized_ion_source
+        from msplatform.particle_release.dotnet_gaussian_box_ion11 import generate_particle_source, _serialized_particle_source
 
         with tempfile.TemporaryDirectory(prefix="radial-source-identity-") as directory:
             root = Path(directory)
@@ -1341,7 +1341,7 @@ def run(case_root, run_id, context, managed):
             for count in (100, fixed["particle_count"]):
                 path = root / f"N{count}.ion"
                 result = subprocess.run(["pwsh", "-NoProfile", "-File",
-                    str(PROJECT_ROOT.parents[1] / "backends/simion/resources" / "generate_comsol_consistent_ions.ps1"),
+                    str(PROJECT_ROOT.parents[1] / "backends/simion/resources" / "generate_comsol_consistent_particles.ps1"),
                     "-PythonExe", sys.executable, "-N", str(count), "-Output", str(path),
                     *[value for key, value in options.items() for value in (f"-{key}", str(value))]],
                     cwd=radial.REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120,
@@ -1352,7 +1352,7 @@ def run(case_root, run_id, context, managed):
             self.assertEqual(outputs[100], b"\r\n".join(outputs[1000].splitlines()[:100]) + b"\r\n")
             self.assertEqual(radial.hashlib.sha256(outputs[100]).hexdigest().upper(),
                              "3BD65B6CD43C5C122708D98BBD0BC0D9BD599D9FBBF17C5BB76B469613ECF26D")
-            old_source = _serialized_ion_source(generate_ion_source(
+            old_source = _serialized_particle_source(generate_particle_source(
                 particle_count=fixed["particle_count"], mass_amu=target["mass_amu"], charge=1,
                 energy_mean_ev=target["initial_energy_mean_ev"], energy_std_ev=target["initial_energy_sigma_ev"],
                 half_width_xyz_mm=tuple(source[f"size_{axis}_mm"] / 2 for axis in "xyz"),

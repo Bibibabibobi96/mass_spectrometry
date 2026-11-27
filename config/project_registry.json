@@ -1,43 +1,43 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "generated_project_capability_registry_do_not_edit",
   "generated_from": [
     {
       "descriptor": "src/msplatform/components/apertured_tube_electron_impact_ion_source/config/project.json",
-      "sha256": "D528FF6FB6481620D85D914E1504BE072F94EBC60F52B4DE4C7B388E419A3423"
+      "sha256": "B4C011F4BF3873E119EBED3C4B0B838C9F609E5ED16185967E8CFBF28507467F"
     },
     {
       "descriptor": "src/msplatform/components/dual_cone_tandem_quadrupole/config/project.json",
-      "sha256": "4262501543CB86D39B1ED82AE79DB945E357CF197FF1B74F15BBA19301E3F712"
+      "sha256": "626125877050F10CA6CDE736FA1583E7EA66CCE30D5945AAEEE58EE867FFD230"
     },
     {
       "descriptor": "src/msplatform/components/ion_processor/config/project.json",
-      "sha256": "135CCD7CFA35638DF6E77F88785A360838ED46C83ABDEF80FE1A0B0AC537AA72"
+      "sha256": "3225D5C8A670EAF62492BDBF05B99CDC43F994FC38C88AE7B53CD1D2627D3B3D"
     },
     {
       "descriptor": "src/msplatform/components/multi_reflection_tof/config/project.json",
-      "sha256": "D09405691242F52417D6DB837FCBC3584763E525B500F1BDB6A957A754E13BB6"
+      "sha256": "714CF7592663165CC2C9B64823F1050FF4CCBE0AF9BC81CF7CC549C3C22C7A34"
     },
     {
       "descriptor": "src/msplatform/components/orthogonal_accelerator/config/project.json",
-      "sha256": "6319CB332787DBDDE0BCF1A0711FA858E43990A7F2B2A3AA0302273958B306B8"
+      "sha256": "3EFAB773697C629EE2D5AFBE6E64B632F9B84E37A235BC9C1933A6338E9CE28C"
     },
     {
       "descriptor": "src/msplatform/components/rf_multipole/config/project.json",
-      "sha256": "AA6D1C0491FDEBD72B03D2C4102A638903FBFD647F426BE1BF6E36FEEA50195A"
+      "sha256": "AFC28C86FC5772714E0D75D0CE743BA26FD32422386FE304BE5956CA44FED144"
     },
     {
       "descriptor": "src/msplatform/components/single_reflection_oa_tof/config/project.json",
-      "sha256": "424F9EAABD2F8D99A6AF57D1EC8CA103355FF3137C70E21960494FD3CB1294D9"
+      "sha256": "615731C45C80704CC16A5B748134FD9BE7616F7E7FA54DD95148AA19F4B29755"
     },
     {
       "descriptor": "src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/config/project.json",
-      "sha256": "572DC04628DFB2C49E1D5F0BBC9B372C09A79333EFB3D8EBC5AC7F12F403B1CF"
+      "sha256": "56AB05DE4E9C1DCE9E50EEB2669E4ADD0D6B9E7AE974F131026C8F3191B25119"
     }
   ],
   "projects": [
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "project_id": "apertured_tube_electron_impact_ion_source",
       "legacy_identities": [
         {
@@ -61,7 +61,6 @@
       "family_id": "ion_sources",
       "display_name": "开孔长管电子轰击离子源",
       "purpose": "电子束电离产额可行性以及未来重离子出生接口设计",
-      "lifecycle_status": "prototype",
       "toolchains": [
         "comsol",
         "matlab",
@@ -80,7 +79,6 @@
         {
           "capability_id": "electron_impact_ionization_feasibility",
           "function": "ionization_yield_feasibility",
-          "status": "prototype",
           "modes": [
             "build_only_smoke"
           ],
@@ -91,24 +89,22 @@
           "design_variables": []
         }
       ],
-      "formal_assets": {
-        "status": "none",
-        "types": [],
-        "identity_contract": null
-      },
       "known_gaps": [
         "Functional N=100 GUI Compute and solver-output particle-count verification are not completed",
         "No independent heavy-ion tracking or frozen downstream interface",
         "GUI Compute and native result-node acceptance are not completed"
-      ]
+      ],
+      "asset_references": {
+        "types": [],
+        "identity_contract": null
+      }
     },
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "project_id": "dual_cone_tandem_quadrupole",
       "family_id": "atmospheric_pressure_ion_interfaces",
       "display_name": "双锥串联四极杆离子传输接口",
       "purpose": "以COMSOL气流场到SIMION气体辅助轨迹的冻结依赖链验证双锥及两级RF四极导引接口",
-      "lifecycle_status": "prototype",
       "toolchains": [
         "comsol",
         "matlab",
@@ -130,7 +126,6 @@
         {
           "capability_id": "axisymmetric_gas_flow_field_generation",
           "function": "gas_flow_field_generation",
-          "status": "prototype",
           "modes": [
             "axisymmetric_gas_flow_screening"
           ],
@@ -145,7 +140,6 @@
         {
           "capability_id": "gas_field_driven_simion_transport",
           "function": "gas_assisted_ion_transport",
-          "status": "prototype",
           "modes": [
             "gas_field_driven_simion_transport"
           ],
@@ -159,11 +153,6 @@
           "design_variables": []
         }
       ],
-      "formal_assets": {
-        "status": "none",
-        "types": [],
-        "identity_contract": null
-      },
       "known_gaps": [
         "Component vendor and exact product identity are unconfirmed",
         "Cone truncation and aperture-plane interpretation remain provisional; pump geometry and intermediate pressures are missing",
@@ -172,6 +161,10 @@
         "The current ion source, 570 kHz and 300 V peak-to-ground RF point, and official SIMION SDS collision closure are explicit but not experimentally qualified",
         "CAD, pump type and geometry, intermediate pressure measurements, Candidate evidence and Formal evidence are unavailable"
       ],
+      "asset_references": {
+        "types": [],
+        "identity_contract": null
+      },
       "retired_project_descriptors": [
         {
           "project_id": "dual_cone_tandem_quadrupole_ion_interface",
@@ -187,12 +180,11 @@
       ]
     },
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "project_id": "ion_processor",
       "family_id": "rf_ion_accumulation_and_pulsed_extraction",
       "display_name": "双压力区矩形射频离子处理器",
       "purpose": "由简化实体电极与原生SIMION求场复现多极杆输运、捕获、碰撞冷却、聚集、整体抬升和正交引出",
-      "lifecycle_status": "prototype",
       "toolchains": [
         "python",
         "simion"
@@ -211,7 +203,6 @@
         {
           "capability_id": "native_electrode_functional_transport",
           "function": "ion_capture_cooling_and_extraction",
-          "status": "prototype",
           "modes": [
             "native_electrode_functional"
           ],
@@ -225,11 +216,6 @@
           "design_variables": []
         }
       ],
-      "formal_assets": {
-        "status": "none",
-        "types": [],
-        "identity_contract": null
-      },
       "known_gaps": [
         "Simplified solid-electrode geometry is a functional abstraction, not a complete manufacturer mechanical reconstruction",
         "Native N100 functional baseline and user GUI confirmation are recorded; full spatial and whole-flight time-step convergence remain unqualified",
@@ -239,6 +225,10 @@
         "Analytical prescribed-field workflow is retired; the active functional workflow uses native solid-electrode fields",
         "Public execution planning covers only the existing 524 Da/+1 functional source and fixed configuration; custom, exploration and upstream-injected workflows retain their project-specific entrypoints"
       ],
+      "asset_references": {
+        "types": [],
+        "identity_contract": null
+      },
       "retired_project_descriptors": [
         {
           "project_id": "dual_pressure_rectilinear_ion_processor",
@@ -254,12 +244,11 @@
       ]
     },
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "project_id": "multi_reflection_tof",
       "family_id": "tof_mass_analyzers",
       "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
       "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
-      "lifecycle_status": "candidate",
       "toolchains": [
         "python",
         "simion",
@@ -278,7 +267,6 @@
         {
           "capability_id": "multiple_reflection_mass_analysis",
           "function": "mass_analysis",
-          "status": "candidate",
           "modes": [
             "native_condition"
           ],
@@ -292,17 +280,16 @@
           "design_variables": []
         }
       ],
-      "formal_assets": {
-        "status": "none",
-        "types": [],
-        "identity_contract": null
-      },
       "known_gaps": [
         "Resolved geometry is deterministically derived and frozen per run; no standalone checked-in resolved JSON is promoted as a second authority",
         "The native corridor PA family still requires real-build equivalence, IOB priority and end-to-end flight qualification",
         "No independent COMSOL field or trajectory model currently qualifies the three-dimensional SIMION candidate",
         "Manufacturing tolerances, complete source distributions, space charge and Formal performance acceptance remain open"
       ],
+      "asset_references": {
+        "types": [],
+        "identity_contract": null
+      },
       "retired_project_descriptors": [
         {
           "project_id": "parallel_mirror_dual_stripe_mr_tof",
@@ -318,12 +305,11 @@
       ]
     },
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "project_id": "orthogonal_accelerator",
       "family_id": "orthogonal_pulsed_accelerators",
       "display_name": "正交脉冲加速器（二区／三区结构变体）",
       "purpose": "独立维护正交脉冲加速器的理论、参数化器件几何和验证；向不同TOF仪器提供唯一领域实现",
-      "lifecycle_status": "prototype",
       "toolchains": [
         "python",
         "simion",
@@ -359,7 +345,6 @@
         {
           "capability_id": "two_zone_orthogonal_acceleration",
           "function": "orthogonal_acceleration",
-          "status": "prototype",
           "modes": [
             "component_focus"
           ],
@@ -372,7 +357,6 @@
         {
           "capability_id": "three_zone_orthogonal_acceleration",
           "function": "orthogonal_acceleration",
-          "status": "prototype",
           "modes": [],
           "metrics": [
             "axial_flight_time",
@@ -381,25 +365,23 @@
           "design_variables": []
         }
       ],
-      "formal_assets": {
-        "status": "none",
-        "types": [],
-        "identity_contract": null
-      },
       "known_gaps": [
         "Migrated mechanisms do not transfer OA instrument Formal qualification to this component",
         "No standalone hardware baseline or independent component CAD/field/trajectory qualification has been published",
         "Two-zone and three-zone structural variants require separate geometry and validation identities",
         "Instrument transforms and accelerator-reflectron or MR-TOF coupling remain consumer responsibilities"
-      ]
+      ],
+      "asset_references": {
+        "types": [],
+        "identity_contract": null
+      }
     },
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "project_id": "rf_multipole_ion_optics",
       "family_id": "rf_multipole_ion_optics",
       "display_name": "RF多极杆离子光学（四极／六极／八极）",
       "purpose": "显式结构变体的无碰撞传输、轴向加速及四极质量过滤；分别维护科学输入与资格",
-      "lifecycle_status": "candidate",
       "toolchains": [
         "comsol",
         "simion",
@@ -449,7 +431,6 @@
         {
           "capability_id": "quadrupole_ion_transport",
           "function": "ion_transport",
-          "status": "candidate",
           "modes": [
             "quadrupole_transport_no_collision",
             "quadrupole_transport_interface_readiness"
@@ -495,7 +476,6 @@
         {
           "capability_id": "quadrupole_collision_cooling",
           "function": "collision_cooling",
-          "status": "prototype",
           "modes": [],
           "metrics": [
             "transmission_fraction",
@@ -509,7 +489,6 @@
         {
           "capability_id": "quadrupole_mass_filter_reference",
           "function": "mass_filtering",
-          "status": "static",
           "modes": [
             "quadrupole_mass_filter_reference"
           ],
@@ -530,7 +509,6 @@
         {
           "capability_id": "hexapole_ideal_transport",
           "function": "ion_transport",
-          "status": "static",
           "modes": [
             "hexapole_transport_no_collision"
           ],
@@ -545,7 +523,6 @@
         {
           "capability_id": "hexapole_round_rod_l2_transport",
           "function": "ion_transport",
-          "status": "static",
           "modes": [
             "hexapole_round_rod_no_collision"
           ],
@@ -562,7 +539,6 @@
         {
           "capability_id": "hexapole_finite_3d_transport",
           "function": "ion_transport",
-          "status": "static",
           "modes": [
             "hexapole_finite_3d_no_collision"
           ],
@@ -597,7 +573,6 @@
         {
           "capability_id": "octupole_ideal_transport",
           "function": "ion_transport",
-          "status": "static",
           "modes": [
             "octupole_transport_no_collision"
           ],
@@ -612,7 +587,6 @@
         {
           "capability_id": "octupole_round_rod_l2_transport",
           "function": "ion_transport",
-          "status": "static",
           "modes": [
             "octupole_round_rod_no_collision"
           ],
@@ -629,7 +603,6 @@
         {
           "capability_id": "octupole_finite_3d_transport",
           "function": "ion_transport",
-          "status": "static",
           "modes": [
             "octupole_finite_3d_no_collision"
           ],
@@ -662,11 +635,6 @@
           "model": "有限三维多极场与轨迹"
         }
       ],
-      "formal_assets": {
-        "status": "none",
-        "types": [],
-        "identity_contract": null
-      },
       "known_gaps": [
         "quadrupole: No current formal mechanical geometry or SolidWorks assembly",
         "quadrupole: N=100 strict interface phase-space gate remains failed",
@@ -715,10 +683,14 @@
           "verification_identity": "recorded_project_id",
           "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
         }
-      ]
+      ],
+      "asset_references": {
+        "types": [],
+        "identity_contract": null
+      }
     },
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "legacy_identities": [
         {
@@ -742,7 +714,6 @@
       "family_id": "tof_mass_analyzers",
       "display_name": "单次反射正交加速飞行时间质量分析器",
       "purpose": "单次折返oa-TOF的质量分析、离子传输和正式跨求解器设计",
-      "lifecycle_status": "formal",
       "toolchains": [
         "comsol",
         "simion",
@@ -765,7 +736,6 @@
         {
           "capability_id": "single_reflection_mass_analysis",
           "function": "mass_analysis",
-          "status": "formal",
           "modes": [
             "formal",
             "mass_spectrum",
@@ -811,8 +781,13 @@
           ]
         }
       ],
-      "formal_assets": {
-        "status": "formal",
+      "known_gaps": [
+        "RF upstream interface contract is not frozen",
+        "Stage-2 engineering margin and manufacturing-tolerance semantics are not experimentally validated",
+        "Axisymmetric circular accelerator is deferred",
+        "Manufacturing and assembly tolerance budget is not established"
+      ],
+      "asset_references": {
         "types": [
           "comsol_model",
           "simion_package",
@@ -820,16 +795,10 @@
           "results"
         ],
         "identity_contract": "config/formal_assets.json"
-      },
-      "known_gaps": [
-        "RF upstream interface contract is not frozen",
-        "Stage-2 engineering margin and manufacturing-tolerance semantics are not experimentally validated",
-        "Axisymmetric circular accelerator is deferred",
-        "Manufacturing and assembly tolerance budget is not established"
-      ]
+      }
     },
     {
-      "schema_version": 1,
+      "schema_version": 2,
       "project_id": "transverse_helical_filament_wehnelt_electron_gun",
       "legacy_identities": [
         {
@@ -853,7 +822,6 @@
       "family_id": "electron_guns",
       "display_name": "横置螺旋灯丝Wehnelt电子枪",
       "purpose": "面向EI离子源的热电子发射、收集和电子束传输设计",
-      "lifecycle_status": "prototype",
       "toolchains": [
         "comsol",
         "matlab"
@@ -871,7 +839,6 @@
         {
           "capability_id": "wehnelt_thermal_electron_transport",
           "function": "electron_transport",
-          "status": "prototype",
           "modes": [
             "build_only_smoke"
           ],
@@ -881,18 +848,17 @@
           "design_variables": []
         }
       ],
-      "formal_assets": {
-        "status": "none",
-        "types": [],
-        "identity_contract": null
-      },
       "known_gaps": [
         "The functional_reference mode has no governed N>=100 solver runner or current evidence",
         "Final particle model is not reopened and recomputed under the current GUI gate",
         "The historical 34.18% value is not a current usable-final-state result",
         "Unweighted test particles do not support a beam-current claim or wall-resolved loss attribution",
         "No interface contract to the downstream EI source has been frozen"
-      ]
+      ],
+      "asset_references": {
+        "types": [],
+        "identity_contract": null
+      }
     }
   ]
 }

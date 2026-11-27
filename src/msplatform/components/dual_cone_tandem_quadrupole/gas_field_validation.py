@@ -19,7 +19,7 @@ METADATA_ROLE = "dual_cone_axisymmetric_gas_field_metadata"
 
 def _load_json(path: Path, role: str) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
-    if value.get("schema_version") != 1 or value.get("role") != role:
+    if value.get("schema_version") not in ((1, 2) if role == SCIENCE_ROLE else (1,)) or value.get("role") != role:
         raise ValueError(f"{path} is not a supported {role} contract")
     if value.get("project_id") != PROJECT_ID:
         raise ValueError(f"{path} has the wrong project identity")
@@ -36,9 +36,11 @@ def validate_gas_field_data(data: GasFieldData) -> dict[str, Any]:
         ("metadata", METADATA_ROLE),
     ):
         value = documents[name]
-        if value.get("schema_version") != 1 or value.get("role") != role:
+        if value.get("schema_version") not in ((1, 2) if name == "science" else (1,)) or value.get("role") != role:
             raise ValueError(f"{name} is not a supported {role} contract")
-        if value.get("project_id") != PROJECT_ID:
+        historical = science.get("schema_version") == 1 and science.get("project_id") == "dual_cone_tandem_quadrupole_ion_interface"
+        expected_project = "dual_cone_tandem_quadrupole_ion_interface" if historical else PROJECT_ID
+        if value.get("project_id") != expected_project:
             raise ValueError(f"{name} has the wrong project identity")
     model_id = science["model_id"]
     if numerics.get("model_id") != model_id or metadata.get("model_id") != model_id:

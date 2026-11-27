@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.ion_release.release import generate_release_states, validate_release_spec
+from msplatform.particle_release.release import generate_release_states, validate_release_spec
 from msplatform.backends.simion.dual_cone_geometry import (
     device_to_workbench_offsets,
     render_gem,
@@ -38,24 +38,23 @@ def write_uniform_gas_fixture(output_lua, output_manifest, *, spec_path, interfa
     """Actual current component projection/compiler over explicit research fixtures."""
     from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_uniform_rear_gas_field
     from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
-    from msplatform.contracts.gas import GasSpecies
     from msplatform.io.manifest_records import file_record
 
-    source_science = load(PROJECT / "config/gas_flow_science.json")
-    transport_science = load(PROJECT / "config/ion_transport_science.json")
-    composition = (GasSpecies(source_science["physics"]["gas_species"]["species_id"],
-        transport_science["gas"]["collision_gas_mass_amu"], 1.),)
+    environment_path = PROJECT / "config/gas_environment.json"
     field, metadata = prepare_uniform_rear_gas_field(load(spec_path), interface=load(interface_path),
-        composition=composition, spec_record=file_record(spec_path, "required_evidence"),
+        environment_author=load(environment_path), geometry=load(DEFAULT_RESOLVED),
+        environment_record=file_record(environment_path, "required_evidence"), geometry_record=file_record(DEFAULT_RESOLVED, "required_evidence"), spec_record=file_record(spec_path, "required_evidence"),
         interface_record=file_record(interface_path, "required_evidence"))
     return materialize_gas_runtime(field, output_lua, output_manifest, manifest_metadata=metadata)
 
 
 def prepare(output_dir, **kwargs):
+    environment_path = kwargs.pop("environment_path", PROJECT / "config/gas_environment.json")
     return prepare_transport(output_dir, resolved_path=DEFAULT_RESOLVED,
         numerics_path=DEFAULT_NUMERICS, science_path=PROJECT / "config/ion_transport_science.json",
         interface_path=GAS_INTERFACE, gas_science_path=PROJECT / "config/gas_flow_science.json",
-        source_spec_path=PROJECT / "config/cylindrical_ion_source.json", **kwargs)
+        source_spec_path=PROJECT / "config/cylindrical_particle_source.json",
+        environment_path=environment_path, **kwargs)
 
 
 def load(path: Path) -> dict:
@@ -141,11 +140,12 @@ class SimionGeometryTests(unittest.TestCase):
     def test_science_contract_makes_simion_the_only_trajectory_authority(self) -> None:
         science = load(PROJECT / "config" / "ion_transport_science.json")
         self.assertEqual(science["trajectory_authority"], "simion")
-        self.assertEqual(science["gas"]["collision_model"], "simion_official_collision_sds")
-        self.assertEqual(science["gas"]["species_id"], "n2")
+        environment = load(PROJECT / "config/gas_environment.json")
+        self.assertEqual(environment["collision_model_ref"]["model_id"], "simion_official_collision_sds")
+        self.assertEqual(environment["species_ref"]["species_id"], "n2")
 
     def test_source_cylinder_can_be_wider_than_the_first_aperture(self) -> None:
-        source = load(PROJECT / "config" / "cylindrical_ion_source.json")
+        source = load(PROJECT / "config" / "cylindrical_particle_source.json")
         resolved = load(PROJECT / "config" / "resolved_geometry.json")
         gas_science = load(PROJECT / "config" / "gas_flow_science.json")
         radius = source["geometry"]["radius_mm"]
@@ -200,27 +200,17 @@ class SimionGeometryTests(unittest.TestCase):
     def test_published_gas_runtime_real_entry_preserves_output_and_rejects_tampering(self) -> None:
         from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
         from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_cfd_gas_field
-        from msplatform.io.manifest_records import file_record
         from msplatform.results.gas_field import read_gas_field
-        from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import _write_fixture
+        from tests.contracts.test_support.dual_cone_transport import write_published_gas_fixture
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            csv_path, metadata_path = _write_fixture(root)
-            config = PROJECT / "config"
-            paths = dict(science=config / "gas_flow_science.json",
-                numerics=config / "comsol_solver_numerics.json",
-                geometry=config / "resolved_geometry.json", field_csv=csv_path, field_metadata=metadata_path)
-            records = {name: file_record(path, "required_evidence") for name, path in paths.items()}
-            producer = dict(schema_version=2, role="simulation_run_manifest", project=PROJECT.name,
-                run_id="explicit-inert-gas-fixture", mode="axisymmetric_gas_flow_screening", status="success",
-                inputs={name: records[name] for name in ("science", "numerics", "geometry")},
-                outputs=[records["field_csv"], records["field_metadata"]],
-                products=dict(gas_field=dict(schema_version=1, kind="gas_field", status="complete",
-                    metadata=dict(claim_scope="INERT_PREPARATION_FIXTURE_NOT_NATIVE"), data=records)))
-            manifest = root / "run_manifest.json"
-            manifest.write_text(json.dumps(producer), encoding="utf-8")
-            reference = dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
+            fixture = write_published_gas_fixture(root)
+            csv_path, metadata_path = fixture["csv_path"], fixture["metadata_path"]
+            paths = dict(science=root / "inputs/science_resolved.json",
+                numerics=root / "inputs/numerics.json", geometry=root / "inputs/geometry.json",
+                field_csv=csv_path, field_metadata=metadata_path)
+            reference = fixture["reference"]
             reference_path = root / "reference.json"
             reference_path.write_text(json.dumps(reference), encoding="utf-8")
             interface = load(GAS_INTERFACE)
@@ -267,6 +257,18 @@ class SimionGeometryTests(unittest.TestCase):
 
 
 class GasPreparationTests(unittest.TestCase):
+    def test_uniform_runtime_rejects_rehashed_payload_not_derived_from_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime, manifest = root / "gas.lua", root / "manifest.json"
+            write_uniform_gas_fixture(runtime, manifest, spec_path=UNIFORM_SPEC, interface_path=GAS_INTERFACE)
+            runtime.write_text(runtime.read_text(encoding="utf-8") + "\n-- forged\n", encoding="utf-8")
+            document = load(manifest)
+            document["runtime_lua"]["sha256"] = file_sha256(runtime)
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "runtime differs from its resolved environment"):
+                validate_runtime_manifest(manifest, load(GAS_INTERFACE))
+
     def test_c0_pure_preparation_keeps_fractional_geometry_and_no_pa_payload(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "prepared"
@@ -341,7 +343,6 @@ from msplatform.execution import inputs as frozen_inputs
 from msplatform.backends.simion import dual_cone_transport as p
 from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_uniform_rear_gas_field
 from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
-from msplatform.contracts.gas import GasSpecies
 from msplatform.io.manifest_records import file_record
 import json
 assert Path(p.__file__).resolve().is_relative_to(Path.cwd())
@@ -351,13 +352,12 @@ case = Path(sys.argv[2]); case.mkdir()
 config=Path.cwd() / 'src/msplatform/components/dual_cone_tandem_quadrupole/config'
 kwargs=dict(resolved_path=config/'resolved_geometry.json', numerics_path=config/'simion_solver_numerics.json',
  science_path=config/'ion_transport_science.json',interface_path=config/'gas_field_interface.json',
- gas_science_path=config/'gas_flow_science.json',source_spec_path=config/'cylindrical_ion_source.json')
+ gas_science_path=config/'gas_flow_science.json',source_spec_path=config/'cylindrical_particle_source.json',environment_path=config/'gas_environment.json')
 c0 = p.prepare_transport(case / 'c0', mode='c0_gem_smoke',**kwargs)
-species=json.loads(kwargs['gas_science_path'].read_text())['physics']['gas_species']['species_id']
-mass=json.loads(kwargs['science_path'].read_text())['gas']['collision_gas_mass_amu']
 spec_path=config/'uniform_rear_gas_field.json'
 field,metadata=prepare_uniform_rear_gas_field(json.loads(spec_path.read_text()),
-    interface=json.loads(kwargs['interface_path'].read_text()),composition=(GasSpecies(species,mass,1.),),
+    interface=json.loads(kwargs['interface_path'].read_text()),environment_author=json.loads(kwargs['environment_path'].read_text()),
+    geometry=json.loads(kwargs['resolved_path'].read_text()),environment_record=file_record(kwargs['environment_path'],'required_evidence'),geometry_record=file_record(kwargs['resolved_path'],'required_evidence'),
     spec_record=file_record(spec_path,'required_evidence'),interface_record=file_record(kwargs['interface_path'],'required_evidence'))
 materialize_gas_runtime(field,(case/'field.lua').resolve(),(case/'manifest.json').resolve(),manifest_metadata=metadata)
 sds = case / 'sds'; sds.mkdir()
@@ -369,7 +369,7 @@ for receipt in (c0, gas):
     record = receipt['inputs']['resolved_geometry']
     assert set(record) == {'source_path', 'frozen_path', 'sha256', 'bytes'}
     assert Path(record['frozen_path']).read_bytes() == Path(record['source_path']).read_bytes()
-assert gas['inputs']['cylindrical_ion_source_receipt']['identity']['particle_count'] == 100
+assert gas['inputs']['cylindrical_particle_source_receipt']['identity']['particle_count'] == 100
 assert not list(case.rglob('*.pa*'))
 for name, module in tuple(sys.modules.items()):
     if name.startswith('msplatform') and getattr(module, '__file__', None):
@@ -447,8 +447,8 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             for record in frozen.values():
                 self.assertEqual(set(record), {"source_path", "frozen_path", "sha256", "bytes"})
                 self.assertEqual(file_sha256(Path(record["frozen_path"])), record["sha256"])
-            source_receipt = receipt["inputs"]["cylindrical_ion_source_receipt"]["identity"]
-            self.assertEqual(source_receipt["role"], "repository_ion_release")
+            source_receipt = receipt["inputs"]["cylindrical_particle_source_receipt"]["identity"]
+            self.assertEqual(source_receipt["role"], "repository_particle_release")
             self.assertEqual(source_receipt["release_spec"]["geometry"]["shape"], "cylinder")
             self.assertEqual(source_receipt["particle_count"], 100)
             fly2 = Path(receipt["inputs"]["particle_fly2"]["path"])
@@ -456,6 +456,14 @@ print('DETACHED_DUAL_CONE_PREPARE=PASS MODES=2')
             self.assertEqual(source.count("standard_beam {"), 100)
             self.assertIn("direction = vector(", source)
             self.assertIn("gas_flow_science", receipt["inputs"])
+            altered = load(PROJECT / "config/gas_environment.json")
+            altered["outlet_pressure_pa"] = 401
+            altered_path = root / "altered_environment.json"
+            altered_path.write_text(json.dumps(altered), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "environment or geometry differs"):
+                prepare(root / "wrong", mode="gas_assisted_transport", collision_sds_dir=sds,
+                        gas_field_manifest=manifest_path, environment_path=altered_path)
+            self.assertFalse((root / "wrong").exists())
 
     def test_uniform_rear_runtime_keeps_400_pa_and_zeroes_upstream_collisions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

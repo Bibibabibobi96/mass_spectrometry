@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "project_execution_profiles",
   "project_id": "multi_reflection_tof",
   "profiles": [
@@ -86,10 +86,6 @@
       ],
       "model": "平行镜双条带MR-TOF原生候选条件",
       "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none",
-        "candidate"
-      ],
       "runtime_binding": {
         "entrypoint": "src/msplatform/workflows/mr_design/execution_binding.py",
         "required_bindings": [

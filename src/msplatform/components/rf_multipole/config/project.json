@@ -1,10 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "project_id": "rf_multipole_ion_optics",
   "family_id": "rf_multipole_ion_optics",
   "display_name": "RF多极杆离子光学（四极／六极／八极）",
   "purpose": "显式结构变体的无碰撞传输、轴向加速及四极质量过滤；分别维护科学输入与资格",
-  "lifecycle_status": "candidate",
   "toolchains": [
     "comsol",
     "simion",
@@ -54,7 +53,6 @@
     {
       "capability_id": "quadrupole_ion_transport",
       "function": "ion_transport",
-      "status": "candidate",
       "modes": [
         "quadrupole_transport_no_collision",
         "quadrupole_transport_interface_readiness"
@@ -100,7 +98,6 @@
     {
       "capability_id": "quadrupole_collision_cooling",
       "function": "collision_cooling",
-      "status": "prototype",
       "modes": [],
       "metrics": [
         "transmission_fraction",
@@ -114,7 +111,6 @@
     {
       "capability_id": "quadrupole_mass_filter_reference",
       "function": "mass_filtering",
-      "status": "static",
       "modes": [
         "quadrupole_mass_filter_reference"
       ],
@@ -135,7 +131,6 @@
     {
       "capability_id": "hexapole_ideal_transport",
       "function": "ion_transport",
-      "status": "static",
       "modes": [
         "hexapole_transport_no_collision"
       ],
@@ -150,7 +145,6 @@
     {
       "capability_id": "hexapole_round_rod_l2_transport",
       "function": "ion_transport",
-      "status": "static",
       "modes": [
         "hexapole_round_rod_no_collision"
       ],
@@ -167,7 +161,6 @@
     {
       "capability_id": "hexapole_finite_3d_transport",
       "function": "ion_transport",
-      "status": "static",
       "modes": [
         "hexapole_finite_3d_no_collision"
       ],
@@ -202,7 +195,6 @@
     {
       "capability_id": "octupole_ideal_transport",
       "function": "ion_transport",
-      "status": "static",
       "modes": [
         "octupole_transport_no_collision"
       ],
@@ -217,7 +209,6 @@
     {
       "capability_id": "octupole_round_rod_l2_transport",
       "function": "ion_transport",
-      "status": "static",
       "modes": [
         "octupole_round_rod_no_collision"
       ],
@@ -234,7 +225,6 @@
     {
       "capability_id": "octupole_finite_3d_transport",
       "function": "ion_transport",
-      "status": "static",
       "modes": [
         "octupole_finite_3d_no_collision"
       ],
@@ -267,11 +257,6 @@
       "model": "有限三维多极场与轨迹"
     }
   ],
-  "formal_assets": {
-    "status": "none",
-    "types": [],
-    "identity_contract": null
-  },
   "known_gaps": [
     "quadrupole: No current formal mechanical geometry or SolidWorks assembly",
     "quadrupole: N=100 strict interface phase-space gate remains failed",
@@ -320,5 +305,9 @@
       "verification_identity": "recorded_project_id",
       "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
     }
-  ]
+  ],
+  "asset_references": {
+    "types": [],
+    "identity_contract": null
+  }
 }

@@ -43,13 +43,13 @@ class ComponentContractTest(unittest.TestCase):
         self.assertEqual(api["request_api"]["two_zone"]["fixed_topology"],
                          "solid_positive_z_repeller_and_grounded_cap__negative_z_exit_grid")
         self.assertEqual(api["request_api"]["two_zone"]["flight_source"],
-                         "caller_supplied_repository_ion_release_spec__run_input_only__excluded_from_pa_geometry_identity")
+                         "caller_supplied_repository_particle_release_spec__run_input_only__excluded_from_pa_geometry_identity")
         self.assertEqual(api["request_api"]["two_zone"]["geometry_authority"],
                          "provider_owned__consumer_requests_only_source_envelope_mesh_and_rigid_placement")
         self.assertTrue((REPO / "src/msplatform/backends/simion/two_zone_candidate.py").is_file())
         self.assertEqual(api["request_api"]["three_zone"]["role"], "orthogonal_accelerator_bare_three_zone_requirements")
         self.assertTrue((REPO / "src/msplatform/backends/simion/bare_three_zone_component.py").is_file())
-        self.assertEqual(descriptor["formal_assets"]["status"], "none")
+        self.assertEqual(descriptor["asset_references"]["types"], [])
 
     def test_consumers_explicitly_declare_provider_and_variant(self) -> None:
         for consumer in ("single_reflection_oa_tof_mass_analyzer", "multi_reflection_tof"):

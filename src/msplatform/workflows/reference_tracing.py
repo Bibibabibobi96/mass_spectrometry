@@ -17,10 +17,11 @@ import numpy as np
 import scipy
 
 from msplatform.io.file_identity import canonical_json_sha256, file_sha256
-from msplatform.recipes import load_recipe, validate_recipe
+from msplatform.recipes import validate_recipe as _validate_recipe
 from msplatform.results.particle_data import read_particle_data, summarize_particle_data, write_particle_data
 from msplatform.storage import ArtifactStore
-from msplatform.tracing import TraceResult, preflight, trace_particles
+from msplatform.tracing import preflight, trace_particles
+from msplatform.results.model import merge_trace_batches
 import msplatform.fields as fields_implementation
 import msplatform.tracing as tracer_implementation
 import msplatform.analysis.particle_census as census_implementation
@@ -37,35 +38,14 @@ def _implementations() -> dict[str, str]:
             "cohort": file_sha256(census_implementation.__file__),
             "particle_data": file_sha256(data_implementation.__file__),
             "numpy": np.__version__, "scipy": scipy.__version__,
-            "distribution": version("mass-spectrometry-analysis"), "data_schema": "si_particle_data_1"}
-
-
-def _merged(results: list[dict[str, Any]]) -> TraceResult:
-    status = "succeeded"
-    if any(row["execution_status"] == "failed" for row in results):
-        status = "failed"
-    elif any(row["execution_status"] == "cancelled" for row in results):
-        status = "cancelled"
-    from msplatform.results.detector_observation import merge_detector_observations
-    coverage = merge_detector_observations([(row["initial_states"], row["data_integrity"]) for row in results])
-    return TraceResult(
-        initial_states=[p for r in results for p in r["initial_states"]],
-        terminal_states=[p for r in results for p in r["terminal_states"]],
-        events=[p for r in results for p in r["events"]],
-        trajectories={name: np.concatenate([r["trajectories"][name] for r in results], axis=0)
-                      for name in ("particle_id", "time_s", "position_m", "velocity_m_s")},
-        execution_status=status,
-        data_integrity={"status": "complete" if all(r["data_integrity"].get("status") == "complete" for r in results)
-                        else "incomplete", "batch_integrity": [r["data_integrity"] for r in results],
-                        "detector_observation": coverage},
-    )
+            "distribution": version("mass-spectrometry-analysis"), "data_schema": "si_particle_data_3"}
 
 
 def _batch(store: ArtifactStore, recipe: Mapping[str, Any], particle: dict, field_key: str,
            implementation: dict, cancelled: Callable[[], bool] | None,
            stack: ExitStack) -> tuple[dict, dict]:
     scientific = {k: recipe[k] for k in ("frame_id", "clock", "constants", "gas_environment", "numerics",
-                                       "surfaces", "recording", "particle_tracer", "assembly")}
+                                       "surfaces", "recording", "particle_tracer", "assembly", "species")}
     key = canonical_json_sha256({"role": "complete_particle_batch", "field": field_key,
                                 "input": scientific, "particle": particle, "implementation": implementation})
     cached = stack.enter_context(store.claim_key(key)) if cancelled is None else None
@@ -78,7 +58,7 @@ def _batch(store: ArtifactStore, recipe: Mapping[str, Any], particle: dict, fiel
         batch_recipe = {**recipe, "initial_states": [particle]}
         result = trace_particles(batch_recipe, cancelled=cancelled)
         work = store.new_work()
-        write_particle_data(work, result, metadata={"frame_id": recipe["frame_id"], "clock": recipe["clock"]})
+        write_particle_data(work, result, metadata={"schema_version": 3, "frame_id": recipe["frame_id"], "clock": recipe["clock"], "species": recipe["species"]})
         written = sum(p.stat().st_size for p in work.iterdir() if p.is_file())
         # Failed/cancelled execution is retained as run evidence, never a reusable success cache.
         if result.execution_status == "succeeded":
@@ -93,7 +73,7 @@ def _batch(store: ArtifactStore, recipe: Mapping[str, Any], particle: dict, fiel
                   "asset_id": asset_id, "reused": reused, "new_payload_bytes": written}
 
 
-def run_recipe(recipe_path: str | Path, *, artifact_root: str | Path,
+def run_loaded_recipe(loaded, *, artifact_root: str | Path,
                high_water_bytes: int | None = None, low_water_bytes: int | None = None,
                safety_bytes: int = 0, reserve_bytes: int = 0,
                source_revision: str | None = None,
@@ -104,16 +84,10 @@ def run_recipe(recipe_path: str | Path, *, artifact_root: str | Path,
 The deployment supplies disk watermarks and an optional additional peak budget.
 Numerical failures and cancellation publish explicit incomplete evidence.
 """
-    loaded = load_recipe(recipe_path)
     recipe = loaded.to_dict()
-    if recipe["schema_version"] == 2:
-        from .native_tracing import run_loaded_recipe
-        return run_loaded_recipe(loaded, context=context, artifact_root=artifact_root,
-            high_water_bytes=high_water_bytes, low_water_bytes=low_water_bytes, safety_bytes=safety_bytes,
-            reserve_bytes=reserve_bytes, source_revision=source_revision, cancelled=cancelled)
     if context is not None:
         raise ValueError("reference tracing does not consume a native execution context")
-    validate_recipe(recipe)
+    _validate_recipe(recipe)
     preflight(recipe)
     if source_revision is not None and not re.fullmatch(r"[0-9a-fA-F]{40}", source_revision):
         raise ValueError("source_revision must be an explicit full repository SHA")
@@ -146,6 +120,7 @@ Numerical failures and cancellation publish explicit incomplete evidence.
         except Exception as error:
             store.finish_run(run_id, "failed", reason=str(error))
             raise
+    from .tracing import inspect_results
     inspected = inspect_results(run_id, artifact_root=artifact_root)
     return {"run_id": run_id, "artifact_root": str(Path(artifact_root).resolve()), **inspected}
 
@@ -187,9 +162,9 @@ def _execute_recipe(store: ArtifactStore, recipe: dict, run_work: Path, run_id: 
             # R means still-unwritten growth, not bytes already deducted from real free space.
             written += receipt["new_payload_bytes"]
             store.reservation_written(reservation, max(0, budget - written))
-        merged = _merged(results)
+        merged = merge_trace_batches(results)
         work = run_work
-        write_particle_data(work, merged, metadata={"frame_id": recipe["frame_id"], "clock": recipe["clock"]})
+        write_particle_data(work, merged, metadata={"schema_version": 3, "frame_id": recipe["frame_id"], "clock": recipe["clock"], "species": recipe["species"]})
         _write_json(work / "provenance.json", {"schema_version": 1, "implementation": implementation,
                     "author_sha256": file_sha256(work / "author.toml"), "execution_owner": "reference_tracing",
                     "repository_source": {"sha": source_revision, "status": "declared" if source_revision else "unavailable",
@@ -201,28 +176,3 @@ def _execute_recipe(store: ArtifactStore, recipe: dict, run_work: Path, run_id: 
         store.reservation_written(reservation, max(0, budget - written))
         provenance = [field_id] + [b["asset_id"] for b in batches if b["asset_id"]]
         store.publish_run(work, run_id=run_id, execution_status=merged.execution_status, provenance_assets=provenance)
-
-
-def inspect_results(run_id: str, *, artifact_root: str | Path) -> dict[str, Any]:
-    """Reopen a managed run, validate its files, then recompute complete-cohort statistics."""
-    store = ArtifactStore(artifact_root)
-    state = store.run_status(run_id)
-    if state["publication_status"] != "ready":
-        return {"run_state": state, "summary": None}
-    path = store.inspect_run(run_id)
-    data = read_particle_data(path)
-    summary = summarize_particle_data(data)
-    recorded = json.loads((path / "summary.json").read_text(encoding="utf-8"))
-    legacy = "detector_observation" not in data["data_integrity"]
-    if legacy:
-        from msplatform.results.particle_data import _summarize_particle_data
-        expected = _summarize_particle_data(data, legacy=True)
-    else:
-        expected = summary
-    if expected != recorded:
-        raise ValueError("recorded statistics differ from published particle data")
-    result = {"run_path": str(path), "run_state": state, "summary": summary,
-              "provenance": json.loads((path / "provenance.json").read_text(encoding="utf-8"))}
-    if legacy:
-        result["stored_summary"] = recorded
-    return result

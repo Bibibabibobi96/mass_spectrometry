@@ -14,11 +14,13 @@ from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import 
     _write_fixture,
 )
 
+HISTORICAL_GAS = Path(__file__).parent / "fixtures/b_gas_contract"
+
 
 def input_paths():
     return tuple(
         (PROJECT_ROOT / "config" / name).resolve()
-        for name in ("baseline.json", "resolved_geometry.json", "gas_flow_science.json", "comsol_solver_numerics.json")
+        for name in ("baseline.json", "resolved_geometry.json", "gas_flow_science.json", "comsol_solver_numerics.json", "gas_environment.json")
     )
 
 
@@ -26,7 +28,7 @@ class GasFlowTests(unittest.TestCase):
     def test_request_uses_only_explicit_gas_contracts_and_original_freshness(self):
         request = gas_flow.resolve_gas_flow_request(*input_paths())
         self.assertEqual(request["claim_scope"], "prototype_axisymmetric_empty_enclosure_gas_flow")
-        self.assertEqual(set(request["inputs"]), {"baseline", "geometry", "science", "numerics"})
+        self.assertEqual(set(request["inputs"]), {"baseline", "geometry", "science", "numerics", "environment", "species_data", "constants_data", "transport_data"})
         with tempfile.TemporaryDirectory() as directory:
             changed = Path(directory) / "geometry.json"
             changed.write_bytes(input_paths()[1].read_bytes() + b" ")
@@ -48,7 +50,8 @@ class GasFlowTests(unittest.TestCase):
                     return args[args.index(name) + 1]
 
                 output = session.run_dir / "comsol"
-                _write_fixture(output)
+                _write_fixture(output, science_path=session.input_dir / "science_resolved.json",
+                               numerics_path=session.input_dir / "numerics.json", geometry_path=session.input_dir / "geometry.json")
                 (output / request["artifact_names"]["model"]).write_bytes(b"INERT_NOT_A_COMSOL_MODEL")
                 (output / "comsol_run_report.txt").write_text("STATUS=PASS\n", encoding="utf-8")
                 Path(value("-ReportPath")).write_text("STATUS=PASS\n", encoding="utf-8")
@@ -86,14 +89,44 @@ class GasFlowTests(unittest.TestCase):
             self.assertEqual(args[args.index("-WorkingDirectory") + 1], str(session.run_dir))
             task = Path(args[args.index("-TaskScript") + 1]).read_text(encoding="utf-8")
             self.assertNotIn("getenv", task)
-            for name in ("science", "numerics", "geometry"):
+            for name in ("science_resolved", "numerics", "geometry"):
                 self.assertIn(str(session.input_dir / (name + ".json")), task)
             product = result["manifest_extra_fields"]["products"]["gas_field"]
             self.assertEqual(product["kind"], "gas_field")
+            self.assertTrue({"science_author", "environment", "species_data", "constants_data", "transport_data"} <= set(product["data"]))
+            self.assertEqual(product["data"]["environment"]["sha256"], request["inputs"]["environment"]["sha256"])
             self.assertNotIn("model", product["data"])
             self.assertIn(str(session.run_dir / "comsol" / request["artifact_names"]["model"]), result["output_paths"])
             self.assertEqual(product["metadata"]["source_status"], "not_requested")
             self.assertEqual(product["metadata"]["scientific_qualification"], "not_granted")
+
+    def test_environment_change_after_request_preserves_captured_author(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = root / "environment.json"
+            original = input_paths()[4].read_bytes()
+            environment.write_bytes(original)
+            request = gas_flow.resolve_gas_flow_request(*input_paths()[:4], environment)
+            environment.write_bytes(environment.read_bytes() + b" ")
+            run = root / "run"
+            run.mkdir()
+            session = InertComsolSession(run, model_relative_paths=())
+            def stop_before_native(*args, **kwargs):
+                raise RuntimeError("stopped before native")
+            session.run_process = stop_before_native
+            with self.assertRaisesRegex(RuntimeError, "stopped before native"):
+                gas_flow._execute(session, request=request, limits={"explicit": True}, parent=None)
+            self.assertEqual((session.input_dir / "environment.json").read_bytes(), original)
+            import copy
+            import base64
+            forged = copy.deepcopy(request)
+            forged["author_snapshots"]["environment"] = base64.b64encode(b"{}").decode("ascii")
+            second = root / "second"
+            second.mkdir()
+            other_session = InertComsolSession(second, model_relative_paths=())
+            with self.assertRaisesRegex(ValueError, "captured author differs"):
+                gas_flow._execute(other_session, request=forged, limits={"explicit": True}, parent=None)
+            self.assertEqual(other_session.calls, [])
 
 
 class GasModelResumeTests(unittest.TestCase):
@@ -195,7 +228,8 @@ class GasFieldReaderTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            csv_path, metadata_path = _write_fixture(root)
+            csv_path, metadata_path = _write_fixture(root, science_path=HISTORICAL_GAS/'gas_flow_science.json',
+                numerics_path=HISTORICAL_GAS/'comsol_solver_numerics.json', geometry_path=HISTORICAL_GAS/'resolved_geometry.json')
             metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
             metadata['solution_summary']['mass_balance_relative_error'] = 1.0
             metadata_path.write_text(json.dumps(metadata), encoding='utf-8')
@@ -206,11 +240,11 @@ class GasFieldReaderTests(unittest.TestCase):
                 ('resolved_geometry', 'resolved_geometry.json'),
             ):
                 target = root / name
-                target.write_bytes((PROJECT_ROOT / 'config' / name).read_bytes())
+                target.write_bytes((HISTORICAL_GAS / name).read_bytes())
                 inputs[key] = file_record(target, 'required_evidence')
             location = root / 'run_manifest.json'
             location.write_text(json.dumps(dict(
-                schema_version=2, role='simulation_run_manifest', project=gas_flow.PROJECT,
+                schema_version=2, role='simulation_run_manifest', project='dual_cone_tandem_quadrupole_ion_interface',
                 run_id='historical-quality-limited', mode='axisymmetric_gas_flow_screening',
                 status='success', inputs=inputs,
                 outputs=[file_record(csv_path, 'required_evidence'), file_record(metadata_path, 'required_evidence')],
@@ -228,7 +262,8 @@ class GasFieldReaderTests(unittest.TestCase):
         for scenario in ("valid", "missing_original", "tampered_csv", "unknown_version"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                csv_path, metadata_path = _write_fixture(root)
+                csv_path, metadata_path = _write_fixture(root, science_path=HISTORICAL_GAS/'gas_flow_science.json',
+                    numerics_path=HISTORICAL_GAS/'comsol_solver_numerics.json', geometry_path=HISTORICAL_GAS/'resolved_geometry.json')
                 inputs = {}
                 for key, name in (
                     ("gas_flow_science", "gas_flow_science.json"),
@@ -236,7 +271,7 @@ class GasFieldReaderTests(unittest.TestCase):
                     ("resolved_geometry", "resolved_geometry.json"),
                 ):
                     target = root / name
-                    target.write_bytes((PROJECT_ROOT / "config" / name).read_bytes())
+                    target.write_bytes((HISTORICAL_GAS / name).read_bytes())
                     inputs[key] = file_record(target, "required_evidence")
                 absent = root / "retired_model.mph"
                 model_record = dict(
@@ -249,7 +284,7 @@ class GasFieldReaderTests(unittest.TestCase):
                 manifest = dict(
                     schema_version=3 if scenario == "unknown_version" else 2,
                     role="simulation_run_manifest",
-                    project=gas_flow.PROJECT,
+                    project='dual_cone_tandem_quadrupole_ion_interface',
                     run_id="historical-producer",
                     mode="axisymmetric_gas_flow_screening",
                     status="success",
@@ -320,7 +355,7 @@ class GasFlowCapabilityTests(unittest.TestCase):
         from msplatform.capabilities import capabilities
 
         paths = input_paths()
-        arguments = dict(zip(("baseline_path", "geometry_path", "science_path", "numerics_path"), paths))
+        arguments = dict(zip(("baseline_path", "geometry_path", "science_path", "numerics_path", "environment_path"), paths))
         result = capabilities(dict(schema_version=1, operation="solve_axisymmetric_gas_flow", arguments=arguments))
         self.assertEqual(result["contract_status"], "accepted")
         self.assertEqual(result["validator"], "msplatform.backends.comsol.gas_flow.resolve_gas_flow_request")
@@ -422,7 +457,8 @@ class GasFlowOwnerTests(unittest.TestCase):
                     )
                     if failure:
                         raise ProcessExecutionError("inert export failed after MPH save", receipt)
-                    _write_fixture(native)
+                    _write_fixture(native, science_path=run / "inputs/science_resolved.json",
+                                   numerics_path=run / "inputs/numerics.json", geometry_path=run / "inputs/geometry.json")
                     if author_change:
                         paths[2].write_text("{}", encoding="utf-8")
                     Path(value("-ReportPath")).write_text("STATUS=PASS", encoding="utf-8")
@@ -460,6 +496,15 @@ class GasFlowOwnerTests(unittest.TestCase):
                         self.assertEqual(product.kind, "gas_field")
                         self.assertNotIn("model", product.data_locations)
                         self.assertEqual(product.metadata["scientific_qualification"], "not_granted")
+                        from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_cfd_gas_field
+                        from msplatform.results.gas_field import read_gas_field
+                        opened = read_gas_field(product.reference)
+                        interface = json.loads((PROJECT_ROOT / "config/gas_field_interface.json").read_text(encoding="utf-8"))
+                        interface["runtime_artifact_contract"]["domain"] = dict(
+                            minimum_z_mm=0.0, maximum_z_mm=9.0, minimum_radius_mm=0.0, maximum_radius_mm=9.0)
+                        field, _ = prepare_cfd_gas_field(opened.data, interface=interface,
+                            producer_reference=product.reference, source_records=product.data_records)
+                        self.assertEqual(field.spec.composition[0].mass_amu, 28.0134)
                         if author_change:
                             self.assertEqual(paths[2].read_text(encoding="utf-8"), "{}")
                             self.assertEqual(

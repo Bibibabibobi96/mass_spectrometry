@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "project_execution_profiles",
   "project_id": "orthogonal_accelerator",
   "profiles": [
@@ -79,9 +79,6 @@
       ],
       "model": "封闭二区正交加速器原生场与聚焦",
       "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none"
-      ],
       "runtime_binding": {
         "entrypoint": "msplatform/workflows/oa_focus_execution_binding.py",
         "required_bindings": [

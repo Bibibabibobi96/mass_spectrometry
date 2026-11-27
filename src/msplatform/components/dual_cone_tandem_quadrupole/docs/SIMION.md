@@ -33,7 +33,7 @@ five files are supplied by an explicit installation directory, with no installat
 fallback. The research `prepare.ps1` transports these paths to the installed CLI only.
 
 The Program and RF kernel come from canonical installed resources. Particle serialization is owned by
-`msplatform.backends.simion.source`; release sampling by `msplatform.ion_release.release`. The Program
+`msplatform.backends.simion.source`; release sampling by `msplatform.particle_release.release`. The Program
 uses official `SDS.init` to bind the explicitly requested collision gas mass, diameter and diffusion switch
 before official initialization. Source/code migration and inert initialization do not authorize native
 Fly or qualify the seven-electrode fractional native chain. See PROJECT for the reproduced

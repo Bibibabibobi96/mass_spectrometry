@@ -220,8 +220,8 @@ $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         'msplatform.contracts.particle_physics',
         'msplatform.contracts.particle_count_policy',
         'msplatform.io.file_identity',
-        'msplatform.ion_release',
-        'msplatform.ion_release.numpy_ion11_box',
+        'msplatform.particle_release',
+        'msplatform.particle_release.numpy_ion11_box',
         'msplatform.components.rf_multipole',
         'msplatform.components.rf_multipole.interface_geometry',
         'msplatform.components.rf_multipole.source_validation'

@@ -1,0 +1,434 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/project_v1.schema.json",
+  "title": "Mass spectrometry project capability descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "family_id",
+    "display_name",
+    "purpose",
+    "lifecycle_status",
+    "toolchains",
+    "contracts",
+    "capabilities",
+    "formal_assets",
+    "known_gaps"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "project_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "legacy_identities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_location"
+        ],
+        "properties": {
+          "mapping_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "project_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "retired_at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+          },
+          "migration_kind": {
+            "const": "administrative_rename_only"
+          },
+          "artifact_location": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/pendingLegacyArtifactLocation"
+              },
+              {
+                "$ref": "#/$defs/archivedLegacyArtifactLocation"
+              }
+            ]
+          },
+          "artifact_access": {
+            "const": "read_only"
+          },
+          "new_runs_allowed": {
+            "const": false
+          },
+          "verification_identity": {
+            "const": "recorded_project_id"
+          },
+          "claim_policy": {
+            "const": "preserve_original_status_and_claim_limits_no_promotion"
+          }
+        }
+      }
+    },
+    "family_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lifecycle_status": {
+      "$ref": "#/$defs/lifecycle"
+    },
+    "toolchains": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "comsol",
+          "simion",
+          "matlab",
+          "python",
+          "solidworks"
+        ]
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline",
+        "resolved",
+        "analysis",
+        "interface",
+        "execution",
+        "design_variables",
+        "optimization_envelope"
+      ],
+      "properties": {
+        "baseline": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "science": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "solver_numerics": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "resolved": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "analysis": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "interface": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "execution": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "design_variables": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "optimization_envelope": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "design_profiles": {
+          "$ref": "#/$defs/nullablePath"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability_id",
+          "function",
+          "status",
+          "modes",
+          "metrics",
+          "design_variables"
+        ],
+        "properties": {
+          "capability_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "function": {
+            "$ref": "#/$defs/identifier"
+          },
+          "status": {
+            "$ref": "#/$defs/maturity"
+          },
+          "modes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          },
+          "metrics": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          },
+          "design_variables": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "formal_assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "types",
+        "identity_contract"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "none",
+            "candidate",
+            "formal"
+          ]
+        },
+        "types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "comsol_model",
+              "simion_package",
+              "cad",
+              "results"
+            ]
+          }
+        },
+        "identity_contract": {
+          "$ref": "#/$defs/nullablePath"
+        }
+      }
+    },
+    "known_gaps": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "structural_variants": {
+      "type": "array",
+      "description": "Structural identity and capability ownership only; physical constraints belong to project contracts.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "variant_id",
+          "display_name",
+          "capability_ids"
+        ],
+        "properties": {
+          "variant_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "capability_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          }
+        }
+      }
+    },
+    "retired_project_descriptors": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Read-only original descriptors for consolidated projects; their recorded artifact owners and claims do not migrate.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "project_id",
+          "path",
+          "bytes",
+          "sha256",
+          "source_commit",
+          "artifact_access",
+          "new_runs_allowed",
+          "verification_identity",
+          "claim_policy"
+        ],
+        "properties": {
+          "project_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^docs/history/projects/[a-z][a-z0-9_]*/retired_projects/[a-z][a-z0-9_]*/config/project\\.json$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{40}$"
+          },
+          "artifact_access": {
+            "const": "read_only"
+          },
+          "new_runs_allowed": {
+            "const": false
+          },
+          "verification_identity": {
+            "const": "recorded_project_id"
+          },
+          "claim_policy": {
+            "const": "preserve_original_status_and_claim_limits_no_promotion"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "maturity": {
+      "enum": [
+        "prototype",
+        "static",
+        "candidate",
+        "formal"
+      ]
+    },
+    "lifecycle": {
+      "enum": [
+        "prototype",
+        "static",
+        "candidate",
+        "formal",
+        "formal_revalidation_pending"
+      ]
+    },
+    "nullablePath": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "legacyArtifactLocationBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "state",
+        "archive_id",
+        "archive_root",
+        "migration_manifest"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "state": {
+          "enum": [
+            "source_pending_relocation",
+            "archived_verified"
+          ]
+        },
+        "archive_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_root": {
+          "type": "string",
+          "pattern": "^artifacts/projects/[a-z][a-z0-9_]*$"
+        },
+        "archive_root": {
+          "type": "string",
+          "pattern": "^artifacts/projects/[a-z][a-z0-9_]*/archive/[a-z0-9_-]+/legacy-project-root$"
+        },
+        "migration_manifest": {
+          "type": "string",
+          "pattern": "^artifacts/projects/[a-z][a-z0-9_]*/archive/[a-z0-9_-]+/identity_migration_manifest\\.json$"
+        }
+      }
+    },
+    "pendingLegacyArtifactLocation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/legacyArtifactLocationBase"
+        },
+        {
+          "type": "object",
+          "required": [
+            "source_root"
+          ],
+          "properties": {
+            "state": {
+              "const": "source_pending_relocation"
+            }
+          }
+        }
+      ]
+    },
+    "archivedLegacyArtifactLocation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/legacyArtifactLocationBase"
+        },
+        {
+          "type": "object",
+          "not": {
+            "required": [
+              "source_root"
+            ]
+          },
+          "properties": {
+            "state": {
+              "const": "archived_verified"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

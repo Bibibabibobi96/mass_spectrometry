@@ -389,7 +389,7 @@ Dual-cone geometry and gas-source projection are installed in
 - 两段四极导引器均采用反相正弦 RF；用户确认每组杆对地峰值 `300 V`，即对置杆组间
   `600 V` 峰值、`1200 Vpp`。用户给出的工作频率范围为 `550–590 kHz`，当前标称计算点取中值
   `570 kHz`；两个频率端点尚未扫描。
-- 当前 N=100 原型源由仓库公共 `msplatform.ion_release` 的 seeded-Gaussian cylinder 合同物化：在第一锥上游、中心 `z=-1 mm`、长 `1.5 mm` 的圆柱体积内均匀取样，并独立采样速度；用户指定
+- 当前 N=100 原型源由仓库公共 `msplatform.particle_release` 的 seeded-Gaussian cylinder 合同物化：在第一锥上游、中心 `z=-1 mm`、长 `1.5 mm` 的圆柱体积内均匀取样，并独立采样速度；用户指定
   源半径为 `1.5 mm`。它大于第一锥 `1 mm` 孔半径但小于 `5 mm` 上游储气腔半径，超出孔径的离子
   不在源生成阶段预先剔除；后续由 SIMION 实体几何或 COMSOL 流体支持边界代理判定损失。
 
@@ -816,3 +816,23 @@ wiring, invalid/source negatives and the unchanged original 400 Pa Lua golden.
 All 457 runtime payloads joined source/distributions/installations; only the
 component constructor changed from the preceding gas package. This closes the
 identified software pressure-selection gap, not native collision or RNG physics.
+
+### C-r2 public-contract test migration
+
+The focused migration keeps model-only scientific authors separate from the
+component-resolved native SDS view. Direct Lua renderer fixtures now use that
+explicit projection, and inert published-gas fixtures freeze the complete current
+input/product closure under the current component artifact owner. Runtime ABI
+checks report a missing required function before uniform-source recompilation;
+hash, environment and scientific-quality rejection remain unchanged. The large
+runtime regression uses an actual compiled 1024 by 1024 CFD fixture rather than
+rehashing arbitrary comment bytes.
+
+The component directory ran 109 parent tests in 207.318 seconds: 107 passed and
+only the two native-guard parents failed because direct unittest invocation had
+no `MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH`. The separate dual-cone contract
+selection ran 53 parents in 100.582 seconds with the same two host-context
+failures. These require the normal public GATE context; no environment success
+is inferred. Scoped Ruff and diff checks passed. No COMSOL or native SIMION solve
+ran; these software results grant no collision, trajectory or scientific
+qualification.

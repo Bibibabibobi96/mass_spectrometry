@@ -69,7 +69,7 @@ if($null-ne$observation.usage){throw 'Unbudgeted observation created usage outpu
         )
         self.assertTrue(
             all(
-                profile["action"] == "run" and profile["qualification_support"] == ["none"]
+                profile["action"] == "run" and "qualification_support" not in profile
                 for profile in profiles["profiles"]
             )
         )
@@ -101,7 +101,7 @@ if($null-ne$observation.usage){throw 'Unbudgeted observation created usage outpu
 
         self.assertIs(gas_flow.run_managed_stage, owner.run_managed_stage)
         request = gas_flow.resolve_gas_flow_request(*input_paths())
-        self.assertEqual(set(request["inputs"]), {"baseline", "geometry", "science", "numerics"})
+        self.assertEqual(set(request["inputs"]), {"baseline", "geometry", "science", "numerics", "environment", "species_data", "constants_data", "transport_data"})
         with patch.object(gas_flow, "run_managed_stage", side_effect=RuntimeError("actual owner boundary")) as boundary:
             from tests.contracts.test_execution_runtime import NormalOwnerTests
 

@@ -104,10 +104,11 @@ class SimionFieldReferenceTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import patch
         import numpy as np
-        from msplatform.ion_release import sample_release
+        from msplatform.particle_release import sample_release
         from msplatform.physics import CONSTANTS
         from msplatform.results.model import TraceResult
         from msplatform.results.detector_observation import detector_observation
+        from tests.contracts.test_support.species import fixture_ion_species
         from msplatform.results.particle_data import write_particle_data
         from msplatform.workflows.native_tracing import _execute
         with tempfile.TemporaryDirectory() as directory:
@@ -134,7 +135,7 @@ class SimionFieldReferenceTests(unittest.TestCase):
             path=root/'trajectory';path.mkdir()
             clock=dict(basis='experiment_relative',unit='s',**release.to_dict()['clock'])
             write_particle_data(path,result,metadata=dict(schema_version=2,initial_state_basis='native_birth_verified',
-                frame_id=model.document['geometry']['frontend_geometry']['native_frame_id'],clock=clock))
+                frame_id=model.document['geometry']['frontend_geometry']['native_frame_id'],clock=clock,species=fixture_ion_species(initial)))
             trajectory=SimpleNamespace(data_path=lambda key:path/'execution.json')
             work=root/'work';work.mkdir();(work/'author.toml').write_text('fixture',encoding='utf8')
             class Store:
@@ -145,15 +146,17 @@ class SimionFieldReferenceTests(unittest.TestCase):
                 @contextmanager
                 def claim_token(self,*args): yield ('lease',root)
                 def publish_run(self,*args,**kwargs): self.published=kwargs
-            store=Store();active=[]
+                def reservation_written(self,*args): pass
+            store=Store();store.root=root/'store';active=[]
             @contextmanager
             def guard(*args,**kwargs):
+                self.assertIs(kwargs.get("artifact_store"), store)
                 active.append(True)
                 try: yield selected
                 finally: active.pop()
             @contextmanager
             def protect(*args,**kwargs): yield
-            def reference(store,stack,key,produce,*,kind,raw_root,claims,calls):
+            def reference(store,stack,key,produce,*,kind,raw_root,claims,calls,account):
                 self.assertIn(kind,('field_bundle','trajectory_result'));calls.append(key)
                 return produce(),dict(asset_id=None,task_key=key,reused=False)
             def track(*args,**kwargs):
@@ -168,7 +171,7 @@ class SimionFieldReferenceTests(unittest.TestCase):
                  patch('msplatform.backends.simion.build_geometry') as build, \
                  patch('msplatform.backends.simion.prepare_model') as prepare, \
                  patch('msplatform.backends.simion.solve_fields') as solve:
-                _execute(store,recipe,context,'run',work,'reservation',None)
+                _execute(store,recipe,context,'run',work,'reservation',None,10_000_000)
             fly.assert_called_once();build.assert_not_called();prepare.assert_not_called();solve.assert_not_called()
             # This conversion seam tests orchestration only, not native ground certification.
             ground.assert_called_once_with(selected,context=context)

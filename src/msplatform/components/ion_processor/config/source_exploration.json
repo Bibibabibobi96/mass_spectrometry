@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "role": "repository_ion_release",
+  "schema_version": 2,
+  "role": "repository_particle_release",
   "frame_id": "dual_pressure_ion_processor_local_v1",
   "particle_count": 10,
   "mother_particle_count": 100,
@@ -18,7 +18,8 @@
   },
   "species": {
     "mass_amu": 524,
-    "charge_state": 1
+    "charge_state": 1,
+    "species_kind": "ion"
   },
   "sampling": {
     "strategy": "center_first_halton_cylinder_thermal_transverse_v1",

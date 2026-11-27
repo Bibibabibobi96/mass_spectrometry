@@ -1,4 +1,4 @@
-schema_version = 1
+schema_version = 3
 label = "Field-free reference"
 frame_id = "laboratory"
 particle_tracer = "scipy_dop853"
@@ -18,14 +18,18 @@ time_dependence = "static"
 electric_field_v_m = [0.0, 0.0, 0.0]
 magnetic_field_t = [0.0, 0.0, 0.0]
 
+[[species]]
+species_id = "reference_ion"
+species_kind = "ion"
+mass_u = 100.0
+charge_state = 1
+
 [[initial_states]]
 particle_id = 1
 species_id = "reference_ion"
 position_mm = [0.0, 0.0, 0.0]
 velocity_m_s = [10000.0, 0.0, 0.0]
 time_us = 0.0
-mass_u = 100.0
-charge_state = 1
 weight = 1.0
 
 [numerics]

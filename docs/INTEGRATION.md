@@ -1154,7 +1154,7 @@ RF相位和唯一仪器时钟；换范围不重新投影已记录状态或重新
 | 阶段与完整批恢复 | [统一恢复规则](DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)；不拼接中断粒子片段 |
 | 执行与观测 | [公共调度](REPOSITORY_OPERATIONS.md#主机资源实现)，普通预算告警不终止健康求解 |
 | 完成事实与终态 | [SIMION适配](SIMION_BACKEND.md#原生完成事实)与[公共收尾](../tools/repository/README.md)，不把完成行当科学成功 |
-| 母群、事件与统计 | [公共释放](ION_RELEASE.md)、[分析函数](../tests/analysis/README.md)；科学分母与判据仍由项目定义 |
+| 母群、事件与统计 | [公共释放](PARTICLE_RELEASE.md)、[分析函数](../tests/analysis/README.md)；科学分母与判据仍由项目定义 |
 | 碰撞生命周期 | IP保留HS1加载／冻结／复位；机制复用不授予碰撞物理资格 |
 
 容量目标和最低空闲保护只读[唯一机器政策](../src/msplatform/execution/resources/artifact_capacity_policy.json)。
@@ -1310,7 +1310,7 @@ limited-stage switches. Its historical author format is documented by
 没有新后端模块时仍可完成旧协议的软件准备。request引用冻结父plan、逐实例提供者、显式数值域与场来源。
 
 Recorded-birth admission is now available through
-`msplatform.ion_release.load_recorded_release`, without sampling or replacing the
+`msplatform.particle_release.load_recorded_release`, without sampling or replacing the
 original particle IDs and clock. The public tracking planner and its existing owner
 revalidate and freeze that source. Scoped software fixtures cover actual SFI input
 through the planner and source freezing before recovery; this does not establish
@@ -1638,7 +1638,7 @@ N3薄片局部探针与carrier发布不构成完整场、工作台或Fly验收�
 
 ## 共同场与有限脉冲
 
-[共同静态场owner](../src/msplatform/workflows/resources/paired_accelerator_static_field.ps1)消费同一OA-only实体、ON电压、边界、数值box和样点。
+共同静态场旧 PowerShell owner 已退役；当前 [Store API](../src/msplatform/workflows/paired_accelerator_static_field/store_workflow.py) 按明确请求消费同一OA-only实体、ON电压、边界、数值box和样点。
 `-Request -DryRun`仅准备，原生执行另须`-SolverAuthorized`和显式预算。
 `-ComsolSourceManifest`选择已保存prepared或solved来源：prepared只补solve，solved只导出，不重建几何／mesh。
 同BVP且原采样、CSV与native facts完整匹配时直接借用原导出，不读取／哈希MPH或启动COMSOL；
@@ -1704,44 +1704,11 @@ installation and native coupled-field/continuous-flight acceptance remain OPEN.
 
 ## OA／IP接口准备与绑定
 
-原 `-FullJoint` 入口的内部控制与输出统一称 `JOINT_WORKFLOW`，按上游源至MR终点和prepared源至终点分别报告实际范围；全复用明确为 `reused_completed_results_no_new_fly`。新IP设计分支自动选择唯一适用provider，显式不匹配先拒绝，prepared下游分支不受此默认选择影响。正式Changed验证完整accelerator_interface模块23项PASS（66.088秒，摘要区间91.560秒），含真实provider准备、失败阶段、源／恢复、双路径输出及根上下文接线；未因此新增原生求解或科学资格。
+当前 [accelerator_interface入口](../src/msplatform/workflows/resources/accelerator_interface.ps1)仅根据已封存MR参考发布OA或IP接口需求提案，保留能量每电荷（V）、焦点位置（mm）、坐标系和参考manifest身份；它不生成出口接力、新源、场或飞行。实际几何与连续追踪由作者显式构造 Assembly 与原始出生 SimulationRecipe，场数据和工程条件仍须明确提供。既有历史 run 的 finalization 可沿其原owner恢复，不把恢复当作新飞行。
 
-[accelerator_interface入口](../src/msplatform/workflows/resources/accelerator_interface.ps1)拥有跨项目准备与绑定；
-OA、IP和MR分别拥有自身设计与科学约束。IP设计必须显式提供schema 3 `-MatchingRequestPath`；
-`-FinalizeJointWorkbench`只消费设计run已冻结的父plan、matching request及实际源／场，不回读活动默认。
-它会建立／重开IOB和做场审计，**不执行Fly**。完整输入参数以该入口为准。
+此前 Changed 验证23项PASS是旧接口的软件历史证据，不构成当前组件或原生资格。
 
-同一入口的`-FullJoint`在未提供`-PreparedJointWorkbenchRunPath`时选择IP分段接续链，
-仅此分支自动采用IP provider并拒绝显式不兼容provider；直接prepared workbench分支不选择设计provider，
-只执行其声明的下游范围。IP接续运行须提供`-IonProcessorRunPath`、
-`-ReferenceMrRunPath`、`-ContractPath`，并分别提供新设计的`-MatchingRequestPath`或
-已有设计的`-PreparedInterfaceRunPath`、新场的`-FieldRequestPath`或已有场的`-JointFieldRunPath`。
-场请求由作者指定局部数值域、surface容量预估及符合仓库规则的新场run_id；各层计算预算沿设计冻结的
-参考数值计划使用。入口将replacement assembly路径绑定到
-新设计run，再依次调用MR场owner、Finalize及prepared-joint飞行／分析owner。各阶段保留自己的
-run和终态；失败输出阶段及各run路径，后续恢复沿对应owner入口进行，不改写前驱。
-可将`-ContinuationPredecessorManifestPath`传给prepared-joint整批恢复；已有场仍由Finalize校验与设计和源的身份。
-也可直接给`-PreparedJointWorkbenchRunPath`与`-ContractPath`，跳过设计、求场及IOB重建，
-由prepared-joint校验原绑定和恢复批次；全部批次有效时不启动Fly。入口输出失败阶段和各阶段／总耗时。
-IP源的真实出口为零时，准备run保留完整母群census及源科学状态，结果标记`zero_exit`；
-完整链在此停止匹配、求场和Fly，零出口不是物理性能通过。
-该模式从显式实测IP源开始，以状态交接而非连续Fly到MR；不能据调度成功声称物理匹配或Formal资格。
-准备结果保留设计、场计划与真实源交接；不再生成无生产消费者的独立IP重飞recipe。
-仅当实验明确改变上游工作点时才由IP入口产生新实测源，既有状态不会因准备新联合场而重新采样或缩放。
-
-`-FullJoint -MultipoleIpRequestPath`也可从已封存的真实MP出口接续：调用者同时显式提供
-`-MultipoleIpRunId`、`-IonProcessorRunId`和`-IonProcessorConfigurationDirectory`，可选
-`-IonProcessorFieldRunPath`复用符合IP owner检查的原生场。入口先校验准备run绑定的接收几何与
-IP配置，再传递原始母群；MP零出口直接报告并停止。`-ContinueOnIpScientificFailure`只允许
-原生与诊断已完整但科学门限未通过的结果继续，执行错误或未知状态仍失败关闭。源request仍显式绑定
-MP run、case、接收器、父plan、物种及权重，不能从参考MR或历史结果推测；这是分段状态交接。
-该分支恢复IP阶段时使用独立的`-IonProcessorContinuationPredecessorManifestPath <IP原manifest>`，
-同时提供原已发布的MP→IP准备RunId、未变请求与接收配置，以及新的IP RunId。
-入口复用经验证的源准备，IP owner按原完整分区补缺；不重做已完成批，也不把它称为原生积分checkpoint。
-恢复后的源须重新绑定新接口设计，不能混用旧源设计或另一个IP场。下游Fly恢复仍用独立的
-`-ContinuationPredecessorManifestPath`；参数和适用边界见[IP恢复说明](../src/msplatform/components/ion_processor/docs/PROJECT.md#原批分区恢复)。
-
-IP阶段恢复的原`-MultipoleIpRunId`须指成功封存准备，当前请求须与其manifest绑定的冻结request结构相同；来源、接收几何或请求变化不回退重建。新的IP run不能同时指定`-IonProcessorFieldRunPath`，也不能沿用绑定旧源的`-PreparedInterfaceRunPath`；当前支持用`-MatchingRequestPath`与适用`-FieldRequestPath`接续。直接prepared workbench或ResumeFinalization拒绝这些IP恢复参数，不宣称任意断点全链全复用。
+历史 MP→IP 分段接力及其恢复参数已退役；相关旧manifest仍可按原身份只读。当前跨组件追踪通过公共 SimulationRecipe 从显式原始出生母群连续执行，不将旧出口状态重标为新源。
 
 完整MP／IP／MR父plan可派生IP／MR局部范围；同一完整IP接口同时发布guide_inlet与extraction_exit。
 MR-local几何、原IP→MR直接位姿和唯一clock保持，不按锚点反算放置。真实115429准备已完成81粒子源的

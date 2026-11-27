@@ -10,7 +10,7 @@ import matplotlib
 import numpy as np
 
 from msplatform.analysis.peak_metrics import half_height_width
-from msplatform.ion_release.paired_mass_scan import load_ion_rows
+from msplatform.particle_release.paired_mass_scan import load_particle_rows
 
 
 matplotlib.use("Agg")
@@ -85,7 +85,7 @@ def prepare_response_analysis(response: list[dict[str, Any]]) -> dict[str, Any]:
 
 def load_ion_masses(path: Path) -> dict[int, float]:
     """Return m/z in Th only after validating the ION11 physical mass/+1 scope."""
-    rows = load_ion_rows(path)
+    rows = load_particle_rows(path)
     return {index: float(row[1]) for index, row in enumerate(rows, start=1)}
 
 

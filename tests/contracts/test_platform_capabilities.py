@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform import assembly as assembly_api, capabilities as capability_api, components as component_api, examples as example_api
-from msplatform import ion_release as ion_release_api
+from msplatform import particle_release as particle_release_api
 from msplatform.backends.simion.model import compile_prepared_model, PHYSICS
 
 
@@ -205,7 +205,7 @@ class PlatformCapabilitiesTests(unittest.TestCase):
         self.assertEqual(result["native_qualification"], "not_granted")
 
     def test_real_model_field_and_tracking_planners_are_distinct_from_execution(self):
-        packet = ion_release_api.sample_release(self.case.release).to_dict()
+        packet = particle_release_api.sample_release(self.case.release).to_dict()
         clock = packet["clock"]
         clocks = {key:dict(path="C:/explicit-declaration-only/"+key+".json",exists=True,bytes=32,
             sha256=clock["authority_sha256"] if key=="instrument_epoch" else "A"*64)

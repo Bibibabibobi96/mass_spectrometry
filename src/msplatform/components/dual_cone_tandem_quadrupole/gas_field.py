@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 from msplatform.contracts.gas import (
@@ -88,10 +88,19 @@ def prepare_cfd_gas_field(
     documents = data.documents
     science = documents["science"]
     species = science["physics"]["gas_species"]
-    # The source declares kg/mol. The numerical g/mol mass convention expresses
-    # that same molecular mass in u; SDS still consumes its separate actual
-    # transport-science mass/diameter/diffusion, never this metadata projection.
-    composition = (GasSpecies(species["species_id"], species["molar_mass_kg_per_mol"]*1000., 1.),)
+    if science["schema_version"] == 2:
+        from msplatform.contracts.gas_species import NITROGEN
+        identity = science.get("gas_environment_identity", {})
+        if (species["species_id"] != NITROGEN["species_id"]
+                or species["molar_mass_kg_per_mol"] != NITROGEN["molar_mass_kg_per_mol"]
+                or identity.get("species_version") != NITROGEN["version"]
+                or identity.get("species_sha256") != NITROGEN["dataset_sha256"]):
+            raise ValueError("current CFD nitrogen differs from the shared material authority")
+        mass_amu = NITROGEN["mass_amu"]
+    else:
+        # Historical records retain their original approximate convention.
+        mass_amu = species["molar_mass_kg_per_mol"] * 1000.
+    composition = (GasSpecies(species["species_id"], mass_amu, 1.),)
     metadata_record = validate_file_record(source_records["field_metadata"], "gas source metadata")
     if producer_reference is not None:
         if (not isinstance(producer_reference, Mapping) or set(producer_reference) != {"manifest", "product_id"}
@@ -124,37 +133,67 @@ def prepare_uniform_rear_gas_field(
     spec: Mapping[str, Any],
     *,
     interface: Mapping[str, Any],
-    composition: Sequence[GasSpecies],
+    environment_author: Mapping[str, Any],
+    geometry: Mapping[str, Any],
+    environment_record: Mapping[str, Any],
+    geometry_record: Mapping[str, Any],
     spec_record: Mapping[str, Any],
     interface_record: Mapping[str, Any],
 ) -> tuple[GasField, dict[str, Any]]:
     """Keep the named control and all its legal cylindrical scalar values."""
-    if spec.get("role") != "dual_cone_uniform_rear_gas_field":
+    if spec.get("role") != "dual_cone_uniform_rear_gas_field" or spec.get("schema_version") != 2:
         raise ValueError("explicit uniform rear-gas study required")
+    if "rear_region" in spec or set(spec.get("upstream_collision_proxy", {})) != {"interpretation"}:
+        raise ValueError("uniform rear model must not duplicate experimental gas conditions")
+    import hashlib
+    import json
+    from pathlib import Path
+    environment_record = validate_file_record(environment_record, "uniform gas environment")
+    if not Path(environment_record["path"]).is_absolute():
+        raise ValueError("uniform gas environment requires an absolute source record")
+    environment_bytes = Path(environment_record["path"]).read_bytes()
+    if (len(environment_bytes) != environment_record["bytes"]
+            or hashlib.sha256(environment_bytes).hexdigest().lower() != environment_record["sha256"].lower()
+            or json.loads(environment_bytes) != environment_author):
+        raise ValueError("uniform gas environment author identity differs")
+    geometry_record = validate_file_record(geometry_record, "uniform gas geometry")
+    if not Path(geometry_record["path"]).is_absolute():
+        raise ValueError("uniform gas geometry requires an absolute source record")
+    geometry_bytes = Path(geometry_record["path"]).read_bytes()
+    if (len(geometry_bytes) != geometry_record["bytes"]
+            or hashlib.sha256(geometry_bytes).hexdigest().lower() != geometry_record["sha256"].lower()
+            or json.loads(geometry_bytes) != geometry):
+        raise ValueError("uniform gas geometry identity differs")
+    from .gas_environment import resolve_dual_cone_conditions
+    conditions = resolve_dual_cone_conditions(dict(environment_author), dict(geometry))
     contract = _contract(interface)
-    rear, upstream = spec["rear_region"], spec["upstream_collision_proxy"]
+    upstream = spec["upstream_collision_proxy"]
     model_id = spec.get("model_id")
     if not isinstance(model_id, str) or not model_id.strip():
         raise ValueError("an explicit uniform gas study model_id is required")
-    if model_id == "uniform_400pa_plug_flow_prototype_v1" and rear["pressure_pa"] != 400.:
-        raise ValueError("the frozen minimal prototype requires a 400 Pa rear region")
     declared = _domain(contract["domain"])
-    if not declared.minimum_z_mm <= rear["start_z_mm"] <= declared.maximum_z_mm:
+    if not declared.minimum_z_mm <= conditions["rear_start_z_mm"] <= declared.maximum_z_mm:
         raise ValueError("rear-region start lies outside the gas-field domain")
     policy = contract["sampling_policies"]["prescribed_uniform_rear_gas"]
     effective = runtime_support_domain(interface, "prescribed_uniform_rear_gas")
     def values(pressure, radial, axial):
         return AxisymmetricGasValues("vacuum" if pressure == 0 else "gas", pressure,
-                                     rear["temperature_k"], radial, axial)
+                                     conditions["temperature_k"], radial, axial)
     source = GasSource("prescribed_proxy", spec["model_id"],
         (spec["claim_scope"], upstream["interpretation"]), validate_file_record(spec_record, "uniform gas source"))
     definition = GasFieldSpec(field_id=spec["model_id"], frame_id=contract["coordinate_frame"]["frame_id"],
-        representation="axisymmetric_piecewise_uniform", composition_id=spec["model_id"]+":composition",
-        composition=tuple(composition), domain=effective, source=source,
-        axisymmetric_regions=(AxisymmetricGasRegion("rear", rear["start_z_mm"], effective.maximum_z_mm,
-            True, True, values(rear["pressure_pa"], rear["radial_velocity_m_per_s"], rear["axial_velocity_m_per_s"])),),
-        axisymmetric_background=values(upstream["pressure_pa"], 0., 0.), sampling_profile=policy["sampling_profile"])
-    field = prepare_gas_field(definition)
+        representation="axisymmetric_piecewise_uniform", composition_id="n2",
+        composition=(GasSpecies("n2", conditions["species_data"]["mass_amu"], 1),), domain=effective, source=source,
+        axisymmetric_regions=(AxisymmetricGasRegion("rear", conditions["rear_start_z_mm"], effective.maximum_z_mm,
+            True, True, values(conditions["outlet_pressure_pa"], conditions["rear_radial_velocity_m_per_s"], conditions["rear_axial_velocity_m_per_s"])),),
+        axisymmetric_background=values(0., 0., 0.), sampling_profile=policy["sampling_profile"])
+    from msplatform.contracts.gas_environment import GasEnvironment
+    environment = GasEnvironment("gas", (definition,), ({"gas_field_id": definition.field_id,
+                                  **dict(environment_author["collision_model_ref"])},))
+    field = prepare_gas_field(environment.fields[0])
     origin = dict(kind="prescribed_uniform_rear_gas", spec_record=copy.deepcopy(dict(spec_record)),
+                  environment_record=copy.deepcopy(dict(environment_record)),
+                  geometry_record=copy.deepcopy(dict(geometry_record)),
+                  environment_snapshot=environment.to_dict(),
                   interface_record=copy.deepcopy(dict(interface_record)))
     return field, _metadata(field, interface, contract, origin, policy)

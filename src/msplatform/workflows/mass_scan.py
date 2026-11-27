@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from msplatform.ion_release.authoring import sample_release
+from msplatform.particle_release.authoring import sample_release
 from msplatform.results.model import TraceResult
 from msplatform.results.particle_data import _validate_records, summarize_particle_data
 

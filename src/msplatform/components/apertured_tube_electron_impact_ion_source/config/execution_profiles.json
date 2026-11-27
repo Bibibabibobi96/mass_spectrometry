@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "project_execution_profiles",
   "project_id": "apertured_tube_electron_impact_ion_source",
   "profiles": []

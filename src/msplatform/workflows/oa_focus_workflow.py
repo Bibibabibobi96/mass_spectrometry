@@ -16,7 +16,7 @@ from typing import Any
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import speed_m_s_from_kinetic_energy_ev
-from msplatform.ion_release.release import validate_release_spec
+from msplatform.particle_release.release import validate_release_spec
 from msplatform.workflows.oa_focus_analysis import _load_campaign
 from msplatform.backends.simion.oa_focus_plan import derive
 from msplatform.components.orthogonal_accelerator.accelerator_time_focus import accelerator_state, time_to_plane_s

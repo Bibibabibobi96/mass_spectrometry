@@ -53,7 +53,7 @@ $comsolSources += @($acceleratorComsolSource, $acceleratorGridComsolSource, $acc
 $simionLua = Join-Path $simionDir 'oatof_ideal_grounded.lua'
 $simionFly2 = Join-Path $simionDir 'oatof_ideal_grounded.fly2'
 $simionDeliveryBuilder = Join-Path $simionDir 'build_formal_delivery.ps1'
-$ionGeneratorPath = Join-Path $simionDir 'generate_comsol_consistent_ions.ps1'
+$ionGeneratorPath = Join-Path $simionDir 'generate_comsol_consistent_particles.ps1'
 $detectorGem = Join-Path $repoRoot 'src\msplatform\backends\simion\resources\oatof_detector_ground.gem'
 $acceleratorGemPath = Join-Path $simionDir 'two_zone_accelerator.gem'
 $flightTubeGemPath = Join-Path $repoRoot 'src\msplatform\backends\simion\resources\oatof_flight_tube_ground.gem'
@@ -381,7 +381,7 @@ if (-not $SkipRuntime) {
   if ($cadReport.solidWorks.assembly.saveErrors -ne 0 -or $cadReport.solidWorks.assembly.saveWarnings -ne 0) { throw 'Formal SolidWorks assembly report contains save errors or warnings.' }
   if (($cadReport.solidWorks.parts | Measure-Object -Property saveErrors -Maximum).Maximum -ne 0 -or ($cadReport.solidWorks.parts | Measure-Object -Property saveWarnings -Maximum).Maximum -ne 0) { throw 'Formal SolidWorks part report contains save errors or warnings.' }
   $stableGate = Join-Path $repoRoot 'src/msplatform/workflows/resources/verify_stable_entry.ps1'
-  & $stableGate -ManifestPath $simionStablePath -SimionExe $SimionExe -PythonExe $python -SkipRuntime
+  & $stableGate -WorkspaceRoot $repoRoot -ArtifactRootPath (Join-Path $projectRoot 'artifacts') -ScienceRoot $componentDir -ManifestPath $simionStablePath -SimionExe $SimionExe -PythonExe $python -SkipRuntime
   if ($LASTEXITCODE -ne 0) { throw 'Formal SIMION stable-entry gate failed.' }
   $verifyLua = Join-Path $simionDir 'verify_formal_runtime.lua'
   $report = Join-Path $env:TEMP 'oatof_geometry_contract_simion.txt'

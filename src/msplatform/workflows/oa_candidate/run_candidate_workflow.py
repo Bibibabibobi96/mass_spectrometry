@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
-import time
 from pathlib import Path
 from contextlib import ExitStack
 from typing import Any, Callable
@@ -56,7 +55,7 @@ STAGE_SOURCE_PREFIXES = {
     ),
     "simion_candidate": (
         "src/msplatform/backends/simion/",
-        "src/msplatform/ion_release/dotnet_gaussian_box_ion11.py",
+        "src/msplatform/particle_release/dotnet_gaussian_box_ion11.py",
         "src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1",
         "src/msplatform/backends/comsol/matlab/oatof_paths.m",
         "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",
@@ -234,7 +233,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         output = Path(stage["pending_output"])
         output.parent.mkdir(parents=True, exist_ok=True)
         command = _powershell(
-            frozen_source_path(closure, "src/msplatform/backends/simion/resources/generate_comsol_consistent_ions.ps1"),
+            frozen_source_path(closure, "src/msplatform/backends/simion/resources/generate_comsol_consistent_particles.ps1"),
             _ps_arguments(stage["arguments"]),
         )
         _run_command(command, logs / "static_inputs.log")
@@ -1197,9 +1196,8 @@ def execute_prepared_run(
     """Execute the admitted root; the public owner alone publishes its terminal state."""
     run_config_path = Path(run_config_path).resolve(strict=True)
     request_document = load_json(Path(execution_request_path))
-    if request_document["package"]["mode"] == "candidate_comsol_postprocess":
-        return execute_prepared_postprocess(Path(run_config_path), Path(capacity_session_path),
-                                            Path(execution_request_path), Path(completion_path))
+    if request_document["package"]["mode"] != "design_candidate":
+        raise ValueError("candidate execution requires the design_candidate mode")
     run_root = run_config_path.parent
     execution_request_path = Path(execution_request_path).resolve(strict=True)
     request = load_json(execution_request_path)
@@ -1399,116 +1397,10 @@ def _invoke_candidate_owner_request(request: dict, pa_handoff_output: Path | Non
         return run_root, summary
 
 
-def run_candidate_postprocess(
-    parent: Path, run_id: str, *, science_root: Path, host_context: dict[str, Any]
-) -> tuple[Path, dict]:
-    """Original Candidate CLI's explicit new-child postprocessing action."""
-    from msplatform.workflows.oa_candidate.prepare_candidate_run import prepare_postprocess_request
-    return _invoke_candidate_owner_request(prepare_postprocess_request(
-        parent, run_id, science_root=science_root, host_context=host_context))
 
 
-def _postprocess_required_outputs(status: str, evidence: dict[str, Any]) -> list[str]:
-    required: list[str] = []
-    request_value = evidence.get("analysis_request")
-    if isinstance(request_value, str) and Path(request_value).is_file():
-        required.append(request_value)
-        raw_events = Path(load_json(Path(request_value)).get("raw_events_csv", ""))
-        if raw_events.is_file():
-            required.append(str(raw_events))
-        elif status == "success":
-            raise RuntimeError("successful postprocessing is missing required raw detector events")
-    elif status == "success":
-        raise RuntimeError("successful postprocessing is missing its analysis request")
-    receipt = evidence.get("analysis_receipt")
-    if isinstance(receipt, str) and Path(receipt).is_file():
-        required.append(receipt)
-    elif status == "success":
-        raise RuntimeError("successful postprocessing is missing its analysis receipt")
-    return required
 
 
-def execute_prepared_postprocess(config_path: Path, session_path: Path, request_path: Path, completion_path: Path) -> None:
-    """Use the initialized public package; publish only actual small child outputs."""
-    import shutil
-    from msplatform.workflows.oa_candidate.candidate_run_lifecycle import _rewrite_paths
-    from msplatform.workflows.oa_candidate.prepare_candidate_run import select_postprocess_parent
-    from msplatform.workflows.oa_candidate.candidate_comsol_stage import execute_saved_postprocess
-    root = config_path.resolve().parent
-    request = load_json(request_path)
-    initial = load_json(config_path)
-    payload = request["payload"]
-    verify_record("frozen postprocess selection", payload["postprocess_selection"])
-    selected = load_json(Path(payload["postprocess_selection"]["path"]))
-    session = load_json(session_path)
-    source_paths = [path for lease in session.get("source_protection_leases", [])
-                    if lease.get("status") == "active" for path in lease.get("protected_paths", [])]
-    if str(root) not in session["protected_paths"] or selected["parent"] not in [*session["protected_paths"], *source_paths]:
-        raise ValueError("Postprocessing source and child must be protected by the admitted public session")
-    closure = payload["execution_source_closure"]
-    verify_candidate_source_closure(closure)
-    source_code = Path(closure["code_root"])
-    child_code = root / "inputs/code"
-    shutil.copytree(source_code, child_code)
-    closure = _rewrite_paths(closure, source_code, child_code)
-    verify_candidate_source_closure(closure)
-    selected_path = root / "inputs/postprocess_source_selection.json"
-    write_json_atomic(selected_path, selected)
-    config = dict(initial)
-    config["inputs"] = dict(initial["inputs"], postprocess_source_selection=str(selected_path))
-    config["execution_source_closure"] = closure
-    config["provenance"] = {"source_reference": selected["source_reference"], "science_reference": selected["science_reference"], "model_record": selected["model_record"]}
-    config["parameters"] = dict(initial.get("parameters", {}), scope="comsol_postprocessing_only")
-    write_json_atomic(config_path, config)
-    writer = {"operations": [], "resource_releases": []}
-    failure = None
-    evidence = {}
-    source_verified = False
-    start = time.monotonic()
-    try:
-        refreshed = select_postprocess_parent(Path(selected["parent"]), Path(session["artifact_root"]))
-        if refreshed != selected:
-            raise ValueError("Protected parent evidence changed after admission")
-        source_verified = True
-        evidence = execute_saved_postprocess(selected, root, closure,
-            {"run_id": root.name, "run_root": str(root), "context_sha256": sha256(request_path).lower(), "writer_completion": writer,
-             "host_context": request["host_context"],
-             "execution_run_directory": request["execution_run_directory"],
-             "source_execution_context": session.get("source_execution_context"), "postprocess_evidence": evidence},
-            runtime=sys.modules[__name__])
-    except BaseException as error:
-        failure = {"type": type(error).__name__, "message": str(error), "notes": list(getattr(error, "__notes__", []))}
-    status = "failed" if failure else "success"
-    recovery_parent = root if evidence.get("detector_exports_ready") is True else Path(selected["parent"])
-    recovery_action = (f'"{sys.executable}" -m msplatform.workflows.oa_candidate.run_candidate '
-                       f'--postprocess-from "{recovery_parent}" --run-id <NEW_RUN_ID> '
-                       f'--science-root <SCIENCE_DATA_ROOT> --host-context <EXECUTION_CONTEXT.json>') if failure else "none"
-    if evidence.get("writer_completion_unconfirmed"):
-        recovery_action = "inspect_original_writer_completion; retain current protections"
-    summary = {"schema_version": 1, "role": "oa_tof_candidate_postprocess_summary", "run_id": root.name,
-        "status": status, "execution_status": status, "data_validity": "unknown" if failure else "valid",
-        "source_identity_verified": source_verified,
-        "scientific_result": "not_evaluated_whole_candidate", "scope": "comsol_postprocessing_only",
-        "candidate_decision": "not_evaluated_postprocess_scope", "promotion_authorized": False,
-        "performance_claim_allowed": False, "parent_model_saved": False,
-        "native_field_solve_count": 0, "native_particle_solve_count": 0,
-        "failure_stage": "postprocessing" if failure else None,
-        "failure_reason": failure["message"] if failure else None,
-        "recovery_action": recovery_action,
-        "recovery_requires_terminal_publication": bool(failure and evidence.get("detector_exports_ready")),
-        "resume_finalization_command": (f'"{sys.executable}" -m msplatform.workflows.oa_candidate.run_candidate '
-                                        f'--resume-finalization "{root}"'),
-        "evidence": evidence, "elapsed_seconds": time.monotonic()-start}
-    outputs = sorted(str(path) for path in root.rglob("*") if path.is_file()
-                     and not path.is_relative_to(root / "inputs") and path.name not in {"run_config.json", "run_manifest.json"})
-    write_json_atomic(completion_path, {"schema_version": 1, "role": "run_artifact_workflow_completion",
-        "run_id": root.name, "project": "single_reflection_oa_tof_mass_analyzer",
-        "execution_request": file_record(request_path), "run_config": file_record(config_path),
-        "status": status, "summary": summary, "output_paths": outputs,
-        "required_output_paths": _postprocess_required_outputs(status, evidence),
-        "retention_preserve_paths": [], "manifest_extra_fields": {"lifecycle_state": "terminal", "promotion_authorized": False,
-            "postprocess_source_reference": selected["source_reference"], "scope": "comsol_postprocessing_only"},
-        "writer_completion": writer, "exception": failure})
 
 
 def _native_stage_execution_view(command: list[str], environment: dict[str, str] | None,
@@ -1597,7 +1489,7 @@ def _comsol_phase_sources(parent: Path) -> dict[str, dict[str, Any]]:
     config = load_json(config_path)
     phases = config.get('provenance', {}).get('comsol_phases')
     if not isinstance(phases, dict) or set(phases) != {'native','export','analysis','sync'}:
-        raise ValueError('Original COMSOL owner lacks comparable native/export phase facts. The current field generator requires explicit Electrostatics initialization; request the necessary new native stage rather than accepting an unproved old implementation. Sufficient sealed detector CSV remains usable with --postprocess-from without COMSOL.')
+        raise ValueError('Original COMSOL owner lacks comparable native/export phase facts. The current field generator requires explicit Electrostatics initialization; request the necessary new native stage rather than accepting an unproved old implementation. Sufficient sealed detector CSV remains readable with msplatform.workflows.historical_comsol_detector without COMSOL.')
     result = {}
     for phase, item in phases.items():
         implementation_name = 'comsol_phase_' + phase
@@ -1714,7 +1606,7 @@ def _comsol_reuse_disposition(parent: Path, closure: dict, artifact_root: Path) 
         native = origins['native']
         context = native['outputs'].get('saved_context')
         if context is None:
-            raise ValueError('Changed COMSOL exporter requires the original bound saved-solution context; CSV reanalysis remains available via --postprocess-from')
+            raise ValueError('Changed COMSOL exporter requires the original bound saved-solution context; CSV reanalysis remains available through msplatform.workflows.historical_comsol_detector')
         selected = select_postprocess_parent(Path(native['owner_directory']), artifact_root)
         selected.update(exports=None, model_record=native['outputs']['model'], context_record=context,
                         parent=native['owner_directory'])

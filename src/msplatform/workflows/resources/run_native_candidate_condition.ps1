@@ -355,7 +355,7 @@ try{
   $failureStage='k_specific_oa_provider'
   $releaseSpec=Copy-VerifiedRunInput -Source $oaBaseReleaseSpec -Destination (Join-Path $package.input_dir 'oa_release_spec.json')
   $release=Get-Content -LiteralPath $releaseSpec -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-  if($release.role-ne'repository_ion_release'-or$release.sampling.kinetic_energy-isnot[Collections.IDictionary]){
+  if($release.role-ne'repository_particle_release'-or$release.sampling.kinetic_energy-isnot[Collections.IDictionary]){
     throw 'OA base release spec is not a repository ion release.'
   }
   if($release.geometry.shape-ne'cylinder'-or$release.geometry.axis-ne'y'-or

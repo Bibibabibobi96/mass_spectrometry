@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from msplatform import assembly as assembly_api, components as component_api, examples as example_api
-from msplatform import ion_release as ion_release_api
+from msplatform import particle_release as particle_release_api
 from msplatform.backends.comsol.assembly_geometry import project_assembly_geometry
 from msplatform.backends.comsol.assembly_electrostatic_model import validate_request
 from msplatform.backends.simion.model import PHYSICS, compile_prepared_model, project_resolved_drive
@@ -33,7 +33,7 @@ class SfiScalarAdmissionTests(unittest.TestCase):
         geometry_numerics['geometry_build']['detector']['max_mib']=128.
         compiled=compile_geometry(dict(composition_plan=assembly.composition_plan,
             components_resolved=assembly.components_resolved),numerics=geometry_numerics)
-        packet=ion_release_api.sample_release(case.release).to_dict()
+        packet=particle_release_api.sample_release(case.release).to_dict()
         pulse=dict(mode='timed',time_us=10.,width_us=2.)
         drive=project_resolved_drive(compiled,compiled.components_resolved,pulse=pulse,clock=dict(packet['clock'],phase_reference_instrument_time_us=0.))
         self.model=compile_prepared_model(compiled,compiled.components_resolved,drive=drive,physics=PHYSICS)

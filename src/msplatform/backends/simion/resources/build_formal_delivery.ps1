@@ -604,7 +604,7 @@ foreach($component in $componentPlan.components){
 }
 
 if(-not$SourceIonPath){
-$ionGenerator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
+$ionGenerator = Join-Path $PSScriptRoot 'generate_comsol_consistent_particles.ps1'
   foreach ($particleCount in @($ParticleCount)) {
     $ionPath = Join-Path $outputFull "oatof_comsol_524amu_gaussian_N$particleCount.ion"
     & $ionGenerator -N $particleCount -MassAmu $contract.validation_target.mass_amu -Charge 1 `

@@ -13,7 +13,7 @@ from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache
 from msplatform.backends.simion import standalone_pa_response_set
 
 from msplatform.backends.simion.oa_focus_plan import derive
-from msplatform.workflows.oa_focus_pa_cache import expected_files, identity
+from msplatform.backends.simion.oa_focus_identity import expected_files, identity
 
 
 class ComponentFocusPAPlanTests(unittest.TestCase):
@@ -134,7 +134,7 @@ try{. $production}catch{$failure=$_.Exception.Message}
         self.assertEqual(value['builder_identity']['response_set_contract_sha256'],file_sha256(contract))
         def changed_contract(path):
             return 'A'*64 if Path(path)==contract else file_sha256(path)
-        with patch('msplatform.workflows.oa_focus_pa_cache.file_sha256',side_effect=changed_contract):
+        with patch('msplatform.backends.simion.oa_focus_identity.file_sha256',side_effect=changed_contract):
             changed=identity(plan,builder,executable)
         self.assertNotEqual(value['builder_identity']['response_set_contract_sha256'],changed['builder_identity']['response_set_contract_sha256'])
         self.assertNotEqual(canonical_pa_family_cache_key(value),canonical_pa_family_cache_key(changed))

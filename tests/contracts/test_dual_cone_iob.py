@@ -218,7 +218,7 @@ class DualConeIobTests(unittest.TestCase):
                         self.assertIn(reason, result.stderr)
                 if role.startswith("dual_cone"):
                     from tests.contracts.test_dual_cone_placement import pose
-                    from tests.contracts.test_dual_cone_transport_execution import request as actual_request
+                    from tests.contracts.test_support.dual_cone_transport import request as actual_request
                     from msplatform.backends.simion.dual_cone_stages import native_instance_pose
 
                     values = actual_request()
@@ -234,7 +234,7 @@ class DualConeIobTests(unittest.TestCase):
                     self.assertEqual(path.read_bytes(), before)
 
     def test_actual_sds_adapter_inverse_translation_and_velocity_axes_in_declared_pose(self):
-        from tests.contracts.test_dual_cone_transport_execution import request
+        from tests.contracts.test_support.dual_cone_transport import native_request as request
         from msplatform.backends.simion.dual_cone_transport import _render_run_config
 
         with tempfile.TemporaryDirectory() as directory:
@@ -299,7 +299,7 @@ print('DUAL_CONE_DECLARED_GAS_FRAME=PASS INVERSE=translation VELOCITY_ROTATION=i
             self.assertIn("VELOCITY_ROTATION=identity", result.stdout)
 
     def test_actual_program_global_callbacks_preserve_outside_instance_terminal_census(self):
-        from tests.contracts.test_dual_cone_transport_execution import request
+        from tests.contracts.test_support.dual_cone_transport import native_request as request
         from msplatform.backends.simion.dual_cone_transport import _render_run_config
 
         for mode in ("c0_gem_smoke", "gas_assisted_transport"):
@@ -360,7 +360,7 @@ print('DUAL_CONE_OUTSIDE_INSTANCE_CENSUS=PASS')
 
     def test_actual_source_birth_and_workbench_projection_keep_complete_mother(self):
         import csv
-        from tests.contracts.test_dual_cone_transport_execution import request, CONFIG
+        from tests.contracts.test_support.dual_cone_transport import request, CONFIG
         from msplatform.backends.simion.dual_cone_transport import _materialize_gas_source
 
         with tempfile.TemporaryDirectory() as directory:
@@ -382,7 +382,7 @@ print('DUAL_CONE_OUTSIDE_INSTANCE_CENSUS=PASS')
                 numerics=values["numerics"],
                 source_spec_path=path,
             )
-            with (frozen / "cylindrical_ion_source.csv").open(newline="") as stream:
+            with (frozen / "cylindrical_particle_source.csv").open(newline="") as stream:
                 rows = list(csv.DictReader(stream))
             self.assertEqual(len(rows), 100)
             self.assertEqual([int(row["particle_id"]) for row in rows], list(range(1, 101)))

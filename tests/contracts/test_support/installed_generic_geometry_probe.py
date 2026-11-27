@@ -184,12 +184,12 @@ def run(root, lua_provider):
     capability=capabilities(dict(schema_version=1,operation='compile_geometry',arguments=dict(assembly=product,numerics=bad)))
     assert capability['contract_status']=='rejected',capability
     # Exercise the installed static scientific and tracking planners; no solver or Fly.
-    from msplatform import examples, ion_release
+    from msplatform import examples, particle_release
     from msplatform.backends.simion import model, field_execution, tracking_execution, rf_tracking_program
     from msplatform.backends.simion.resources import native_resource_path
     from msplatform.io.manifest_records import file_record
     from importlib.resources import files
-    for selected_module in (model,field_execution,tracking_execution,rf_tracking_program,examples,ion_release):
+    for selected_module in (model,field_execution,tracking_execution,rf_tracking_program,examples,particle_release):
         assert Path(selected_module.__file__).resolve().is_relative_to(purelib), selected_module.__file__
     for name in ('model_drive.lua','rf_drive.lua','rf_tracking.lua','export_detached_standalone_pa.lua','audit_static_operating_pa.lua'):
         assert native_resource_path(name).resolve().is_relative_to(purelib), name
@@ -198,7 +198,7 @@ def run(root, lua_provider):
     release['release_spec']['frame_id']='toy_local'
     release['release_spec']['particle_count']=release['release_spec']['mother_particle_count']=2
     release['particle_ids']=release['particle_ids'][:2]
-    packet=ion_release.sample_release(release).to_dict()
+    packet=particle_release.sample_release(release).to_dict()
     clock=dict(packet['clock'],phase_reference_instrument_time_us=0.)
     drive=dict(clock=clock,groups={'first':{'body':dict(kind='static',voltage_v=1.25)},
                                   'second':{'body':dict(kind='static',voltage_v=0.)}})

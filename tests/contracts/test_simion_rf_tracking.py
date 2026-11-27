@@ -305,8 +305,8 @@ simion={wb={instances={item}},pas={open=function() return {close=function()end} 
                 # One explicit recorded producer follows the same actual independent RF owner.
                 import csv
                 import io
-                from msplatform.ion_release import load_recorded_release
-                from msplatform.ion_release.cylinder import CANONICAL_COLUMNS
+                from msplatform.particle_release import load_recorded_release
+                from msplatform.particle_release.cylinder import CANONICAL_COLUMNS
                 output = io.StringIO(newline='')
                 writer = csv.DictWriter(output, fieldnames=CANONICAL_COLUMNS, lineterminator='\n')
                 writer.writeheader()

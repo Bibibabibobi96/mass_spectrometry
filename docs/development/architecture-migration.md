@@ -230,6 +230,14 @@ Agent 8 将 prepared_joint_execute 的完整 Flight 参数、两种 source mode�
 
 直接消费者同步删除已删 API 的调用，历史 component-exit 原 ID/clock/母群及篡改负例保留，Assembly prepare-only 与 finalization 保留。MR SIMION 文档移除 Prepared P/S 新运行命令。定向结果：退役首错3 PASS、legacy 同类8 PASS、trial+iteration 104 PASS、iteration runner 111 PASS（214.164s）、prepared execute 8 PASS（399.001s）、历史 component-exit 2 PASS、accelerator interface 13 PASS（51.430s），均0 skip；公共 IP–MR preflight 在补私有 host-state 后PASS（195.585s），退役 PowerShell 负例3 PASS。无商业求解或最终 Repository/双安装声明。
 
+### C1 particle_release 收口与参考三类物种（候选索引）
+
+现行作者、原生/参考消费者、安装探针与 gate catalog 已统一切换到既有 `particle_release` 和显式 `contracts.species`；旧 `ion_release` 生产包及其重复测试命名空间删除，不保留导入别名。源生成 PowerShell、双锥源配置和 RF 冻结快照按同一新所有者同步；历史科学 ID、原冻结字节与只读历史证据不改写。参考 Recipe 升级为 schema 3，物种表提供质量/电荷，初始粒子引用规范物种；公共 Recipe/追踪继续独立持有通用入口，reference 模块不再兼任通用调度。
+
+同时完成已实拆的 IP–MR 连接与几何来源收口：`assembly.ip_mr_connection` 只负责选定 Assembly 连接，`assembly.geometry_primitives`、组件几何和 SIMION IO 各保留实际职责；旧 `prepared_joint.ip_mr_connection`、`prepared_joint.ion_processor_assembly` 与 `accelerator_interface.geometry` 删除。该删除不代替剩余 Prepared/OA 活跃职责退役。
+
+首次精确索引只含旧包差异，4 个新增合同测试未被收入而产生4个收集 error；补齐后逐轮暴露参考 schema、通用追踪与 Assembly 新文件依赖并纳入同一候选。`c1-index-check-20261128T031610` 的56父测试／107回执全部成功（3.511s），含三类独立参考解析、负粒子/电子身份、源采样与旧模块缺席。RF 源预检另发现回执读取仍期待 schema 1、当前测试仍作者旧 role，已分别改为实际 schema 2/`repository_particle_release` 并显式 `species_kind=ion`；`c1-rf-index-check-20261128T032640` 的16父测试／31回执全部成功。SFI 当前 prepare/zero-gap 新粒子请求在 `c1-sfi-index-check-20261128T034344` 为52父测试、240 success／1既有环境skip（60.478s），只证明当前输入合同，不宣称旧 SFI 包已退役。补齐组件 v2 描述符、当前 schema、OA 诊断与 recorded-birth 反例后，`c1-combined-index-check-20261128T042129` 合并147父测试，425 success／1既有skip（80.858s）。双锥组件迁移另由 Agent 1 完成：组件目录109父测试、合同目录53父测试中，除两个明确要求正式公共 GATE 的宿主上下文用例外均通过；这两例及合并范围由后续正式门禁复验，不将裸跑环境错误算作生产 FAIL 或 PASS。最终组件索引 `c1-components-final-index-check-20261128T042407` 的187父测试／381回执全部成功（321.748s），Ruff 与 diff-check 通过。公共双锥 Changed 首轮因未配置 Lua 在安装预检失败；以实际 `C:/Program Files/SIMION-2020/lua.exe` 重跑后，安装夹具又暴露重复气体字段删除后的 `species_id` 读取，现改从唯一 `NITROGEN` 数据集取身份/质量，等待复验。后续安装夹具补齐实际 API 所需的环境/几何及记录，不再传独立 composition；公共 `c1-dual-public-gate-final.log` 仍FAIL，安装分片在 MR fixture 固定 SHA 断言停止，另一分片66父测试为200 success／7 failure／1 error，含旧 Store 作用域与 IP–MR 错误文本夹具；这些真实失败保持未关闭，不用前置索引绿灯覆盖。上述均不是商业 native、普通双安装或全 C 验收；完整变更测试索引复验及最终同 SHA 门禁继续执行。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

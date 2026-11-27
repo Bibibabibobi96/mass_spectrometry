@@ -2,7 +2,7 @@ from __future__ import annotations
 import tempfile, unittest
 from pathlib import Path
 import json
-from msplatform.ion_release.release import generate_release_states, materialize_release
+from msplatform.particle_release.release import generate_release_states, materialize_release
 from msplatform.backends.simion.oa_focus_source import materialize
 
 
@@ -13,7 +13,7 @@ class SimionSourceTests(unittest.TestCase):
  def test_complete_projection_preserves_release_units_ids_and_bound_identities(self):
   self.assertEqual(materialize.__module__, 'msplatform.backends.simion.oa_focus_source')
   self.assertFalse((Path(__file__).resolve().parents[4] / 'projects/orthogonal_accelerator').exists())
-  self.assertEqual(materialize.__globals__['validate_materialized_release'].__module__, 'msplatform.ion_release.release')
+  self.assertEqual(materialize.__globals__['validate_materialized_release'].__module__, 'msplatform.particle_release.release')
   self.assertEqual(materialize.__globals__['kinetic_energy_ev'].__module__, 'msplatform.contracts.particle_physics')
   self.assertEqual(materialize.__globals__['file_sha256'].__module__, 'msplatform.io.file_identity')
   import copy
@@ -71,7 +71,7 @@ class SimionSourceTests(unittest.TestCase):
     materialize(receipt, campaign_path, provider, fly, lua)
 
  def test_projects_common_release_into_local_first_gap_frame(self):
-  spec={'schema_version':1,'role':'repository_ion_release','frame_id':'orthogonal_accelerator_exit_origin_v1','particle_count':1,'mother_particle_count':1,'common_time_of_birth_s':0.0,'geometry':{'shape':'cylinder','center_mm':[0,0,33.6],'axis':'z','radius_mm':1,'height_mm':1},'species':{'mass_amu':100.,'charge_state':1},'sampling':{'strategy':'center_first_halton_cylinder_v1','kinetic_energy':{'center_ev':.001,'full_width_ev':0},'nominal_direction':[0,0,-1],'angular_full_width_deg':0}}
+  spec={'schema_version':2,'role':'repository_particle_release','frame_id':'orthogonal_accelerator_exit_origin_v1','particle_count':1,'mother_particle_count':1,'common_time_of_birth_s':0.0,'geometry':{'shape':'cylinder','center_mm':[0,0,33.6],'axis':'z','radius_mm':1,'height_mm':1},'species':{'species_kind': 'ion', 'mass_amu':100.,'charge_state':1},'sampling':{'strategy':'center_first_halton_cylinder_v1','kinetic_energy':{'center_ev':.001,'full_width_ev':0},'nominal_direction':[0,0,-1],'angular_full_width_deg':0}}
   campaign={'release_spec':spec,'simion_projection':{'source_frame':'orthogonal_accelerator_exit_origin_v1','workbench_mapping':'identity_xyz_with_local_exit_z_translation_v1','local_pa_span_mm':[64,64,64],'iob_origin_rule':'x_mirror_plane__negative_half_y__local_z_zero_v1','local_exit_z_mm':6,'focus_plane_padding_mm':6,'positive_z_enclosure_padding_mm':6,'semantics':'test'}}
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);receipt=root/'r.json';state=root/'s.csv';materialize_release(spec,state,receipt);camp=root/'c.json';import json;camp.write_text(json.dumps(campaign));fly=root/'x.fly2';source_states=root/'component_focus.source_states.lua';out=materialize(receipt,camp,write_provider_plan(root),fly,source_states);self.assertEqual(out['particle_count'],1);self.assertIn('position = vector(0.0,0.0,39.6)',fly.read_text());self.assertIn('[1]={t=0,x=0,y=0,z=39.6',source_states.read_text());self.assertIn('source_states_sha256',out)
@@ -169,7 +169,7 @@ Invoke-Expression $calls[0].Extent.Text
    self.assertIn('ke = 4.925417406161194',fly_text)
 
  def test_rejects_exit_adjacent_source_that_is_not_in_first_gap(self):
-  spec={'schema_version':1,'role':'repository_ion_release','frame_id':'orthogonal_accelerator_exit_origin_v1','particle_count':1,'mother_particle_count':1,'common_time_of_birth_s':0.0,'geometry':{'shape':'cylinder','center_mm':[0,0,3],'axis':'z','radius_mm':1,'height_mm':1},'species':{'mass_amu':100.,'charge_state':1},'sampling':{'strategy':'center_first_halton_cylinder_v1','kinetic_energy':{'center_ev':.001,'full_width_ev':0},'nominal_direction':[0,0,-1],'angular_full_width_deg':0}}
+  spec={'schema_version':2,'role':'repository_particle_release','frame_id':'orthogonal_accelerator_exit_origin_v1','particle_count':1,'mother_particle_count':1,'common_time_of_birth_s':0.0,'geometry':{'shape':'cylinder','center_mm':[0,0,3],'axis':'z','radius_mm':1,'height_mm':1},'species':{'species_kind': 'ion', 'mass_amu':100.,'charge_state':1},'sampling':{'strategy':'center_first_halton_cylinder_v1','kinetic_energy':{'center_ev':.001,'full_width_ev':0},'nominal_direction':[0,0,-1],'angular_full_width_deg':0}}
   campaign={'release_spec':spec,'simion_projection':{'source_frame':'orthogonal_accelerator_exit_origin_v1','workbench_mapping':'identity_xyz_with_local_exit_z_translation_v1','local_pa_span_mm':[64,64,64],'iob_origin_rule':'x_mirror_plane__negative_half_y__local_z_zero_v1','local_exit_z_mm':6,'focus_plane_padding_mm':6,'positive_z_enclosure_padding_mm':6,'semantics':'test'}}
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);receipt=root/'r.json';state=root/'s.csv';campaign_path=root/'c.json';fly=root/'x.fly2';source_states=root/'states.lua';materialize_release(spec,state,receipt);campaign_path.write_text(json.dumps(campaign),encoding='utf-8')

@@ -202,14 +202,14 @@ def release_fixture(root, *, instance_id="oatof", local=False):
         else [0.125, -0.25, 5.0]
     )
     spec = dict(
-        schema_version=1,
-        role="repository_ion_release",
+        schema_version=2,
+        role="repository_particle_release",
         frame_id=pose["from_frame_id"],
         particle_count=100,
         mother_particle_count=100,
         common_time_of_birth_s=42.125e-6,
         geometry=dict(shape="cylinder", center_mm=center, axis="z", radius_mm=0.05, height_mm=0.1),
-        species=dict(mass_amu=524.0, charge_state=1),
+        species=dict(species_kind="ion", mass_amu=524.0, charge_state=1),
         sampling=dict(
             strategy="center_first_halton_cylinder_v1",
             kinetic_energy=dict(center_ev=2.0, full_width_ev=0.2),

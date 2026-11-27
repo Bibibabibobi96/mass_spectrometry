@@ -1,5 +1,6 @@
 """Installed IP–MR public tracking admission and planning; no native execution."""
 import copy
+import json
 import sys
 import sysconfig
 from pathlib import Path
@@ -12,9 +13,10 @@ def run(fixture):
     from msplatform.backends.simion.resources import native_resource_path, structural_seed_path
     from msplatform.execution.context import ExecutionContext
     from msplatform.execution.resources import resource_path
-    from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
+    from msplatform.contracts.gas import BoxDomain
+    from importlib.resources import files
     from msplatform.io.manifest_records import file_record
-    from msplatform import examples, ion_release
+    from msplatform import examples, particle_release
 
     purelib=Path(sysconfig.get_paths()['purelib']).resolve()
     for module in (operations,tracking_execution,rf_tracking_execution,ip_mr_tracking_admission,rf_tracking_collection):
@@ -25,19 +27,19 @@ def run(fixture):
     reference=fixture['reference']
     admission=ip_mr_tracking_admission.admit_ip_mr_tracking_fields(reference)
     assert len(admission['basis']['bases'])==17 and len(admission['priority']['instances'])==5
-    baseline=admission['model'].document['drive']['ip_schedule']['baseline']
     box=lambda lo,hi:BoxDomain(lo,hi,(True,True,True),(True,True,True))
-    outer=GasFieldSpec(field_id='outer',frame_id=baseline['clock']['frame_id'],representation='uniform',
-        composition_id='ion_processor_explicit_single_gas',composition=(GasSpecies('ion_processor_model_gas',baseline['gas']['mass_amu'],1),),
-        domain=box((-10000,-10000,-10000),(10000,10000,10000)),source=GasSource('prescribed','installed_test',()),
-        uniform_state=GasState('gas',4,baseline['gas']['temperature_k'],(1,2,3)))
-    request=dict(bath_domain=box((0,-10,-10),(211,10,10)),outer=outer,
-        vendor_record=file_record(Path(fixture['vendor_path'])),numerics=dict(seed=40,hs1_steps_per_mfp=20))
     c=fixture['context'];context=ExecutionContext(workspace=Path(c['workspace'])/('installed-ip-mr-'+fixture['arm']),
         python_executable=Path(sys.executable),powershell_executable=Path(c['powershell_executable']),
         tools={'simion':Path(sys.executable)},host_state_path=Path(c['host_state_path']),policy_path=resource_path('host_resource_policy.json'),
         capacity_policy_path=Path(c['capacity_policy_path']),stage_policy_path=Path(c['stage_policy_path']))
-    packet=ion_release.sample_release(examples.load_example('rf_oatof_functional_v1').release).to_dict()
+    context.workspace.mkdir(parents=True,exist_ok=True)
+    author=json.loads(files('msplatform').joinpath('components/ion_processor/config/gas_environment.json').read_text(encoding='utf8'))
+    author['outer_state']=dict(pressure_pa=4,temperature_k=300,bulk_velocity_m_s=[1,2,3])
+    env=context.workspace/'test_hs1_environment.json';env.write_text(json.dumps(author),encoding='utf8')
+    request=dict(bath_domain=box((0,-10,-10),(211,10,10)),outer_domain=box((-10000,-10000,-10000),(10000,10000,10000)),
+        environment_record=file_record(env),environment_instance_id='ion_processor',
+        vendor_record=file_record(Path(fixture['vendor_path'])),numerics=dict(seed=40,hs1_steps_per_mfp=20))
+    packet=particle_release.sample_release(examples.load_example('rf_oatof_functional_v1').release).to_dict()
     propagation=dict(schema_version=1,scope='continuous_assembly',dynamics=dict(kinematics='nonrelativistic',collisions='hs1',space_charge='none'),
         end_policy=dict(maximum_particle_age_us=200.),consumed_plane_events=[],stop=None)
     numerics=dict(maximum_step_us=.001,trajectory_quality=17,rf_steps_per_period=80,grouped=0)

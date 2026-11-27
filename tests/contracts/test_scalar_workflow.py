@@ -134,7 +134,7 @@ class ScalarWorkflowTests(unittest.TestCase):
         def run(species):
             particle=SimpleNamespace(rows=[{"species_id":species}],to_dict=lambda:{"rows":[{"species_id":species}]})
             with patch("msplatform.workflows.scalar_tracing.compile_scalar_inputs",return_value=admitted), \
-                 patch("msplatform.ion_release.sample_release",side_effect=lambda request:particle), \
+                 patch("msplatform.particle_release.sample_release",side_effect=lambda request:particle), \
                  patch("msplatform.workflows.scalar_tracing.open_artifact",side_effect=lambda ref,**kw: next(x for x in (admitted["background"],admitted["on"],admitted["prepared"],admitted["geometry"],admitted["collision"],*exported_objects) if x.reference == ref)), \
                  patch.object(assembly_field_export,"export_world_scalar_grids",side_effect=exported), \
                  patch.object(assembly_field_export,"derive_world_scalar_support",side_effect=derive), \
@@ -175,9 +175,48 @@ class ScalarWorkflowTests(unittest.TestCase):
         for row in track_selection['refinement_windows']:
             self.assertEqual(set(row['samples']),{'off','on'})
 
+    def test_recorded_birth_is_reconstructed_before_scalar_owner(self):
+        import csv
+        import tempfile
+        from msplatform.particle_release import sample_release
+        from msplatform.particle_release.cylinder import CANONICAL_COLUMNS
+        from msplatform.workflows.native_tracing import _realizations
+        from msplatform.workflows.scalar_tracing import run_scalar_stages
+
+        admitted = self.compile()
+        generated = self.recipe["study"]["document"]["release"]
+        rows = sample_release(generated).to_dict()["realization"]["generator_rows"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "recorded_birth.csv"
+            with path.open("w", encoding="utf8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=CANONICAL_COLUMNS, extrasaction="ignore", lineterminator="\n")
+                writer.writeheader()
+                writer.writerows(rows)
+            payload = path.read_bytes()
+            release = {"schema_version": 1, "role": "canonical_recorded_birth_request",
+                "source_record": {"path": "birth.csv", "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest().upper()},
+                "clock": generated["clock"], "instrument_origin_us": generated["instrument_origin_us"],
+                "species_id": generated["species_id"], "species": generated["release_spec"]["species"],
+                "source_component_id": generated["source_component_id"], "frame_id": generated["release_spec"]["frame_id"],
+                "relative_weights": generated["relative_weights"], "particle_ids": [row["particle_id"] for row in rows]}
+            self.recipe["study"]["document"]["release"] = release
+            packet = _realizations(release, resource_root=root)[0]
+            def run(value):
+                return run_scalar_stages(self.recipe, self.instrument, value, context=object(), resource_root=root,
+                    stage_cache=lambda *args: (_ for _ in ()).throw(RuntimeError("ADMISSION_REACHED")),
+                    invoke=lambda fn: fn(), implementation={"comsol": {}, "simion": {}}, epoch_record={"sha256": "0" * 64})
+            with patch("msplatform.workflows.scalar_tracing.compile_scalar_inputs", return_value=admitted):
+                with self.assertRaisesRegex(RuntimeError, "ADMISSION_REACHED"):
+                    run(packet)
+                altered = copy.deepcopy(packet)
+                altered["rows"][0]["particle_id"] += 1
+                with self.assertRaisesRegex(ValueError, "births differ"):
+                    run(altered)
+
     def test_birth_must_match_frozen_source_and_mass_scan_allocated_ids(self):
         from msplatform.workflows.scalar_tracing import run_scalar_stages
-        from msplatform.ion_release import sample_release
+        from msplatform.particle_release import sample_release
         from msplatform.workflows.mass_scan import prepare_mass_scan
         admitted = self.compile()
         release = self.recipe["study"]["document"]["release"]

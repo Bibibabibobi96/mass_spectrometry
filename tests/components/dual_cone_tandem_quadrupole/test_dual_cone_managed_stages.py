@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from msplatform.backends.simion.model import RF_PHYSICS
 from msplatform.io.manifest_records import file_record
-from tests.components.dual_cone_tandem_quadrupole.test_dual_cone_transport_execution import request, ROOT
+from tests.contracts.test_support.dual_cone_transport import request, ROOT
 from tests.components.dual_cone_tandem_quadrupole.test_dual_cone_stages import CLOCK
 
 
@@ -150,7 +150,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     stdout += "DUAL_CONE_TRACKING_IOB=PASS\nDUAL_CONE_TRACKING_IOB_REOPEN=PASS\n"
                 elif "fly" in args:
                     from tests.simion.test_analyze_terminal_plane import HEADER
-                    from tests.components.dual_cone_tandem_quadrupole.test_dual_cone_transport_execution import terminal_log
+                    from tests.contracts.test_support.dual_cone_transport import terminal_log
 
                     result = run / "transport/results"
                     (result / "particle_final_state.csv").write_text(
@@ -217,7 +217,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 import copy
                 inconsistent=copy.deepcopy(numerics)
                 inconsistent['pa']['cell_mm_xyz']['x']*=2
-                with patch('msplatform.workflows.dual_cone_stages.run_managed_stage',
+                with patch('msplatform.execution.owner.run_managed_stage',
                            side_effect=RuntimeError('INERT_OWNER_WOULD_HAVE_LAUNCHED')) as invalid_owner:
                     with self.assertRaisesRegex(ValueError,'field numerics cannot redefine'):
                         solve_fields(model,numerics=inconsistent,context=context)
@@ -274,7 +274,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     reused,
                     gas_field_reference=gas_reference,
                     source_spec_path=ROOT
-                    / "src/msplatform/components/dual_cone_tandem_quadrupole/config/cylindrical_ion_source.json",
+                    / "src/msplatform/components/dual_cone_tandem_quadrupole/config/cylindrical_particle_source.json",
                     numerics_path=ROOT
                     / "src/msplatform/components/dual_cone_tandem_quadrupole/config/simion_solver_numerics.json",
                     interface_path=ROOT
@@ -291,7 +291,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                                clock_authority_reference=clockrows),
                     fields=dict(numerics=numerics),
                     trajectory=dict(gas_field_reference=gas_reference,
-                        source_spec_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config/cylindrical_ion_source.json",
+                        source_spec_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config/cylindrical_particle_source.json",
                         numerics_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config/simion_solver_numerics.json",
                         interface_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config/gas_field_interface.json",
                         collision_science=values["science"]["gas"], collision_sds_dir=sds))
@@ -306,7 +306,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 changed_spec = json.loads(mutable_source.read_text())
                 changed_spec["sampling"]["seed"] += 1
                 mutable_source.write_text(json.dumps(changed_spec))
-                with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as no_changed_owner:
+                with patch("msplatform.execution.owner.run_managed_stage") as no_changed_owner:
                     with self.assertRaisesRegex(ValueError, "authority changed"):
                         run_to(selected_plan, context=context)
                     no_changed_owner.assert_not_called()
@@ -314,7 +314,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                                   available={"geometry": geometry, "fields": fields})
                 self.assertEqual(rebound["stages"], ["model", "fields"])
                 before = len(calls)
-                with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as no_owner:
+                with patch("msplatform.execution.owner.run_managed_stage") as no_owner:
                     existing = plan_to(target="trajectory", available={"trajectory": trajectory})
                     self.assertEqual(existing["stages"], [])
                     self.assertEqual(run_to(existing).reference, trajectory.reference)
@@ -416,63 +416,12 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     fresh_stages=full_plan["stages"], mother_count=100)))
 
     def _gas_source(self, context):
-        import csv, hashlib
-        from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import _write_fixture
         from msplatform.execution.capacity_ledger import record_capacity_object
+        from tests.contracts.test_support.dual_cone_transport import write_published_gas_fixture
 
-        config = ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config"
-        source = context.workspace / "artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/runs/inert-gas"
-        source.mkdir(parents=True)
-        csv_path, metadata = _write_fixture(source)
-        with csv_path.open(newline="") as stream:
-            reader = csv.DictReader(stream)
-            names = reader.fieldnames
-            rows = list(reader)
-        domain = json.loads((config / "gas_field_interface.json").read_text())["runtime_artifact_contract"]["domain"]
-        radii = [
-            domain["minimum_radius_mm"] + (domain["maximum_radius_mm"] - domain["minimum_radius_mm"]) * i / 9
-            for i in range(10)
-        ]
-        axial = [domain["minimum_z_mm"] + (domain["maximum_z_mm"] - domain["minimum_z_mm"]) * i / 9 for i in range(10)]
-        for row in rows:
-            row.update(r_mm=radii[int(row["r_index"])], z_mm=axial[int(row["z_index"])])
-        with csv_path.open("w", newline="") as stream:
-            writer = csv.DictWriter(stream, fieldnames=names)
-            writer.writeheader()
-            writer.writerows(rows)
-        meta = json.loads(metadata.read_text())
-        meta["grid"] = {"r_values_mm": radii, "z_values_mm": axial}
-        meta["field_csv_sha256"] = hashlib.sha256(csv_path.read_bytes()).hexdigest()
-        metadata.write_text(json.dumps(meta))
-        identity = dict(
-            project="dual_cone_tandem_quadrupole",
-            run_id=source.name,
-            mode="axisymmetric_gas_flow_screening",
-        )
-        runtime = source / "run_config.json"
-        runtime.write_text(json.dumps(identity))
-        inputs = {}
-        for key, name in [
-            ("gas_flow_science", "gas_flow_science.json"),
-            ("comsol_solver_numerics", "comsol_solver_numerics.json"),
-            ("resolved_geometry", "resolved_geometry.json"),
-        ]:
-            path = source / name
-            path.write_bytes((config / name).read_bytes())
-            inputs[key] = file_record(path, "required_evidence")
-        manifest = source / "run_manifest.json"
-        manifest.write_text(
-            json.dumps(
-                dict(
-                    schema_version=2,
-                    role="simulation_run_manifest",
-                    status="success",
-                    **identity,
-                    run_config=file_record(runtime, "required_evidence"),
-                    inputs=inputs,
-                    outputs=[file_record(path, "required_evidence") for path in (csv_path, metadata)],
-                )
-            )
+        source = context.workspace / "artifacts/components/dual_cone_tandem_quadrupole/runs/inert-gas"
+        fixture = write_published_gas_fixture(
+            source, cover_transport_domain=True, artifact_root=context.workspace / "artifacts"
         )
         record_capacity_object(
             context.workspace / "artifacts",
@@ -482,7 +431,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
             status="ready",
             owner="inert-gas",
         )
-        return dict(manifest=file_record(manifest, "required_evidence"), product_id="gas_field")
+        return fixture["reference"]
 
     def test_public_saved_fly_rejects_missing_unknown_and_tampered_sources_before_owner(self):
         from msplatform.workflows.dual_cone_stages import track_fields
@@ -496,7 +445,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 )
                 if scenario == "tampered":
                     (root / "dual_cone.pa22").write_text("CHANGED_ORIGINAL_PUBLISHED_FIELD")
-                with patch("msplatform.workflows.dual_cone_stages.run_managed_stage") as owner:
+                with patch("msplatform.execution.owner.run_managed_stage") as owner:
                     expected_error = AssertionError if scenario == "tampered" else ValueError
                     with self.assertRaises(expected_error):
                         track_fields(
@@ -517,13 +466,13 @@ class ManagedIndependentStagesTests(unittest.TestCase):
         from msplatform.backends.simion.dual_cone_transport import _render_run_config
         from msplatform.backends.simion.dual_cone_stages import render_model_stage_configuration
         from tests.components.dual_cone_tandem_quadrupole.test_dual_cone_stages import model
-        from tests.components.dual_cone_tandem_quadrupole.test_dual_cone_transport_execution import LUA
+        from tests.contracts.test_support.dual_cone_transport import LUA, native_request
 
         if not LUA.is_file():
             self.skipTest("plain Lua unavailable; no native fallback")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            values = request()
+            values = native_request()
             selected = model(amplitude=123)
             (root / "model_drive_configuration.lua").write_text(render_model_stage_configuration(selected))
             for name in ("model_drive.lua", "rf_drive.lua", "single_flight_pulse_hook.lua", "voltage_waveforms.lua"):

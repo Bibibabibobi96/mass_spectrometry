@@ -6,9 +6,10 @@ import unittest
 from pathlib import Path
 
 from msplatform.components.orthogonal_accelerator.focus_campaign import geometry_profile_identity
+from msplatform.components.orthogonal_accelerator.focus_voltage_adjustment import _candidate_campaign, _tier
 
 from msplatform.workflows.oa_focus_fast_adjust import (
-    _candidate_campaign, _tier, initialize, record_analysis,
+    initialize, record_analysis,
 )
 
 

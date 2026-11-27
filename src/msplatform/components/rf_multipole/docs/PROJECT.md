@@ -165,7 +165,7 @@ retained as a failed result, not reclassified as a pass. No solver or scientific
 
 ## 科学核心 P1 接线
 
-`msplatform.components.rf_multipole.ideal_transport` 直接从 `msplatform.ion_release` 与
+`msplatform.components.rf_multipole.ideal_transport` 直接从 `msplatform.particle_release` 与
 `msplatform.contracts.particle_physics` 消费源策略、释放及粒子物理实现。
 相邻回归核对实际函数来源，并保持原两粒子完整固定输出；不再经旧科学兼容桥取得这些调用。
 粒子物理活动消费者、运行器冻结清单和来源探针现均直接绑定`msplatform.contracts.particle_physics`，旧公共桥已退役。
@@ -523,7 +523,7 @@ RF+DC已有理论和有限几何功能响应，网格、跨求解器一致性及
 质量过滤L0数学实现归`msplatform.components.rf_multipole.mass_filter_theory`，具名参考政策归
 `msplatform.workflows.rf_mass_filter.reference`；[研究CLI](../../../workflows/rf_mass_filter/theory.py)只选择显式研究输入。其源由
 [official_particle_source.json](../variants/quadrupole/config/official_particle_source.json)声明，确定性采样由
-[公共ion_release](../../../../../docs/ION_RELEASE.md)提供。旧150 mm碰撞脚本不是活动合同。
+[公共 particle_release](../../../../../docs/PARTICLE_RELEASE.md)提供。旧150 mm碰撞脚本不是活动合同。
 旧矩形PA导出／比较三脚本已退役，不恢复硬编码0.2 mm基线的GEM文本替换链。
 
 完整质量响应比较正文归`msplatform.workflows.rf_mass_filter.response_comparison`，原根Python实现退出；
@@ -1282,7 +1282,7 @@ Independent installed RF tracking accepts the documented integer Program traject
 ## Installed paired mass scans and sampled responses
 
 The positive singly charged ION11 paired-mass construction and sampled mass-response
-aggregation now have sole implementations in `msplatform.ion_release.paired_mass_scan`
+aggregation now have sole implementations in `msplatform.particle_release.paired_mass_scan`
 and `msplatform.analysis.mass_response`. Mass-filter preparation, evaluation and frozen
 analysis consumers use those installed modules. Original row order, physical mass/+1
 scope, complete particle denominator, terminal statuses, SHA/provenance, sampled and
@@ -1387,13 +1387,14 @@ parent never executes the live scan or CSV writer. Package aggregation has one
 neutral implementation in `execution.inputs`; existing RF PowerShell consumers
 delegate using their selected Python and selected implementation origin.
 
-Execution requires `--run-id`, `--workspace`, `--execution-environment` and
-`--engineering-profile`; `--check-contract` remains owner-free. A supplied
-`--artifact-project-root` must agree with that workspace's normal managed layout.
-An explicit alternate managed research workspace is supported; an arbitrary
-ungoverned output layout is rejected rather than silently redirected. The retired
-research CLI analysis flags have no active caller; the canonical worker's explicit
-simulation/analysis actions remain the sole module CLI.
+Execution requires `--run-id`, `--workspace`, `--artifact-root`,
+`--execution-environment` and `--engineering-profile`; `--check-contract`
+remains owner-free. `--artifact-root` selects a dedicated ArtifactStore outside
+the repository and historical owner roots. `--analyze-only --parent-manifest`
+reads a sealed historical or Store parent while holding its selected records;
+`--resume-finalization --asset-id` replays only the specified stopped Store
+stage and does not rewrite its original parent run. The canonical worker's
+explicit simulation/analysis actions remain independent of this transport.
 
 For new schema2 executions, engineering wall-clock values (including a selected
 120-second prepare/analysis setting) are warnings followed by natural managed

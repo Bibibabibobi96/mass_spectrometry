@@ -18,11 +18,11 @@ from msplatform.analysis.particle_census import partition_cohort
 from msplatform.backends.simion.transport_result import load_transport_producer_result
 from msplatform.contracts.machine_contracts import validate_schema
 from msplatform.contracts.particle_state import load_component_particle_state_csv
-from msplatform.execution.clock_authority import validate_clock_authority
+from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.io.manifest_records import file_record, record_path, verify_record, verified_successful_run_reference
 from msplatform.execution.retention import classify_file
 from msplatform.io.manifest_records import require_completed_terminal_publication
-from msplatform.ion_release.release import generate_release_states
+from msplatform.particle_release.release import generate_release_states
 
 SCHEMA = Path(str(files("msplatform.backends.simion").joinpath("resources/ip_injected_source.schema.json")))
 FATE_COLUMNS = ["particle_id", "particle_birth_time_us", "mass_amu", "charge_state",

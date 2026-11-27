@@ -2,7 +2,7 @@
 from __future__ import annotations
 import math
 from typing import Any, Mapping
-from msplatform.ion_release.release import validate_release_spec
+from msplatform.particle_release.release import validate_release_spec
 from msplatform.io.file_identity import canonical_json_sha256
 from msplatform.components.orthogonal_accelerator.two_zone_geometry import validate_geometry_profile
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "project_execution_profiles",
   "project_id": "transverse_helical_filament_wehnelt_electron_gun",
   "profiles": [
@@ -58,10 +58,7 @@
         "python"
       ],
       "model": "横置Wehnelt电子枪模型树（不求解）",
-      "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none"
-      ]
+      "scientific_status": "not_evaluated"
     }
   ]
 }

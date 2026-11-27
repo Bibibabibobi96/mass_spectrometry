@@ -5,6 +5,7 @@ import unittest
 from tests.components.orthogonal_accelerator.analysis import test_component_focus_analysis as fixtures
 
 from msplatform.workflows import oa_focus_analysis as draft
+from msplatform.components.orthogonal_accelerator import focus_theory
 
 def _geometry_profile():
     import json
@@ -58,15 +59,15 @@ class FocusClockTests(unittest.TestCase):
         campaign = json.loads(self.campaign.read_text())
         states = {i: dict(z_mm=32.0, vz_m_s=0.0, t_us=start) for i, start in enumerate((1.0, 2.0, 4.0), 1)}
         voltages = campaign["operating_point"]["electrode_voltages_v"]
-        duration = draft.time_to_fixed_plane_s(voltages[1], voltages[2], 4.0, 30.0, 2.0, 0.0, 0.0, 100.0, exit_v=voltages[3])*1e6
+        duration = focus_theory.time_to_fixed_plane_s(voltages[1], voltages[2], 4.0, 30.0, 2.0, 0.0, 0.0, 100.0, exit_v=voltages[3])*1e6
         hits = {i:(state, dict(t_us=state["t_us"]+duration)) for i,state in states.items()}
-        result = draft._ideal_two_zone_contrast(hits, campaign, geometry_profile=_geometry_profile())
+        result = focus_theory._ideal_two_zone_contrast(hits, campaign, geometry_profile=_geometry_profile())
         self.assertAlmostEqual(result["native_peak_to_peak_t_ns"], 3000.0)
         self.assertAlmostEqual(result["propagation_duration_width_ns"]["native"], 0.0)
         self.assertAlmostEqual(result["paired_time_difference_ns"]["rms"], 0.0)
         for state, focus in hits.values():
             state["t_us"] += 7.0; focus["t_us"] += 7.0
-        shifted = draft._ideal_two_zone_contrast(hits, campaign, geometry_profile=_geometry_profile())
+        shifted = focus_theory._ideal_two_zone_contrast(hits, campaign, geometry_profile=_geometry_profile())
         self.assertAlmostEqual(shifted["paired_time_difference_ns"]["rms"], 0.0)
         self.assertAlmostEqual(shifted["native_peak_to_peak_t_ns"], result["native_peak_to_peak_t_ns"])
 

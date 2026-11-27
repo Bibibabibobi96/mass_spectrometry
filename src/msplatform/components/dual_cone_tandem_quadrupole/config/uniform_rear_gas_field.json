@@ -1,17 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "dual_cone_uniform_rear_gas_field",
   "project_id": "dual_cone_tandem_quadrupole",
-  "model_id": "uniform_400pa_plug_flow_prototype_v1",
-  "rear_region": {
-    "start_z_mm": 3.0,
-    "pressure_pa": 400.0,
-    "temperature_k": 300.0,
-    "axial_velocity_m_per_s": 100.0,
-    "radial_velocity_m_per_s": 0.0
-  },
+  "model_id": "uniform_rear_plug_flow_prototype_v2",
   "upstream_collision_proxy": {
-    "pressure_pa": 0.0,
     "interpretation": "collisions before the second aperture are omitted; ions are initialized as already desolvated"
   },
   "enabled_physics": [

@@ -33,7 +33,7 @@ DUAL_CONE_TERMINAL_CALLBACKS = {
 }
 
 
-def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: Mapping, source_spec: Mapping, placement=None, source_to_device=None) -> dict:
+def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: Mapping, source_spec: Mapping, environment: Mapping, placement=None, source_to_device=None) -> dict:
     """Validate scientific selections and return the actual serial native graph.
 
     Preparation and analysis are pure in-process responsibilities, not fabricated
@@ -48,7 +48,11 @@ def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: 
         raise ValueError("dual-cone transport science role differs")
     if science.get("trajectory_authority") != "simion":
         raise ValueError("SIMION must remain the trajectory authority")
-    if science["gas"]["collision_model"] != "simion_official_collision_sds":
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_environment import (
+        project_dual_cone_transport_science, resolve_dual_cone_conditions,
+    )
+    projected = project_dual_cone_transport_science(dict(science), resolve_dual_cone_conditions(dict(environment), dict(resolved)))
+    if projected["gas"]["collision_model"] != "simion_official_collision_sds":
         raise ValueError("dual-cone gas transport requires the declared official SDS model")
     groups = []
     for name in ("stage_1", "stage_2"):
@@ -65,6 +69,8 @@ def plan_transport_operations(*, resolved: Mapping, numerics: Mapping, science: 
         if source_to_device is not None:
             selected_pose["source_to_device"] = registration.to_contract()
     count = validate_positive_particle_count(source_spec["particle_count"])
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_environment import require_sds_positive_ion
+    require_sds_positive_ion(source_spec)
     if validate_positive_particle_count(source_spec["mother_particle_count"]) != count:
         raise ValueError("fresh transport requires its complete declared mother source")
     trajectory = numerics["trajectory"]
@@ -377,12 +383,14 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
     from msplatform.io.manifest_records import file_record
     from msplatform.results.gas_field import read_gas_field
     from .dual_cone_transport import prepare_transport
-    from .model_execution import _protected_source
+    from .dual_cone_stage_execution import _protect_product
     from .resources import native_resource_path
 
+    request = dict(request)
+    request.pop("canonical_result", None)
     values = {
         name: json.loads(Path(request[name + "_path"]).read_text(encoding="utf-8-sig"))
-        for name in ("resolved", "numerics", "science", "source_spec")
+        for name in ("resolved", "numerics", "science", "source_spec", "environment")
     }
     for key in ("placement", "source_to_device"):
         if key in request:
@@ -396,9 +404,20 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
     opened_gas = read_gas_field(request["gas_field_reference"])
     validate_gas_field_data(opened_gas.data)
     gas = opened_gas.artifact
-    _protected_source(
-        session, gas.reference["manifest"], required_paths=[str(path) for path in gas.data_locations.values()]
+    _protect_product(
+        session, gas, required_paths=[str(path) for path in gas.data_locations.values()]
     )
+    if "expected_gas_environment" in request:
+        from .dual_cone_transport import admit_sds_gas_field
+
+        request = dict(request)
+        expected_environment = request.pop("expected_gas_environment")
+        interface = json.loads(Path(request["interface_path"]).read_text(encoding="utf-8-sig"))
+        _, _, _, actual_environment = admit_sds_gas_field(request["gas_field_reference"],
+            environment_bytes=Path(request["environment_path"]).read_bytes(),
+            resolved=values["resolved"], interface=interface)
+        if actual_environment.to_dict() != expected_environment:
+            raise ValueError("protected gas field differs from admitted GasEnvironment")
     prepared = session.run_dir / "transport"
     # Declare the pure preparer's finite output closure before its first write,
     # including partial preparation failures; never adopt arbitrary native files.
@@ -416,9 +435,12 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
         "gas_producer_numerics.json",
         "gas_producer_geometry.json",
         "gas_flow_science.json",
-        "cylindrical_ion_source.json",
-        "cylindrical_ion_source.csv",
-        "cylindrical_ion_source_receipt.json",
+        "gas_environment.json",
+        "physics_nitrogen.json", "physics_sds_model.json", "physics_reference.json", "physics_nitrogen_transport_300k.json",
+        "ion_transport_science_resolved.json",
+        "cylindrical_particle_source.json",
+        "cylindrical_particle_source.csv",
+        "cylindrical_particle_source_receipt.json",
         "placement.json", "source_to_device.json",
     )
     solver_names = (
@@ -499,6 +521,10 @@ def _prepare_execution_inputs(session, *, request, selected_plan=None, model_pro
         if isinstance(record, dict) and ("frozen_path" in record or "path" in record):
             bind("prepared_" + name, Path(record.get("frozen_path", record.get("path"))), expected=record)
     for name, record in receipt["inputs"]["simion_official_collision_sds"].items():
+        if "sds_source_identities" in plan:
+            expected = plan["sds_source_identities"][name]
+            if record["bytes"] != expected["bytes"] or record["sha256"].upper() != expected["sha256"]:
+                raise ValueError("SDS source differs from the admitted frozen identity: " + name)
         bind("prepared_sds_" + name, Path(record["frozen_path"]), expected=record)
     compiled = receipt["inputs"]["gas_field_manifest_identity"]["runtime_lua"]
     bind("prepared_compiled_gas_context", Path(compiled["path"]), expected=compiled)
@@ -714,7 +740,8 @@ def build_transport_tracking_model(
 
 
 def _fly_and_collect_transport(
-    session, *, prepared, records, plan, values, iob, native_guards, solver, audit, limits, allow_asynchronous_io=None
+    session, *, prepared, records, plan, values, iob, native_guards, solver, audit, limits, allow_asynchronous_io=None,
+    canonical_result=None,
 ):
     """Read complete final states and publish their small existing analysis closure."""
     import json
@@ -722,8 +749,12 @@ def _fly_and_collect_transport(
 
     final_state = session.declare_file(prepared / "results/particle_final_state.csv", "required_evidence")
     session.declare_file(prepared / "results/trajectory_samples.csv", "dense_trajectory")
+    canonical_names = ("initial_states.parquet", "terminal_states.parquet", "events.parquet", "trajectories.h5", "execution.json")
+    if canonical_result is not None:
+        for name in canonical_names:
+            session.declare_file(session.result_dir / "particle_data" / name, "required_evidence")
     import csv
-    with (prepared / "input/cylindrical_ion_source.csv").open(encoding="utf-8", newline="") as stream:
+    with (prepared / "input/cylindrical_particle_source.csv").open(encoding="utf-8", newline="") as stream:
         source_particle_ids = [int(row["particle_id"]) for row in csv.DictReader(stream)]
     metrics, _transmitted = track_transport(
         session,
@@ -749,9 +780,42 @@ def _fly_and_collect_transport(
         metrics=file_record(session.canonical_path(metrics_path), "required_evidence"),
         preparation_receipt=records["preparation_receipt"],
         source_csv=file_record(
-            session.canonical_path(prepared / "input/cylindrical_ion_source.csv"), "required_evidence"
+            session.canonical_path(prepared / "input/cylindrical_particle_source.csv"), "required_evidence"
         ),
     )
+    if canonical_result is not None:
+        from .dual_cone_particle_data import adapt_dual_cone_results
+        from .dual_cone_transport import source_placement
+        from .source import transform_source_rows
+        from msplatform.execution.executable_identity import windows_binary_version
+        from msplatform.results.particle_data import read_particle_data, write_particle_data
+
+        with (prepared / "input/cylindrical_particle_source.csv").open(encoding="utf-8", newline="") as stream:
+            source_rows = list(csv.DictReader(stream))
+        world, _ = source_placement(values["resolved"], values["numerics"], values["source_spec"],
+                                    placement=plan.get("placement"), source_to_device=plan.get("source_to_device"))
+        if canonical_result["frame_id"] != world.to_frame_id:
+            raise ValueError("canonical result frame differs from actual source placement")
+        projected = transform_source_rows(source_rows, world)
+        for source, projected_row in zip(source_rows, projected, strict=True):
+            for axis in "xyz":
+                source[axis + "_mm"] = projected_row["position_" + axis + "_mm"]
+                source["v" + axis + "_mm_per_us"] = float(projected_row["velocity_" + axis + "_m_s"]) / 1000
+        with final_state.open(encoding="utf-8-sig", newline="") as stream:
+            finals = list(csv.DictReader(stream))
+        with (prepared / "results/trajectory_samples.csv").open(encoding="utf-8-sig", newline="") as stream:
+            samples = list(csv.DictReader(stream))
+        result_si = adapt_dual_cone_results(source_rows, finals, samples, metrics["terminal_evidence"],
+            species=canonical_result["species"], backend_version=windows_binary_version(session.context.tools["simion"]))
+        particle_directory = session.result_dir / "particle_data"
+        particle_directory.mkdir(parents=True, exist_ok=True)
+        write_particle_data(particle_directory, result_si, metadata=dict(schema_version=2,
+            initial_state_basis="native_birth_verified", frame_id=canonical_result["frame_id"],
+            clock=canonical_result["clock"], species=[canonical_result["species"]]))
+        read_particle_data(particle_directory)
+        data.update({"particle_data_" + name.replace(".", "_"):
+                     file_record(session.canonical_path(particle_directory / name), "required_evidence")
+                     for name in canonical_names})
     if "placement" in plan:
         data["placement"] = records["prepared_placement"]
     if "source_to_device" in plan:
@@ -771,6 +835,8 @@ def _fly_and_collect_transport(
     if "terminal_evidence" in plan:
         metadata["terminal_evidence"] = plan["terminal_evidence"]
     outputs = [session.canonical_path(path) for path in (final_state, metrics_path, audit)]
+    if canonical_result is not None:
+        outputs.extend(session.canonical_path(session.result_dir / "particle_data" / name) for name in canonical_names)
     outputs.extend(session.canonical_path(path) for path in prepared.rglob("*") if path.is_file())
     outputs = list(dict.fromkeys(outputs))
     return dict(

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "project_execution_profiles",
   "project_id": "ion_processor",
   "profiles": [
@@ -61,6 +61,7 @@
         "baseline": "config/baseline.json",
         "numerics": "config/numerics.json",
         "source": "config/source.json",
+        "gas_environment": "config/gas_environment.json",
         "acceptance": "config/acceptance.json",
         "native_operating_point": "config/native_operating_point.json",
         "diagnostics": "config/diagnostics.json",
@@ -76,10 +77,7 @@
         "python"
       ],
       "model": "双压力区矩形RF电极与碰撞离子输运",
-      "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none"
-      ]
+      "scientific_status": "not_evaluated"
     }
   ]
 }

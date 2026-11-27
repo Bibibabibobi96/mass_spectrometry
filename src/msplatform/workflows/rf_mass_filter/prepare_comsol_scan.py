@@ -6,9 +6,9 @@ import argparse
 import json
 from pathlib import Path
 
-from msplatform.ion_release.paired_mass_scan import (
+from msplatform.particle_release.paired_mass_scan import (
     generate_paired_case_tables,
-    load_ion_rows,
+    load_particle_rows,
 )
 
 
@@ -21,7 +21,7 @@ def generate(
     """Generate COMSOL cases using the frozen source row count."""
     mode = json.loads(mode_path.read_text(encoding="utf-8"))
     scan_spec = mode["mass_scan_spec"]
-    particles_per_mass = len(load_ion_rows(source_path))
+    particles_per_mass = len(load_particle_rows(source_path))
     cases = generate_paired_case_tables(
         source_path,
         output_directory,

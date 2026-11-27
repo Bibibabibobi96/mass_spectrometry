@@ -14,7 +14,7 @@ from msplatform.components import PROVIDER_DEPENDENCIES, validate_provider_depen
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_ROOT = REPO_ROOT / "src/msplatform"
-SCIENTIFIC_DOMAINS = {"analysis", "assembly", "contracts", "io", "ion_release"}
+SCIENTIFIC_DOMAINS = {"analysis", "assembly", "contracts", "io", "particle_release"}
 PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection_oa_tof",
                     "single_reflection_tof",
                     "apertured_tube_electron_impact_ion_source", "transverse_helical_filament_wehnelt_electron_gun",
@@ -27,11 +27,13 @@ DOMAIN_IMPORTS = {
     **{name: SCIENTIFIC_DOMAINS for name in SCIENTIFIC_DOMAINS},
     "gas": {"gas", "contracts", "io"},
     "physics": {"physics", "contracts"},
-    "recipes": {"recipes", "physics", "io", "assembly", "components", "contracts", "ion_release"},
+    "recipes": {"recipes", "physics", "io", "assembly", "components", "contracts", "particle_release"},
     "fields": {"fields"},
-    "tracing": {"tracing", "fields", "physics", "analysis", "results"},
+    # Explicit Species validation is a neutral contract consumed by the SI
+    # tracer; execution and workflow dependencies remain forbidden here.
+    "tracing": {"tracing", "fields", "physics", "contracts", "analysis", "results"},
     "storage": {"storage"},
-    "cli": {"cli", "recipes", "tracing", "workflows", "results", "storage", "execution"},
+    "cli": {"cli", "recipes", "tracing", "workflows", "results", "storage", "execution", "io"},
     "__main__": {"cli"},
     "analysis": SCIENTIFIC_DOMAINS | {"gas"},
     "assembly": SCIENTIFIC_DOMAINS | {"components"},
@@ -113,7 +115,11 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
                 "msplatform.execution.native_artifact_controls.reconcile_native_receipt"}:
             return None
         allowed = DOMAIN_IMPORTS.get(source_domain, set())
-        if source_module in {"msplatform.workflows.reference_tracing", "msplatform.workflows.native_tracing",
+        # This public study author/result coordinator consumes the recipe and
+        # Store APIs. Its numerical implementation remains in pure analysis.
+        if source_module == "msplatform.workflows.reflectron_compensation":
+            allowed = allowed | {"recipes", "storage"}
+        if source_module in {"msplatform.workflows.tracing", "msplatform.workflows.reference_tracing", "msplatform.workflows.native_tracing",
                              "msplatform.workflows.comsol_tracing", "msplatform.workflows.scalar_tracing"}:
             allowed = allowed | {"physics", "recipes", "fields", "tracing", "storage"}
         if len(parts) > 1 and parts[1] not in allowed:
@@ -309,6 +315,8 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
             ("msplatform.tracing", "from msplatform.physics import GasEnvironment"),
             ("msplatform.results.particle_data", "from msplatform.analysis.particle_census import partition_cohort"),
             ("msplatform.workflows.reference_tracing", "from msplatform.storage import ArtifactStore"),
+            ("msplatform.workflows.reflectron_compensation", "from msplatform.recipes import load_recipe"),
+            ("msplatform.workflows.reflectron_compensation", "from msplatform.storage import ArtifactStore"),
             ("msplatform.storage.store", "import os; windows = os.name == 'nt'"),
             ("msplatform.storage.store", "from msplatform.execution.file_lock import process_file_lock"),
             ("msplatform.__main__", "from msplatform.cli import main"),
@@ -319,6 +327,8 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
             ("msplatform.recipes.reference", "from msplatform.workflows import reference_tracing"),
             ("msplatform.results.particle_data", "from msplatform.storage import ArtifactStore"),
             ("msplatform.workflows.unrelated", "from msplatform.storage import ArtifactStore"),
+            ("msplatform.analysis.reflectron_compensation", "from msplatform.storage import ArtifactStore"),
+            ("msplatform.analysis.reflectron_compensation", "from msplatform.recipes import load_recipe"),
             ("msplatform.storage.other", "import os; windows = os.name == 'nt'"),
             ("msplatform.storage.other", "from msplatform.execution.file_lock import process_file_lock"),
             ("msplatform.storage.store", "from msplatform.execution import recovery"),
@@ -552,6 +562,7 @@ lib.import_module('.helper', __package__)
 
     def test_installed_outer_domains_follow_explicit_directions(self):
         allowed = (
+            ("msplatform.cli", "from msplatform.io.strict_json import load_json_object"),
             ("msplatform.capabilities", "from msplatform.components.rf_multipole import design"),
             ("msplatform.capabilities", "from msplatform.examples import load_example"),
             ("msplatform.backends.simion.geometry", "from msplatform.execution import recovery"),
@@ -576,6 +587,7 @@ lib.import_module('.helper', __package__)
             with self.subTest(module=module, source=source):
                 self.assertEqual(core_boundary_errors(source, module, dependencies={"cadquery", "OCP", "pythoncom"}), [])
         rejected = (
+            ("msplatform.io.strict_json", "from msplatform.cli import main"),
             ("msplatform.contracts.clock", "from msplatform.execution import recovery"),
             ("msplatform.results.artifacts", "from msplatform.execution import owner"),
             ("msplatform.results.artifacts", "import subprocess"),

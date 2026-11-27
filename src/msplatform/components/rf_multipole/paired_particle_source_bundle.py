@@ -20,7 +20,7 @@ from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_count_policy import (
     load_particle_count_policy,
 )
-from msplatform.ion_release.numpy_ion11_box import sample_numpy_ion11_box_latent
+from msplatform.particle_release.numpy_ion11_box import sample_numpy_ion11_box_latent
 from msplatform.components.rf_multipole.source_validation import COLUMNS, validate_source
 
 

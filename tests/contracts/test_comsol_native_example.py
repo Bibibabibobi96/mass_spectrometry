@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 from msplatform import assembly, components
-from msplatform.ion_release import sample_release
+from msplatform.particle_release import sample_release
 from msplatform.recipes import load_recipe, validate_recipe
 from msplatform.workflows.comsol_tracing import compile_comsol_inputs
 

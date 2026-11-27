@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform
-from msplatform.ion_release.release import validate_release_spec
+from msplatform.particle_release.release import validate_release_spec
 from msplatform.components.rf_multipole.round_rod_geometry import build_rod_array
 from msplatform.components.ion_processor.assembly_interface import _guide_solids
 
@@ -109,7 +109,7 @@ def export_guide_contract(resolved_model: dict[str, Any], input_identities: dict
     """
     identities = _identities(input_identities)
     baseline = resolved_model["baseline"]
-    if type(baseline.get("schema_version")) is not int or baseline["schema_version"] != 1:
+    if type(baseline.get("schema_version")) is not int or baseline["schema_version"] != 2:
         raise ValueError("unsupported IP baseline schema")
     source = resolved_model["source"]
     validate_release_spec(source)

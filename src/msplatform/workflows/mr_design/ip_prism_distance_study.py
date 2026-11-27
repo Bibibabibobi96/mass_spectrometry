@@ -37,7 +37,7 @@ from msplatform.workflows.mr_design.ip_prism_local_geometry import prepare_geome
 FROZEN_SCIENTIFIC_BRIDGE_MODULES = (
     "src/msplatform/contracts/particle_physics.py",
     "src/msplatform/assembly/resolve_assembly.py",
-    "src/msplatform/ion_release/release.py",
+    "src/msplatform/particle_release/release.py",
     "src/msplatform/execution/simion_dispatch.py",
 )
 
@@ -372,8 +372,8 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
     """Project exact native CSG and evaluate the unchanged sole Lua voltage schedule."""
     import copy
     from msplatform.contracts.particle_physics import kinetic_energy_ev
-    from msplatform.workflows.prepared_joint.ion_processor_assembly import transform_shape
-    from msplatform.workflows.prepared_joint.native_preparation import project_provider_voltages
+    from msplatform.components.ion_processor.assembly_geometry import transform_shape
+    from msplatform.backends.simion.provider_voltage_projection import project_provider_voltages
 
     model = case["config"]
     if geometry["frame_id"] != registration["to_frame_id"]:

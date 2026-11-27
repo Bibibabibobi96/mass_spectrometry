@@ -37,7 +37,7 @@ foreach($name in @('Invoke-FocusFrozenPython','Initialize-FocusFrozenPython')){
 $modules=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'},$true)|ForEach-Object{
  $elements=@($_.CommandElements);for($i=0;$i-lt$elements.Count-1;$i++){if($elements[$i].Extent.Text-eq'-Module'){$elements[$i+1].Extent.Text}}
 })
-if(($modules-join',')-ne'msplatform.ion_release.cylinder,msplatform.backends.simion.oa_focus_source,msplatform.workflows.oa_focus_analysis'){throw 'Actual leaf scientific invocations differ'}
+if(($modules-join',')-ne'msplatform.particle_release.cylinder,msplatform.backends.simion.oa_focus_source,msplatform.workflows.oa_focus_analysis'){throw 'Actual leaf scientific invocations differ'}
 New-Item -ItemType Directory -Path (Join-Path $Root inputs),(Join-Path $Root results),(Join-Path $Root simion) -Force|Out-Null
 $dataFiles=Get-Content $Data -Raw|ConvertFrom-Json -AsHashtable
 foreach($pair in $dataFiles.GetEnumerator()){Copy-VerifiedRunInput $pair.Value (Join-Path $Root ('inputs/'+$pair.Key))|Out-Null}
@@ -56,7 +56,7 @@ try{
  if(-not[object]::ReferenceEquals($OutputEncoding,$savedEncoding)){throw 'Package enumeration changed caller OutputEncoding'}
  if($Mode-eq'failure'){
   $cases=@()
-  foreach($relative in @('src/msplatform/components/orthogonal_accelerator/component_contract.json','src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py','src/msplatform/ion_release/cylinder.py','src/msplatform/backends/simion/oa_focus_source.py')){
+  foreach($relative in @('src/msplatform/components/orthogonal_accelerator/component_contract.json','src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py','src/msplatform/particle_release/cylinder.py','src/msplatform/backends/simion/oa_focus_source.py')){
    $path=Join-Path $context.code_root $relative;$bytes=[IO.File]::ReadAllBytes($path);Remove-Item -LiteralPath $path
    try{
     $vendorCalls=0
@@ -69,7 +69,7 @@ try{
   $cases|ConvertTo-Json -Depth 10|Set-Content (Join-Path $Root 'results/failure_cases.json') -Encoding utf8
  }else{
   $receipt=Join-Path $Root 'inputs/release_receipt.json';$release=Join-Path $Root 'inputs/release.csv'
-  Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.ion_release.cylinder -Arguments @('--materialize',(Join-Path $Root 'inputs/release_spec.json'),'--state-table',$release,'--receipt',$receipt)
+  Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.particle_release.cylinder -Arguments @('--materialize',(Join-Path $Root 'inputs/release_spec.json'),'--state-table',$release,'--receipt',$receipt)
   if($LASTEXITCODE-ne0){throw 'Frozen release failed'}
   Invoke-FocusFrozenPython -Python $Python -CodeRoot $context.code_root -OriginsPath $context.origins_path -Module msplatform.backends.simion.oa_focus_source -Arguments @('--release-receipt',$receipt,'--campaign',(Join-Path $Root 'inputs/campaign.json'),'--provider-plan',(Join-Path $Root 'inputs/component_focus_pa_plan.json'),'--resolved-projection',(Join-Path $Root 'inputs/resolved_projection.json'),'--fly2',(Join-Path $Root 'simion/source.fly2'),'--source-states',(Join-Path $Root 'simion/source.lua'),'--receipt',(Join-Path $Root 'results/source_projection.json'))
   if($LASTEXITCODE-ne0){throw 'Frozen projection failed'}
@@ -198,7 +198,7 @@ class FocusFrozenPythonTests(unittest.TestCase):
                                 for row in manifest["inputs"].values()))
             self.assertFalse(any(path.name.startswith("test_") for path in copied))
             origins = json.loads((run / "results/python_execution.json").read_text(encoding="utf-8"))
-            self.assertEqual([row["module"] for row in origins], ["preflight", "msplatform.ion_release.cylinder",
+            self.assertEqual([row["module"] for row in origins], ["preflight", "msplatform.particle_release.cylinder",
                 "msplatform.backends.simion.oa_focus_source",
                 "msplatform.workflows.oa_focus_analysis"])
             self.assertTrue(all(Path(path).is_relative_to(code) for row in origins for path in row["module_paths"].values()))

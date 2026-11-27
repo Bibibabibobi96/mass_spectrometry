@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "environment_id": "dual_cone_n2_reservoirs_v1",
+  "species_ref": {"species_id": "n2", "version": "nitrogen_effective_hard_sphere_v1"},
+  "collision_model_ref": {"model_id": "simion_official_collision_sds", "version": "simion_official_collision_sds_v1"},
+  "temperature_k": 300.0,
+  "inlet_pressure_pa": 101325.0,
+  "outlet_pressure_pa": 400.0,
+  "uniform_rear": {
+    "start_ref": "second_cone_aperture",
+    "pressure_ref": "outlet_pressure_pa",
+    "axial_velocity_m_per_s": 100.0,
+    "radial_velocity_m_per_s": 0.0,
+    "upstream": "prescribed_zero_pressure_collision_omission"
+  }
+}

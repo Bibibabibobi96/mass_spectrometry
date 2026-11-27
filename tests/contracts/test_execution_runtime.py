@@ -997,7 +997,7 @@ class NormalOwnerTests(unittest.TestCase):
                 producer_run = Path(producer['run_directory'])
                 source = file_record(producer_run/'results/source.csv', 'required_evidence')
                 packet = load_recorded_release(source, clock=ClockIdentity('fixture', 'A'*64), frame_id='rf',
-                    source_component_id='rf', species_id='fixture', relative_weights=None,
+                    source_component_id='rf', species_id='fixture', species_kind='ion', relative_weights=None,
                     instrument_origin_us=0., expected_particle_ids=[7])
                 authority = validate_birth_authority({'manifest':producer['manifest'], 'records':{'source':source}}, packet)
                 def consume(session):

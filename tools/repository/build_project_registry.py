@@ -19,11 +19,6 @@ else:
     from msplatform.contracts.machine_contracts import ContractError, load_json, pointer_value, validate_schema
 
 
-MATURITY = {"prototype": 0, "static": 1, "candidate": 2, "formal": 3}
-EVIDENCE = {"plan": -1, **MATURITY}
-# Registry records retained Formal history; project lifecycle preflight remains the execution authority.
-LIFECYCLE_MATURITY = {**MATURITY, "formal_revalidation_pending": MATURITY["formal"]}
-FORMAL_ASSET_LIFECYCLES = frozenset(("formal", "formal_revalidation_pending"))
 DEFAULT_OUTPUT = REPO_ROOT / "config" / "project_registry.json"
 DESCRIPTOR_ROOTS = (Path("src/msplatform/components"),)
 
@@ -170,8 +165,6 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
         if capability_id in capability_ids:
             raise ContractError(f"{path}: duplicate capability_id {capability_id!r}")
         capability_ids.add(capability_id)
-        if MATURITY[capability["status"]] > LIFECYCLE_MATURITY[descriptor["lifecycle_status"]]:
-            raise ContractError(f"{path}: capability {capability_id!r} exceeds project maturity")
         for mode in capability["modes"]:
             mode_path = project_root / "config" / "modes" / f"{mode}.json"
             # Caller-input workflows need no invented fixed scientific mode file.
@@ -308,9 +301,6 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
             if key in profile_keys:
                 raise ContractError(f"{execution_path}: duplicate capability/mode profile {key!r}")
             profile_keys.add(key)
-            if any({"none": -1, "candidate": 2, "formal": 3}[level] > MATURITY[capability["status"]]
-                   for level in profile["qualification_support"]):
-                raise ContractError(f"{execution_path}: requested qualification exceeds capability maturity")
             for step in profile["steps"]:
                 relative = step["entrypoint"]
                 entrypoint = repo_root / relative if relative.startswith("src/") else project_root / relative
@@ -433,22 +423,12 @@ def validate_descriptor(descriptor: dict[str, Any], path: Path, repo_root: Path)
     elif descriptor["contracts"]["optimization_envelope"] is not None:
         raise ContractError(f"{path}: optimization envelope requires a design-variable catalog")
 
-    assets = descriptor["formal_assets"]
+    assets = descriptor["asset_references"]
     identity = assets["identity_contract"]
     if identity is not None and not (project_root / identity).is_file():
-        raise ContractError(f"{path}: formal identity contract is missing: {identity}")
-    if assets["status"] == "formal":
-        if (
-            descriptor["lifecycle_status"] not in FORMAL_ASSET_LIFECYCLES
-            or identity is None
-            or not assets["types"]
-        ):
-            raise ContractError(
-                f"{path}: formal assets require formal lifecycle or revalidation-pending history, "
-                "types, and identity contract"
-            )
-    elif any(capability["status"] == "formal" for capability in descriptor["capabilities"]):
-        raise ContractError(f"{path}: formal capability declared without formal assets")
+        raise ContractError(f"{path}: asset identity contract is missing: {identity}")
+    if assets["types"] and identity is None:
+        raise ContractError(f"{path}: referenced asset types require an identity contract")
 
 
 def build_registry(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
@@ -482,7 +462,7 @@ def build_registry(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         )
     validate_legacy_identity_mappings(descriptors, repo_root)
     registry = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "generated_project_capability_registry_do_not_edit",
         "generated_from": source_records,
         "projects": descriptors,

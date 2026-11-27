@@ -6,9 +6,9 @@ import argparse
 import json
 from pathlib import Path
 
-from msplatform.ion_release.paired_mass_scan import (
-    generate_paired_ion_table,
-    load_ion_rows,
+from msplatform.particle_release.paired_mass_scan import (
+    generate_paired_particle_table,
+    load_particle_rows,
     sha256,
     validate_masses,
 )
@@ -23,8 +23,8 @@ def generate(source_path: Path, mode_path: Path, destination: Path, metadata_pat
     """Generate the paired scan table and its identity metadata."""
     mode = json.loads(mode_path.read_text(encoding="utf-8"))
     masses = validate_masses(mode["mass_scan_spec"]["paired_source_masses_Th"])
-    expected_per_mass = len(load_ion_rows(source_path))
-    return generate_paired_ion_table(
+    expected_per_mass = len(load_particle_rows(source_path))
+    return generate_paired_particle_table(
         source_path,
         destination,
         metadata_path,

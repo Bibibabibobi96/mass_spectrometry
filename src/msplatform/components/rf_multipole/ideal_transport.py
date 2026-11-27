@@ -12,8 +12,8 @@ import numpy as np
 
 from msplatform.contracts.particle_count import validate_positive_particle_count
 from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from msplatform.ion_release.mt19937_disk_cone_rf_phase import IDEAL_TRANSPORT_STRATEGY
-from msplatform.ion_release.release import generate_release_states
+from msplatform.particle_release.mt19937_disk_cone_rf_phase import IDEAL_TRANSPORT_STRATEGY
+from msplatform.particle_release.release import generate_release_states
 from msplatform.components.rf_multipole.family_contract import (
     VoltageDrive, from_high_order_baseline, rf_waveform_voltage,
 )
@@ -138,8 +138,8 @@ def source_particles(contract: dict[str, Any]) -> list[dict[str, float]]:
     source = contract["particle_source"]
     validate_positive_particle_count(int(source["count"]))
     states = generate_release_states({
-        "schema_version": 1,
-        "role": "repository_ion_release",
+        "schema_version": 2,
+        "role": 'repository_particle_release',
         "frame_id": "multipole_ideal_transport_local_cartesian_v1",
         "particle_count": int(source["count"]),
         "mother_particle_count": int(source["count"]),
@@ -147,7 +147,7 @@ def source_particles(contract: dict[str, Any]) -> list[dict[str, float]]:
             "shape": "disk", "center_mm": [0.0, 0.0, 0.0],
             "radius_mm": float(source["maximum_source_radius_mm"]),
         },
-        "species": {"mass_amu": float(source["mass_amu"]), "charge_state": int(source["charge_state"])},
+        "species": {'species_kind': 'ion', "mass_amu": float(source["mass_amu"]), "charge_state": int(source["charge_state"])},
         "sampling": {
             "strategy": IDEAL_TRANSPORT_STRATEGY, "seed": int(source["seed"]),
             "rf_frequency_hz": float(contract["rf"]["frequency_Hz"]),

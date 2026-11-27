@@ -247,7 +247,7 @@ try {
         'msplatform.workflows.rf_mass_filter.reference',
         'msplatform.components.rf_multipole.family_contract',
         'msplatform.analysis.mass_response',
-        'msplatform.ion_release.paired_mass_scan',
+        'msplatform.particle_release.paired_mass_scan',
         'msplatform.io.file_identity',
         'msplatform.analysis.peak_metrics'
     )

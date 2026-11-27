@@ -32,7 +32,7 @@ $gem = Join-Path $simionRoot 'two_zone_accelerator.gem'
 $program = Join-Path $simionRoot 'oatof_ideal_grounded.lua'
 $fly2 = Join-Path $simionRoot 'oatof_ideal_grounded.fly2'
 $iobBuilder = Join-Path $simionRoot 'build_formal_iob.lua'
-$ionGenerator = Join-Path $simionRoot 'generate_comsol_consistent_ions.ps1'
+$ionGenerator = Join-Path $simionRoot 'generate_comsol_consistent_particles.ps1'
 $logAnalyzer = Join-Path $simionRoot 'analyze_ideal_field_log.ps1'
 
 New-Item -ItemType Directory -Force -Path $scratchDir,$runDir,$resultDir,$logDir | Out-Null

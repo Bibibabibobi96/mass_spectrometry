@@ -30,10 +30,10 @@ from msplatform.components.rf_multipole.source_validation import (
     validate_source,
 )
 from msplatform.backends.simion.rf_particle_source import render_canonical_source
-from msplatform.ion_release import mt19937_disk_cone_rf_phase as release_sampler
+from msplatform.particle_release import mt19937_disk_cone_rf_phase as release_sampler
 from msplatform.workflows.rf_runtime_profiles import resolve_runtime_profile
 from msplatform.workflows.rf_resource_budget import validate_pilot_budget
-from msplatform.ion_release.release import materialize_release_from_file as materialize
+from msplatform.particle_release.release import materialize_release_from_file as materialize
 from tests.components.rf_multipole_ion_optics.domain.test_compile_design_request import design_request
 
 
@@ -42,8 +42,8 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 def planar_release_spec(resolved: dict, *, count: int = 100) -> dict:
     """A new authored source, sharing the established family sampler only."""
     return dict(
-        schema_version=1,
-        role="repository_ion_release",
+        schema_version=2,
+        role="repository_particle_release",
         frame_id=resolved["coordinate"]["coordinate_id"],
         particle_count=count,
         mother_particle_count=count,
@@ -52,7 +52,7 @@ def planar_release_spec(resolved: dict, *, count: int = 100) -> dict:
             center_mm=[0.0, 0.0, transport_observations(resolved)["release_plane_z_mm"]],
             radius_mm=0.5,
         ),
-        species=dict(mass_amu=524.0, charge_state=resolved["particle_source"]["charge_state"]),
+        species=dict(species_kind="ion", mass_amu=524.0, charge_state=resolved["particle_source"]["charge_state"]),
         sampling=dict(
             strategy="mt19937_uniform_disk_filled_cone_rf_phase_v1",
             seed=2026072801,
@@ -177,7 +177,7 @@ class ParticleSourcePreflightTest(unittest.TestCase):
         return path
 
     def test_release_materializes_once_and_full_and_batch_projection_keep_frozen_states(self) -> None:
-        from msplatform.ion_release import mt19937_disk_cone_rf_phase as sampler
+        from msplatform.particle_release import mt19937_disk_cone_rf_phase as sampler
 
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -255,7 +255,7 @@ from pathlib import Path
 from unittest.mock import patch
 from msplatform.components.rf_multipole import source_validation as preflight
 from msplatform.backends.simion.rf_particle_source import render_canonical_source
-from msplatform.ion_release import mt19937_disk_cone_rf_phase as sampler
+from msplatform.particle_release import mt19937_disk_cone_rf_phase as sampler
 assert Path(preflight.__file__).resolve().is_relative_to(Path.cwd().resolve())
 source,receipt,spec,resolved=[Path('inputs')/n for n in ('source.csv','receipt.json','spec.json','resolved.json')]
 sys.argv=['preflight','--source',str(source),'--resolved-design',str(resolved),'--output','inputs/metadata.json',
@@ -383,10 +383,10 @@ print('DETACHED_RELEASE=PASS SAMPLES=1')
 
     def test_hash_bound_volume_snapshot_is_the_only_nonplanar_source_exception(self) -> None:
         spec = {
-            "schema_version": 1,
-            "role": "continuous_axial_volume_ion_beam_source",
-            "method": "independent_spatial_velocity_ion_source_snapshot_v1",
-            "source_region_model": "ion_source_volume_cylinder_v1",
+            "schema_version": 2,
+            "role": 'continuous_axial_volume_particle_beam_source',
+            "method": 'independent_spatial_velocity_particle_source_snapshot_v2',
+            "source_region_model": 'particle_source_volume_cylinder_v2',
             "source_frame_id": "multipole_cartesian_z_axis_v1",
             "particle_count": 20,
             "seed": 7,
@@ -407,7 +407,7 @@ print('DETACHED_RELEASE=PASS SAMPLES=1')
                 "sigma_vz_m_s": 50.0,
                 "minimum_vz_m_s": 1500.0,
             },
-            "ion": {"mass_amu": 100.0, "charge_state": 1},
+            'species': {'species_kind': 'ion', "mass_amu": 100.0, "charge_state": 1},
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

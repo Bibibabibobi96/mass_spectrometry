@@ -191,7 +191,8 @@ def _selection_identity(selection: Mapping[str, Any]) -> dict:
     return result
 
 def run_scalar_stages(recipe: dict, instrument: Any, particles: Any, *, context: Any,
-                      stage_cache: Any, invoke: Any, implementation: dict, epoch_record: dict) -> tuple[Any, dict]:
+                      stage_cache: Any, invoke: Any, implementation: dict, epoch_record: dict,
+                      resource_root: Any = None) -> tuple[Any, dict]:
     """Export existing COMSOL workpoints and track original births via one world owner.
 
     Stage caching and lifetime claims are supplied by the caller's existing
@@ -202,18 +203,13 @@ def run_scalar_stages(recipe: dict, instrument: Any, particles: Any, *, context:
     if not isinstance(implementation, Mapping) or set(implementation) != {"comsol", "simion"}:
         raise ValueError("scalar bridge requires separate COMSOL and SIMION implementation identities")
     admission = compile_scalar_inputs(recipe)
-    from msplatform.ion_release import sample_release
-    if not hasattr(particles, "to_dict") or not hasattr(particles, "rows"):
-        raise ValueError("scalar bridge requires the actual canonical birth realization")
-    birth = particles.to_dict()
+    from .native_tracing import _particle_document, _realizations
     release = recipe["study"]["document"]["release"]
-    if release.get("role") == "canonical_mass_scan_request":
-        from .mass_scan import prepare_mass_scan
-        expected_births = prepare_mass_scan(release)
-    else:
-        expected_births = [sample_release(release)]
-    if not any(expected.to_dict() == birth for expected in expected_births):
+    birth = _particle_document(particles)
+    expected_births = _realizations(release, resource_root=resource_root)
+    if not any(_particle_document(expected) == birth for expected in expected_births):
         raise ValueError("scalar bridge births differ from the frozen study source")
+    rows = birth["rows"] if isinstance(particles, Mapping) else particles.rows
     if (instrument.composition_plan != admission["instrument"].composition_plan
             or instrument.components_resolved != admission["instrument"].components_resolved):
         raise ValueError("caller Assembly differs from frozen scalar study")
@@ -287,12 +283,14 @@ def run_scalar_stages(recipe: dict, instrument: Any, particles: Any, *, context:
     study = recipe["study"]["document"]
     tof = next(name for name, component in instrument.components.items() if component.provider_id == "single_reflection_tof")
     observations = {"plane_observations":[{"schema_version":2, "observation_id":"detector", "source_instance_id":tof,
-        "surface_id":"detector_active_face", "max_records":len(particles.rows)}],
+        "surface_id":"detector_active_face", "max_records":len(rows)}],
         "observation_times_us":copy.deepcopy(recipe["recording"]["observation_times_us"])}
+    if "field_intervention" in recipe["recording"]:
+        observations["field_intervention"] = copy.deepcopy(recipe["recording"]["field_intervention"])
     propagation = {"schema_version":1, "scope":"continuous_assembly", "stop":None, "consumed_plane_events":[],
                    "end_policy":copy.deepcopy(study["numerics"]["tracing"]["end_policy"])}
     numerics = copy.deepcopy(study["numerics"]["tracing"]["simion"])
-    trace_key = canonical_json_sha256({"stage":"scalar_simion_trace", "world":world_key, "particles":particles.to_dict(),
+    trace_key = canonical_json_sha256({"stage":"scalar_simion_trace", "world":world_key, "particles":(release if isinstance(particles, Mapping) else birth),
         "propagation":propagation, "observations":observations, "numerics":numerics,
         "epoch_sha256":epoch_record["sha256"], "implementation":implementation["simion"]})
     trajectory, receipt = stage_cache("scalar_trace", trace_key, "trajectory_result",

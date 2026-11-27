@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "project_execution_profiles",
   "project_id": "rf_multipole_ion_optics",
   "profiles": [
@@ -100,10 +100,7 @@
         "python"
       ],
       "model": "四极杆有限三维电场与轨迹",
-      "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none"
-      ]
+      "scientific_status": "not_evaluated"
     },
     {
       "profile_id": "quadrupole_transport_interface_readiness_candidate",
@@ -252,11 +249,7 @@
         "python"
       ],
       "model": "四极杆有限场跨求解器接口对照",
-      "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none",
-        "candidate"
-      ]
+      "scientific_status": "not_evaluated"
     },
     {
       "profile_id": "quadrupole_mass_filter_simion_functional_reference",
@@ -321,10 +314,7 @@
         "python"
       ],
       "model": "有限长四极杆RF/DC质量过滤",
-      "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none"
-      ]
+      "scientific_status": "not_evaluated"
     },
     {
       "profile_id": "hexapole_simion_transport_campaign_engineering",
@@ -421,10 +411,7 @@
         "python"
       ],
       "model": "六极杆有限三维电场与轨迹",
-      "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none"
-      ]
+      "scientific_status": "not_evaluated"
     },
     {
       "profile_id": "octupole_simion_transport_campaign_engineering",
@@ -524,10 +511,7 @@
         "python"
       ],
       "model": "八极杆有限三维电场与轨迹",
-      "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none"
-      ]
+      "scientific_status": "not_evaluated"
     }
   ]
 }

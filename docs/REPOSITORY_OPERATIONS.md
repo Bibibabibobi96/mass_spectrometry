@@ -13,7 +13,7 @@
 | 创建run、冻结输入、发布manifest、保护来源或恢复收尾 | [机器合同与生命周期API](../tools/repository/README.md#python工作流的公共生命周期owner)；小Result保存在run外，原CLI的ResumeFinalization只恢复收尾 |
 | 发现项目、校验设计请求与预览执行计划 | [项目发现与规划](../tools/repository/README.md#项目发现) |
 | 连接组件、解析完整配方与局部范围 | [公共连接合同](../docs/CONNECTIONS.md) |
-| 构造母群、释放与粒子身份 | [离子释放](../docs/ION_RELEASE.md) |
+| 构造母群、释放与粒子身份 | [离子释放](../docs/PARTICLE_RELEASE.md) |
 | 计算峰宽、比较场或配对粒子数据 | [公共分析](../tests/analysis/README.md) |
 | 维护COMSOL启动器与共享小模型 | [COMSOL实现](../docs/COMSOL_BACKEND.md) |
 | 维护SIMION执行、PA缓存、批次与恢复 | [SIMION实现](../docs/SIMION_BACKEND.md)；批次协调使用 `Invoke-SimionBatchPhase`，科学物化和接受条件由调用方提供 |
@@ -35,7 +35,7 @@ remain allowed; this is a dependency check, not a runtime reflection sandbox.
 ## 科学核心发行与旧入口
 
 `mass-spectrometry-analysis` 0.4开发版的实现位于 `src/msplatform/`，使用 Python 3.11 与标准
-setuptools src 布局。正式 API 是 `msplatform.ion_release.release` 的请求校验、生成、物化和读回，
+setuptools src 布局。正式 API 是 `msplatform.particle_release.release` 的请求校验、生成、物化和读回，
 `msplatform.assembly.resolve_assembly` 的完整布局与局部范围派生，
 `msplatform.analysis.peak_metrics` 的 `AnalysisSettings`、`compute_time_peak_metrics`、`half_height_width`，
 以及 `msplatform.contracts` 的刚体变换、粒子物理和本地 schema 校验。
@@ -181,12 +181,7 @@ The same published software fixture used 336 hash calls instead of 430, with
 tamper, source-protection and unqualified-relocation refusals retained. These
 fixture counts do not predict production throughput or the Repository budget.
 
-The retained `multipole_ip.continuous` consumer now delegates field capability
-admission to the public operations rather than requiring the historical RF-IP
-field-family label. It forwards an explicitly supplied sampled basis and collision
-reuse reference to the same field stage. Five software parents passed (369.939 s),
-including an actual published neutral-field consumer with HS1, original sparse IDs
-and refusal cases; native leaves were inert.
+Continuous original-birth RF–IP and RF–IP–MR tracking uses the public SimulationRecipe and explicit field reference with one frozen gas environment. Prior continuous consumer fixture results remain historical software evidence; they do not establish native qualification.
 
 For unmirrored 3D scalar arrays, the runtime first requires the query inside the
 closed stored box, then checks the stored part of the conservative derivative
@@ -401,7 +396,7 @@ OCCT序列化精度profile；体积界不是物理／制造公差。可显式给
 这些语义检查，也不代表任意器件／姿态已支持。准确能力和GUI验收范围查
 [集成状态](../docs/INTEGRATION.md#当前边界)。
 
-SolidWorks兼容查看是后续显式可选动作`applications.open_model(cad, application="solidworks", context=..., artifact_store=store)`，
+SolidWorks兼容查看是后续显式可选动作`applications.open_model(cad, application="solidworks", context=context, artifact_store=store)`，
 另需应用、配对模板与`open_model`预算，见本节下文；不是生成STEP的前置，也不自动保存／转存。
 同一`assembly`可并列传给`msplatform.backends.simion.compile_geometry(assembly, numerics=study.geometry_numerics)`，
 纯编译不采样、不写工作目录、不Refine／Fly或开GUI；不经STEP导入来反建后端几何。
@@ -450,17 +445,17 @@ locations for the same record is rejected. This read-only operation does not mak
 execution through relocated inputs available automatically; each execution consumer must
 preserve the same explicit locations and input protection.
 
-`msplatform.ion_release.sample_release`消费版本1的`canonical_birth_source_request`：显式`release_spec`（原生成器合同）、
+`msplatform.particle_release.sample_release`消费版本1的`canonical_birth_source_request`：显式`release_spec`（原生成器合同）、
 `clock`（epoch与authority SHA）、`instrument_origin_us`、`species_id`、`source_component_id`与
 `relative_weights`，可另给首次作者`particle_ids`。`relative_weights=None`明确使用单位权重；映射则
 精确覆盖实际作者ID，JSON十进制ID键与整数ID键不能重复。返回`ReleaseRealization`的`rows`是原CSV1
 出生状态，`mother`覆盖本次实际释放的全部粒子，`to_dict()`展开原spec、生成器原始行及初始ID映射。
 所有公开嵌套视图返回副本；生成族`mother_particle_count`用于原采样前缀关系，不虚构本run未释放母粒子。
 此入口不重编号已有handoff，不把snapshot重标为birth，也不声明未观测相位；原低层
-`msplatform.ion_release.release.generate_release_states`合同和采样次序保持。实际原生执行仍须验证相同
+`msplatform.particle_release.release.generate_release_states`合同和采样次序保持。实际原生执行仍须验证相同
 clock authority的真实发布record，并由backend检查原生ID表示范围。
 
-`msplatform.ion_release.load_recorded_release` reads an explicitly identified canonical
+`msplatform.particle_release.load_recorded_release` reads an explicitly identified canonical
 birth CSV without running a sampler. The caller supplies the full ordered particle IDs,
 clock, frame, source component, species, time mapping and positive weights (or explicit
 unit weights). Its distinct recorded-birth packet retains the selected file record and
@@ -493,6 +488,7 @@ observation可为census的null、`{"kind":"canonical_event","event":...}`，或�
 （epoch、authority SHA、`instrument_time_us`）及`settings`（原AnalysisSettings字段或显式null）。
 峰使用共同仪器参考，保留原算法metadata；缺测／非等权分别报告不足／不支持，不补飞或授予精度资格。
 
+沿用前述同一个 `store`；Store 对来源持有认证声明及操作系统文件锁。
 `applications.open_model(cad, application="solidworks", context=context, artifact_store=store)`是独立、同步的STEP查看动作。
 `open_model` stage runtime明确`com_class="SldWorks.Application.30"`、现有clean `part_template`及`assembly_template`绝对路径与
 `lifecycle="document_close"`；显式工具路径使用`tools["solidworks"]`。它拒绝接管已有应用，复制已发布
@@ -632,7 +628,7 @@ Lua保留已冻结根的加载职责，均不是installed侧反向依赖作者�
 integration所有者负责组合入口、source/clock、程序与冻结资源声明同步。历史协议reader只读边界继续保留。
 性能与正式模型／科学资格、COMSOL后续迁移及P5新使用者验证不由桥清单关闭；阶段责任仍查[路线图](../docs/ROADMAP.md#科学核心与平台边界迁移)。
 
-Ion-release and assembly compatibility aliases have retired. Active imports, CLI calls and new frozen source declarations use `msplatform.ion_release` and `msplatform.assembly.resolve_assembly` directly. Repository test modules remain under `tests/ion_release`; the following P1/P2 inventory is historical, not an active import contract.
+Ion-release and assembly compatibility aliases have retired. Active imports, CLI calls and new frozen source declarations use `msplatform.particle_release` and `msplatform.assembly.resolve_assembly` directly. Repository test modules remain under `tests/ion_release`; the following P1/P2 inventory is historical, not an active import contract.
 
 ### P1／P2 迁移时的旧入口索引
 
@@ -679,7 +675,7 @@ Ion-release and assembly compatibility aliases have retired. Active imports, CLI
 - `projects/rf_multipole_ion_optics/workflows/same_solver_convergence/run_comparison.ps1`：粒子物理来源探针。
 - `projects/rf_multipole_ion_optics/workflows/mass_filter_reference/compare_responses.ps1`、`run_comsol.ps1`、`run_simion.ps1`：峰形模块来源探针。
 - `projects/rf_multipole_ion_optics/runtime/run_simion_finite_3d_transport.ps1`：内嵌Python的schema校验。
-- `projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/generate_comsol_consistent_ions.ps1`：以文件路径调用 `common/ion_release/dotnet_gaussian_box_ion11.py`。
+- `src/msplatform/backends/simion/resources/generate_comsol_consistent_particles.ps1`：用显式选择的 Python 调用 `msplatform.particle_release.dotnet_gaussian_box_ion11`。
 
 上述入口随各自科学调用和来源探针一起迁移，最迟P4；公共兼容测试保留行为保证后再退出旧桥导入。
 IP与MR的有限桥冻结声明、单反射候选及重分析清单同时交付canonical源码和schema；

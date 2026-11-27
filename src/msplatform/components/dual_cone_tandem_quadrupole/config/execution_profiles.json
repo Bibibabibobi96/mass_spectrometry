@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "project_execution_profiles",
   "project_id": "dual_cone_tandem_quadrupole",
   "profiles": [
@@ -67,6 +67,7 @@
         "geometry_baseline": "config/baseline.json",
         "resolved_geometry": "config/resolved_geometry.json",
         "gas_flow_science": "config/gas_flow_science.json",
+        "gas_environment": "config/gas_environment.json",
         "comsol_solver_numerics": "config/comsol_solver_numerics.json"
       },
       "binding_types": {
@@ -81,11 +82,8 @@
         "matlab",
         "python"
       ],
-      "model": "\u8f74\u5bf9\u79f0\u7a7a\u5305\u7edc\u53ef\u538b\u7f29\u6c14\u6d41",
-      "scientific_status": "not_evaluated",
-      "qualification_support": [
-        "none"
-      ]
+      "model": "轴对称空包络可压缩气流",
+      "scientific_status": "not_evaluated"
     }
   ]
 }
