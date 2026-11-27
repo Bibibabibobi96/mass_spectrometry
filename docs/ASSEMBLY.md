@@ -107,152 +107,56 @@ component 3输入生成composition plan 5；显式旧component 1／2输入分别
 
 以下为公开入口。商业执行须有明确科学输入、授权及相称预算；准备成功不代表求场、Fly或物理验收。
 跨项目新run归`instrument_assembly`，独立组件几何／场／CAD仍归其提供者项目。
-公开workflow由`src/msplatform/workflows/config/assembly_registry.json`的`assemblies`集合登记，
-以`assembly_id`选择owner；入口和recipe必须位于`src/msplatform`，不再声明独立的integration源码根。
+统一 Recipe 由公共追踪入口解析；仍存的独立研究工作流以
+`src/msplatform/workflows/config/assembly_registry.json` 的实际登记为准。入口和运行资源属于 `msplatform`。
 
-The SFI entry consumes an explicit published FieldBundle and original births.
-Fresh sources use `canonical_birth_source_request`; the historical recorded-birth
-path requires a successful preparation manifest, species and complete original IDs.
-New split RF/OA/TOF recorded sources use preparation schema12, binding the actual
-published plan6 FieldBundle, original CSV/metadata and explicit instrument time
-origin. Its current metadata validator supports RF births; OA-only recorded
-metadata is rejected. Historical preparation remains readable; legacy composite
-new execution is retired. This binding has software tests, with native acceptance
-tracked in the migration record.
-The public tracking owner generates the actual run identity returned in `OWNER_RETURNED`.
-The former `-Request -ExecutionBudgetPath` entry and duplicate execution body are retired.
-Historical preparation readers and analysis remain; native and installed acceptance
-are tracked in the [current SFI status](INTEGRATION.md#单反射整机).
+公开原生追踪通过同一 Recipe/Study 选择真实场和显式原出生。历史 recorded-birth 请求版本12
+仅可用 `results.historical_flight.decode_flight_request` 读取，不自动补造粒子种类或恢复旧执行入口。
+当前 canonical recorded source 必须显式冻结物种、原母群与时钟；能力与 native 证据以
+[追踪合同](TRACING.md)和[迁移记录](development/architecture-migration.md)为准。
 
 ### 模拟路径选择
 
-下图说明当前已支持的双路径语义；箭头表示本次研究范围内的推进与数据交接。
-它不声明全程场耦合或原生checkpoint能力，当前可执行范围见紧随其后的选择表。
-
-```mermaid
-flowchart TB
-    Scope["声明研究范围、源与仪器时钟"]
-    Prepare["共用装配定义、准备与执行机制"]
-    SegmentA["分段接续：上游段飞行"]
-    Transfer["转交粒子状态与实验时刻"]
-    SegmentB["重新释放，继续下游段"]
-    Continuous["联合连续：范围内跨部件持续推进"]
-    Observe["观测汇总、损失与峰形诊断"]
-    Scope --> Prepare
-    Prepare --> SegmentA
-    Prepare --> Continuous
-    SegmentA --> Transfer
-    Transfer --> SegmentB
-    SegmentA -->|上游观测| Observe
-    Transfer -->|交接与母群事实| Observe
-    SegmentB --> Observe
-    Continuous --> Observe
-```
-
-图中的汇总要求保留各段、交接与原母群事实，不能只统计最后一段幸存者；未知状态不计为物理损失。
-
-以下[分段命令](#分段接续模拟)与[连续命令](#联合连续模拟)给出实际入口和输入来源；
-坐标、时钟与交接合同见[连接架构](COMPONENT_CONNECTION_ARCHITECTURE.md)，证据边界见
-[集成状态](INTEGRATION.md)。
-
-| 路径 | 粒子与时钟 | 正常入口与当前范围 |
-|---|---|---|
-| 分段接续模拟 `segmented_handoff` | 声明研究范围包含状态导出与重新释放，原ID、母群与绝对时钟保持 | `accelerator_interface/execute.ps1 -FullJoint` 的MP/IP全链接续分支；单反射选择包括pre-pulse历史的范围时同样含接续 |
-| 联合连续模拟 `continuous_assembly` | 声明传播范围内同一轨迹连续推进；中间观测不重新释放 | `single_reflection_flight.ps1` 或 `oa_mr.ps1` 的实际连续范围；FullJoint直接prepared workbench分支仅覆盖其下游范围 |
-
-分类依据本次声明的研究起止，不按脚本名或source_kind单独判断。单反射的`propagation_scope`
-默认`declared_source_to_terminal`，pre-pulse快照之后可以连续；选`original_birth_to_terminal`时，
-pre-pulse历史包含接续。结果同时记录体积状态重启时刻与实际连续起点，不伪造重启平面。
-
-路径名称表达轨迹方式；场耦合仍由配方已有的`state_handoff`、`field_overlap`、
-`monolithic_joint_solve`及实际场receipt表达。一次Fly、多个PA或名称中的joint均不能证明接口场正确。
-`-FullJoint`保留在原owner，按分支说明范围；不把它整体改为单一路径标签。
-
-新IP设计／接续分支省略 `AcceleratorProvider` 时选择现有IP提供者，显式不匹配会提前拒绝；直接prepared-workbench分支不选择提供者。结果中的 `STUDY_SCOPE`、`SIMULATION_PATH` 与 `TRAJECTORY_EXECUTION` 分别说明研究范围、轨迹方式及新Fly／纯复用事实。
+声明的科学范围决定轨迹起点、场、时钟和母群；新整机追踪使用原出生连续传播，
+组件边界观测不等于重新释放。局部研究须明确独立初态和边界。
 
 ### 分段接续模拟
 
-以下完整例子从已封存IP源接续到MR，复用相匹配的设计、联合场与完整Fly前驱；不会重新创建上游母群。
-从仓库根运行，所需外部产物须已在同级`artifacts`中；缺失时报告对应来源，不搜索latest：
-
-```powershell
-$artifacts = Join-Path (Split-Path -Parent (Get-Location).Path) 'artifacts'
-$assembly = Join-Path $artifacts 'projects/instrument_assembly'
-$mr = Join-Path $artifacts 'projects/multi_reflection_tof'
-$ip = Join-Path $artifacts 'projects/ion_processor'
-& src/msplatform/workflows/resources/accelerator_interface.ps1 -FullJoint `
-  -IonProcessorRunPath (Join-Path $ip 'runs/20261023_095324__sim__simion__multipole-524da-injected-ip-n100') `
-  -ReferenceMrRunPath (Join-Path $mr 'runs/20261015_040845__sim__simion__converging-y360-z002-gaussian-ey-sigma0p15-n100') `
-  -PreparedInterfaceRunPath (Join-Path $assembly 'runs/20261025_090904__analysis__python__accelerator-interface-ip-f3a137ee') `
-  -JointFieldRunPath (Join-Path $mr 'runs/20261017_172646__sim__simion__ip-original-target340-stages-stage-055-field') `
-  -ContractPath (Join-Path $assembly 'scratch/20261029__joint-v2-analysis-contract.json') `
-  -ContinuationPredecessorManifestPath (Join-Path $assembly 'runs/20261029_225500__sim__simion__ip-mr-reuse-01fc842a/run_manifest.json')
-```
-
-该例子从实录IP出口状态在下游联合workbench重新释放；原母群100、转交81、未转交19，
-不是MP起点的连续Fly。入口自动校验设计/源/场、执行必要的IOB绑定及接口审计、复用完整Fly批、分析并发布新run。
-该分支并非全链零原生：已有Fly不重飞，绑定/审计仍按实际必要性执行；不对完整流程许诺零IOB。
-准备新设计、源或场的输入组合见[当前入口说明](INTEGRATION.md#oaip接口准备与绑定)。
-`success`表示声明执行和数据合同完成；科学负结果与`candidate_only`不授予整机资格。
-收尾中断时使用同一入口的`-FullJoint -ResumeFinalization -RunId <原flight_run_id>`。
+历史跨组件状态重释放只按原版本读取，不作为新的整机执行入口。独立粒子批、事件、积分分区和
+已支持的完整批次恢复仍按各自合同处理；它们不改变原出生或创建接续粒子。
 
 ### 联合连续模拟
 
-从冻结配方和完整源调用下表中的连续入口；工作流自动建立所需场、workbench、批次、飞行与分析。
-实际连续范围、源起点及场适用域以该次plan和receipt为准；下游独立PA与前端共同场须分别核对接口。
-代表性正常运行例及其数值验收记录见[单反射整机](INTEGRATION.md#单反射整机)。
-
-若只研究已准备IP→MR下游范围，可直接消费上例已发布的workbench；例如以下命令只复用该范围的完整飞行结果并重分析，
-不表示本轮从原出生点完成了新Fly。该分支不选择IP/OA设计provider：
+当前公共入口是 `msplatform run` 和 `msplatform.workflows.tracing.run_recipe`。Study 明确完整组件、
+连接、场、原出生、时钟和数值；一次连续追踪保留同一母群，中间观测不触发重新释放。
+完整配方、部署文件和逐项能力状态见[追踪合同](TRACING.md)。历史 `FullJoint`、分段重释放和
+旧单反射脚本不再作为新执行入口；历史资产按原版本读取。
 
 ```powershell
-$artifacts = Join-Path (Split-Path -Parent (Get-Location).Path) 'artifacts'
-$assembly = Join-Path $artifacts 'projects/instrument_assembly'
-& src/msplatform/workflows/resources/accelerator_interface.ps1 -FullJoint `
-  -PreparedJointWorkbenchRunPath (Join-Path $assembly 'runs/20261025_115429__analysis__python__accelerator-interface-ip-81ed4b78') `
-  -ContractPath (Join-Path $assembly 'scratch/20261029__joint-v2-analysis-contract.json') `
-  -ContinuationPredecessorManifestPath (Join-Path $assembly 'runs/20261029_225500__sim__simion__ip-mr-reuse-01fc842a/run_manifest.json')
+python -m msplatform validate <recipe.toml> --execution-environment <environment.json> --profile <profile> --workspace <workspace>
+python -m msplatform run <recipe.toml> --execution-environment <environment.json> --profile <profile> --workspace <workspace> --artifact-root <store> --reserve-bytes <bytes>
+python -m msplatform results inspect <run-id> --artifact-root <store>
 ```
 
-Provide the selected study's actual input files. Replace the quoted study directory
-and engineering profile below; fields and budgets are explicit and are not discovered:
+OA + 单反射 TOF 支持显式原出生和选定场；RF → IP 支持原出生、显式 HS1 和空观察面，
+其原始场 producer 可经严格身份与来源保护复用；商业 native 资格尚未验证。
+IP → MR 及 RF → IP → MR 的公共路径要求实际匹配的
+已发布采样场及显式 HS1 环境。单 MR 局部研究需要版本2 Study 的 `local_scope`、独立原出生和与模型
+完全匹配的已发布 neutral sampled 场；当前尚无该组合的实际场与 native 资格证据。
+自动发现脉冲的公共两阶段按原母群先进行 held-off 采样，再认证占据决策并进行 timed 追踪；
+现有证据限惰性软件，尚未证明该组合的商业原生运行，不能将单次飞行或默认时间视为完成。
 
-```powershell
-$case = 'C:\path\selected-study'
-& src/msplatform/workflows/resources/single_reflection_flight.ps1 `
-  -ReleaseRequest (Join-Path $case 'birth-request.json') `
-  -FieldsReference (Join-Path $case 'fields.json') `
-  -Propagation (Join-Path $case 'propagation.json') `
-  -Observations (Join-Path $case 'observations.json') `
-  -Numerics (Join-Path $case 'numerics.json') `
-  -Environment (Join-Path $case 'machine.json') -Workspace $case -Profile 'standard' `
-  -ScalarFieldBasis (Join-Path $case 'scalar-basis.json')
-```
+OA→MR 的现有独立研究入口仍为 [oa_mr.ps1](../src/msplatform/workflows/resources/oa_mr.ps1)，
+其实际源、范围和场须按该次配置及证据核验；这不代表已完成公共链迁移。
 
-Supply `-ScalarFieldBasis` only when required by the selected fields. For historical
-recorded births, replace `-ReleaseRequest -Propagation -Numerics` with explicit
-`-PreparationManifest`, `-SpeciesId` and `-ExpectedParticleIds` values. The source
-forms are mutually exclusive. `-RecoveryReference` selects an explicit prior artifact.
-The returned ArtifactRef names the public owner's trajectory product. Software tests
-do not qualify native flight, field coverage or scientific accuracy.
-
-| 科学工作流 | 公开入口与显式输入 | 状态及操作边界 |
-|---|---|---|
-| Multipole → OA → single-reflection TOF | [single_reflection_flight.ps1](../src/msplatform/workflows/resources/single_reflection_flight.ps1), explicit births, fields and environment | [Inputs and historical-reader boundary](INTEGRATION.md#单反射整机); public tracking owner publishes trajectories |
-| OA／IP→MR接口准备与执行 | [accelerator_interface.ps1](../src/msplatform/workflows/resources/accelerator_interface.ps1)，准备时明确提供者与参考run；`-FullJoint`按源链或prepared workbench分支执行 | [输入及设计／Finalize边界](INTEGRATION.md#oaip接口准备与绑定) |
-| 已准备IP→MR飞行／分析 | [prepared_joint_execute.ps1](../src/msplatform/workflows/resources/prepared_joint_execute.ps1)，准备run与观测合同 | [联合执行及Analysis](INTEGRATION.md#已准备ipmr联合飞行) |
-| OA→MR | [oa_mr.ps1](../src/msplatform/workflows/resources/oa_mr.ps1)，显式加速器合同／profile ID、`-CompositionPlanPath`及可选`-LocalScopePath`；统一计划运输`RepoRoot`（仅输入／输出上下文）与`PythonExe`，代码和资源来自其实际选定的同一`msplatform`包；Python探针显式选择入口包根并验证导入来源，冻结恢复不回读宿主安装包 | [支持范围与证据](INTEGRATION.md#已准备ipmr联合飞行) |
-| 真实多极杆→IP状态准备 | [multipole_ip.ps1](../src/msplatform/workflows/resources/multipole_ip.ps1)，explicit `-Request -EnvironmentPath -Workspace -EngineeringProfile -PythonExe` | [真实源／母群与负结果](INTEGRATION.md#真实多极杆ip状态交接) |
-| Complete RF–IP or RF–IP–MR continuous flight | [multipole_ip_continuous.ps1](../src/msplatform/workflows/resources/multipole_ip_continuous.ps1), or `accelerator_interface/execute.ps1 -FullJoint -ContinuousReleaseRequest ...` for the named full-instrument case | Original births and an explicitly selected complete FieldBundle; the FullJoint branch delegates to the same installed consumer. Native qualification and replacement of segmented producers remain open |
-| OA共同静态场 | [paired_accelerator_static_field.ps1](../src/msplatform/workflows/resources/paired_accelerator_static_field.ps1)，`-Request` | [prepared／solved恢复及资格](INTEGRATION.md#共同场与有限脉冲) |
-| OA共同场有限脉冲 | [paired_accelerator_pulse.ps1](../src/msplatform/workflows/resources/paired_accelerator_pulse.ps1)，`-Request`及显式来源 | [阶段／整批恢复与诊断](INTEGRATION.md#共同场与有限脉冲) |
-
-直属静态入口为[verify_integration.ps1](../tools/repository/verify_integration.ps1)，不启动商业求解器。
-入口默认递归枚举`tests/assembly`、`tests/workflows`和`tests/execution`中的测试模块；公共验证按统一目录传入`SelectedTestModules`时仅执行选定集合，
-并保留所需Ruff检查或同轮中央Ruff的显式成功前置。测试使用公共计时runner，即时报出失败详情并逐测试计时；明确的纯测试模块变更
-可由Changed范围精确运行，fixture、删除或未知目录变化扩大到owner。
-软件验证、冻结依赖与最终验收见[状态页](INTEGRATION.md#依赖冻结与门禁)及[操作指南](OPERATIONS.md#软件验证与科学证据)。
-不使用已退役的旧family或arm CLI执行新实验；历史运行保持原身份。
+共同静态场比较使用 [Store 公共 API](../src/msplatform/workflows/paired_accelerator_static_field/store_workflow.py)：
+`run_paired_static_comparison(context, artifact_store=..., request_path=..., run_id=..., committed_new_bytes=...)`。
+它支持新求解、受保护的已保存解原位采样、同边值问题同采样点的已完成样本复用，及有完整 writer/host
+证据的 Store failed prepared 模型原位重开。`recover_paired_static_publication` 只恢复已有终态发布。
+经验证的历史平面成功借用链同时保护消费者与原成功来源；缺 writer completion 的历史失败资产、
+未认证借用链和中断状态不会自动获准。有限脉冲研究仍使用
+[脉冲入口](../src/msplatform/workflows/resources/paired_accelerator_pulse.ps1)。这些能力的软件惰性测试
+不代表商业原生求解、联合飞行或数值准确度已获资格。
 
 ## 当前文本绑定编译
 

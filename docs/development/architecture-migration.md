@@ -214,6 +214,10 @@ OA代码提交为 `3cafdf7db7b9b0267d3a3382807aa6ed1e3948cb`；精确索引快�
 
 变更选择器对账另修复一项真实旧期望：`test_field_plan_dependency_uses_actual_selected_consumers_without_duplicates` 对已删除的 `test_paired_accelerator_static_field_execute.py` 现要求完整 Assembly owner 回退，而不是把已删路径加入窄集合；原其他来源、混合变更、Owner/Repository 断言保留。定向1父测试／9条回执PASS（25.398s），未扩大为完整模块通过或原生证据。
 
+### 当前 Assembly 导航与远端首错
+
+公开 Changed `7878647c`（run 46044367921）在文档阶段报告两条旧 `multipole_ip*.ps1` 坏链，22.477s，后续功能测试未执行。现行 `docs/ASSEMBLY.md` 已收敛到 `msplatform run`/公共 Recipe，删除旧 FullJoint、SFI、paired-static 和 multipole_ip 的活动命令；历史语义只读保留。这里不把文档通过当作真实 native 或完整 Repository 通过。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
