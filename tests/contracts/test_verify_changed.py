@@ -1496,7 +1496,7 @@ $parameters=@{{Route=$route;KnownTestRoots=@('tests/assembly/','tests/workflows/
 $result=@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
 $result.unknown=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @('src/msplatform/workflows/single_reflection_flight/future.py'))
 Remove-Item -LiteralPath (Join-Path $root $source)
-$result.deleted=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source))
+$result.deleted=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)
 $result.renamed=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source,'src/msplatform/workflows/single_reflection_flight/renamed.py'))
 $result.full=@((Get-GateChangedTests @parameters -ChangedPaths @($source) -FullScope).Modules)
 $result|ConvertTo-Json -Compress
@@ -1506,9 +1506,10 @@ $result|ConvertTo-Json -Compress
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             result = json.loads(process.stdout)
             self.assertEqual(set(result['known']), expected)
-            # Outside test roots an unknown/deleted authority returns no narrow
-            # selection; the normal planner then retains the complete owner.
-            for name in ('unknown', 'deleted', 'renamed'):
+            # Deleted sources retain their live consumer mapping; unknown or
+            # renamed sources without a mapping keep the complete-owner fallback.
+            self.assertEqual(set(result['deleted']), expected)
+            for name in ('unknown', 'renamed'):
                 self.assertTrue(result[name])
             self.assertEqual(set(result['full']), paths)
 

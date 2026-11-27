@@ -428,9 +428,8 @@ function Get-GateChangedTests {
     $mappedProfiles = @()
     if (-not $FullScope -and $null -ne $selection.PSObject.Properties['dependencies']) {
         foreach ($path in $ChangedPaths) {
-            # Deleted authorities need the existing full-owner fallback, not a
-            # stale leaf dependency mapping.
-            if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $path) -PathType Leaf)) { continue }
+            # A deleted source may still have live consumer tests. Unmapped deleted
+            # authorities retain the full-owner fallback; mapped tests must run.
             foreach ($dependency in $selection.dependencies) {
                 if (Get-ChangedRouteReason -Route $dependency -Paths @($path)) {
                     $mappedPaths += $path

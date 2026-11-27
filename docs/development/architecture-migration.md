@@ -220,6 +220,8 @@ OA代码提交为 `3cafdf7db7b9b0267d3a3382807aa6ed1e3948cb`；精确索引快�
 
 完整 Changed 合同复验实际得到108个成功父测试、1个路由失败，无 error。`build_and_export_paired_accelerator_field.m`、`oatof_build_accelerator_geometry.m`、`oatof_build_grid_geometry.m` 在 paired-static 退役后只选择实际 TOF owner，不再错误要求 Assembly；其余七个登记路径仍必须选择 Assembly。定向1父测试／12条回执PASS（25.085s）。该结果不替代后续同一SHA完整门禁。
 
+C5 删除选择根因已修：`Get-GateChangedTests` 不再先按文件缺席跳过有效消费者映射；删除源可运行现存测试，未映射的未知/重命名保留完整 owner 回退。MR 分片断言现汇总全部实际分片，TOF 路由移除已删 mass-spectrum admission 测试并覆盖现存 Candidate/peak 消费者。相关定向2父测试／11回执PASS（27.631s），映射正反例2父测试／7回执PASS（20.670s），SFI 正常入口1父测试／5回执PASS（1.522s）。完整选择器轮实际75成功、2 failure、2 error；其中 Prepared 语法错误由其在途 owner 修复，其余已逐项复验，不把该轮写成通过。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

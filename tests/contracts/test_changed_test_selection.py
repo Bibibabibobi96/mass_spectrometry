@@ -1547,10 +1547,13 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     write_planned_request(REPO_ROOT, request, [path])
                     stages = {row["name"]: row for row in json.loads(
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
-                    mr = stages["multi_reflection_tof_static"]["command"]["parameters"]
+                    mr = [module for name, stage in stages.items()
+                          if name.startswith("multi_reflection_tof_static")
+                          for parameter in ("SelectedTestModules", "ChangedTestModules")
+                          for module in stage["command"].get("parameters", {}).get(parameter, [])]
                     self.assertIn(
                         "tests.components.multi_reflection_tof.analysis.test_prepared_joint_trial",
-                        mr["ChangedTestModules"])
+                        mr)
                     integration = set()
                     for name, stage in stages.items():
                         if name.startswith("instrument_assembly"):
@@ -1641,9 +1644,10 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     stages = {row["name"]: row for row in json.loads(
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
                     if path in consumer_paths:
-                        params = stages["single_reflection_oa_tof_mass_analyzer_static"]["command"]["parameters"]
-                        selected = set(params["SelectedTestModules"])
-                        expected = {project + "test_mass_spectrum_input_admission", project + "test_candidate_workflow",
+                        selected = {module for name, stage in stages.items()
+                            if name.startswith("single_reflection_oa_tof_mass_analyzer_static")
+                            for module in stage["command"].get("parameters", {}).get("SelectedTestModules", [])}
+                        expected = {project + "test_candidate_workflow",
                                     project + "test_candidate_causal_workflow", project + "test_candidate_postprocess_workflow"}
                         if path != consumer_paths[2]:
                             expected.add(project + "test_peak_metrics")
