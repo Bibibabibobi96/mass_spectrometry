@@ -11,7 +11,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$projectId='parallel_mirror_dual_stripe_mr_tof'
+$projectId='multi_reflection_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $python=[IO.Path]::GetFullPath($PythonExe)
@@ -20,7 +20,7 @@ $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
 $packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 $repoRoot=$workspaceRoot
-$contract=Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+$contract=Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json'
 if(-not$RunId){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-symmetric-coarse-raw'}
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactRoot -Python $python

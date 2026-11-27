@@ -271,7 +271,7 @@ def compile_continuous_hs1_gas(baseline: dict, *, bath_domain: BoxDomain,
                                parent_domain: BoxDomain) -> tuple[str, str]:
     """Compile explicit IP bath and outer fields in the selected native frame."""
     from msplatform.backends.simion.gas_runtime import compile_gas_runtime
-    from msplatform.components.dual_pressure_rectilinear_ion_processor.gas_regions import (
+    from msplatform.components.ion_processor.gas_regions import (
         build_gas_field_spec, validate_continuous_hs1_gas, validate_continuous_parent_coverage)
     from msplatform.gas.field import prepare_gas_field
 
@@ -318,7 +318,7 @@ def _prepare_ip_hs1(model: CompiledPreparedModel, request: Mapping[str, Any], *,
         ids = sorted({row['instance_id'] for row in document['native_drive_rows'] if row['kind'] == 'ip_schedule'})
     else:
         ids = [name for name, row in composition['components'].items()
-               if row['project_id'] == 'dual_pressure_rectilinear_ion_processor']
+               if row['project_id'] == 'ion_processor']
     poses = [row['transform'] for row in composition['recipe']['instances']
              if len(ids) == 1 and row['instance_id'] == ids[0]]
     if len(poses) != 1:

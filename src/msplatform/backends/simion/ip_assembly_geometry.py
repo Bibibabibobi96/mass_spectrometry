@@ -8,8 +8,8 @@ from typing import Any
 
 from msplatform.backends.simion.ip_geometry import render_projection_electrodes
 from msplatform.backends.simion.rf_electrode_mapping import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
-from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import build_assembly_interface
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
+from msplatform.components.ion_processor.assembly_interface import build_assembly_interface
+from msplatform.components.ion_processor.native_geometry import select_legacy_physical_design
 
 
 def render_selected_ip_body(

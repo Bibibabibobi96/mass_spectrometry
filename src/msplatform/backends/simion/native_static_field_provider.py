@@ -21,13 +21,13 @@ from msplatform.backends.simion import gem_primitives
 from msplatform.backends.simion import collision_overlay
 from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
+from msplatform.components.multi_reflection_tof.candidate_voltage import PS_GROUPS, candidate_authority
 from msplatform.backends.simion.native_system_geometry import build_static_c0_gem
 from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
 from msplatform.backends.simion.mr_geometry import _grid_shape, validate_generation_grid_pitch
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import RESPONSE_NORMALIZATION_V, TE1_AXIS, _response_authority, _te1_basis_metadata, compile_response_coefficients
+from msplatform.components.multi_reflection_tof.native_field_science import RESPONSE_NORMALIZATION_V, TE1_AXIS, _response_authority, _te1_basis_metadata, compile_response_coefficients
 from msplatform.backends.simion.mr_geometry import collision_overlay_plan
 from msplatform.backends.comsol.static_field_binding import (
     _native_active_box,
@@ -73,7 +73,7 @@ def _operator_ancestry_inputs(inputs: dict[str, str], bindings: list[dict]) -> l
     return list(projections.values())
 
 ROLE = "mrtof_native_static_field_provider_request"
-PROJECT = "parallel_mirror_dual_stripe_mr_tof"
+PROJECT = "multi_reflection_tof"
 
 
 def read(path: Path) -> dict[str, Any]:
@@ -81,7 +81,7 @@ def read(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-IP_PROVIDER = "dual_pressure_rectilinear_ion_processor"
+IP_PROVIDER = "ion_processor"
 
 
 def _ip_metadata(source: dict[str, Any]) -> dict[str, Any]:
@@ -547,7 +547,7 @@ def _new_collision_plan(source: dict[str, Any], geometry: dict[str, Any]) -> dic
 def _compile_ip_fine_extension(request: dict[str, Any]) -> dict[str, Any]:
     """Reuse one ordinary operator, rebuilding only its extended IP fine domain."""
     from msplatform.backends.simion.ip_geometry import render_assembled_ip_gem as _gem
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
+    from msplatform.components.multi_reflection_tof.native_field_science import extend_fine_z_domain
     from msplatform.backends.simion.mr_geometry import ordinary_pa_file_bytes
     required = {"schema_version", "role", "source_binding_path", "source_field_manifest",
                 "numerical_contract_path", "reuse_source_levels", "ion_processor_local_domain_update"}
@@ -1367,7 +1367,7 @@ def prepare_run(plan: dict[str, Any], run_directory: Path) -> dict[str, Any]:
     if plan.get("response_level_reuse"):
         write_json(inputs / "ip_fine_response_reuse.json", plan["response_level_reuse"])
     if plan.get("local_domain_update"):
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
+        from msplatform.components.multi_reflection_tof.native_field_science import extend_fine_z_domain
         frozen_source = inputs / "source_binding.json"
         source = load_binding(frozen_source)
         fine_grid, active = extend_fine_z_domain(source["refinement_windows"][0]["grid"],

@@ -110,7 +110,7 @@ function Protect-IonProcessorPreviousField {
  $Context.manifest_stream=[IO.File]::Open($manifestPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
  $Context.run_config_stream=[IO.File]::Open((Join-Path $FieldRun 'run_config.json'),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
  $manifest=Get-Content -LiteralPath $manifestPath -Raw|ConvertFrom-Json
- if($manifest.project-ne'dual_pressure_rectilinear_ion_processor'-or$manifest.status-notin@('success','failed')){throw 'Prior field requires a terminal project owner'}
+ if($manifest.project-ne'ion_processor'-or$manifest.status-notin@('success','failed')){throw 'Prior field requires a terminal project owner'}
  if($null-ne$ResolvedModel.PSObject.Properties['native_field']-and
     $null-ne$ResolvedModel.native_field.PSObject.Properties['source_manifest_sha256']-and
     (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash-ne[string]$ResolvedModel.native_field.source_manifest_sha256){throw 'Prior field manifest changed after input binding'}
@@ -198,7 +198,7 @@ function Add-IonProcessorFailedOperation {
 $workspaceRoot=Split-Path -Parent $RepositoryRoot
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $repoRoot=Split-Path -Parent $packageRoot
-$projectRoot=Join-Path $packageRoot 'components/dual_pressure_rectilinear_ion_processor'
+$projectRoot=Join-Path $packageRoot 'components/ion_processor'
 . (Join-Path $PSScriptRoot '../../execution/resources/require_powershell7.ps1')
 . (Join-Path $PSScriptRoot '../../execution/resources/run_artifact_support.ps1')
 . (Join-Path $PSScriptRoot '../../backends/simion/resources/short_pa_path_support.ps1')
@@ -215,7 +215,7 @@ $script:HostResourceExecutionContext=@{workspace=$workspaceRoot;python_executabl
 . (Join-Path $PSScriptRoot '../../execution/resources/workspace_paths.ps1')
 $pathContext=Resolve-WorkspacePaths -SourceRoot $RepositoryRoot -Python $python
 if($ResumeFinalization){
- $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot ([string]$pathContext.artifact_root) -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $python
+ $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot ([string]$pathContext.artifact_root) -OwnerKind component -OwnerId ion_processor -Python $python
  $recoveryRun=Join-Path $projectArtifacts ('runs/'+$RunId)
  if($ResultPath-and(Test-Path -LiteralPath $ResultPath -PathType Leaf)){
   $transport=Get-Content -LiteralPath $ResultPath -Raw|ConvertFrom-Json -AsHashtable
@@ -225,7 +225,7 @@ if($ResumeFinalization){
  if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts ('scratch/workflow_results/'+$RunId+'/result.json')}
  $requestPath=Join-Path $recoveryRun 'inputs/execution_request.json'
  $request=Get-Content -LiteralPath $requestPath -Raw|ConvertFrom-Json -AsHashtable
- if($request.package.project-cne'dual_pressure_rectilinear_ion_processor'-or$request.package.mode-cne'native_electrode_functional'-or$request.package.run_id-cne$RunId){throw 'IP recovery request identity differs.'}
+ if($request.package.project-cne'ion_processor'-or$request.package.mode-cne'native_electrode_functional'-or$request.package.run_id-cne$RunId){throw 'IP recovery request identity differs.'}
  . (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -RequestPath $requestPath -ResultPath $ResultPath -ResumeFinalization
  $outcome=Invoke-RunArtifactWorkflow -RequestPath $requestPath -ResultPath $ResultPath -ResumeFinalization
  Write-Output "ION_PROCESSOR_FINALIZATION=$($outcome.status) RUN_ID=$RunId RESULT=$ResultPath"
@@ -237,7 +237,7 @@ if(-not $SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.e
 if(-not(Test-Path -LiteralPath $SimionExe)){throw 'SIMION 2020 executable missing'}
 if($ContinuationPredecessorManifestPath-and$NativeFieldRun){throw 'Completed-population continuation obtains its field identity from the explicit predecessor; do not supply a second field source'}
 $runtimeRegistry=Get-Content (Join-Path $projectRoot 'config/runtime_profiles.json') -Raw|ConvertFrom-Json
-if($runtimeRegistry.role-ne'ion_processor_runtime_profiles'-or$runtimeRegistry.project_id-ne'dual_pressure_rectilinear_ion_processor'-or$runtimeRegistry.schema_version-ne1){throw 'Runtime profile identity differs'}
+if($runtimeRegistry.role-ne'ion_processor_runtime_profiles'-or$runtimeRegistry.project_id-ne'ion_processor'-or$runtimeRegistry.schema_version-ne1){throw 'Runtime profile identity differs'}
 $profiles=@($runtimeRegistry.profiles|Where-Object{$_.profile_id-eq'native_functional'})
 if($profiles.Count-ne1){throw 'Exactly one native_functional runtime profile is required'}
 $profile=$profiles[0]
@@ -253,7 +253,7 @@ if($NativeFieldRun){
  $committedNewBytes=[long][Math]::Max(2GB,([long]$count*50MB+256MB))
 }
 $artifacts=[string]$pathContext.artifact_root
-$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifacts -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $python
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifacts -OwnerKind component -OwnerId ion_processor -Python $python
 $capacity=$null;$package=$null;$lease=$null;$finished=$false;$runSucceeded=$false;$writersStopped=$true;$nativeCompleted=$false;$nativeContext=$null
 $primaryRunFailure=$null
 $ownerContext=$null;$nativeOperations=[Collections.Generic.List[object]]::new();$hostRelease=$null
@@ -324,8 +324,8 @@ print(json.dumps(refs))
    $sourceReferences+=@{manifest_record=($record|ConvertFrom-Json -AsHashtable);protected_paths=@($continuationFieldRun);protected_cache_keys=@()}
   }
  }
- $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $committedNewBytes -ProtectedPaths $protected -SourceReferences $sourceReferences -Owner ("run-artifact-workflow:dual_pressure_rectilinear_ion_processor:{0}"-f$RunId)
- $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project dual_pressure_rectilinear_ion_processor -Mode native_electrode_functional -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass $profile.retention_class -RetentionReason $profile.retention_reason -CapacityLedgerLifecycleEnabled -PathContext $pathContext -AdditionalDirectories @('simion')
+ $capacity=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $committedNewBytes -ProtectedPaths $protected -SourceReferences $sourceReferences -Owner ("run-artifact-workflow:ion_processor:{0}"-f$RunId)
+ $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project ion_processor -Mode native_electrode_functional -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass $profile.retention_class -RetentionReason $profile.retention_reason -CapacityLedgerLifecycleEnabled -PathContext $pathContext -AdditionalDirectories @('simion')
  $run=$package.artifact_run_dir;$solver=Join-Path $run 'simion'
  $parentEnvironment=(Get-RunNativeExecutionContext -Package $package -Paths @()).environment
  foreach($key in $parentEnvironment.Keys){[Environment]::SetEnvironmentVariable([string]$key,[string]$parentEnvironment[$key],'Process')}

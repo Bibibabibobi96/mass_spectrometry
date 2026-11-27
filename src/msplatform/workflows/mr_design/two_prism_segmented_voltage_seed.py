@@ -18,11 +18,11 @@ from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     ConstraintClassification,
     classify_constraint_system,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import MirrorL0Design
+from msplatform.components.multi_reflection_tof.mirror_l0 import MirrorL0Design
 from msplatform.workflows.mr_design.prism_mirror_transport import (
     TransportNumerics,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 from msplatform.workflows.prepared_joint.prism_handoff import (

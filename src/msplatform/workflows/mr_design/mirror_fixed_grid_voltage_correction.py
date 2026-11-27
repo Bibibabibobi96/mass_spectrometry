@@ -34,7 +34,7 @@ from msplatform.workflows.mr_design.mirror_real_field_voltage_family import (
     load_axis_response_basis_csv,
     normalized_slopes,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 

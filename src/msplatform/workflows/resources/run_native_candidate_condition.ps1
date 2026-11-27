@@ -24,7 +24,7 @@ param(
 # in the existing Stripe, SIMION, coverage, continuation, N=1, and Candidate runners.
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$project='parallel_mirror_dual_stripe_mr_tof'
+$project='multi_reflection_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'

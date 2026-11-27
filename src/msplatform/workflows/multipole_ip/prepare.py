@@ -32,7 +32,7 @@ from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
 from msplatform.backends.simion.rf_observations import validate_exit_observations
 from msplatform.backends.simion.rf_assembly_interface import build_legacy_assembly_interface
-from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
+from msplatform.components.ion_processor.assembly_interface import resolve_assembly_interface
 from msplatform.workflows.ion_processor.preparation import recorded_native_projection
 from msplatform.backends.simion.ip_handoff import FATE_COLUMNS
 from msplatform.backends.simion.transport_result import load_transport_producer_result
@@ -96,7 +96,7 @@ def _layout(plan: dict, source: dict, receiver_projection: dict) -> tuple[RigidT
     recipe = plan['recipe']
     selected=plan['scope']['instance_ids']
     upstream_ids=[key for key in selected if plan['components'][key]['project_id']==source['project_id']]
-    receiver_ids=[key for key in selected if plan['components'][key]['project_id']=='dual_pressure_rectilinear_ion_processor']
+    receiver_ids=[key for key in selected if plan['components'][key]['project_id']=='ion_processor']
     if len(selected)!=2 or len(upstream_ids)!=1 or len(receiver_ids)!=1 or upstream_ids==receiver_ids:
         raise ValueError(f'multipole/IP state handoff supports exactly one selected real multipole and IP; selected={selected}')
     upstream_id,receiver_id=upstream_ids[0],receiver_ids[0]

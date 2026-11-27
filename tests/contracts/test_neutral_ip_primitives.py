@@ -4,7 +4,7 @@ from pathlib import Path
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component
 from msplatform.components.geometry_members import assembly_geometry_members
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+from msplatform.components.ion_processor.convex_geometry import shape_bounds
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.backends.simion import assembly_geometry as target
 from msplatform.backends.simion.ip_geometry import _primitive
@@ -15,7 +15,7 @@ REPO=Path(__file__).resolve().parents[2]
 class CanonicalIpNeutralTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        fixture=json.loads((REPO/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((REPO/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         cls.component=resolve_component(fixture['component_requests']['ion_processor'])
         recipe=copy.deepcopy(fixture['recipe']);recipe['instances']=recipe['instances'][:1];recipe['connections']=[]
         cls.assembly=assemble(recipe,{'ion_processor':cls.component})

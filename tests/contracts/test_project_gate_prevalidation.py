@@ -18,10 +18,10 @@ REPO = Path(__file__).resolve().parents[2]
 RUFF_PROJECTS = (
     "apertured_tube_electron_impact_ion_source",
     "transverse_helical_filament_wehnelt_electron_gun",
-    "dual_cone_tandem_quadrupole_ion_interface",
+    "dual_cone_tandem_quadrupole",
 )
 OA = "orthogonal_accelerator"
-MR = "parallel_mirror_dual_stripe_mr_tof"
+MR = "multi_reflection_tof"
 PWSH = shutil.which("pwsh")
 
 
@@ -189,7 +189,7 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
 
 
     def test_mr_selected_partition_accepts_assembly_test_module(self):
-        module = "tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis.test_assembly_interface"
+        module = "tests.assembly.multi_reflection_tof.analysis.test_assembly_interface"
         result = self.run_gate(MR, "-SelectedTestModules", module, "-PreflightValidated")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = [row for row in self.calls() if row[0] == "gate_unittest"]

@@ -7,12 +7,12 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Mapping
 from uuid import uuid4
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import (
+from msplatform.components.dual_cone_tandem_quadrupole.geometry import (
     load_baseline,
     resolve_geometry,
     serialized,
 )
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import (
+from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import (
     _load_json,
     SCIENCE_ROLE,
     NUMERICS_ROLE,
@@ -33,7 +33,7 @@ from .native_execution import (
     require_launcher_completion,
 )
 
-PROJECT = "dual_cone_tandem_quadrupole_ion_interface"
+PROJECT = "dual_cone_tandem_quadrupole"
 RESOURCES = ("build_and_solve_axisymmetric_gas_flow.m", "run_axisymmetric_gas_flow.m", "comsolstartup.m")
 
 

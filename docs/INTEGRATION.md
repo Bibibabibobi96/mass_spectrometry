@@ -922,7 +922,7 @@ with two complete posed instances and all 15 scientific groups in each case;
 10,298 / 10,824 / 10,298 probes had no failed checks. The complete 2925-file source
 and checkout guard remained unchanged. This is CadQuery kernel evidence, not
 ordinary-install, SolidWorks, native field/flight or Formal qualification; current
-IP scope and evidence are recorded in its [project state](../src/msplatform/components/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md).
+IP scope and evidence are recorded in its [project state](../src/msplatform/components/ion_processor/docs/PROJECT.md).
 A subsequent public COMSOL model stage consumed the canonical saved geometry and
 explicit group voltages, material, exterior potential, mesh controls and stationary
 study. [Build and independent cold reopen](../../artifacts/projects/instrument_assembly/runs/20261114_024952__build__comsol__assembly-model-19e95c7582cc/summary.json)
@@ -1774,7 +1774,7 @@ MP run、case、接收器、父plan、物种及权重，不能从参考MR或历�
 同时提供原已发布的MP→IP准备RunId、未变请求与接收配置，以及新的IP RunId。
 入口复用经验证的源准备，IP owner按原完整分区补缺；不重做已完成批，也不把它称为原生积分checkpoint。
 恢复后的源须重新绑定新接口设计，不能混用旧源设计或另一个IP场。下游Fly恢复仍用独立的
-`-ContinuationPredecessorManifestPath`；参数和适用边界见[IP恢复说明](../src/msplatform/components/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#原批分区恢复)。
+`-ContinuationPredecessorManifestPath`；参数和适用边界见[IP恢复说明](../src/msplatform/components/ion_processor/docs/PROJECT.md#原批分区恢复)。
 
 IP阶段恢复的原`-MultipoleIpRunId`须指成功封存准备，当前请求须与其manifest绑定的冻结request结构相同；来源、接收几何或请求变化不回退重建。新的IP run不能同时指定`-IonProcessorFieldRunPath`，也不能沿用绑定旧源的`-PreparedInterfaceRunPath`；当前支持用`-MatchingRequestPath`与适用`-FieldRequestPath`接续。直接prepared workbench或ResumeFinalization拒绝这些IP恢复参数，不宣称任意断点全链全复用。
 
@@ -2718,7 +2718,7 @@ bbox差均0，近似体积差分别−1.6007e-10／+1.4552e-11 mm³。
 本轮无mesh／physics／study／Compute／新MPH，也没有重算原仿真。
 
 本次迁移的GUI验收范围按用户更新要求采用实现与代码对等检查，无需实际打开界面。
-MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态，见[MR软件说明](../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/SIMION.md#事件与分析)。
+MR的`load-workbench`与batch Fly共用碰撞PA预载并保持不可Refine状态，见[MR软件说明](../src/msplatform/components/multi_reflection_tof/docs/SIMION.md#事件与分析)。
 旧截图失败不再阻断本次代码对等验收；这不追认旧包人工GUI通过，也不将普通PA查询当作Program回调电场。
 未来正式资产仍须按[GUI／CAD规则](REPOSITORY_ARCHITECTURE.md#gui-与-cad-门禁)完成其适用验收。
 
@@ -3258,7 +3258,7 @@ test-only repair does not convert the preceding Changed failure into a pass.
 
 
 The retained local figures and IP diagnostics consume exact IP sections from
-`msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry`.
+`msplatform.components.ion_processor.section_geometry`.
 The user-withdrawn conditioner overlay is absent; its historical evidence is not a
 current feature or native qualification.
 

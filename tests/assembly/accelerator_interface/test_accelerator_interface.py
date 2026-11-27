@@ -21,7 +21,7 @@ from msplatform.workflows.accelerator_interface.prepare import (
 )
 
 REPO = Path(__file__).resolve().parents[3]
-MR = REPO / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof"
+MR = REPO / "src/msplatform/components/multi_reflection_tof"
 
 
 def reference_fixture(root, *, frame_id="astral.xyz.v2"):
@@ -195,8 +195,8 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             from msplatform.backends.simion.compiler import _content_sha256
             projects = {
                 "rf": "rf_multipole_ion_optics",
-                "ip": "dual_pressure_rectilinear_ion_processor",
-                "mr": "parallel_mirror_dual_stripe_mr_tof",
+                "ip": "ion_processor",
+                "mr": "multi_reflection_tof",
             }
             model = {
                 "role": "compiled_prepared_simion_model", "field_status": "not_solved",
@@ -350,7 +350,7 @@ if(-not$caught){throw 'segmented and continuous inputs were accepted together'}
             record = dict(path="producer/run_manifest.json", bytes=1, sha256="a" * 64)
             request = dict(schema_version=2, role="multipole_ip_preparation_request",
                 source=dict(manifest=dict(record), run_id="source", project_id="rf_multipole_ion_optics", case_id="rf_on"),
-                receiver=dict(manifest=dict(record), run_id="receiver", project_id="dual_pressure_rectilinear_ion_processor"),
+                receiver=dict(manifest=dict(record), run_id="receiver", project_id="ion_processor"),
                 composition_plan=dict(record), species_id="ion", particle_weight=1)
             author = root / "author.json"
             author.write_text(json.dumps(request), encoding="utf-8")
@@ -428,7 +428,7 @@ $providerBody=$providerBranch.Extent.Text
 $PSBoundParameters.Clear();$AcceleratorProvider='orthogonal_accelerator';$PreparedJointWorkbenchRunPath='';$ContinuousReleaseRequest=''
 # Run in the current scope so the actual dispatch uses the selected provider.
 Invoke-Expression $providerBody
-if($AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'){throw 'Segmented chain did not select its unique provider'}
+if($AcceleratorProvider-ne'ion_processor'){throw 'Segmented chain did not select its unique provider'}
 $PSBoundParameters.AcceleratorProvider='orthogonal_accelerator';$AcceleratorProvider='orthogonal_accelerator';$caught=$false
 try{Invoke-Expression $providerBody}catch{$caught=$_.Exception.Message-like'*supports only*'}
 if(-not$caught){throw 'An explicitly incompatible provider was accepted'}
@@ -447,7 +447,7 @@ if($AcceleratorProvider-ne'orthogonal_accelerator'){throw 'Prepared-workbench br
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 required")
-        from tests.components.dual_pressure_rectilinear_ion_processor.test_component_exit import ComponentExitTests
+        from tests.components.ion_processor.test_component_exit import ComponentExitTests
         fixture = ComponentExitTests("test_complete_negative_native_exports_81_states_and_preserves_19_losses_and_failed_result")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -530,7 +530,7 @@ function Invoke-JointOwnerStage {param($Script,$Arguments)
   }
   if($Arguments.ContainsKey('MatchingRequestPath')){
     $script:calls.Add('design')
-    if($Arguments.IonProcessorRunPath-ne(Join-Path $workspaceRoot 'artifacts/components/dual_pressure_rectilinear_ion_processor/runs/ip')){throw 'IP identity not forwarded'}
+    if($Arguments.IonProcessorRunPath-ne(Join-Path $workspaceRoot 'artifacts/components/ion_processor/runs/ip')){throw 'IP identity not forwarded'}
     $p=Join-Path $workspaceRoot 'artifacts/assemblies/instrument_assembly/runs/design'
     New-Item -ItemType Directory -Force (Join-Path $p 'results/joint_flight/assembly')|Out-Null
     Set-Content (Join-Path $p 'run_manifest.json') '{}'
@@ -548,7 +548,7 @@ function Invoke-JointOwnerStage {param($Script,$Arguments)
   }
   $script:calls.Add('flight')
 }
-$workspaceRoot=$Root;$artifactRoot=Join-Path $Root 'artifacts';$assemblyArtifactRoot=Join-Path $artifactRoot 'assemblies/instrument_assembly';$mrArtifactRoot=Join-Path $artifactRoot 'components/parallel_mirror_dual_stripe_mr_tof';$ipArtifactRoot=Join-Path $artifactRoot 'components/dual_pressure_rectilinear_ion_processor';$repoRoot=$Root;$sourceRoot=$Root;$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$workspaceRoot=$Root;$artifactRoot=Join-Path $Root 'artifacts';$assemblyArtifactRoot=Join-Path $artifactRoot 'assemblies/instrument_assembly';$mrArtifactRoot=Join-Path $artifactRoot 'components/multi_reflection_tof';$ipArtifactRoot=Join-Path $artifactRoot 'components/ion_processor';$repoRoot=$Root;$sourceRoot=$Root;$AcceleratorProvider='ion_processor'
 $python=$SelectedPython;$pathContext=@{host_resource_state_path=(Join-Path $Root 'shared-host.sqlite3')}
 $MultipoleIpWorkspace=$Root;$MultipoleIpEngineeringProfile='prepare';$MultipoleIpEnvironmentPath=Join-Path $Root 'machine.json'
 @{schema_version=1;role='execution_environment';tools=@{python=$SelectedPython;powershell=(Get-Process -Id $PID).Path};policy=@{host_state_path=$pathContext.host_resource_state_path};profiles=@{prepare=@{stage_policy_path=(Join-Path $Root 'stages.json')}}}|ConvertTo-Json -Depth 6|Set-Content $MultipoleIpEnvironmentPath
@@ -575,7 +575,7 @@ $expected=if($Scenario-eq'zero'){'source'}elseif($Scenario-in@('field-conflict',
 if(($script:calls -join ',')-ne$expected-or$failed-ne($Scenario-in@('unsafe','no-policy','seal-failure','resume-failure','changed-request','field-conflict','prepared-conflict','old-design-conflict','missing-deployment','wrong-workspace','wrong-ledger'))){throw "unexpected sequence $script:calls failure=$failed error=$message"}
 if($Scenario-eq'resume-failure'){
   if($message-ne'IP_RECOVERY_SENTINEL'){throw 'IP recovery error was replaced'}
-  if($script:failedStage-ne'ion_processor_flight'-or$script:failedOwner-ne(Join-Path $Root 'artifacts/components/dual_pressure_rectilinear_ion_processor/runs/ip')){throw 'IP recovery failure reported a different stage owner'}
+  if($script:failedStage-ne'ion_processor_flight'-or$script:failedOwner-ne(Join-Path $Root 'artifacts/components/ion_processor/runs/ip')){throw 'IP recovery failure reported a different stage owner'}
 }
 if($IonProcessorContinuationPredecessorManifestPath-and(Get-Content $IonProcessorContinuationPredecessorManifestPath)-ne'PARENT_UNCHANGED'){throw 'Parent mutated'}
 Write-Output 'MP_IP_JOINT=PASS'
@@ -636,7 +636,7 @@ if($receipt.exit_count-ne1){throw 'wrong receipt'}
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 required")
-        from tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis.test_ion_processor_assembly import AssemblyTests
+        from tests.assembly.multi_reflection_tof.analysis.test_ion_processor_assembly import AssemblyTests
         from msplatform.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
         from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
 
@@ -694,7 +694,7 @@ function Invoke-JointOwnerStage {
     if($Arguments.PythonExe-cne$Python){throw 'Provider interpreter differs from caller runtime'}
     $output=@(& $Script -RequestPath $Arguments.RequestPath -RunDirectory $Arguments.RunDirectory -PythonExe $Arguments.PythonExe -HostContextJson $Arguments.HostContextJson)
     $plan=($output-join"`n")|ConvertFrom-Json
-    if($plan.project-ne'parallel_mirror_dual_stripe_mr_tof'-or$plan.run_id-ne'20261029_120000__sim__simion__field-fixture'-or$plan.fly_authorized-ne$false){throw 'provider plan mismatch'}
+    if($plan.project-ne'multi_reflection_tof'-or$plan.run_id-ne'20261029_120000__sim__simion__field-fixture'-or$plan.fly_authorized-ne$false){throw 'provider plan mismatch'}
     New-Item -ItemType Directory -Force $Arguments.RunDirectory|Out-Null
     Set-Content (Join-Path $Arguments.RunDirectory 'run_manifest.json') '{}'
   }elseif($Arguments.ContainsKey('FinalizeJointWorkbench')){
@@ -705,12 +705,12 @@ function Invoke-JointOwnerStage {
 }
 . (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $context=Resolve-WorkspacePaths -SourceRoot $Repo -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
-$artifactRoot=[string]$context.artifact_root;$assemblyArtifactRoot=Join-Path $artifactRoot 'assemblies/instrument_assembly';$mrArtifactRoot=Join-Path $artifactRoot 'components/parallel_mirror_dual_stripe_mr_tof';$pathEnvironment=@{}
+$artifactRoot=[string]$context.artifact_root;$assemblyArtifactRoot=Join-Path $artifactRoot 'assemblies/instrument_assembly';$mrArtifactRoot=Join-Path $artifactRoot 'components/multi_reflection_tof';$pathEnvironment=@{}
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
 $ContinuousReleaseRequest=$ContinuousFieldsReference=$ContinuousPropagation=$ContinuousObservations=$ContinuousNumerics=$ContinuousHs1Request=$ContinuousEnvironment=$ContinuousWorkspace=$ContinuousProfile=$ContinuousRecoveryReference=$ContinuousDispatchProfiles='';$ContinuousUnitSize=0
 $repoRoot=$Repo;$sourceRoot=Join-Path $Repo 'src';$workspaceRoot=$Root;$PreparedInterfaceRunPath=$Root;$JointFieldRunPath='';$python=$Python
 $hostContextJson=@{workspace=$Repo;python_executable=$Python;host_state_path=[string]$context.host_resource_state_path;policy_path=(Join-Path $Repo 'src/msplatform/execution/resources/host_resource_policy.json')}|ConvertTo-Json -Compress
-$AcceleratorProvider='dual_pressure_rectilinear_ion_processor';$IonProcessorRunPath='source';$ReferenceMrRunPath='reference'
+$AcceleratorProvider='ion_processor';$IonProcessorRunPath='source';$ReferenceMrRunPath='reference'
 $MatchingRequestPath='';$FieldRequestPath=$Template;$ContractPath='observation';$RunId='';$LuaExe='';$PythonExe='';$SimionExe=''
 $PreparedJointWorkbenchRunPath='';$ContinuationPredecessorManifestPath='';$IonProcessorContinuationPredecessorManifestPath='';$FinalizeJointWorkbench=$false
 Invoke-JointWorkflow
@@ -743,7 +743,7 @@ Write-Output 'REAL_FIELD_PROVIDER=PASS'
                 return {"path": str(path)}
             frozen = dict(
                 accelerator_dependency=write("dependency.json", dict(api_version=2,
-                    provider_project_id="dual_pressure_rectilinear_ion_processor", execution_scope="prepare_only_no_solver",
+                    provider_project_id="ion_processor", execution_scope="prepare_only_no_solver",
                     provider_callable="export_component_exit", provider_module="src/msplatform/backends/simion/ip_exit.py")),
                 accelerator_request=write("request.json", {}), composition_plan=write("plan.json", {}),
             )
@@ -809,7 +809,7 @@ function Invoke-JointOwnerStage {
 $context=Resolve-WorkspacePaths -SourceRoot $SourceRoot -ArtifactRoot (Join-Path $Root 'selected-store') -Python $Python
 $MultipoleIpRequestPath='';$MultipoleIpRunId='';$IonProcessorRunId='';$IonProcessorConfigurationDirectory='';$IonProcessorFieldRunPath='';$ContinueOnIpScientificFailure=$false;$ResultPath=''
 $ContinuousReleaseRequest=$ContinuousFieldsReference=$ContinuousPropagation=$ContinuousObservations=$ContinuousNumerics=$ContinuousHs1Request=$ContinuousEnvironment=$ContinuousWorkspace=$ContinuousProfile=$ContinuousRecoveryReference=$ContinuousDispatchProfiles='';$ContinuousUnitSize=0
-$artifactRoot=[string]$context.artifact_root;$assemblyArtifactRoot=Join-Path $artifactRoot 'assemblies/instrument_assembly';$mrArtifactRoot=Join-Path $artifactRoot 'components/parallel_mirror_dual_stripe_mr_tof';$repoRoot=$Root;$sourceRoot=$Root;$hostContextJson='{}';$AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+$artifactRoot=[string]$context.artifact_root;$assemblyArtifactRoot=Join-Path $artifactRoot 'assemblies/instrument_assembly';$mrArtifactRoot=Join-Path $artifactRoot 'components/multi_reflection_tof';$repoRoot=$Root;$sourceRoot=$Root;$hostContextJson='{}';$AcceleratorProvider='ion_processor'
 $IonProcessorRunPath='source';$MatchingRequestPath='matching';$ContractPath='observation';$ReferenceMrRunPath='reference'
 $FieldRequestPath=Join-Path $Root 'field.json';$RunId='design';$LuaExe='';$PythonExe='';$SimionExe=''
 $FinalizeJointWorkbench=$false;$PreparedInterfaceRunPath='';$JointFieldRunPath=''
@@ -820,7 +820,7 @@ $expected=if($Fail-eq'preflight'){@('design')}elseif($Fail){@('design','field')}
 if(($script:calls -join ',')-ne($expected -join ',')){throw "wrong sequence: $script:calls"}
 if(-not$Fail){
   $script:calls.Clear();$PreparedInterfaceRunPath=Join-Path $artifactRoot 'assemblies/instrument_assembly/runs/design'
-  $JointFieldRunPath=Join-Path $artifactRoot 'components/parallel_mirror_dual_stripe_mr_tof/runs/field'
+  $JointFieldRunPath=Join-Path $artifactRoot 'components/multi_reflection_tof/runs/field'
   $MatchingRequestPath='';$FieldRequestPath=''
   $upstream=@(Invoke-JointWorkflow)
   if(($script:calls -join ',')-ne'binding,flight'){throw "reuse ran extra stages: $script:calls"}
@@ -861,7 +861,7 @@ Write-Output 'JOINT_WORKFLOW_DISPATCH=PASS'
         powershell = shutil.which("pwsh")
         if not powershell:
             self.skipTest("PowerShell 7 required")
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import NativeStaticBindingTest
+        from tests.components.multi_reflection_tof.analysis.test_static_field_binding import NativeStaticBindingTest
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fields = root / "fields"
@@ -982,7 +982,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                 write(handoff, dict(connection=connection, inputs=dict(component_receipt=file_record(component))))
                 comparison = dict(role="mrtof_measured_exit_energy_comparison", centroid_match_accepted=None,
                                   inputs=dict(component_receipt=file_record(component)))
-                binding = dict(accelerator_provider="dual_pressure_rectilinear_ion_processor", geometry=scientific_geometry,
+                binding = dict(accelerator_provider="ion_processor", geometry=scientific_geometry,
                     grid=dict(origin_mm=[0, 0, 0], pitch_mm=[1, 1, 1], dimensions=[2, 2, 2]),
                     sources=dict(scalar_pa=str(fields/"parent.pa")), refinement_windows=[],
                     authority=dict(analyzer_electrode_voltages_v=[369.0] * 20,
@@ -1058,7 +1058,7 @@ if(($Bad-eq'bad')-ne$caught-or($Bad-eq'bad')-eq$vendorAllowed){throw 'Live ident
                     # before creating frozen inputs or exported/handoff states.
                     reference = reference_fixture(root)
                     write(design/"results/accelerator_interface_preparation.json", dict(
-                        selected_provider="dual_pressure_rectilinear_ion_processor",
+                        selected_provider="ion_processor",
                         inputs=dict(reference_manifest=file_record(reference/"run_manifest.json"))))
                     changed = dict(actual_configs, numerics=dict(changed=True))
                     write(actual/"inputs/resolved_model.json", changed)
@@ -1286,7 +1286,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
             self.assertFalse(list((run / "inputs").glob("*.py")))
 
     def matching_fixture(self):
-        from tests.components.dual_pressure_rectilinear_ion_processor.test_component_exit import ComponentExitTests
+        from tests.components.ion_processor.test_component_exit import ComponentExitTests
         fixture = ComponentExitTests("test_preserves_noncontiguous_ids_complete_state_and_variable_absolute_clocks")
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -1312,7 +1312,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         recipe["connections"][0]["upstream"]["instance_id"] = "processor_a"
         recipe["connections"][0]["downstream"]["instance_id"] = "analyzer_b"
         local_recipe = fixture.root / "author_recipe.json"
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_ion_processor_handoff import handoff_plan
+        from tests.components.multi_reflection_tof.analysis.test_ion_processor_handoff import handoff_plan
         local_recipe.write_text(json.dumps(handoff_plan(recipe)))
         sources["composition_plan"] = local_recipe
         matching = _resolve_ip_matching(source_run=fixture.run, results=result, inputs=inputs,
@@ -1330,7 +1330,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         if not Path(lua).is_file():
             self.skipTest("plain Lua unavailable")
         import copy
-        from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import load_config
+        from tests.components.ion_processor.test_functional import load_config
         fixture, reference, result, inputs, sources, matching = self.matching_fixture()
         shutil.copyfile(sources['reference_trajectory'],inputs/'reference_trajectory.json')
         original_model = Path(matching['source_model_path']).read_bytes()
@@ -1434,7 +1434,7 @@ if($LASTEXITCODE-ne0){throw 'actual preparation command did not disable bytecode
         self.assertEqual({row["source_component_id"] for row in rows}, {"processor_a"})
         self.assertEqual({row["target_component_id"] for row in rows}, {"analyzer_b"})
         exported = json.loads((result / "ion_processor_exit/component_exit_receipt.json").read_text())
-        self.assertEqual(exported["source_project"], "dual_pressure_rectilinear_ion_processor")
+        self.assertEqual(exported["source_project"], "ion_processor")
         self.assertEqual(exported["producer_result"]["source_scientific_status"], "failed")
         from msplatform.workflows.prepared_joint.source import materialize_measured_source
         materialized = materialize_measured_source(result / "mrtof_handoff/handoff_receipt.json", result / "measured")

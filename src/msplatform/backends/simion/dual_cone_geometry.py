@@ -35,7 +35,7 @@ def _load(path: Path, role: str) -> dict[str, Any]:
 
 
 def _cone_electrode(cone: dict[str, Any], electrode_id: int, radius: float) -> str:
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry_members import cone_shell_profile
+    from msplatform.components.dual_cone_tandem_quadrupole.geometry_members import cone_shell_profile
 
     (z0, outer0), (outer_z1, _), (inner_z1, _), (_, inner0) = cone_shell_profile(cone, radius)
     return (

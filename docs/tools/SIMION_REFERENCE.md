@@ -100,7 +100,7 @@ standalone 响应。完整 family 物化仅是通用字节复制原语，不再�
 `20260916_235000__sim__simion__mrtof-r55-detached-flight-r87`。后者从 manifest 绑定的八个 standalone
 运行 PA 建立短副本，真实飞行后复现相同 `798.419772666 us` 探测命中并发布 success manifest；上游
 build/cache 证据由
-[MR-TOF 项目状态](../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md)绑定。自然检测命中属于对应项目 run 的功能证据，不由本公共能力授予统计、数值收敛、
+[MR-TOF 项目状态](../../src/msplatform/components/multi_reflection_tof/docs/PROJECT.md)绑定。自然检测命中属于对应项目 run 的功能证据，不由本公共能力授予统计、数值收敛、
 Candidate 或 Formal 资格。本结论不扩展为所有求解器的通用短路径发布层。
 
 [公共实现说明](../SIMION_BACKEND.md#长路径输入-api与证据)维护 API、回归命令、官方依据及完整

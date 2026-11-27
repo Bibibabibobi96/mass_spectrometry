@@ -1,0 +1,572 @@
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+
+RUNNER = (
+    Path(__file__).resolve().parents[4]
+    / "src/msplatform/workflows/resources/run_native_candidate_condition.ps1"
+)
+CONTINUATION_RUNNER = RUNNER.with_name("run_two_prism_segmented_continuation.ps1")
+OA_RELEASE = RUNNER.parents[4] / "src/msplatform/components/multi_reflection_tof/config" / "accelerator_component_release_n100.json"
+
+
+class NativeCandidateConditionRunnerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = RUNNER.read_text(encoding="utf-8-sig")
+
+    def test_physical_stages_delegate_to_existing_runners_in_order(self) -> None:
+        stages = [
+            "run_dual_stripe_operating_seed.ps1",
+            "run_component_focus_workflow.ps1",
+            "oa_mr.ps1",
+            "run_two_prism_segmented_coverage.ps1",
+            "run_two_prism_segmented_continuation.ps1",
+            "run_downstream_workpoint_iteration.ps1",
+            "run_native_candidate_chain.ps1",
+        ]
+        positions = [self.source.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("FixedGridRunManifest=$fixedMirrorManifest", self.source)
+        self.assertIn("ReleaseSpecPath=$releaseSpec", self.source)
+        self.assertIn("AcceleratorSafeExitOnly=$true", self.source)
+        self.assertNotIn("ContinuationRunManifest=$context", self.source)
+
+    def test_condition_contract_changes_only_k_and_accelerator_y(self) -> None:
+        self.assertIn("$contract.nominal.target_drift_period_ratio=$k", self.source)
+        self.assertIn("$contract.accelerator.focus_y_anchor.project_y_mm=$acceleratorY", self.source)
+        self.assertIn("condition_contract.json", self.source)
+        self.assertNotIn("Set-Content -LiteralPath $baseContract", self.source)
+
+    def test_exact_k_oa_provider_uses_repository_release_and_published_offset(self) -> None:
+        self.assertIn("selected_exact_K_slow_energy_per_charge_v", self.source)
+        self.assertIn("oa_base_release_spec_path", self.source)
+        self.assertIn("$release.sampling.kinetic_energy.center_ev=$slowEnergy*[math]::Abs($charge)", self.source)
+        self.assertIn("$release.sampling.nominal_direction=@(0.0,1.0,0.0)", self.source)
+        self.assertIn("$release.sampling.angular_full_width_deg=0.0", self.source)
+        self.assertIn("accepted_release", self.source)
+        self.assertIn("provider_exit_energy_acceptance", self.source)
+        self.assertIn("$energyAcceptance.passed-ne$true", self.source)
+        self.assertIn("maximum_exit_transverse_energy_error_per_charge_v", self.source)
+        self.assertIn("maximum_exit_transverse_velocity_bias_mm_per_us", self.source)
+        self.assertIn("transverse_velocity_bias_passed", self.source)
+        self.assertIn("center_particle.transverse_energy_passed-ne$true", self.source)
+        self.assertIn("cohort.transverse_energy_passed-ne$true", self.source)
+        self.assertIn("required_source_y_offset_from_accelerator_axis_mm", self.source)
+        self.assertIn("$sourceDefinitionData.source_y_offset_mm=$sourceYOffset", self.source)
+        self.assertIn(
+            "$sourceDefinitionData.kinetic_energy_center_ev=$slowEnergy*[math]::Abs($charge)",
+            self.source,
+        )
+        self.assertIn("$sourceDefinitionData.nominal_direction_workbench=@(0.0,1.0,0.0)", self.source)
+        self.assertIn("$sourceDefinitionData.angular_full_width_deg=0.0", self.source)
+        self.assertIn("SourceDefinitionPath=$conditionSourceDefinition", self.source)
+
+    def test_oa_release_geometry_matches_the_mr_source_cylinder(self) -> None:
+        release = json.loads(OA_RELEASE.read_text(encoding="utf-8"))
+        self.assertEqual(release["geometry"]["shape"], "cylinder")
+        self.assertEqual(release["geometry"]["axis"], "y")
+        self.assertEqual(release["geometry"]["radius_mm"], 0.5)
+        self.assertEqual(release["geometry"]["height_mm"], 1.0)
+        self.assertEqual(release["sampling"]["nominal_direction"], [0.0, 1.0, 0.0])
+        self.assertEqual(release["sampling"]["angular_full_width_deg"], 0.0)
+        self.assertIn("OA base release must be the shared y-height 1 mm", self.source)
+        self.assertIn("$acceptedGeometry.axis-ne'y'", self.source)
+        self.assertIn("OA provider geometry differs from the run-local release spec", self.source)
+
+    def test_provider_reuse_is_explicit_and_k_scoped(self) -> None:
+        self.assertIn("[string]$ProviderReusePath=''", self.source)
+        self.assertIn("$reuse.K-ne$k", self.source)
+        self.assertIn("provider_run_manifest=$providerManifest", self.source)
+        self.assertIn("provider_runtime_receipt=$acceleratorReceipt", self.source)
+
+    def test_existing_stripe_and_continuation_reuse_is_optional_and_paired(self) -> None:
+        self.assertIn("[string]$StripeReuseRunManifest=''", self.source)
+        self.assertIn("[string]$ContinuationReuseRunManifest=''", self.source)
+        self.assertIn(
+            "StripeReuseRunManifest and ContinuationReuseRunManifest must be supplied together.",
+            self.source,
+        )
+        self.assertIn("function Assert-ReusedStripeAndContinuation", self.source)
+        self.assertIn("joint_root_tolerance_reached-ne$true", self.source)
+        self.assertIn("target_drift_period_ratio-ne$ExpectedK", self.source)
+        self.assertIn("accelerator_y_anchor_mm-ne$ExpectedAcceleratorY", self.source)
+        self.assertIn("source_stripe_run_id-ne[string]$stripe.run_id", self.source)
+        self.assertIn("if($null-ne$reusedPair)", self.source)
+        self.assertIn("$safeExitManifest=$null;$coverageManifest=$null", self.source)
+
+    def test_completed_candidate_reuse_is_minimal_and_condition_scoped(self) -> None:
+        self.assertIn("[string]$CandidateReuseRunManifest=''", self.source)
+        self.assertIn("function Assert-ReusedCandidate", self.source)
+        self.assertIn(
+            "CandidateReuseRunManifest requires Stripe/Continuation reuse and ProviderReusePath.",
+            self.source,
+        )
+        self.assertIn("native_candidate_end_to_end_chain", self.source)
+        self.assertIn("mrtof_native_candidate_end_to_end_chain_summary", self.source)
+        self.assertIn("downstream_fixed_grid_workpoint_iteration", self.source)
+        self.assertIn("target_drift_period_ratio-ne$ExpectedK", self.source)
+        self.assertIn("project_y_mm-ne$ExpectedAcceleratorY", self.source)
+        self.assertIn("accelerator_provider_receipt", self.source)
+        self.assertIn("source_y_offset_mm-$ExpectedSourceYOffset", self.source)
+        self.assertIn("$failureStage='reuse_native_candidate'", self.source)
+        self.assertIn("if($CandidateReuseRunManifest)", self.source)
+
+    def test_n1_resume_is_explicit_and_uses_the_existing_workpoint_interface(self) -> None:
+        for name in (
+            "WorkpointResumeInitialManifest",
+            "WorkpointResumeParentCheckpoint",
+            "WorkpointResumeSuccessfulChildManifest",
+        ):
+            self.assertIn(f"[string]${name}=''", self.source)
+        self.assertIn(
+            "Workpoint resume requires initial manifest, parent checkpoint, and successful child together.",
+            self.source,
+        )
+        self.assertIn(
+            "Workpoint resume requires Stripe/Continuation reuse and cannot reuse a completed Candidate.",
+            self.source,
+        )
+        start = self.source.index("if($workpointResumeArguments.Count-eq3){")
+        end = self.source.index("$workpointArgs.PythonExe=$python", start)
+        resume_branch = self.source[start:end]
+        self.assertIn("$workpointArgs.InitialWorkpointManifest=", resume_branch)
+        self.assertIn("$workpointArgs.ResumeParentCheckpoint=", resume_branch)
+        self.assertIn("$workpointArgs.ResumeSuccessfulChildManifest=", resume_branch)
+        resume_only, normal_only = resume_branch.split("}else{", 1)
+        self.assertNotIn("NativeRuntimeCheckpoint", resume_only)
+        self.assertIn("$workpointArgs.ContinuationRunManifest=$continuationManifest", normal_only)
+        self.assertIn("$workpointArgs.NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint", normal_only)
+
+    def test_qualified_n1_reuse_skips_workpoint_iteration_and_enters_candidate(self) -> None:
+        self.assertIn("[string]$QualifiedWorkpointRunPath=''", self.source)
+        self.assertIn(
+            "Qualified workpoint reuse requires Stripe/Continuation reuse and excludes Candidate or checkpoint resume.",
+            self.source,
+        )
+        self.assertIn("$failureStage='reuse_n1_workpoint'", self.source)
+        self.assertIn("$workpointRun=(Resolve-Path -LiteralPath $QualifiedWorkpointRunPath).Path", self.source)
+        self.assertIn("$workpointHandoff.status-ne'within_tolerance'", self.source)
+        self.assertIn("$workpointHandoff.qualification-ne'candidate_bunch_screening_authorized'", self.source)
+        self.assertIn("QualifiedWorkpointRunPath=$workpointRun", self.source)
+
+    def test_new_provider_rebinds_only_the_accelerator_before_any_mr_flight(self) -> None:
+        rebind = self.source.index("native_system_runtime rebind-accelerator")
+        safe_exit = self.source.index("Join-Path $workflowResources 'oa_mr.ps1'")
+        workpoint = self.source.index("run_downstream_workpoint_iteration.ps1")
+        candidate = self.source.index("run_native_candidate_chain.ps1")
+        self.assertLess(rebind, safe_exit)
+        self.assertLess(rebind, workpoint)
+        self.assertLess(rebind, candidate)
+        self.assertIn("$nativeBundle=$providerBoundBundle", self.source)
+        self.assertIn("response_refine_performed=$false", self.source)
+        self.assertNotIn("Copy-Item -LiteralPath $accelerator", self.source)
+
+    def test_provider_owns_source_y_offset_without_legacy_offset_gate(self) -> None:
+        self.assertIn("$sourceYOffset=[double]$provider.source_y_offset", self.source)
+        self.assertNotIn("$legacySourceYOffset", self.source)
+        self.assertNotIn("Source-definition y offset differs", self.source)
+        self.assertIn("$sourceDefinitionData.source_y_offset_mm=$sourceYOffset", self.source)
+        self.assertIn("AcceleratorSourceYOffsetMm=$sourceYOffset", self.source)
+
+    def test_r130_authority_remains_the_mirror_run(self) -> None:
+        self.assertIn("fixed_grid_mirror_run_manifest must name run_manifest.json", self.source)
+        self.assertIn("mirror_real_field_period_comparison.json", self.source)
+        self.assertIn("MirrorRunPath=$mirrorRun;StripeRunPath=$stripeRun", self.source)
+        self.assertNotIn("MirrorRunPath=$stripeRun", self.source)
+
+    def test_pair_specific_prism_seed_selection_belongs_to_continuation(self) -> None:
+        self.assertNotIn("function Select-ContinuationSeed", self.source)
+        self.assertNotIn("both_residual_ranges_enclose_zero", self.source)
+        self.assertNotIn("prism_continuation_selection.json", self.source)
+        self.assertIn("$continuationArgs.CoverageRunManifest=$coverageManifest", self.source)
+        self.assertNotIn("$continuationArgs.ExpectedTopologySignatureSha256", self.source)
+        self.assertNotIn("$continuationArgs.InitialP1V", self.source)
+
+    def test_context_cannot_override_pair_identity_or_selected_bracket(self) -> None:
+        self.assertIn("Condition context may not override orchestrator argument", self.source)
+        for name in (
+            "FixedMirrorStripeRunManifest",
+            "AcceleratorExitRunManifest",
+            "ExpectedTopologySignatureSha256",
+            "InitialP1V",
+            "InitialP2LowerV",
+            "InitialP2UpperV",
+            "WorkspaceRoot",
+            "ArtifactRoot",
+        ):
+            self.assertIn(f"'{name}'", self.source)
+
+    def test_n1_is_qualified_before_candidate_and_parent_publishes_child_lineage(self) -> None:
+        self.assertIn("best_physical_workpoint_handoff.json", self.source)
+        self.assertIn("QualifiedWorkpointRunPath=$workpointRun", self.source)
+        self.assertIn("RetainBaselineGuiWorkbench=$true", self.source)
+        self.assertIn("candidate_run_manifest=$candidateManifest", self.source)
+        self.assertIn("workflow_outcome=[string]$candidateSummary.workflow_outcome", self.source)
+
+    def test_structured_physical_nonqualification_is_a_campaign_warning(self) -> None:
+        self.assertIn("function Complete-PhysicalConditionWarning", self.source)
+        self.assertIn(
+            "warning_prism_continuation_not_qualified__continue_parameter_scan",
+            self.source,
+        )
+        self.assertIn(
+            "warning_n1_workpoint_not_qualified__continue_parameter_scan",
+            self.source,
+        )
+        self.assertIn("workpoint_incomplete_downstream_blocked", self.source)
+        self.assertIn("$workpointSummary.external_interruption-eq$false", self.source)
+        self.assertIn("Complete-FailedRun", self.source)
+
+    def test_existing_native_runtime_checkpoint_is_reused_without_pa_materialization(self) -> None:
+        self.assertIn("native_runtime_checkpoint_path", self.source)
+        self.assertGreaterEqual(
+            self.source.count("NativeRuntimeCheckpoint=$nativeRuntimeCheckpoint"), 3
+        )
+
+    def test_accelerator_runtime_checkpoint_is_passed_only_to_new_provider(self) -> None:
+        self.assertIn("[string]$AcceleratorRuntimeCheckpoint=''", self.source)
+        self.assertIn(
+            'if($AcceleratorRuntimeCheckpoint){$providerArgs.RuntimeCheckpointPath=',
+            self.source,
+        )
+
+    def test_wrapper_does_not_duplicate_scheduler_or_hash_checks(self) -> None:
+        self.assertNotIn("Get-FileHash", self.source)
+        self.assertNotIn("Start-Job", self.source)
+        self.assertNotIn("ForEach-Object -Parallel", self.source)
+        self.assertNotIn("Enter-HostExecutionLease", self.source)
+
+    def test_condition_uses_installed_resources_and_forwards_explicit_execution_roots(self) -> None:
+        self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", self.source)
+        self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", self.source)
+        self.assertIn("import msplatform;print(Path(msplatform.__file__).resolve().parent)", self.source)
+        self.assertIn("$workflowResources=Join-Path $packageRoot 'workflows/resources'", self.source)
+        self.assertIn("$simionResources=Join-Path $packageRoot 'backends/simion/resources'", self.source)
+        self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python", self.source)
+        for name in ("stripeArgs", "safeExitArgs", "coverageArgs", "continuationArgs",
+                     "workpointArgs", "candidateArgs"):
+            self.assertIn(f"${name}.PythonExe=$python", self.source)
+        for name in ("stripeArgs", "coverageArgs", "continuationArgs", "workpointArgs", "candidateArgs"):
+            self.assertIn(f"${name}.WorkspaceRoot=$workspaceRoot", self.source)
+            self.assertIn(f"${name}.ArtifactRoot=$artifactRoot", self.source)
+        self.assertIn("RepoRoot=$workspaceRoot", self.source)
+        self.assertIn("CompositionPlanPath=$CompositionPlanPath;LocalScopePath=$LocalScopePath", self.source)
+        self.assertIn("OwnerId orthogonal_accelerator", self.source)
+        self.assertNotIn("projects\\orthogonal_accelerator", self.source)
+        self.assertIn("Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly", self.source)
+        self.assertIn("& $python -I -B -m msplatform.workflows.oa_mr.native_system_runtime", self.source)
+        self.assertNotIn(".venv", self.source)
+        self.assertNotIn("Join-Path $PSScriptRoot", self.source)
+        self.assertNotIn("PYTHONPATH", self.source)
+
+    def test_continuation_runner_supports_auto_and_legacy_explicit_selection(self) -> None:
+        continuation = CONTINUATION_RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("$automaticSelection=$explicitSelection.Count-eq0", continuation)
+        self.assertIn("'--auto-select-initial-bracket'", continuation)
+        self.assertIn("'--expected-topology-signature-sha256'", continuation)
+        self.assertIn("Explicit continuation selection requires topology", continuation)
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
+class NativeCandidateConditionPreparationTests(unittest.TestCase):
+    def test_default_campaign_child_freezes_the_same_plan_and_optional_scope(self) -> None:
+        # Execute both production scripts unchanged. Only lifecycle allocation
+        # and the first physical stage are substituted: no solver is requested.
+        for with_scope in (False, True):
+            with self.subTest(with_scope=with_scope), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                repo = root / "repo"
+                analysis = repo / "src/msplatform/workflows/resources"
+                analysis.mkdir(parents=True)
+                for name in ("run_native_candidate_campaign.ps1", RUNNER.name):
+                    shutil.copyfile(RUNNER.with_name(name), analysis / name)
+                support = repo / "src" / "msplatform" / "execution" / "resources" / "run_artifact_support.ps1"
+                support.parent.mkdir(parents=True)
+                real_support = RUNNER.parents[4] / "src" / "msplatform" / "execution" / "resources" / support.name
+                support.write_text(
+                    f". '{real_support.as_posix()}'\n" + r"""
+function Resolve-RunArtifactRoot {
+  param($ArtifactRoot,$OwnerKind,$OwnerId,$Python)
+  return Join-Path $ArtifactRoot (Join-Path $OwnerKind's' $OwnerId)
+}
+function New-RunPackage {
+  param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,
+    [switch]$RetentionContractEnabled,$RetentionClass,[switch]$CapacityLedgerLifecycleEnabled)
+  $run=Join-Path (Join-Path $ArtifactRoot 'runs') $RunId
+  $inputs=Join-Path $run 'inputs'
+  New-Item -ItemType Directory -Path $inputs -Force|Out-Null
+  $config=Join-Path $run 'run_config.json'
+  Write-RunJson -Path $config -Value @{run_id=$RunId;project=$Project;mode=$Mode}
+  return [pscustomobject]@{input_dir=$inputs;run_config=$config;summary=(Join-Path $run 'summary.json')}
+}
+function Complete-FailedRun {
+  param($Python,$RepoRoot,$RunConfig,$Summary,$SummaryRole,$Reason,$Software,$Status,$FailureStage)
+  $config=Get-Content -LiteralPath $RunConfig -Raw|ConvertFrom-Json -AsHashtable
+  Write-RunJson -Path (Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json') -Value @{
+    schema_version=2;run_id=$config.run_id;project=$config.project;mode=$config.mode;status=$Status}
+  Write-RunJson -Path $Summary -Value @{status=$Status;failure_stage=$FailureStage;reason=$Reason}
+}
+""",
+                    encoding="utf-8",
+                )
+                (analysis / "run_dual_stripe_operating_seed.ps1").write_text(
+                    "param([Parameter(Mandatory)]$AcceleratorComponentContractPath,"
+                    "[Parameter(Mandatory)]$AcceleratorGeometryProfileId,"
+                    "[Parameter(Mandatory)]$FixedGridRunManifest,[Parameter(Mandatory)]$ContractPath,"
+                    "[Parameter(Mandatory)]$RunId,[Parameter(Mandatory)]$WorkspaceRoot,"
+                    "[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)\n"
+                    "throw 'PREPARE_BOUNDARY_BEFORE_PHYSICS'\n",
+                    encoding="utf-8",
+                )
+                selected_python = root / "selected_python.cmd"
+                selected_python.write_text(
+                    f"@echo off\r\necho {(repo / 'src/msplatform').as_posix()}\r\n",
+                    encoding="utf-8",
+                )
+                condition_entry = analysis / "condition_entry.ps1"
+                condition_entry.write_text(
+                    "param($ConditionPath,$ContextPath,$RunId,$CompositionPlanPath,$LocalScopePath='',$WorkspaceRoot,$ArtifactRoot,$PythonExe)\n"
+                    f"$arguments=@{{ConditionPath=$ConditionPath;ContextPath=$ContextPath;RunId=$RunId;"
+                    f"CompositionPlanPath=$CompositionPlanPath;WorkspaceRoot='{repo.as_posix()}';"
+                    f"ArtifactRoot='{(root / 'artifacts').as_posix()}';PythonExe='{selected_python.as_posix()}'}}\n"
+                    "if($LocalScopePath){$arguments.LocalScopePath=$LocalScopePath}\n"
+                    f"& (Join-Path $PSScriptRoot '{RUNNER.name}') @arguments\n",
+                    encoding="utf-8",
+                )
+                campaign = root / "campaign.json"
+                campaign.write_text(json.dumps([{"K": 25.5, "accelerator_y": -55.0}]), encoding="utf-8")
+                contract = root / "contract.json"
+                contract.write_text(json.dumps({"nominal": {"target_drift_period_ratio": 1},
+                    "accelerator": {"focus_y_anchor": {"project_y_mm": 0}}}), encoding="utf-8")
+                mirror = root / "mirror"
+                (mirror / "results").mkdir(parents=True)
+                for path in (mirror / "run_manifest.json", mirror / "results" / "mirror_real_field_period_comparison.json"):
+                    path.write_text("{}", encoding="utf-8")
+                context = root / "context.json"
+                context.write_text(json.dumps({
+                    "schema_version": 2, "role": "mrtof_native_candidate_condition_context",
+                    "accelerator_component_contract_path": str(RUNNER.parents[4] / "src/msplatform/components/orthogonal_accelerator/component_contract.json"),
+                    "accelerator_geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+                    "contract_path": str(contract),
+                    "fixed_grid_mirror_run_manifest": str(mirror / "run_manifest.json"),
+                    "geometry_review_run_path": str(root), "native_corridor_bank_run_path": str(root),
+                    "native_system_runtime_bundle_path": str(contract), "native_runtime_checkpoint_path": "",
+                    "source_definition_path": str(contract), "oa_base_release_spec_path": str(contract),
+                    "oa_request_path": str(contract),
+                }), encoding="utf-8")
+                plan, scope = root / "plan.json", root / "scope.json"
+                plan.write_bytes(b'{"fixture": "explicit parent plan"}\n')
+                scope.write_bytes(b'{"fixture": "explicit local scope"}\n')
+                checkpoint = root / "checkpoint.json"
+                command = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
+                    str(analysis / "run_native_candidate_campaign.ps1"),
+                    "-CampaignPath", str(campaign), "-CheckpointPath", str(checkpoint),
+                    "-ConditionContextPath", str(context), "-CompositionPlanPath", str(plan),
+                    "-ConditionRunnerPath", str(condition_entry),
+                    "-WorkspaceRoot", str(repo), "-ArtifactRoot", str(root / "artifacts"),
+                    "-PythonExe", str(selected_python),
+                    "-CampaignStamp", "20261028_000000"]
+                if with_scope:
+                    command.extend(["-LocalScopePath", str(scope)])
+                result = subprocess.run(command, cwd=repo, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=60, check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Condition run terminated with status failed", result.stdout + result.stderr)
+                state = json.loads(checkpoint.read_text(encoding="utf-8-sig"))
+                self.assertEqual(state["conditions"][0]["terminal_state"], "failed")
+                run = Path(state["conditions"][0]["run_manifest"]).parent
+                config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
+                summary = json.loads((run / "summary.json").read_text(encoding="utf-8-sig"))
+                self.assertEqual(summary["failure_stage"], "fixed_grid_stripe_seed")
+                self.assertEqual(summary["reason"], "PREPARE_BOUNDARY_BEFORE_PHYSICS")
+                for key, source in (("composition_plan", plan), ("local_scope", scope)):
+                    if key == "local_scope" and not with_scope:
+                        self.assertIsNone(state[key])
+                        self.assertNotIn(key, config["inputs"])
+                        continue
+                    frozen = Path(config["inputs"][key])
+                    self.assertEqual(frozen.parent, run / "inputs")
+                    self.assertEqual(frozen.read_bytes(), source.read_bytes())
+                    self.assertEqual(frozen.read_bytes(), Path(state[key]["path"]).read_bytes())
+                frozen_contract = json.loads(Path(config["inputs"]["condition_contract"]).read_text(encoding="utf-8-sig"))
+                self.assertEqual(frozen_contract["nominal"]["target_drift_period_ratio"], 25.5)
+                self.assertEqual(frozen_contract["accelerator"]["focus_y_anchor"]["project_y_mm"], -55.0)
+
+    def test_new_oa_provider_is_read_only_from_the_component_artifact_root(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            repo = root / "repo"
+            resources = repo / "src/msplatform/workflows/resources"
+            provider_resources = repo / "src/msplatform/backends/simion/resources"
+            resources.mkdir(parents=True)
+            provider_resources.mkdir(parents=True)
+            condition_runner = resources / RUNNER.name
+            shutil.copyfile(RUNNER, condition_runner)
+            real_support = RUNNER.parents[4] / "src/msplatform/execution/resources/run_artifact_support.ps1"
+            support = repo / "src/msplatform/execution/resources" / real_support.name
+            support.parent.mkdir(parents=True)
+            support.write_text(
+                f". '{real_support.as_posix()}'\n" + r"""
+function Resolve-RunArtifactRoot {
+  param($ArtifactRoot,$OwnerKind,$OwnerId,$Python)
+  return Join-Path $ArtifactRoot (Join-Path $OwnerKind's' $OwnerId)
+}
+function New-RunPackage {
+  param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,
+    [switch]$RetentionContractEnabled,$RetentionClass,[switch]$CapacityLedgerLifecycleEnabled)
+  $run=Join-Path (Join-Path $ArtifactRoot 'runs') $RunId
+  $inputs=Join-Path $run 'inputs'
+  New-Item -ItemType Directory -Path $inputs -Force|Out-Null
+  $config=Join-Path $run 'run_config.json'
+  Write-RunJson -Path $config -Value @{run_id=$RunId;project=$Project;mode=$Mode}
+  return [pscustomobject]@{input_dir=$inputs;run_config=$config;summary=(Join-Path $run 'summary.json')}
+}
+function Complete-FailedRun {
+  param($Python,$RepoRoot,$RunConfig,$Summary,$SummaryRole,$Reason,$Software,$Status,$FailureStage)
+  Write-RunJson -Path $Summary -Value @{status=$Status;failure_stage=$FailureStage;reason=$Reason}
+}
+""",
+                encoding="utf-8",
+            )
+            (resources / "run_dual_stripe_operating_seed.ps1").write_text(r"""
+param([Parameter(Mandatory)]$AcceleratorComponentContractPath,[Parameter(Mandatory)]$AcceleratorGeometryProfileId,
+  [Parameter(Mandatory)]$FixedGridRunManifest,[Parameter(Mandatory)]$ContractPath,[Parameter(Mandatory)]$RunId,
+  [Parameter(Mandatory)]$WorkspaceRoot,[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)
+$run=Join-Path $ArtifactRoot "components/multi_reflection_tof/runs/$RunId"
+New-Item -ItemType Directory -Path $run -Force|Out-Null
+@{run_id=$RunId}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $run 'run_manifest.json')
+@{selected_seed=@{selected_exact_K_slow_energy_per_charge_v=5.0}}|ConvertTo-Json -Depth 5|
+  Set-Content -LiteralPath (Join-Path $run 'summary.json')
+""", encoding="utf-8")
+            receipt = {
+                "role": "orthogonal_accelerator_mrtof_runtime_receipt",
+                "status": "published_standalone_response_bank",
+                "mrtof_projection": {
+                    "accepted_release": {
+                        "slow_energy_center_per_charge_v": 5.0,
+                        "slow_energy_full_width_per_charge_v": 0.2,
+                        "mass_th": 524.0,
+                        "charge_e": 1,
+                        "nominal_direction": [0.0, 1.0, 0.0],
+                        "angular_full_width_deg": 0.0,
+                        "geometry": {
+                            "shape": "cylinder", "axis": "y", "radius_mm": 0.5,
+                            "height_mm": 1.0, "center_mm": [0.0, 0.0, 0.0],
+                        },
+                    },
+                    "required_source_y_offset_from_accelerator_axis_mm": -1.0,
+                    "provider_exit_energy_acceptance": {
+                        "passed": True,
+                        "tolerances": {
+                            "maximum_exit_transverse_energy_error_per_charge_v": 0.0,
+                            "maximum_exit_transverse_velocity_bias_mm_per_us": 0.0,
+                        },
+                        "center_particle": {
+                            "transverse_energy_passed": True,
+                            "transverse_velocity_bias_passed": True,
+                        },
+                        "cohort": {
+                            "transverse_energy_passed": True,
+                            "transverse_velocity_bias_passed": True,
+                        },
+                    },
+                },
+            }
+            (provider_resources / "run_component_focus_workflow.ps1").write_text(
+                "param([Parameter(Mandatory)]$RunId,[Parameter(Mandatory)]$RequestPath,"
+                "[Parameter(Mandatory)]$ReleaseSpecPath,[Parameter(Mandatory)]$WorkspaceRoot,"
+                "[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)\n"
+                "$run=Join-Path $ArtifactRoot \"components/orthogonal_accelerator/runs/$RunId\"\n"
+                "New-Item -ItemType Directory -Path (Join-Path $run 'results') -Force|Out-Null\n"
+                "@{project='orthogonal_accelerator';mode='component_focus_workflow';status='success';run_id=$RunId}|"
+                "ConvertTo-Json|Set-Content -LiteralPath (Join-Path $run 'run_manifest.json')\n"
+                "$receipt=ConvertFrom-Json -AsHashtable @'\n" + json.dumps(receipt) + "\n'@\n"
+                "$receipt|ConvertTo-Json -Depth 20|Set-Content -LiteralPath (Join-Path $run 'results/mrtof_runtime_receipt.json')\n"
+                "@{workspace=$WorkspaceRoot;artifact=$ArtifactRoot;python=$PythonExe}|ConvertTo-Json|"
+                "Set-Content -LiteralPath (Join-Path $run 'transport.json')\n",
+                encoding="utf-8",
+            )
+            run_id = "20261125_000000__analysis__python__condition"
+            run_inputs = root / "artifacts/components/multi_reflection_tof/runs" / run_id / "inputs"
+            selected_python = root / "selected_python.cmd"
+            selected_python.write_text(
+                "@echo off\r\n"
+                f"if exist \"{run_inputs}\" echo {{}}>\"{run_inputs / 'native_system_runtime_bundle.json'}\"\r\n"
+                f"echo {(repo / 'src/msplatform').as_posix()}\r\n",
+                encoding="utf-8",
+            )
+            contract = root / "contract.json"
+            contract.write_text(json.dumps({
+                "nominal": {"target_drift_period_ratio": 1},
+                "accelerator": {"focus_y_anchor": {"project_y_mm": 0}},
+            }), encoding="utf-8")
+            release = root / "release.json"
+            release.write_text(json.dumps({
+                "role": "repository_ion_release",
+                "species": {"charge_state": 1, "mass_amu": 524.0},
+                "sampling": {
+                    "kinetic_energy": {"center_ev": 1.0, "full_width_ev": 0.2},
+                    "nominal_direction": [0.0, 1.0, 0.0], "angular_full_width_deg": 0.0,
+                },
+                "geometry": {
+                    "shape": "cylinder", "axis": "y", "radius_mm": 0.5,
+                    "height_mm": 1.0, "center_mm": [0.0, 0.0, 0.0],
+                },
+            }), encoding="utf-8")
+            mirror = root / "mirror"
+            (mirror / "results").mkdir(parents=True)
+            (mirror / "run_manifest.json").write_text("{}", encoding="utf-8")
+            (mirror / "results/mirror_real_field_period_comparison.json").write_text("{}", encoding="utf-8")
+            context = root / "context.json"
+            context.write_text(json.dumps({
+                "schema_version": 2, "role": "mrtof_native_candidate_condition_context",
+                "accelerator_component_contract_path": str(contract),
+                "accelerator_geometry_profile_id": "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+                "contract_path": str(contract),
+                "fixed_grid_mirror_run_manifest": str(mirror / "run_manifest.json"),
+                "geometry_review_run_path": str(root), "native_corridor_bank_run_path": str(root),
+                "native_system_runtime_bundle_path": str(contract), "native_runtime_checkpoint_path": "",
+                "source_definition_path": str(contract), "oa_base_release_spec_path": str(release),
+                "oa_request_path": str(contract),
+            }), encoding="utf-8")
+            condition = root / "condition.json"
+            condition.write_text(json.dumps({
+                "schema_version": 1, "role": "mrtof_native_candidate_campaign_condition",
+                "K": 25.5, "accelerator_y": -55.0,
+            }), encoding="utf-8")
+            plan = root / "plan.json"
+            plan.write_text("{}", encoding="utf-8")
+            (root / "results").mkdir()
+            (root / "results/pa_family_cache_publication.json").write_text(json.dumps({
+                "cache_key": "fixture-cache", "generation_sha256": "fixture-generation",
+            }), encoding="utf-8")
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(condition_runner),
+                 "-ConditionPath", str(condition), "-ContextPath", str(context), "-RunId", run_id,
+                 "-WorkspaceRoot", str(repo), "-ArtifactRoot", str(root / "artifacts"),
+                 "-PythonExe", str(selected_python), "-CompositionPlanPath", str(plan)],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=60, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            summary = json.loads((
+                root / "artifacts/components/multi_reflection_tof/runs" / run_id / "summary.json"
+            ).read_text(encoding="utf-8-sig"))
+            self.assertEqual(summary["failure_stage"], "accelerator_safe_exit")
+            self.assertTrue((run_inputs / "native_system_runtime_bundle.json").is_file())
+            provider_run = root / "artifacts/components/orthogonal_accelerator/runs/20261125_000000__sim__simion__mrtof-condition-oa-provider"
+            self.assertTrue((provider_run / "run_manifest.json").is_file())
+            transport = json.loads((provider_run / "transport.json").read_text(encoding="utf-8-sig"))
+            self.assertEqual(transport, {
+                "workspace": str(repo), "artifact": str(root / "artifacts"), "python": str(selected_python),
+            })
+            self.assertFalse((root / "artifacts/projects").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

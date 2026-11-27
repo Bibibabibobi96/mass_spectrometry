@@ -12,9 +12,9 @@ from msplatform.ion_release.authoring import ReleaseRealization
 
 HS1_SCHEMA = Path(__file__).with_name("continuous_hs1.schema.json")
 COMPONENT_SCOPES = {
-    "rf_ip": {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor"},
-    "rf_ip_mr": {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor",
-                 "parallel_mirror_dual_stripe_mr_tof"},
+    "rf_ip": {"rf_multipole_ion_optics", "ion_processor"},
+    "rf_ip_mr": {"rf_multipole_ion_optics", "ion_processor",
+                 "multi_reflection_tof"},
 }
 
 

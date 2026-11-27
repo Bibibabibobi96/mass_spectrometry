@@ -48,7 +48,7 @@
       },
       {
         "instance_id": "mr_entry",
-        "project_id": "parallel_mirror_dual_stripe_mr_tof",
+        "project_id": "multi_reflection_tof",
         "transform": {
           "schema_version": 1,
           "role": "rigid_transform",
@@ -217,7 +217,7 @@
     "mr_entry": {
       "schema_version": 1,
       "role": "component_geometry_interface",
-      "project_id": "parallel_mirror_dual_stripe_mr_tof",
+      "project_id": "multi_reflection_tof",
       "variant_id": "complete_mr_analyzer",
       "geometry_profile_id": null,
       "local_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",

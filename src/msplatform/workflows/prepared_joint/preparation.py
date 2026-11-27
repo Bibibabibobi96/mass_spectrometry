@@ -8,8 +8,8 @@ from typing import Any
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 
-PROJECT = "parallel_mirror_dual_stripe_mr_tof"
-ION_PROCESSOR = "dual_pressure_rectilinear_ion_processor"
+PROJECT = "multi_reflection_tof"
+ION_PROCESSOR = "ion_processor"
 
 
 def _read(path: Path) -> dict[str, Any]:

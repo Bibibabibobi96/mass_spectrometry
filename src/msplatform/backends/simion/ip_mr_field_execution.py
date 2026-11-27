@@ -31,8 +31,8 @@ def _priority_projection(model: Any, binding: Mapping[str, Any],
         values=[name for name in selected if projects[name]['project_id']==project]
         if len(values)!=1:raise ValueError('one explicitly selected '+project+' required')
         return values[0]
-    rf=component('rf_multipole_ion_optics');ip=component('dual_pressure_rectilinear_ion_processor')
-    mr=component('parallel_mirror_dual_stripe_mr_tof');background_id='numerical_background'
+    rf=component('rf_multipole_ion_optics');ip=component('ion_processor')
+    mr=component('multi_reflection_tof');background_id='numerical_background'
     roles=dict(background=background_id,rf=rf,ip=ip,analyzer=mr+'_analyzer',detector=mr+'_detector')
     background_bounds=[[origin[i],origin[i]+(dims[i]-1)*pitch[i]] for i in range(3)]
     instances=[dict(role=background_id,instance_index=1,priority_number=1,
@@ -90,8 +90,8 @@ def prepare_ip_mr_field_inputs(model_reference: Mapping[str, Any], *, scalar_fie
         raise ValueError('COMSOL geometry source request differs')
     snapshot=request['payload']['assembly'];layout=snapshot['composition_plan']
     provider_ids={'rf_multipole_ion_optics':'rf_multipole',
-        'dual_pressure_rectilinear_ion_processor':'dual_pressure_rectilinear_ion_processor',
-        'parallel_mirror_dual_stripe_mr_tof':'parallel_mirror_dual_stripe_mr_tof'}
+        'ion_processor':'ion_processor',
+        'multi_reflection_tof':'multi_reflection_tof'}
     components={name:_from_provider(provider_ids[layout['components'][name]['project_id']],
         snapshot['components_resolved'][name],layout['components'][name],source_design=snapshot['components_source'][name])
         for name in layout['scope']['instance_ids']}

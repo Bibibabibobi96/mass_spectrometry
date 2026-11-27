@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from msplatform.execution.retention import file_record
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes, convex_section
+from msplatform.components.ion_processor.convex_geometry import convex_planes, convex_section
 from msplatform.backends.simion.assembled_field_plan import _bounds
 from msplatform.backends.simion.standalone_pa_composition import HEADER, PaHeader, read_pa_header
 

@@ -5,8 +5,8 @@ import unittest
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component
 from msplatform.exporters import step
-from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis import test_mr_provider_trial_transport as fixtures
-from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+from tests.components.multi_reflection_tof.analysis import test_mr_provider_trial_transport as fixtures
+from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import geometry_authority
 
 
 def snapshot(a):
@@ -19,10 +19,10 @@ class MrStepProjectionTests(unittest.TestCase):
         _,plan,contract=fixtures._plans();auth=geometry_authority(contract);profile=auth['geometry_profile_id']
         oa=resolve_component(dict(provider_id='orthogonal_accelerator',geometry_profile_id=profile,
             design=dict(requirements=auth['accelerator_requirements'],geometry_profile=auth['geometry_profile'])))
-        mr=resolve_component(dict(provider_id='parallel_mirror_dual_stripe_mr_tof',geometry_profile_id=profile,
+        mr=resolve_component(dict(provider_id='multi_reflection_tof',geometry_profile_id=profile,
             design=dict(contract=contract,accelerator_requirements=auth['accelerator_requirements'],geometry_profile=auth['geometry_profile'])))
         cls.oa=next(n for n,v in plan['components'].items() if v['project_id']=='orthogonal_accelerator')
-        cls.mr=next(n for n,v in plan['components'].items() if v['project_id']=='parallel_mirror_dual_stripe_mr_tof')
+        cls.mr=next(n for n,v in plan['components'].items() if v['project_id']=='multi_reflection_tof')
         cls.assembly=assemble(plan['recipe'],{cls.oa:oa,cls.mr:mr})
 
     def test_actual_combined_complete_source_and_exactly_one_oa(self):
@@ -75,7 +75,7 @@ class MrStepProjectionTests(unittest.TestCase):
     def test_detector_parameter_propagates_from_provider(self):
         a=self.assembly;source=copy.deepcopy(a.components_source[self.mr]);source['contract']['detector']['active_width_x_mm']+=1
         profile=a.composition_plan['components'][self.mr]['geometry_profile_id']
-        changed=resolve_component(dict(provider_id='parallel_mirror_dual_stripe_mr_tof',geometry_profile_id=profile,design=source))
+        changed=resolve_component(dict(provider_id='multi_reflection_tof',geometry_profile_id=profile,design=source))
         changed_assembly=assemble(a.composition_plan['recipe'],dict(a.components,**{self.mr:changed}))
         old=next(m for m in assembly_geometry_members(snapshot(a)) if m['instance_id']==self.mr and m['member_id']=='detector')
         new=next(m for m in assembly_geometry_members(snapshot(changed_assembly)) if m['instance_id']==self.mr and m['member_id']=='detector')
@@ -93,7 +93,7 @@ class MrStepProjectionTests(unittest.TestCase):
         relative=RigidTransform.from_contract(poses[self.oa]).then(RigidTransform.from_contract(poses[self.mr]).inverse()).to_contract()
         source=copy.deepcopy(a.components_source[self.mr]);relative['translation_mm'][0]+=.25;source['accelerator_to_mr']=relative
         profile=a.composition_plan['components'][self.mr]['geometry_profile_id']
-        changed=resolve_component(dict(provider_id='parallel_mirror_dual_stripe_mr_tof',geometry_profile_id=profile,design=source))
+        changed=resolve_component(dict(provider_id='multi_reflection_tof',geometry_profile_id=profile,design=source))
         altered=assemble(a.composition_plan['recipe'],dict(a.components,**{self.mr:changed}))
         with self.assertRaisesRegex(ValueError,'relative pose differs'):assembly_geometry_members(snapshot(altered))
     def test_missing_intended_source_members_refuse(self):

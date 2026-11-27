@@ -18,7 +18,7 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
 
-PROJECT = "dual_pressure_rectilinear_ion_processor"
+PROJECT = "ion_processor"
 ABS_TOL = 1e-9
 REL_TOL = 1e-12
 

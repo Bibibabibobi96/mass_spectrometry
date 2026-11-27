@@ -13,7 +13,7 @@ import math
 from typing import Any
 
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+from msplatform.components.multi_reflection_tof.mirror_l0 import (
     MirrorL0Design,
     axial_potential_gradient_v_per_mm,
     axial_potential_v,
@@ -32,14 +32,14 @@ from msplatform.workflows.mr_design.prism_mirror_transport import (
     polygon_potential_region,
     propagate_segmented_hamiltonian,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.prism_analytic import (
+from msplatform.components.multi_reflection_tof.prism_analytic import (
     PrismAnalyticError,
     hard_boundary_bias_for_face_order_and_target_direction_v,
     trace_triangular_hard_boundary_prism,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (compile_dual_stripe_edge_evaluators, dual_stripe_physical_instance_topology)
+from msplatform.components.multi_reflection_tof.resolved_geometry import (compile_dual_stripe_edge_evaluators, dual_stripe_physical_instance_topology)
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 from msplatform.workflows.prepared_joint.prism_handoff import (

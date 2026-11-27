@@ -6,9 +6,9 @@ import math
 from pathlib import Path
 from typing import Any
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract, mirror_power_supply_limits, named_record
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import apply_terminal_mirror_variation, fixed_mirror_stripe_source_state
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
+from msplatform.components.multi_reflection_tof.candidate_contract import load_contract, mirror_power_supply_limits, named_record
+from msplatform.components.multi_reflection_tof.operating_authority import apply_terminal_mirror_variation, fixed_mirror_stripe_source_state
+from msplatform.components.multi_reflection_tof.candidate_voltage import candidate_authority
 from .static_field_binding import _record as record
 
 def read(path: Path) -> dict[str, Any]:

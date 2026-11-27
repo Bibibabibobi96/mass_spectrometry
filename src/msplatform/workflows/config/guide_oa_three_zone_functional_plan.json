@@ -16,7 +16,7 @@
     "instances": [
       {
         "instance_id": "guide",
-        "project_id": "dual_pressure_rectilinear_ion_processor",
+        "project_id": "ion_processor",
         "transform": {
           "schema_version": 1,
           "role": "rigid_transform",
@@ -99,7 +99,7 @@
     "guide": {
       "schema_version": 1,
       "role": "component_geometry_interface",
-      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "project_id": "ion_processor",
       "variant_id": "continuous_bare_octupole_guide",
       "geometry_profile_id": null,
       "local_frame_id": "multipole_cartesian_z_axis_v1",

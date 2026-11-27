@@ -23,7 +23,7 @@ def _native_refine_change(reference: dict[str, Any], contract: dict[str, Any]) -
 
 
 def reference_changes(expected: dict[str, Any], scientific: dict[str, Any], *, contract_base: Path) -> dict:
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import resolve_trajectory_profile
+    from msplatform.components.multi_reflection_tof.candidate_contract import resolve_trajectory_profile
     native_refine_change = _native_refine_change(expected, scientific)
     analysis_change = None
     peak = scientific.get("peak_analysis")

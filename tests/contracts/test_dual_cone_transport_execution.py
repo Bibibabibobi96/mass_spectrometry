@@ -16,7 +16,7 @@ from msplatform.backends.simion.dual_cone_transport_execution import plan_transp
 from msplatform.backends.simion.resources import native_resource_path
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG = ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config"
+CONFIG = ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config"
 LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
 
 
@@ -392,7 +392,7 @@ class ManagedTransportTests(unittest.TestCase):
         from msplatform.execution.capacity_protection import load_capacity_protection_leases
         from msplatform.workflows.dual_cone_transport import run_gas_assisted_transport
         from tests.contracts.test_execution_runtime import NormalOwnerTests
-        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
+        from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import _write_fixture
 
         for scenario in (
             "valid",
@@ -423,7 +423,7 @@ class ManagedTransportTests(unittest.TestCase):
                 initialize_capacity_ledger(artifact_root, objects=[])
                 source = (
                     context.workspace
-                    / "artifacts/components/dual_cone_tandem_quadrupole_ion_interface/runs/inert-gas-source"
+                    / "artifacts/components/dual_cone_tandem_quadrupole/runs/inert-gas-source"
                 )
                 source.mkdir(parents=True)
                 csv_path, metadata = _write_fixture(source)
@@ -461,7 +461,7 @@ class ManagedTransportTests(unittest.TestCase):
                     meta["solution_summary"]["mass_balance_relative_error"] = 1.0
                 metadata.write_text(json.dumps(meta))
                 identity = dict(
-                    project="dual_cone_tandem_quadrupole_ion_interface",
+                    project="dual_cone_tandem_quadrupole",
                     run_id=source.name,
                     mode="axisymmetric_gas_flow_screening",
                 )

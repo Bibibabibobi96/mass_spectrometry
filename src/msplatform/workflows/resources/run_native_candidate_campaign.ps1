@@ -21,7 +21,7 @@ param(
 #   -CompositionPlanPath <frozen JSON> [-LocalScopePath <frozen JSON>]
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$project='parallel_mirror_dual_stripe_mr_tof'
+$project='multi_reflection_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot);$repoRoot=$workspaceRoot
 $python=[IO.Path]::GetFullPath($PythonExe)
 $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;print(Path(msplatform.__file__).resolve().parent)'

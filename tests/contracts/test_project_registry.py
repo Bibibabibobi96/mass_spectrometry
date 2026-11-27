@@ -201,12 +201,12 @@ class ProjectRegistryTests(unittest.TestCase):
     def test_mrtof_descriptor_registers_current_candidate_baseline(self) -> None:
         descriptor = load_json(
             REPO_ROOT
-            / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/project.json"
+            / "src/msplatform/components/multi_reflection_tof/config/project.json"
         )
         self.assertEqual(descriptor["lifecycle_status"], "candidate")
         self.assertEqual(
             descriptor["contracts"]["baseline"],
-            "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json",
+            "src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json",
         )
         self.assertIsNone(descriptor["contracts"]["resolved"])
         self.assertIn("simion", descriptor["toolchains"])
@@ -406,6 +406,30 @@ class ProjectRegistryTests(unittest.TestCase):
 
 
 class RetiredProjectRegistryTests(unittest.TestCase):
+    def test_phase_c_component_names_have_no_executable_aliases(self) -> None:
+        from importlib.util import find_spec
+        from msplatform.execution.artifact_identity_archive import assert_new_run_project_allowed
+
+        names = {
+            "parallel_mirror_dual_stripe_mr_tof": "multi_reflection_tof",
+            "dual_pressure_rectilinear_ion_processor": "ion_processor",
+            "dual_cone_tandem_quadrupole_ion_interface": "dual_cone_tandem_quadrupole",
+        }
+        registry = build_registry()
+        active = {row["project_id"] for row in registry["projects"]}
+        for old, current in names.items():
+            with self.subTest(component=current):
+                self.assertIn(current, active)
+                self.assertNotIn(old, active)
+                self.assertIsNotNone(find_spec("msplatform.components." + current))
+                self.assertIsNone(find_spec("msplatform.components." + old))
+                descriptor = load_json(REPO_ROOT / "src/msplatform/components" / current / "config/project.json")
+                recorded = load_retired_project_descriptors(descriptor, REPO_ROOT)
+                self.assertEqual([row["project_id"] for row in recorded], [old])
+                with self.assertRaisesRegex(ValueError, "read-only"):
+                    assert_new_run_project_allowed(REPO_ROOT, old)
+                assert_new_run_project_allowed(REPO_ROOT, current)
+
     def test_retired_owners_and_aliases_are_not_active_or_duplicate(self) -> None:
         from tests.contracts.test_artifact_identity_archive import CURRENT, LEGACY, retirement_fixture
 

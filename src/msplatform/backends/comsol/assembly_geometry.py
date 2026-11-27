@@ -23,7 +23,7 @@ def _supported(shape: Mapping, *, ideal: bool) -> None:
     elif kind in {"ip_box", "ip_cylinder_x", "ip_convex_polyhedron"}:
         if ideal:
             raise ValueError("COMSOL IP ideal surface is unsupported")
-        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        from msplatform.components.ion_processor.convex_geometry import shape_bounds
         original = {"shape": kind[3:], **{k: v for k, v in shape.items() if k != "kind"}}
         lower, upper = shape_bounds(original)
         if any(a >= b for a, b in zip(lower, upper, strict=True)):
@@ -70,7 +70,7 @@ def _local_bounds(shape: Mapping) -> tuple[list[float], list[float]]:
         return ([min(b[0][i] for b in boxes) for i in range(3)],
                 [max(b[1][i] for b in boxes) for i in range(3)])
     if kind.startswith("ip_"):
-        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        from msplatform.components.ion_processor.convex_geometry import shape_bounds
         return shape_bounds({"shape": kind[3:], **{k: v for k, v in shape.items() if k != "kind"}})
     if kind == "extruded_yz_polygon":
         points = shape["polygon_yz_mm"]

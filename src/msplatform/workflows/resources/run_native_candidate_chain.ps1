@@ -45,7 +45,7 @@ param(
 # materialization, and detector diagnostics remain in their existing runners.
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$project='parallel_mirror_dual_stripe_mr_tof'
+$project='multi_reflection_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$repoRoot=$workspaceRoot
 $artifactWorkspaceRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $python=[IO.Path]::GetFullPath($PythonExe)
@@ -604,7 +604,7 @@ function Resolve-ScreeningFieldBinding {
     $staticCandidateFields[$key]=[string]$center.field_binding.path
   }
   if($staticFieldRepresentation-eq'native_static_pa'-and$centerBinding.ContainsKey('consumer_view')){
-    $fullReuseCode="import json,sys; from pathlib import Path; from msplatform.backends.comsol.static_field_binding import load_binding,native_numerics_match; from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority; r=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig')); b=load_binding(Path(r['source_binding_path'])); u=json.loads(sys.argv[2]); expected=candidate_authority(b['authority'],dict(zip(('s1','s2','p1','p2'),u,strict=True)),mirror_voltages_v=json.loads(sys.argv[3])); print(json.dumps(not b.get('consumer_view') and b['authority']==expected and native_numerics_match(b,sys.argv[4])))"
+    $fullReuseCode="import json,sys; from pathlib import Path; from msplatform.backends.comsol.static_field_binding import load_binding,native_numerics_match; from msplatform.components.multi_reflection_tof.candidate_voltage import candidate_authority; r=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig')); b=load_binding(Path(r['source_binding_path'])); u=json.loads(sys.argv[2]); expected=candidate_authority(b['authority'],dict(zip(('s1','s2','p1','p2'),u,strict=True)),mirror_voltages_v=json.loads(sys.argv[3])); print(json.dumps(not b.get('consumer_view') and b['authority']==expected and native_numerics_match(b,sys.argv[4])))"
     $reuseFull=((Invoke-ProjectPython -Arguments @('-B','-c',$fullReuseCode,$FieldProviderRequestPath,($voltages|ConvertTo-Json -Compress),($targetMirror|ConvertTo-Json -Compress),$numericalContractPath))-join"`n")|ConvertFrom-Json
     if($reuseFull-isnot[bool]){throw 'Full native source reuse did not return a boolean.'}
     if($reuseFull){$staticCandidateFields[$key]=[string]$fieldProviderRequest.source_binding_path}
@@ -1335,7 +1335,7 @@ try{
   $workpointProfile=$focusContract.downstream_fixed_grid_workpoint_profile
   if(-not($workpointProfile-is[Collections.IDictionary])-or
      -not$workpointProfile.ContainsKey('jacobian_relative_step_tiers')){
-    $currentContractPath=Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+    $currentContractPath=Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json'
     $currentContract=Get-Content -LiteralPath $currentContractPath -Raw|ConvertFrom-Json -AsHashtable
     $currentTiers=$currentContract.downstream_fixed_grid_workpoint_profile.jacobian_relative_step_tiers
     if(-not($workpointProfile-is[Collections.IDictionary])-or-not($currentTiers-is[Collections.IDictionary])){

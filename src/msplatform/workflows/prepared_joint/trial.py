@@ -379,7 +379,7 @@ def freeze_equivalence_reference(reference_run: Path, preparation: dict[str, Any
     # have exactly the assembly owner/mode; no old public execution branch exists.
     if (manifest.get("project"), manifest.get("mode")) not in {
         ("instrument_assembly", "prepared_joint"),
-        ("parallel_mirror_dual_stripe_mr_tof", "two_prism_joint_measured_trial"),
+        ("multi_reflection_tof", "two_prism_joint_measured_trial"),
     }:
         raise ValueError("Equivalence reference owner/mode differs from a prepared joint flight")
     outputs = {record_path(record, base_dir=reference_run): record for record in manifest["outputs"]}

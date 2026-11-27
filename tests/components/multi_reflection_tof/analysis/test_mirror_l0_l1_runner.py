@@ -1,0 +1,412 @@
+"""Contract tests for the managed mirror L0-to-L1 Candidate workflow."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from msplatform.io.file_identity import file_sha256
+from msplatform.workflows.mr_design.mirror_l0_l1_run_summary import (
+    GAMMA_SELECTION_STATUS,
+    L0_STATUS,
+    L1_STATUS,
+    validate_and_summarize,
+)
+from msplatform.components.multi_reflection_tof.mirror_candidate_receipt import (
+    MIRROR_MODE,
+    MIRROR_QUALIFICATION,
+    PROJECT_ID,
+    load_managed_mirror_candidate,
+    mirror_stage_contract_projection,
+)
+from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
+
+
+PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/multi_reflection_tof"
+CONTRACT = PROJECT.parents[3] / "src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json"
+RUNNER = PROJECT.parents[3] / "src/msplatform/workflows/resources/run_mirror_l0_l1_candidate.ps1"
+OPERATING_SEED_RUNNER = PROJECT.parents[3] / "src/msplatform/workflows/resources/run_dual_stripe_operating_seed.ps1"
+EXACT_K_RUNNER = PROJECT.parents[3] / "src/msplatform/workflows/resources/run_mirror_exact_k_operating_point.ps1"
+VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES = (
+    0.0,
+    -5303.6360420719,
+    -2679.2330778768383,
+    3867.1398578575227,
+    5532.572279301402,
+)
+
+
+class MirrorL0L1RunnerTests(unittest.TestCase):
+    def _assert_workflow_capacity(self, source: str, committed_token: str) -> None:
+        for token in (
+            "-CapacityLedgerLifecycleEnabled",
+            "Enter-ArtifactWorkflowCapacitySession",
+            "Update-ArtifactWorkflowCapacitySession",
+            "Exit-ArtifactWorkflowCapacitySession",
+            committed_token,
+            "-RemainingCommittedNewBytes 0",
+        ):
+            self.assertIn(token, source)
+        for forbidden in (
+            "Invoke-ArtifactCapacityGate",
+            "RequiredHeadroomBytes",
+            "KnownMeasuredBytes",
+            "MaximumNewArtifactBytes",
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def _receipts(self, root: Path) -> tuple[Path, Path]:
+        contract_sha = file_sha256(CONTRACT)
+        l0 = root / "l0.json"
+        l0.write_text(
+            json.dumps(
+                {
+                    "status": L0_STATUS,
+                    "input": {"contract_sha256": contract_sha, "actual_parallel_workers": 12},
+                    "parallel_restart_search": {
+                        "restart_count": 36,
+                        "accepted_l0_restart_indices": [2, 7],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        l1 = root / "l1.json"
+        l1.write_text(
+            json.dumps(
+                {
+                    "status": L1_STATUS,
+                    "input": {
+                        "contract": {"sha256": contract_sha},
+                        "l0_receipt": {"sha256": file_sha256(l0)},
+                    },
+                    "l0_accepted_count": 2,
+                    "l1_stable_count": 1,
+                    "gamma_target_continuation": {
+                        "status": GAMMA_SELECTION_STATUS,
+                        "gamma_residual_degrees": 2e-8,
+                        "maximum_gamma_residual_degrees": 0.01,
+                        "l0_receipt": {
+                            "electrode_voltages_v": list(VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES),
+                            "normalized_period_slopes_per_v": [2e-9, -4e-9, 3e-9],
+                            "maximum_abs_normalized_period_slope_per_v": 1e-7,
+                        },
+                        "l1_screen": {"nominal_mapping": {"gamma_degrees": 90.00000002}},
+                    },
+                    "gamma_target_probe_convergence": {
+                        "status": "pass",
+                        "last_adjacent_gamma_change_degrees": 0.0004,
+                        "last_adjacent_relative_Tbar_change": 0.006,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return l0, l1
+
+    def test_summary_accepts_a_bound_converged_candidate(self) -> None:
+        with TemporaryDirectory() as temporary:
+            l0, l1 = self._receipts(Path(temporary))
+            result = validate_and_summarize(CONTRACT, l0, l1)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["search"]["restart_count"], 36)
+        self.assertEqual(result["search"]["gamma_target_root_count"], 1)
+        self.assertEqual(
+            result["selected_mirror_voltages_v"]["D"],
+            VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES[3],
+        )
+        self.assertEqual(
+            result["selected_mirror_voltages_v"]["E"],
+            VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES[4],
+        )
+
+    def test_summary_uses_frozen_gamma_limit_when_selected_root_omits_duplicate(self) -> None:
+        with TemporaryDirectory() as temporary:
+            l0, l1 = self._receipts(Path(temporary))
+            document = json.loads(l1.read_text(encoding="utf-8"))
+            del document["gamma_target_continuation"]["maximum_gamma_residual_degrees"]
+            l1.write_text(json.dumps(document), encoding="utf-8")
+            result = validate_and_summarize(CONTRACT, l0, l1)
+        self.assertEqual(result["status"], "success")
+
+    def test_summary_rejects_gamma_limit_that_differs_from_frozen_contract(self) -> None:
+        with TemporaryDirectory() as temporary:
+            l0, l1 = self._receipts(Path(temporary))
+            document = json.loads(l1.read_text(encoding="utf-8"))
+            document["gamma_target_continuation"]["maximum_gamma_residual_degrees"] = 0.001
+            l1.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "differs from the frozen contract"):
+                validate_and_summarize(CONTRACT, l0, l1)
+
+    def test_summary_rejects_a_receipt_that_does_not_bind_l0(self) -> None:
+        with TemporaryDirectory() as temporary:
+            l0, l1 = self._receipts(Path(temporary))
+            document = json.loads(l1.read_text(encoding="utf-8"))
+            document["input"]["l0_receipt"]["sha256"] = "0" * 64
+            l1.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "does not bind"):
+                validate_and_summarize(CONTRACT, l0, l1)
+
+    def test_summary_rejects_failed_probe_convergence(self) -> None:
+        with TemporaryDirectory() as temporary:
+            l0, l1 = self._receipts(Path(temporary))
+            document = json.loads(l1.read_text(encoding="utf-8"))
+            document["gamma_target_probe_convergence"]["status"] = "fail"
+            l1.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "probe convergence"):
+                validate_and_summarize(CONTRACT, l0, l1)
+
+    def test_runner_reuses_the_common_managed_run_contract(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "New-RunPackage",
+            "Copy-VerifiedRunInput",
+            "Apply-RunArtifactRetention",
+            "Write-VerifiedRunManifest",
+            "mirror_l0_hardware_candidate",
+            "mirror_l0_l1_hardware_candidate",
+            "mirror_l0_l1_run_summary",
+            "Assert-FrozenSourcesUnchanged",
+        ):
+            self.assertIn(token, source)
+        self._assert_workflow_capacity(source, "-CommittedNewBytes $inputCopyBytes")
+        self.assertEqual(source.count("Complete-FailedRun"), 2)
+        self.assertNotIn("SIMION", source)
+        self.assertNotIn("Refine", source)
+
+    def test_operating_seed_runner_freezes_theory_and_uses_common_run_lifecycle(self) -> None:
+        source = OPERATING_SEED_RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "New-RunPackage",
+            "Copy-VerifiedRunInput",
+            "Apply-RunArtifactRetention",
+            "Write-VerifiedRunManifest",
+            "parent_mirror_run_manifest.json",
+            "dual_stripe_operating_seed",
+            "Test-RunFilesIdentical",
+            "paper_theory_instance_specific",
+            "Enter-HostExecutionLease -Role GATE -Stage theory_compute",
+            "Exit-HostExecutionLease -Lease $theoryLease",
+        ):
+            self.assertIn(token, source)
+        self._assert_workflow_capacity(source, "-CommittedNewBytes 1048576")
+        self.assertEqual(source.count("Complete-FailedRun"), 2)
+        self.assertNotIn("SIMION", source)
+        self.assertNotIn("Refine", source)
+
+    def test_operating_seed_runner_has_a_distinct_exact_k_input_mode(self) -> None:
+        source = OPERATING_SEED_RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "ExactKRunManifest",
+            "parent_exact_k_run_manifest.json",
+            "dual_stripe_exact_k_downstream_seed",
+            "--exact-k-manifest",
+            "MRTOF_DUAL_STRIPE_EXACT_K_OPERATING_SEED",
+        ):
+            self.assertIn(token, source)
+
+    def test_operating_seed_runner_has_a_distinct_fixed_grid_input_mode(self) -> None:
+        source = OPERATING_SEED_RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "FixedGridRunManifest",
+            "parent_fixed_grid_run_manifest.json",
+            "dual_stripe_fixed_grid_native_downstream_seed",
+            "--fixed-grid-manifest",
+            "fixed_grid_mirror_stripe_handoff.py",
+            "MRTOF_DUAL_STRIPE_FIXED_GRID_OPERATING_SEED",
+        ):
+            self.assertIn(token, source)
+
+    def test_exact_k_runner_is_managed_and_does_not_modify_solver_geometry(self) -> None:
+        source = EXACT_K_RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "New-RunPackage",
+            "Copy-VerifiedRunInput",
+            "Apply-RunArtifactRetention",
+            "Write-VerifiedRunManifest",
+            "parent_mirror_run_manifest.json",
+            "mirror_exact_k_operating_point",
+            "T_D_stripe_on(E_z,v1(E_z),v2(E_z))/T_0=K",
+            "geometry_change = 'none'",
+        ):
+            self.assertIn(token, source)
+        self._assert_workflow_capacity(source, "-CommittedNewBytes 2097152")
+        self.assertEqual(source.count("Complete-FailedRun"), 2)
+        self.assertNotIn("SIMION", source)
+        self.assertNotIn("Refine", source)
+
+    def _managed_manifest(
+        self, root: Path, frozen_contract_document: dict[str, object] | None = None,
+    ) -> Path:
+        inputs = root / "inputs"
+        results = root / "results"
+        inputs.mkdir()
+        results.mkdir()
+        contract = inputs / "simion_candidate_two_zone.json"
+        if frozen_contract_document is None:
+            shutil.copyfile(CONTRACT, contract)
+        else:
+            contract.write_text(json.dumps(frozen_contract_document) + "\n", encoding="utf-8")
+        l0 = results / "mirror_l0_family_receipt.json"
+        l1 = results / "mirror_l0_l1_candidate_receipt.json"
+        l0.write_text("{}\n", encoding="utf-8")
+        l1.write_text(
+            json.dumps({
+                "gamma_target_root_family": {
+                    "roots": [{
+                        "l0_receipt": {
+                            "electrode_voltages_v": list(
+                                VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES
+                            ),
+                        },
+                        "l1_screen": {"nominal_mapping": {"gamma_degrees": 90.00000002}},
+                        "probe_convergence": {"status": "pass"},
+                    }],
+                },
+            }) + "\n",
+            encoding="utf-8",
+        )
+        summary = root / "summary.json"
+        summary.write_text(
+            json.dumps(
+                {
+                    "role": "mrtof_mirror_l0_l1_candidate_summary",
+                    "status": "success",
+                    "qualification": MIRROR_QUALIFICATION,
+                    "input_identity": {
+                        "contract_sha256": file_sha256(contract),
+                        "l0_receipt_sha256": file_sha256(l0),
+                        "l1_receipt_sha256": file_sha256(l1),
+                    },
+                    "selected_mirror_voltages_v": {
+                        name: voltage
+                        for name, voltage in zip(
+                            ("A", "B", "C", "D", "E"),
+                            VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES,
+                            strict=True,
+                        )
+                    },
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        run_config = root / "run_config.json"
+        run_config.write_text(
+            json.dumps({"run_id": "managed-test", "project": PROJECT_ID, "mode": MIRROR_MODE}) + "\n",
+            encoding="utf-8",
+        )
+
+        def record(path: Path) -> dict[str, object]:
+            return {"path": str(path), "bytes": path.stat().st_size, "sha256": file_sha256(path)}
+
+        manifest = root / "run_manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "run_id": "managed-test",
+                    "project": PROJECT_ID,
+                    "mode": MIRROR_MODE,
+                    "status": "success",
+                    "run_config": record(run_config),
+                    "inputs": {"candidate_contract": record(contract)},
+                    "outputs": [record(summary), record(l0), record(l1)],
+                }
+            ) + "\n",
+            encoding="utf-8",
+        )
+        return manifest
+
+    def test_downstream_consumer_derives_period_and_w_from_managed_receipt(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self._managed_manifest(root)
+            downstream_contract = root / "downstream_contract.json"
+            shutil.copyfile(CONTRACT, downstream_contract)
+            candidate = load_managed_mirror_candidate(manifest, downstream_contract)
+            downstream_contract_sha256 = file_sha256(downstream_contract)
+        self.assertEqual(candidate.design.electrode_voltages_v[0], 0.0)
+        self.assertGreater(candidate.nominal_reduced_period_mm_per_sqrt_v, 0.0)
+        self.assertGreater(candidate.nominal_axial_width_w_mm, 0.0)
+        self.assertAlmostEqual(candidate.nominal_axial_width_w_mm, 586.9393396818346)
+        self.assertEqual(len(candidate.root_family), 1)
+        self.assertAlmostEqual(candidate.root_family[0].nominal_axial_width_w_mm, 586.9393396818346)
+        self.assertNotEqual(candidate.contract_sha256, "")
+        self.assertEqual(candidate.downstream_contract_sha256, downstream_contract_sha256)
+
+    def test_downstream_consumer_accepts_unrelated_historical_topology_change(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            historical = json.loads(CONTRACT.read_text(encoding="utf-8"))
+            del historical["accelerator"]["detector_return_path"]
+            historical["dual_stripe"]["physical_electrode_count"] = 2
+            manifest = self._managed_manifest(root, historical)
+            downstream_contract = root / "downstream_contract.json"
+            shutil.copyfile(CONTRACT, downstream_contract)
+            candidate = load_managed_mirror_candidate(manifest, downstream_contract)
+        self.assertEqual(candidate.design.electrode_voltages_v, VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES)
+
+    def test_historical_contract_without_current_downstream_keeps_full_validation(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            historical = json.loads(CONTRACT.read_text(encoding="utf-8"))
+            del historical["accelerator"]["detector_return_path"]
+            manifest = self._managed_manifest(root, historical)
+            with self.assertRaisesRegex(CandidateContractError, "detector return"):
+                load_managed_mirror_candidate(manifest)
+
+    def test_downstream_consumer_rejects_post_manifest_tampering(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self._managed_manifest(root)
+            (root / "summary.json").write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
+                load_managed_mirror_candidate(manifest)
+
+    def test_downstream_consumer_rejects_frozen_contract_byte_tampering(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = self._managed_manifest(root)
+            frozen_contract = root / "inputs" / "simion_candidate_two_zone.json"
+            frozen_contract.write_bytes(frozen_contract.read_bytes() + b"\n")
+            downstream_contract = root / "downstream_contract.json"
+            shutil.copyfile(CONTRACT, downstream_contract)
+            with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
+                load_managed_mirror_candidate(manifest, downstream_contract)
+
+    def test_downstream_consumer_rejects_a_changed_mirror_projection(self) -> None:
+        mutations = (
+            lambda document: document["mirror"]["theory_requirements"].__setitem__(
+                "berdnikov_transverse_half_gap_mm", 16.0,
+            ),
+            lambda document: document["mirror"].__setitem__("inter_electrode_gaps_mm", [6, 5, 5, 5]),
+            lambda document: document["geometry_authority"].__setitem__("model", "theory_derived_3d"),
+            lambda document: document["accelerator_energy_contract"].__setitem__(
+                "maximum_particle_net_gain_deviation_per_charge_v", 90,
+            ),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                manifest = self._managed_manifest(root)
+                downstream_contract = root / "downstream_contract.json"
+                document = json.loads(CONTRACT.read_text(encoding="utf-8"))
+                mutate(document)
+                downstream_contract.write_text(json.dumps(document) + "\n", encoding="utf-8")
+                with self.assertRaisesRegex(CandidateContractError, "mirror-stage inputs"):
+                    load_managed_mirror_candidate(manifest, downstream_contract)
+
+    def test_downstream_exact_k_selection_controls_are_not_parent_mirror_inputs(self) -> None:
+        first = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        second = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        second["mirror"]["theory_requirements"]["exact_k_operating_point_selection"][
+            "energy_bracket_node_count"
+        ] += 2
+        self.assertEqual(mirror_stage_contract_projection(first), mirror_stage_contract_projection(second))
+
+
+if __name__ == "__main__":
+    unittest.main()

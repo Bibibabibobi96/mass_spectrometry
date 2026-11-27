@@ -64,29 +64,29 @@
           ]
         },
         {
-          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_accelerator_component_request_n100_json",
-          "source_repo_path": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/accelerator_component_request_n100.json",
+          "id": "accelerator_interface_projects_multi_reflection_tof_config_accelerator_component_request_n100_json",
+          "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/accelerator_component_request_n100.json",
           "consumers": [
             "accelerator_interface"
           ]
         },
         {
-          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_accelerator_dependency_json",
-          "source_repo_path": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/accelerator_dependency.json",
+          "id": "accelerator_interface_projects_multi_reflection_tof_config_accelerator_dependency_json",
+          "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/accelerator_dependency.json",
           "consumers": [
             "accelerator_interface"
           ]
         },
         {
-          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_accelerator_interfaces_json",
-          "source_repo_path": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/accelerator_interfaces.json",
+          "id": "accelerator_interface_projects_multi_reflection_tof_config_accelerator_interfaces_json",
+          "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/accelerator_interfaces.json",
           "consumers": [
             "accelerator_interface"
           ]
         },
         {
-          "id": "accelerator_interface_projects_parallel_mirror_dual_stripe_mr_tof_config_ion_processor_dependency_json",
-          "source_repo_path": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json",
+          "id": "accelerator_interface_projects_multi_reflection_tof_config_ion_processor_dependency_json",
+          "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/ion_processor_dependency.json",
           "consumers": [
             "accelerator_interface"
           ]
@@ -238,7 +238,7 @@
         },
         {
           "id": "msplatform_components_mr_simion_candidate_two_zone_json",
-          "source_repo_path": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json",
+          "source_repo_path": "src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json",
           "consumers": [
             "oa_mr"
           ]
@@ -869,7 +869,7 @@
           ]
         },
         {
-          "id": "projects_parallel_mirror_dual_stripe_mr_tof_simion_native_corridor_runtime_support_ps1",
+          "id": "projects_multi_reflection_tof_simion_native_corridor_runtime_support_ps1",
           "source_repo_path": "src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1",
           "consumers": [
             "oa_mr",

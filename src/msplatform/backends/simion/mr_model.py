@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drive import scientific_group_voltages
+from msplatform.components.multi_reflection_tof.drive import scientific_group_voltages
 from .artifacts import CompiledPreparedModel
 from .compiler import CompiledSimionGeometry, _content_sha256
 
@@ -40,7 +40,7 @@ def compile_oa_mr_model(compiled: CompiledSimionGeometry, components: Mapping[st
             raise ValueError(f'{name}: stale model provider identity')
     asset_components = geo['asset_components']
     oa = next((name for name in selected if plan['components'][name]['project_id'] == 'orthogonal_accelerator'), None)
-    mr = next((name for name in selected if plan['components'][name]['project_id'] == 'parallel_mirror_dual_stripe_mr_tof'), None)
+    mr = next((name for name in selected if plan['components'][name]['project_id'] == 'multi_reflection_tof'), None)
     if not oa or not mr or set(compiled.frontend_gems) != {oa, mr+'_analyzer', mr+'_detector'}:
         raise ValueError('OA–MR requires its three complete geometry assets')
     if asset_components != {oa: oa, mr+'_analyzer': mr, mr+'_detector': mr}:

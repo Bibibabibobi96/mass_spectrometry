@@ -18,8 +18,8 @@ from matplotlib.figure import Figure
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import charge_to_mass_c_per_kg
-from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+from msplatform.components.ion_processor.coordinates import to_project_position, to_project_vector
+from msplatform.components.ion_processor.convex_geometry import shape_bounds
 
 from msplatform.backends.simion.ip_force_protocol import AXES, STEP_COLUMNS, IMPULSE_COLUMNS
 REGIONS = ("upstream_E5", "E5_slab", "E5_to_E14_gap", "E14_slab", "downstream_E14")

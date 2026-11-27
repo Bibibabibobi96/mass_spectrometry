@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 from msplatform.backends.simion.mrtof_observations import parse_events
 
-_PROJECT = "parallel_mirror_dual_stripe_mr_tof"
+_PROJECT = "multi_reflection_tof"
 _MODE = "finite_3d_two_prism_voltage_trial"
 _EVENTS = ("drift_phase_return", "return_positive_mirror_turn", "detector")
 _STATE_FIELDS = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")

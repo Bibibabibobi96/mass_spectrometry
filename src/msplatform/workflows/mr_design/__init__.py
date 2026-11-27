@@ -15,8 +15,8 @@ from collections.abc import Mapping, Sequence
 
 from scipy.optimize import differential_evolution
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
+from msplatform.components.multi_reflection_tof.mirror_l0 import (
     MirrorL0Design,
     _finite,
     optimize_fixed_geometry_voltages,
@@ -208,7 +208,7 @@ def analyze_native_dual_stripe_l0(contract: dict[str, Any], biases_v: Sequence[f
     Bias/energy errors precede geometry errors, which precede width/mapping errors.
     Inputs retain volts per charge and mm; this performs no native execution.
     """
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
+    from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
         _nominal_dual_stripe_response, _complete_dual_stripe_response,
     )
     stripe, values = _nominal_dual_stripe_response(

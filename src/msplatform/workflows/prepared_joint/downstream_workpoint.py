@@ -34,7 +34,7 @@ from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
     resolve_active_stripe_axes,
     workpoint_residual_names,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 from msplatform.workflows.prepared_joint.prism_operating_point import (
@@ -2298,7 +2298,7 @@ def load_measured_centroid_closure_target(path: Path, source_receipt_path: Path,
                                          contract_path: Path) -> dict[str, Any]:
     """Import the explicit audited target; never synthesize an old OA target."""
     from msplatform.contracts.particle_state import DERIVED_RELATIVE_TOLERANCE, DERIVED_ABSOLUTE_TOLERANCE
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import resolve_converging_prism_target
+    from msplatform.components.multi_reflection_tof.dual_stripe_l0 import resolve_converging_prism_target
     target = _load(path, "measured centroid closure target")
     required = {"schema_version", "role", "inputs", "source_energy_ledger", "prism_handoff_target",
                 "target_positive_mirror_turn_y_mm", "target_low_field_tangent_ratio_vy_over_vz",
@@ -2582,7 +2582,7 @@ def prepare_measured_centroid_acquisition(*, prepared_run: Path, contract_path: 
         prepared_run, "results/joint_workbench/static_field_binding.json",
         project="instrument_assembly", mode="accelerator_interface_preparation", retention_classifier=_manifest_classifier)
     binding=load_binding(binding_path)
-    if binding.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor":
+    if binding.get("accelerator_provider") != "ion_processor":
         raise CandidateContractError("Acquisition requires the measured IP replacement field")
     for axis,path in (("p1",p1_response),("p2",p2_response)):
         response=load_native_response_basis(path,binding)
@@ -2621,7 +2621,7 @@ def _load_stage_trial(manifest_path: Path, replay_path: Path | None = None) -> d
     if replay_path is None:
         return _derive_saved_slow_signature(trial, manifest_path)
     replay = _load(replay_path, "P handoff replay manifest")
-    if (replay.get("status") != "success" or replay.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+    if (replay.get("status") != "success" or replay.get("project") != "multi_reflection_tof"
             or replay.get("mode") != "prism_handoff_log_reanalysis"):
         raise CandidateContractError("P handoff replay is not a published successful reanalysis")
     config_record = replay["run_config"]
@@ -2663,7 +2663,7 @@ def _load_prior_prism_decision(
     """Read a sealed P decision and its registered real anchor without touching field payloads."""
     manifest = _load(manifest_path, "prior P decision manifest")
     if (manifest.get("status") != "success"
-            or manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"):
+            or manifest.get("project") != "multi_reflection_tof"):
         raise CandidateContractError("prior P decision manifest must be published successful evidence")
     inputs = manifest.get("inputs", {})
     for name in ("baseline_manifest", "workpoint_contract"):

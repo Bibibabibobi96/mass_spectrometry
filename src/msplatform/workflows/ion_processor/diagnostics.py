@@ -25,7 +25,7 @@ from msplatform.contracts.particle_state import load_component_particle_state_cs
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.analysis.particle_styles import prepare_visual_style_map
-from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position
+from msplatform.components.ion_processor.coordinates import to_project_position
 # Top-level imports are deliberate: prepare() freezes loaded repository modules
 # before Fly, so these mandatory default producers travel with the same run.
 from msplatform.workflows.ion_processor.section_diagnostics import export_sections
@@ -77,7 +77,7 @@ def project_geometry(config: dict) -> dict:
     for electrode in projection["electrodes"]:
         solids = []
         for shape in electrode["solids"]:
-            from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+            from msplatform.components.ion_processor.convex_geometry import shape_bounds
             low, high = shape_bounds(shape)
             corners = [to_project_position(config, (x,y,z)) for x in (low[0],high[0]) for y in (low[1],high[1]) for z in (low[2],high[2])]
             solids.append(dict(shape="box", min_mm=[min(p[i] for p in corners) for i in range(3)], max_mm=[max(p[i] for p in corners) for i in range(3)]))
@@ -296,7 +296,7 @@ def census(data: dict, time: float) -> tuple[dict, list[dict]]:
 
 def add_geometry(axis, projection: dict, horizontal: str, vertical: str) -> None:
     """Draw conservative solid-bound footprints; these are not metal sections."""
-    from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+    from msplatform.components.ion_processor.convex_geometry import shape_bounds
     hi, vi = "xyz".index(horizontal), "xyz".index(vertical)
     for electrode in projection["electrodes"]:
         first = True

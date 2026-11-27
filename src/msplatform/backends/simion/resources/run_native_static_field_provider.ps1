@@ -70,11 +70,11 @@ try{
     $copies=[ordered]@{request=$RequestPath;launcher=$PSCommandPath;compiler=(Join-Path $packageRoot 'backends/simion/native_static_field_provider.py');geometry_emitter=(Join-Path $packageRoot 'backends/simion/native_system_geometry.py');analyzer_shapes=(Join-Path $packageRoot 'backends/simion/mr_geometry.py');candidate_authority=(Join-Path $packageRoot 'backends/comsol/candidate_authority.py');binding_loader=(Join-Path $packageRoot 'backends/comsol/static_field_binding.py');scalar_adapter=(Join-Path $packageRoot 'backends/simion/resources/scalar_field_adapter.lua');builder=(Join-Path $PSScriptRoot 'build_dirichlet_patch_basis.lua');executor=(Join-Path $executionResources 'resource_process_support.ps1')}
     foreach($key in $plan.inputs.Keys){$copies[$key]=$plan.inputs[$key]}
     if($plan.ContainsKey('collision_build')){
-        $copies.geometry_resolver=Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof/resolved_geometry.py'
-        $copies.geometry_contract_loader=Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py'
+        $copies.geometry_resolver=Join-Path $packageRoot 'components/multi_reflection_tof/resolved_geometry.py'
+        $copies.geometry_contract_loader=Join-Path $packageRoot 'components/multi_reflection_tof/candidate_contract.py'
         $copies.oa_physical_geometry=Join-Path $packageRoot 'components/orthogonal_accelerator/two_zone_geometry.py'
         $copies.oa_time_focus=Join-Path $packageRoot 'components/orthogonal_accelerator/accelerator_time_focus.py'
-        $copies.mr_geometry_contract=Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof/geometry_contract.py'
+        $copies.mr_geometry_contract=Join-Path $packageRoot 'components/multi_reflection_tof/geometry_contract.py'
         $copies.rigid_transform=Join-Path $packageRoot 'contracts/rigid_transform.py'
         $copies.oa_assembly_interface=Join-Path $packageRoot 'components/orthogonal_accelerator/assembly_interface.py'
         $copies.oa_electrode_topology=Join-Path $packageRoot 'components/orthogonal_accelerator/electrode_topology.py'

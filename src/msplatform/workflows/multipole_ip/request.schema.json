@@ -23,7 +23,7 @@
       "properties": {
         "manifest": {"$ref": "#/$defs/record"},
         "run_id": {"type": "string", "minLength": 1},
-        "project_id": {"const": "dual_pressure_rectilinear_ion_processor"}
+        "project_id": {"const": "ion_processor"}
       }
     },
     "species_id": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.:-]*$"},

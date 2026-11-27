@@ -13,14 +13,14 @@ from dataclasses import dataclass
 
 from scipy.integrate import solve_ivp
 from scipy.optimize import brentq, least_squares
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+from msplatform.components.multi_reflection_tof.mirror_l0 import (
     MirrorL0Design,
     optimize_fixed_geometry_voltages,
     step_response_derivative,
     three_point_normalized_period_slopes_per_v,
     three_point_report,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
+from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,506 @@
+"""Behavior fixture for bounded private native-family preparation."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import shutil
+import sys
+from tempfile import TemporaryDirectory
+import unittest
+
+
+PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/multi_reflection_tof"
+REPO = PROJECT.parents[3]
+SUPPORT = REPO / "src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1"
+
+
+class NativeCorridorRuntimeSupportTest(unittest.TestCase):
+    def invoke_continuation_protection(self, code_root: Path, parent: Path, workspace: Path) -> subprocess.CompletedProcess:
+        script = r"""
+param($Support,$Parent,$CodeRoot,$Python)
+$ErrorActionPreference='Stop'
+. $Support
+function Update-ArtifactWorkflowCapacitySession {
+  param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences)
+  return @{session=$Session}
+}
+$guards=[Collections.Generic.List[object]]::new()
+try {
+  $null=Protect-MrtofContinuationEvidence -Parent $Parent -Session ([pscustomobject]@{lease_id='fixture'}) -Python $Python -RepoRoot $CodeRoot -Guards $guards
+  Write-Output 'CONTINUATION_PROTECTION=PASS'
+} finally {
+  foreach($guard in $guards){$guard.Dispose()}
+}
+"""
+        fixture = workspace / "invoke.ps1"
+        fixture.write_text(script, encoding="utf-8")
+        caller = workspace / "caller"
+        caller.mkdir()
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(fixture),
+             str(SUPPORT), str(parent), str(code_root), sys.executable],
+            cwd=caller, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30, env={**os.environ, "PYTHONPATH": str(workspace / "unselected")},
+        )
+
+    @staticmethod
+    def continuation_run(workspace: Path, status: str = "success") -> Path:
+        run = workspace / "artifacts/assemblies/instrument_assembly/runs/fixture-run"
+        run.mkdir(parents=True)
+        config = run / "run_config.json"
+        config.write_text(json.dumps({"run_id": run.name, "project": "instrument_assembly",
+                                      "mode": "prepared_joint", "inputs": {}}), encoding="utf-8")
+        payload = config.read_bytes()
+        manifest = {
+            "role": "simulation_run_manifest", "status": status, "run_id": run.name,
+            "project": "instrument_assembly", "mode": "prepared_joint",
+            "run_config": {"path": str(config), "exists": True, "bytes": len(payload),
+                           "sha256": hashlib.sha256(payload).hexdigest()},
+            "inputs": {}, "outputs": [],
+        }
+        (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        return run
+
+    def selected_continuation_source(self, workspace: Path) -> Path:
+        selected = workspace / "selected"
+        shutil.copytree(REPO / "src/msplatform", selected / "src/msplatform")
+        return selected
+
+    @unittest.skipUnless(os.environ.get('SIMION_EXE'), 'requires explicit SIMION_EXE')
+    def test_real_workbench_loader_preserves_refinable_collision_without_writing(self):
+        script = r"""
+param($Repo,$Root,$Simion)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/host_execution_lease.ps1')
+$lease=Enter-HostExecutionLease -Role SIMION -Stage prepare
+$guard=$null
+try{
+  $fixture=Join-Path $Repo 'tests/components/multi_reflection_tof/simion/test_workbench_load_fixture.lua'
+  $seed=Join-Path $Repo 'src/msplatform/backends/simion/resources/1_instance_seed.iob'
+  $launcher=Join-Path $Repo 'src/msplatform/backends/simion/resources/run_iob_flight.lua'
+  & $Simion --nogui --noprompt lua $fixture $Root prepare $seed $launcher
+  if($LASTEXITCODE-ne0){throw 'Tiny loader fixture preparation failed'}
+  $pa=Join-Path $Root 'collision.pa'
+  $before=(Get-FileHash -LiteralPath $pa -Algorithm SHA256).Hash
+  $guard=[IO.File]::Open($pa,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+  & $Simion --nogui --noprompt lua $fixture $Root load $seed $launcher
+  if($LASTEXITCODE-ne0){throw 'Native loader-only operation failed'}
+  if((Get-FileHash -LiteralPath $pa -Algorithm SHA256).Hash-ne$before){throw 'Loader rewrote collision PA'}
+  Write-Output 'WORKBENCH_LOAD_SOURCE_BYTES=PASS'
+}finally{
+  if($null-ne$guard){$guard.Dispose()}
+  Exit-HostExecutionLease -Lease $lease
+}
+"""
+        with TemporaryDirectory(prefix='mrtof-workbench-load-') as directory:
+            root = Path(directory)
+            fixture = root / 'verify.ps1'
+            fixture.write_text(script, encoding='utf-8')
+            result = subprocess.run(['pwsh', '-NoProfile', '-File', str(fixture), str(PROJECT.parents[3]),
+                                     str(root), os.environ['SIMION_EXE']], cwd=PROJECT,
+                                    capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
+            print(result.stdout, end='')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('WORKBENCH_LOAD_NATIVE=PASS', result.stdout)
+            self.assertIn('WORKBENCH_LOAD_SOURCE_BYTES=PASS', result.stdout)
+
+    def test_builder_transports_frozen_waveform_with_each_program_basename(self) -> None:
+        """Execute the builder's real companion-copy section, without SIMION."""
+        lua = Path(shutil.which("lua") or shutil.which("lua5.1") or (Path(r'C:\Program Files\SIMION-2020\lua.exe')))
+        if not lua.is_file():
+            self.skipTest('standalone Lua unavailable')
+        builder = (PROJECT.parents[3]/'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua').read_text()
+        copies = builder[builder.index('local function copy(source, target)'):]
+        native_path = builder[builder.index('local native_path='):builder.index('local seed, paths, output')]
+        waveform = PROJECT.parents[3]/'src/msplatform/backends/simion/resources/voltage_waveforms.lua'
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = root/'original'
+            original.mkdir()
+            for name in ('program.lua', 'source.fly2', 'priority.lua', 'operating.lua',
+                         'voltage_map.lua', 'program.mirror_cycle_counter.lua',
+                         'program.scalar_field_adapter.lua', 'program.source_runtime.lua'):
+                (original/name).write_text('return {}\n')
+            (original/'program.voltage_waveforms.lua').write_bytes(waveform.read_bytes())
+            for kind, measured in (('temporary', False), ('worker', True), ('gui', False)):
+                target = root/kind
+                target.mkdir()
+                output = target/'retained.iob'
+                context = dict(program=str(original/'program.lua'), fly2=str(original/'source.fly2'),
+                               priority_path=str(original/'priority.lua'), operating_path=str(original/'operating.lua'),
+                               voltage_map_path=str(original/'voltage_map.lua'), output=str(output))
+                preamble = '\n'.join(f'local {key}={json.dumps(value)}' for key,value in context.items())
+                script = root/'copy.lua'
+                script.write_text(preamble+'\nlocal measured_mode='+str(measured).lower()+
+                    '\nlocal offset=0\n'+native_path+'\nlocal operating={static_field=true}\nlocal paths={1,2,3,4}\n'+copies+
+                    '\nassert(assert(loadfile(output:gsub("%.iob$", ".voltage_waveforms.lua")))().cap_before_edge(10,3,12)==2)\n')
+                result = subprocess.run([str(lua), str(script)], cwd=target,
+                                        capture_output=True, text=True, timeout=20, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+                self.assertEqual((target/'retained.voltage_waveforms.lua').read_bytes(), waveform.read_bytes())
+                self.assertEqual((target/'retained.lua').read_bytes(), (original/'program.lua').read_bytes())
+
+    def test_support_loads_its_short_pa_copy_dependency(self) -> None:
+        source = (PROJECT.parents[3] / 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("short_pa_path_support.ps1", source)
+        self.assertIn("[math]::Max([int64]0,[int64]$CapacityWorkflowSession.committed_new_bytes", source)
+
+    def test_continuation_projection_uses_selected_source_with_workspace_local_cwd(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-normal-") as temporary:
+            workspace = Path(temporary)
+            selected = self.selected_continuation_source(workspace)
+            entry = selected / "src/msplatform/workflows/prepared_joint/continuation.py"
+            entry.write_text(entry.read_text(encoding="utf-8").replace(
+                "if args.protection_projection:",
+                "if args.protection_projection:\n        print('SELECTED_CONTINUATION_SOURCE', file=__import__('sys').stderr)",
+            ), encoding="utf-8")
+            parent = self.continuation_run(workspace)
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("CONTINUATION_PROTECTION=PASS", result.stdout)
+            self.assertIn("SELECTED_CONTINUATION_SOURCE", result.stderr)
+
+    def test_continuation_projection_preserves_nonzero_python_exit(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-exit-") as temporary:
+            workspace = Path(temporary)
+            selected = workspace / "installed"
+            entry = selected / "msplatform/workflows/prepared_joint/continuation.py"
+            entry.parent.mkdir(parents=True)
+            for package in (entry.parents[2], entry.parents[1], entry.parent):
+                (package/"__init__.py").write_text("", encoding="utf-8")
+            entry.write_text("raise SystemExit(23)\n", encoding="utf-8")
+            parent = workspace / "predecessor"
+            parent.mkdir()
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("failed with exit code 23", result.stdout + result.stderr)
+
+    def test_continuation_projection_observes_selected_source_change(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-source-") as temporary:
+            workspace = Path(temporary)
+            selected = workspace / "frozen"
+            entry = selected / "src/msplatform/workflows/prepared_joint/continuation.py"
+            entry.parent.mkdir(parents=True)
+            for package in (entry.parents[2], entry.parents[1], entry.parent):
+                (package/"__init__.py").write_text("", encoding="utf-8")
+            entry.write_text(
+                "import json,sys\n"
+                "print('CHANGED_SELECTED_SOURCE',file=sys.stderr)\n"
+                "print(json.dumps({'manifests':{},'run_directories':[],'files':[]}))\n",
+                encoding="utf-8",
+            )
+            parent = workspace / "predecessor"
+            parent.mkdir()
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(result.stderr.count("CHANGED_SELECTED_SOURCE"), 2, result.stderr)
+
+    def test_continuation_projection_rejects_other_package_without_rewriting_parent(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-wrong-source-") as temporary:
+            workspace = Path(temporary)
+            selected = workspace / "selected"
+            entry = selected / "msplatform/workflows/prepared_joint/continuation.py"
+            entry.parent.mkdir(parents=True)
+            # Omitting regular-package markers intentionally lets another ordinary
+            # installation win discovery; the origin guard must reject it.
+            entry.write_text("raise AssertionError('unselected code executed')\n", encoding="utf-8")
+            parent = self.continuation_run(workspace)
+            protected = [parent/"run_manifest.json", parent/"run_config.json"]
+            before = [path.read_bytes() for path in protected]
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("escaped its selected code source", result.stdout + result.stderr)
+            self.assertNotIn("unselected code executed", result.stdout + result.stderr)
+            self.assertEqual([path.read_bytes() for path in protected], before)
+
+    def test_continuation_projection_rejects_unknown_run_status(self) -> None:
+        with TemporaryDirectory(prefix="mrtof-continuation-status-") as temporary:
+            workspace = Path(temporary)
+            selected = self.selected_continuation_source(workspace)
+            parent = self.continuation_run(workspace, status="unknown")
+            result = self.invoke_continuation_protection(selected, parent, workspace)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("terminal owner run", result.stdout + result.stderr)
+            self.assertNotIn("CONTINUATION_PROTECTION=PASS", result.stdout)
+
+    def test_accelerator_reuses_provider_owned_checkpoint_without_materialization(self) -> None:
+        source = (PROJECT.parents[3] / 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1').read_text(encoding='utf-8-sig')
+        function = source.split('function Get-NativeAcceleratorRuntimeFamily {', 1)[1].split(
+            'function Assert-NativeCorridorRuntimeSessionDirectory {', 1,
+        )[0]
+        self.assertIn('$provider.private_runtime_checkpoint', function)
+        self.assertIn('persistent_controller_path=', function)
+        self.assertIn('accelerator_runtime_directory', function)
+        self.assertNotIn('New-NativeFastAdjustRuntimeFamily', function)
+        self.assertNotIn('Write-VerifiedRunManifest', function)
+
+    def test_managed_family_survives_session_and_resumes_without_reconstruction(self):
+        script = r"""
+param($Repo,$Root,$Python)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
+. (Join-Path $Repo 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1')
+$owner=Join-Path $Root 'runs/owner'
+New-Item -ItemType Directory -Path (Join-Path $owner 'results') -Force|Out-Null
+[IO.File]::WriteAllText((Join-Path $owner 'run_config.json'),'{}')
+$binary=Join-Path $Root 'simion.exe';[IO.File]::WriteAllText($binary,'fixture solver identity')
+$script:builds=0;$script:registered=0;$script:inventories=0
+function New-NativeCorridorRuntimeFamily {
+  param($BankGenerationDirectory,$DestinationDirectory,$Python,$RepoRoot,$SimionExe,$ResourceLease,$RunId)
+  $script:builds++
+  foreach($i in 0..8){[IO.File]::WriteAllText((Join-Path $DestinationDirectory ('mrtof_analyzer_corridor.pa'+$i)),('fixture-'+$i))}
+  return [pscustomobject]@{controller_path=(Join-Path $DestinationDirectory 'mrtof_analyzer_corridor.pa0');resource_lease=$ResourceLease;
+    receipt=[ordered]@{run_id=$RunId;cache_key=('A'*64);generation_sha256=('B'*64);generation_directory=$BankGenerationDirectory;source_raw=@{bytes=10};controller_path='temporary';controller_refine='solutions={0}';response_refine_performed=$false;published_native_members_opened=$false}}
+}
+function Invoke-RunCapacityLifecycleAdapter {param($Python,$RepoRoot,$Action,$ArtifactRoot,$RunConfig)
+  if($Action-ne'register-writing'-or$RunConfig-ne(Join-Path $owner 'run_config.json')){throw 'Wrong owner accounting'}
+  $script:registered++
+}
+function Write-VerifiedRunManifest {param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs)
+  if($Status-ne'checkpoint'-or$RunConfig-ne(Join-Path $owner 'run_config.json')-or
+     $Outputs-notcontains(Join-Path $owner 'results/native_corridor_runtime_checkpoint.json')){throw 'Prepared family lacks owner manifest binding'}
+  Write-Output 'RUN_MANIFEST=PASS'
+  Write-Output 'RUN_MANIFEST_VERIFY=PASS'
+}
+function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$RemainingCommittedNewBytes)
+  if($script:registered-ne1){throw 'Commitment reduced before resident accounting'}
+  $Session.committed_new_bytes=$RemainingCommittedNewBytes
+}
+$originalInventory=${function:Get-NativeRuntimeInventory}
+function Get-NativeRuntimeInventory {param($Directory,$Python,$RepoRoot)
+  $script:inventories++
+  & $originalInventory -Directory $Directory -Python $Python -RepoRoot $RepoRoot
+}
+function New-Session {
+  return [pscustomobject]@{lease_id='lease';directory=(Join-Path $owner 'runtime/native_corridor_family');runtime=$null;
+    owner_run_directory=$owner;owner_run_config=(Join-Path $owner 'run_config.json');resident_bytes=[int64]0;
+    checkpoint_path=(Join-Path $owner 'results/native_corridor_runtime_checkpoint.json')}
+}
+$capacity=[pscustomobject]@{status='active';lease_id='lease';artifact_root=$Root;committed_new_bytes=[int64]125}
+$session=New-Session
+$args=@{Session=$session;CapacityWorkflowSession=$capacity;BankGenerationDirectory=$Root;CacheKey=('A'*64);GenerationSha256=('B'*64);
+  Python=$Python;RepoRoot=$Repo;SimionExe=$binary;ResourceLease=@{};RunId='first'}
+try{
+  $first=Get-NativeCorridorRuntimeFamily @args
+  if(@($first).Count-ne1-or$null-eq$first.PSObject.Properties['resource_lease']){throw 'Manifest logging polluted the runtime return value'}
+  $second=Get-NativeCorridorRuntimeFamily @args
+  if($script:builds-ne1-or$script:inventories-ne1-or-not$second.receipt.reused){throw 'Active session redundantly materialized or hashed'}
+  if($session.resident_bytes-ne81-or$capacity.committed_new_bytes-ne25){throw 'Family resident and commitment double-counted'}
+  $args.CacheKey='C'*64
+  try{$null=Get-NativeCorridorRuntimeFamily @args;throw 'Wrong bank accepted'}catch{if($_.Exception.Message-notlike'*another bank*'){throw}}
+  $args.CacheKey='A'*64;$capacity.lease_id='other'
+  try{$null=Get-NativeCorridorRuntimeFamily @args;throw 'Wrong lease accepted'}catch{if($_.Exception.Message-notlike'*active capacity lease*'){throw}}
+  $capacity.lease_id='lease'
+  $alias=$session.execution_alias
+  Suspend-NativeCorridorRuntimeSession -Session $session
+  if((Test-Path -LiteralPath $alias)-or-not(Test-Path -LiteralPath $session.directory)){throw 'Suspend deleted payload or left alias'}
+  $session=New-Session;$args.Session=$session;$args.RunId='resumed'
+  $resumed=Get-NativeCorridorRuntimeFamily @args
+  if($script:builds-ne1-or$script:inventories-ne1-or-not$resumed.receipt.reused){throw 'Cross-session resume rebuilt or reread the sealed payload'}
+  $blocked=$false;try{[IO.File]::WriteAllText($resumed.controller_path,'changed')}catch{$blocked=$true}
+  if(-not$blocked){throw 'Restored private family is writable'}
+  Suspend-NativeCorridorRuntimeSession -Session $session
+  $path=Join-Path $session.directory 'mrtof_analyzer_corridor.pa1'
+  (Get-Item -LiteralPath $path).IsReadOnly=$false;[IO.File]::WriteAllText($path,'changed-size');(Get-Item -LiteralPath $path).IsReadOnly=$true
+  $session=New-Session;$args.Session=$session
+  try{$null=Get-NativeCorridorRuntimeFamily @args;throw 'Changed byte count accepted'}catch{if($_.Exception.Message-notlike'*member byte count differs*'){throw}}
+  if($script:builds-ne1-or-not(Test-Path -LiteralPath $session.directory)){throw 'Invalid family was reconstructed or deleted'}
+  (Get-Item -LiteralPath $path).IsReadOnly=$false;[IO.File]::WriteAllText($path,'fixture-1');(Get-Item -LiteralPath $path).IsReadOnly=$true
+  [IO.File]::WriteAllText($binary,'changed generator')
+  $session=New-Session;$args.Session=$session
+  $afterGeneratorChange=Get-NativeCorridorRuntimeFamily @args
+  if(-not$afterGeneratorChange.receipt.reused-or$script:builds-ne1-or$script:inventories-ne1){throw 'Generator provenance change invalidated sealed PA payload'}
+  Write-Output 'MANAGED_NATIVE_RECOVERY=PASS'
+}finally{
+  Suspend-NativeCorridorRuntimeSession -Session $session
+  Get-ChildItem -LiteralPath $owner -Recurse -File|ForEach-Object{$_.IsReadOnly=$false}
+}
+"""
+        with TemporaryDirectory(prefix='mrtof-native-checkpoint-') as temporary:
+            fixture = Path(temporary) / 'test.ps1'
+            fixture.write_text(script, encoding='utf-8')
+            result = subprocess.run(
+                ['pwsh', '-NoProfile', '-File', str(fixture), str(PROJECT.parents[3]), temporary,
+                 sys.executable],
+                cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60,
+                env={**os.environ, 'MASS_SPECTROMETRY_EXECUTION_ROOT': str(Path(temporary) / 'execution')},
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('MANAGED_NATIVE_RECOVERY=PASS', result.stdout)
+
+    @unittest.skipUnless(os.environ.get('SIMION_EXE'), 'requires explicit SIMION_EXE')
+    def test_real_fast_adjust_reopens_guarded_family_without_writing(self) -> None:
+        script = r"""
+param($Repo,$Root,$Simion)
+$ErrorActionPreference='Stop'
+. (Join-Path $Repo 'common/host_execution_lease.ps1')
+$lease=$null;$guards=@()
+try{
+  $lease=Enter-HostExecutionLease -Role SIMION -Stage prepare -RunId ('native-readonly-fixture-'+[guid]::NewGuid().ToString('N'))
+  $project=Join-Path $Repo 'src/msplatform/components/multi_reflection_tof'
+  & $Simion --nogui --noprompt lua (Join-Path $project 'tests/simion/test_native_local_family_fixture.lua') $Root
+  if($LASTEXITCODE-ne0){throw 'Tiny native fixture construction failed'}
+  $iobFixture=Join-Path $project 'tests/simion/test_native_corridor_iob_fixture.lua'
+  & $Simion --nogui --noprompt lua $iobFixture $Root prepare
+  if($LASTEXITCODE-ne0){throw 'Tiny IOB fixture construction failed'}
+  $before=@()
+  foreach($id in 0..8){
+    $path=Join-Path $Root ('fixture.pa'+$id)
+    $before+=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    (Get-Item -LiteralPath $path).IsReadOnly=$true
+    $guards+=,[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+  }
+  & $Simion --nogui --noprompt lua (Join-Path $Repo 'src/msplatform/backends/simion/resources/verify_native_corridor_family.lua') (Join-Path $Root 'fixture.pa0')
+  if($LASTEXITCODE-ne0){throw 'Guarded Fast Adjust failed'}
+  foreach($name in @('global.pa','accelerator.pa','detector.pa')){
+    $path=Join-Path $Root $name
+    (Get-Item -LiteralPath $path).IsReadOnly=$true
+    $guards+=,[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+  }
+  $build=@('--nogui','--noprompt','lua',(Join-Path $Repo 'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua'),'--',
+    (Join-Path $Repo 'src/msplatform/backends/simion/resources/4_instance_seed.iob'),
+    (Join-Path $Root 'global.pa'),(Join-Path $Root 'fixture.pa0'),(Join-Path $Root 'accelerator.pa'),(Join-Path $Root 'detector.pa'),
+    (Join-Path $Root 'fixture.iob'),(Join-Path $Root 'program.lua'),(Join-Path $Root 'source.fly2'),
+    (Join-Path $Root 'operating.lua'),(Join-Path $Root 'voltage_map.lua'),(Join-Path $Root 'priority.lua'),
+    '0','0','0','0','0','0','0','0','0','8','0','0')
+  & $Simion @build
+  if($LASTEXITCODE-ne0){throw 'Guarded production native IOB builder failed'}
+  & $Simion --nogui --noprompt lua $iobFixture $Root inspect
+  if($LASTEXITCODE-ne0){throw 'Production native IOB reload failed'}
+  foreach($id in 0..8){
+    if((Get-FileHash -LiteralPath (Join-Path $Root ('fixture.pa'+$id)) -Algorithm SHA256).Hash-ne$before[$id]){throw 'Guarded member changed'}
+  }
+  # Reuse this same explicit native test owner and tiny family, not a second runner.
+  $accelerator=Join-Path $Root 'tiny_accelerator';New-Item -ItemType Directory -Path $accelerator|Out-Null
+  & $Simion --nogui --noprompt lua (Join-Path $project 'tests/simion/test_native_local_family_fixture.lua') $accelerator 0.2 x
+  if($LASTEXITCODE-ne0){throw 'Tiny accelerator family construction failed'}
+  $python='@@PYTHON@@'
+  $helper=Join-Path $project 'tests/test_support/native_csv_fixture.py'
+  $oldPythonPath=$env:PYTHONPATH;$env:PYTHONPATH=$Repo
+  try{
+  & $python -B $helper prepare --repo $Repo --root $Root
+  if($LASTEXITCODE-ne0){throw 'Complete current program fixture preparation failed'}
+  $currentBuild=@('--nogui','--noprompt','lua',(Join-Path $Repo 'src/msplatform/backends/simion/resources/build_native_corridor_iob.lua'),'--',
+    (Join-Path $Repo 'src/msplatform/backends/simion/resources/4_instance_seed.iob'),
+    (Join-Path $Root 'global.pa'),(Join-Path $Root 'fixture.pa0'),(Join-Path $accelerator 'fixture.pa0'),(Join-Path $Root 'detector.pa'),
+    (Join-Path $Root 'current.iob'),(Join-Path $Root 'program_current.lua'),(Join-Path $Root 'source_current.fly2'),
+    (Join-Path $Root 'operating_current.lua'),(Join-Path $Root 'voltage_map_current.lua'),(Join-Path $Root 'priority.lua'),
+    '0','0','0','0','0','0','0','0','0','8','0','0')
+  & $Simion @currentBuild
+  if($LASTEXITCODE-ne0){throw 'Current complete program IOB save failed'}
+  $names=@('MRTOF_FIXTURE_EVENTS','MRTOF_FIXTURE_TRAJECTORY');$saved=@{}
+  foreach($name in $names){$saved[$name]=[Environment]::GetEnvironmentVariable($name)}
+  try{
+    foreach($phase in @('first','cold')){
+      $env:MRTOF_FIXTURE_EVENTS=Join-Path $Root ($phase+'.events.csv')
+      $env:MRTOF_FIXTURE_TRAJECTORY=Join-Path $Root ($phase+'.trajectory.csv')
+      # Each call is a new native process; cold starts from the same persisted IOB.
+      & $Simion --nogui --noprompt lua (Join-Path $Repo 'src/msplatform/backends/simion/resources/run_iob_flight.lua') (Join-Path $Root 'current.iob') 1>(Join-Path $Root ($phase+'.stdout.log')) 2>(Join-Path $Root ($phase+'.stderr.log'))
+      if($LASTEXITCODE-ne0){throw ('Current complete program '+$phase+' Fly failed')}
+    }
+  }finally{foreach($name in $names){[Environment]::SetEnvironmentVariable($name,$saved[$name])}}
+  & $python -B $helper verify --repo $Repo --root $Root
+  if($LASTEXITCODE-ne0){throw 'Complete program CSV or cold replay mismatch'}
+  }finally{$env:PYTHONPATH=$oldPythonPath}
+  Write-Output 'GUARDED_NATIVE_FAST_ADJUST=PASS'
+}finally{
+  foreach($guard in $guards){$guard.Dispose()}
+  Get-ChildItem -LiteralPath $Root -File|ForEach-Object{$_.IsReadOnly=$false}
+  if($null-ne$lease){Exit-HostExecutionLease -Lease $lease}
+}
+"""
+        with TemporaryDirectory(prefix='mrtof-guard-fixture-') as temporary:
+            root = Path(temporary)
+            fixture = root / 'verify.ps1'
+            fixture.write_text(script.replace('@@PYTHON@@', sys.executable.replace("'", "''")), encoding='utf-8')
+            result = subprocess.run(
+                ['C:/Program Files/PowerShell/7/pwsh.exe', '-NoProfile', '-File',
+                 str(fixture), str(PROJECT.parents[3]), str(root), os.environ['SIMION_EXE']],
+                cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180, check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotRegex(result.stdout + result.stderr, r'(?m)^error,|Failed saving PA|Aborting PA updates')
+        self.assertIn('GUARDED_NATIVE_FAST_ADJUST=PASS', result.stdout)
+        self.assertIn('MRTOF_TINY_COMPLETE_PROGRAM_CSV=PASS', result.stdout)
+        self.assertIn('MRTOF_NATIVE_CORRIDOR_IOB_BUILD=PASS', result.stdout)
+        self.assertIn('NATIVE_CORRIDOR_IOB_FIXTURE_RELOAD=PASS', result.stdout)
+
+    def test_complete_program_csv_fixture_generation_is_explicit_and_byte_exact(self):
+        import importlib.util
+        helper_path=Path(__file__).resolve().parents[1]/'test_support/native_csv_fixture.py'
+        spec=importlib.util.spec_from_file_location('native_csv_fixture',helper_path)
+        helper=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        with TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            (root/'priority.lua').write_text('return {}',encoding='utf-8')
+            helper.prepare(PROJECT.parents[3],root)
+            self.assertEqual((root/'program_current.lua').read_bytes(),(PROJECT.parents[3]/'src/msplatform/backends/simion/resources/mrtof_candidate.lua').read_bytes())
+            records=json.loads((root/'current_source_records.json').read_text(encoding='utf-8'))
+            self.assertEqual(len(records),6)
+            self.assertIn('scientific_event_reconciliation.lua',records)
+            point=(root/'operating_current.lua').read_text(encoding='utf-8')
+            self.assertIn('reconciliation_path=',point)
+            self.assertIn('environment_required=true',point)
+            self.assertIn('full_path_timeout_us=0.02',point)
+            self.assertNotIn('static_field',point)
+            self.assertIn('n = 1',(root/'source_current.fly2').read_text(encoding='utf-8'))
+            with self.assertRaises(FileExistsError):
+                helper.prepare(PROJECT.parents[3],root)
+
+    def test_streams_one_guarded_source_and_releases_it_before_next(self) -> None:
+        bank = {
+            'cache_key': 'A' * 64, 'generation_sha256': 'B' * 64,
+            'source_transaction': None,
+            'raw': {'name': 'field.pa#', 'bytes': 3, 'sha256': 'C' * 64},
+            'responses': [dict(response_id=i, name=f'field.response{i}.pa', bytes=3, sha256='D' * 64) for i in range(1, 9)],
+        }
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bank['source_directory'] = str(root)
+            script = """
+param($Support,$Root,$Bank)
+$ErrorActionPreference='Stop'
+. $Support
+$script:active=0;$script:copies=0;$script:stages=@()
+function Invoke-RunToolRootContext { param($RepoRoot,$Operation) return $Bank }
+function New-ShortPaCopy {
+  param($Source,$Destination,$ExpectedBytes,$ExpectedSha256,[switch]$GuardDestinationReadOnly)
+  if($script:active-ne0){throw 'More than one source retained'}
+  $script:active++;$script:copies++
+  [IO.File]::WriteAllText($Destination,'raw')
+  return $Destination
+}
+function Remove-ShortPaCopy { param($Path) Remove-Item -LiteralPath $Path;$script:active-- }
+function Update-HostResourceStage { param($Lease,$Stage,$Budget,$RetainedMemoryBytes) $script:stages+=@($Stage);return $Lease }
+function Get-HostResourceBudget { param($Role,$Stage) return @{} }
+function Invoke-FixtureSimion {
+  $modeIndex=if($args.Contains('--controller')){[array]::IndexOf($args,'--controller')}else{[array]::IndexOf($args,'--append')}
+  if($modeIndex-lt0){throw 'Fixture assembly mode is missing'}
+  $destination=$args[$modeIndex+2]
+  [IO.File]::WriteAllText($destination,'new object')
+  $global:LASTEXITCODE=0
+}
+$result=New-NativeCorridorRuntimeFamily -BankGenerationDirectory $Root -CacheKey ('A'*64) -GenerationSha256 ('B'*64) -DestinationDirectory (Join-Path $Root 'private') -Python 'unused' -RepoRoot $Root -SimionExe 'Invoke-FixtureSimion' -ResourceLease ([pscustomobject]@{id='fixture'}) -RunId 'fixture'
+if($script:active-ne0-or$script:copies-ne9){throw 'Source release/count differs'}
+if(($script:stages-join',')-ne'pa_refine,prepare'){throw 'Controller heavy stage differs'}
+if(@(Get-ChildItem (Join-Path $Root 'private') -File).Count-ne9){throw 'Expected controller and eight responses'}
+if(-not(Test-Path $result.controller_path)){throw 'Controller missing'}
+if($result.receipt.published_native_members_opened-or$result.receipt.response_refine_performed){throw 'Wrong provenance'}
+Write-Output 'STREAM_FIXTURE=PASS'
+"""
+            path = root / 'test_stream.ps1'
+            path.write_text(script, encoding='utf-8')
+            result = subprocess.run(
+                ['pwsh', '-NoProfile', '-NonInteractive', '-File', str(path),
+                 '-Support', str(PROJECT.parents[3] / 'src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1'),
+                 '-Root', str(root), '-Bank', json.dumps(bank)],
+                cwd=PROJECT, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('STREAM_FIXTURE=PASS', result.stdout)
+
+
+if __name__ == '__main__':
+    unittest.main()

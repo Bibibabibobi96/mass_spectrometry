@@ -31,7 +31,7 @@ from msplatform.workflows.ion_processor.extraction_phase_space_comparison import
 )
 from msplatform.workflows.ion_processor.preparation import validate_numerical_boundaries
 from msplatform.workflows.ion_processor.preparation import recorded_native_projection
-from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import parts, section_centroid
+from msplatform.components.ion_processor.section_geometry import parts, section_centroid
 
 MODES = {"flat", "formed_extraction", "formed_extraction_continuous_aux"}
 PARABOLIC_MODE = "formed_extraction_continuous_aux_parabolic_inner"
@@ -334,7 +334,7 @@ def build_electrode_comparison_figures(cases: list[dict]) -> tuple[dict, dict]:
     """Compare equal-scale LP cuts and explicitly cropped auxiliary profiles."""
     if not cases:
         raise ValueError("electrode comparison requires at least one declared case")
-    from msplatform.components.dual_pressure_rectilinear_ion_processor.section_geometry import world_bounds
+    from msplatform.components.ion_processor.section_geometry import world_bounds
     names = {5:"Pull",6:"Push",7:"Upper side",8:"Lower side",10:"Outer auxiliary",11:"Inner auxiliary",14:"LP shield"}
     cross, cross_axes = plt.subplots(1,len(cases),figsize=(5*len(cases),5),squeeze=False,constrained_layout=True)
     auxiliary, aux_axes = plt.subplots(len(cases),2,figsize=(13,3.3*len(cases)),squeeze=False,constrained_layout=True)
@@ -471,7 +471,7 @@ def analyze_geometry_study(run: Path) -> dict:
     """Load a registered contour study and publish automatic comparison evidence."""
     run = Path(run).resolve()
     config = _json(run/"run_config.json")
-    if config.get("project") != "dual_pressure_rectilinear_ion_processor":
+    if config.get("project") != "ion_processor":
         raise ValueError("geometry comparison project differs")
     study_path = Path(config["inputs"]["study_contract"])
     if not study_path.is_absolute():

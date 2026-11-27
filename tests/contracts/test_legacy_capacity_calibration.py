@@ -766,7 +766,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             common.mkdir(parents=True)
             (common / "capacity_ledger.json").write_text("{}", encoding="utf-8")
             (common / ".capacity_ledger.json.fixture").write_bytes(b"stale")
-            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+            for project in ("orthogonal_accelerator", "multi_reflection_tof"):
                 review = root / "projects" / project / "reviews" / "current"
                 review.mkdir(parents=True)
                 _write_json(review / "inspection_receipt.json", {
@@ -1062,7 +1062,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             common.mkdir(parents=True)
             (common / "capacity_ledger.json").write_text("{}", encoding="utf-8")
             (common / ".capacity_ledger.json.fixture").write_bytes(b"stale")
-            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+            for project in ("orthogonal_accelerator", "multi_reflection_tof"):
                 review = root / "projects" / project / "reviews" / "current"
                 review.mkdir(parents=True)
                 _write_json(review / "inspection_receipt.json", {
@@ -1075,7 +1075,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
             self.assertEqual(temp["owner_hint"], "common.capacity_ledger")
             self.assertEqual(temp["reason"], "stale_capacity_ledger_atomic_temp_requires_recovery")
             self.assertIn("atomic publication lineage", temp["recovery_task"])
-            for project in ("orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"):
+            for project in ("orthogonal_accelerator", "multi_reflection_tof"):
                 item = pending[f"projects/{project}/reviews"]
                 self.assertEqual(item["owner_hint"], project)
                 self.assertEqual(item["reason"], "review_package_lacks_sealed_owner_disposition_manifest")
@@ -1232,7 +1232,7 @@ class LegacyCapacityCalibrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "artifacts"
             source = (
-                root / "projects" / "parallel_mirror_dual_stripe_mr_tof"
+                root / "projects" / "multi_reflection_tof"
                 / "scratch" / "20260902__ion-foil-recovery" / "foil.SLDPRT"
             )
             source.parent.mkdir(parents=True)

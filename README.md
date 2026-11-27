@@ -29,9 +29,9 @@ Mass Spectrometer Design and Simulation Platform
 | RF多极杆离子光学 | [项目](src/msplatform/components/rf_multipole/README.md)；[四极杆](src/msplatform/components/rf_multipole/variants/quadrupole/README.md)、[六极杆](src/msplatform/components/rf_multipole/variants/hexapole/README.md)、[八极杆](src/msplatform/components/rf_multipole/variants/octupole/README.md) |
 | 正交脉冲加速器 | [二区／三区加速器](src/msplatform/components/orthogonal_accelerator/README.md) |
 | 单次反射正交加速飞行时间质量分析器 | [oa-TOF](src/msplatform/components/single_reflection_oa_tof/README.md)（已安装部件所有者；科学项目ID不变） |
-| 开放路径平行镜双条带多次反射飞行时间质量分析器 | [MR-TOF](src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/README.md) |
-| 双压力区矩形射频离子处理器 | [Ion Processor](src/msplatform/components/dual_pressure_rectilinear_ion_processor/README.md) |
-| 双锥串联四极杆离子传输接口 | [双锥接口](src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/README.md) |
+| 开放路径平行镜双条带多次反射飞行时间质量分析器 | [MR-TOF](src/msplatform/components/multi_reflection_tof/README.md) |
+| 双压力区矩形射频离子处理器 | [Ion Processor](src/msplatform/components/ion_processor/README.md) |
+| 双锥串联四极杆离子传输接口 | [双锥接口](src/msplatform/components/dual_cone_tandem_quadrupole/README.md) |
 | 开孔长管电子轰击离子源 | [EI离子源](src/msplatform/components/apertured_tube_electron_impact_ion_source/README.md) |
 | 横置螺旋灯丝Wehnelt电子枪 | [电子枪](src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/README.md) |
 

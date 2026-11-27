@@ -16,7 +16,7 @@ ROOT=Path(fixture.__file__).resolve().parents[2]
 class MultiIpScheduleTests(unittest.TestCase):
  def test_real_two_ips_and_span(self):
   fixture.CanonicalIpNeutralTests.setUpClass();case=fixture.CanonicalIpNeutralTests(methodName='runTest')
-  raw=json.loads((ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+  raw=json.loads((ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
   other=copy.deepcopy(raw['component_requests']['ion_processor'])
   for key in other['design']['baseline']['schedule']:other['design']['baseline']['schedule'][key]+=10
   component=resolve_component(other)
@@ -24,7 +24,7 @@ class MultiIpScheduleTests(unittest.TestCase):
   assembly=assemble(recipe,{'ion_processor':case.component,'second_ip':component});geometry=case.compile_complete(assembly)
   self.assertEqual(len(geometry.frontend_geometry['members']),30)
   clock={'clock_epoch_id':'instrument_clock_epoch_v1','authority_sha256':file_sha256(ROOT/'src/msplatform/examples/instrument_epoch_v1.json')}
-  point=json.loads((ROOT/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
+  point=json.loads((ROOT/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
   drives={};schedules={}
   for instance in ('ion_processor','second_ip'):
    electrodes=assembly.components_resolved[instance]['projection']['electrodes']
@@ -36,7 +36,7 @@ class MultiIpScheduleTests(unittest.TestCase):
   from msplatform.backends.simion.rf_tracking_execution import prepare_neutral_ip_hs1
   from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
   from msplatform.io.manifest_records import file_record
-  from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+  from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
   from unittest.mock import patch
   import tempfile
   def box(lo,hi):return BoxDomain(lo,hi,(True,True,True),(True,True,True))

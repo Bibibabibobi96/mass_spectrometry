@@ -75,7 +75,7 @@ class ContinuousConsumerTests(unittest.TestCase):
         source.data_path.return_value.read_text.return_value = '{}'
         projects = {
             'rf': 'rf_multipole_ion_optics',
-            'ip': 'dual_pressure_rectilinear_ion_processor',
+            'ip': 'ion_processor',
         }
         document = {'geometry': {'frontend_geometry': {'composition_plan': {
             'scope': {'instance_ids': list(projects)},
@@ -97,7 +97,7 @@ class ContinuousConsumerTests(unittest.TestCase):
                             expected_component_scope=expected, **self.common)
                     track.assert_not_called()
         document['geometry']['frontend_geometry']['composition_plan']['components']['mr'] = {
-            'project_id': 'parallel_mirror_dual_stripe_mr_tof'}
+            'project_id': 'multi_reflection_tof'}
         document['geometry']['frontend_geometry']['composition_plan']['scope']['instance_ids'].append('mr')
         document['components_resolved']['mr'] = {}
         with patch('msplatform.results.artifacts.open_artifact', return_value=source), \

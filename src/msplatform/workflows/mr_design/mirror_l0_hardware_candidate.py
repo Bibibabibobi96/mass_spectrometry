@@ -17,12 +17,12 @@ from pathlib import Path
 import scipy
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import derive_mirror_l0_slope_tolerance_per_v
+from msplatform.components.multi_reflection_tof.mirror_l0 import derive_mirror_l0_slope_tolerance_per_v
 from msplatform.workflows.mr_design import parallel_global_l0_family_search
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import (
+from msplatform.components.multi_reflection_tof.mirror_geometry_parameters import (
     derive_mirror_boundaries,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     derive_mirror_voltage_bounds,
     derive_operating_energy_envelope,
     load_contract,

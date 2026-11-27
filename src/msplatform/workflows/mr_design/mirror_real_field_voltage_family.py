@@ -12,7 +12,7 @@ import numpy as np
 from scipy.integrate import IntegrationWarning, quad
 from scipy.interpolate import CubicSpline, PPoly
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 

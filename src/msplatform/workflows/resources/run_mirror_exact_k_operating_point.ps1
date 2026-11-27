@@ -11,7 +11,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$projectId = 'parallel_mirror_dual_stripe_mr_tof'
+$projectId = 'multi_reflection_tof'
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $repoRoot = $workspaceRoot
 $artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
@@ -23,7 +23,7 @@ $packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 $contract = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
-  Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+  Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json'
 }
 $parentManifest = (Resolve-Path -LiteralPath $MirrorRunManifest).Path
 if ([string]::IsNullOrWhiteSpace($RunId)) {
@@ -112,27 +112,27 @@ try {
     'src\msplatform\execution\resources\host_execution_lease.ps1',
     'src\msplatform\execution\host_resource_scheduler.py',
     'src\msplatform\execution\resources\host_resource_policy.json',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\dual_stripe_l0.py',
+    'src\msplatform\components\multi_reflection_tof\dual_stripe_l0.py',
     'src\msplatform\workflows\mr_design\dual_stripe_operating_seed.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\drift_phase_contract.py',
+    'src\msplatform\components\multi_reflection_tof\drift_phase_contract.py',
     'src\msplatform\workflows\prepared_joint\joint_mirror_stripe_l0.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_candidate_receipt.py',
+    'src\msplatform\components\multi_reflection_tof\mirror_candidate_receipt.py',
     'src\msplatform\workflows\mr_design\mirror_exact_k_operating_point.py',
     'src\msplatform\backends\simion\native_stripe_shape_adapter.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_l0.py',
+    'src\msplatform\components\multi_reflection_tof\mirror_geometry_parameters.py',
+    'src\msplatform\components\multi_reflection_tof\mirror_l0.py',
     'src\msplatform\workflows\mr_design\mirror_l1.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\resolved_geometry.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\accelerator_requirements.py',
+    'src\msplatform\components\multi_reflection_tof\resolved_geometry.py',
+    'src\msplatform\components\multi_reflection_tof\accelerator_requirements.py',
     'src\msplatform\components\orthogonal_accelerator\two_zone_geometry.py',
     'src\msplatform\components\orthogonal_accelerator\accelerator_time_focus.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\geometry_contract.py',
+    'src\msplatform\components\multi_reflection_tof\geometry_contract.py',
     'src\msplatform\contracts\rigid_transform.py',
     'src\msplatform\backends\simion\mr_geometry.py',
     'src\msplatform\backends\simion\two_zone_candidate.py',
     'src\msplatform\backends\simion\rectangular_accelerator.py',
     'src\msplatform\backends\simion\bare_three_zone_component.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py',
+    'src\msplatform\components\multi_reflection_tof\candidate_contract.py',
     'src\msplatform\workflows\resources\run_mirror_exact_k_operating_point.ps1',
     'src\msplatform\workflows\mr_design\__init__.py'
   )

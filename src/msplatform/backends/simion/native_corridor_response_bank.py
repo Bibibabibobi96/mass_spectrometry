@@ -23,7 +23,7 @@ from msplatform.backends.simion.standalone_pa_response_set import (
     validate_standalone_pa_response_set,
     write_standalone_pa_response_set,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 

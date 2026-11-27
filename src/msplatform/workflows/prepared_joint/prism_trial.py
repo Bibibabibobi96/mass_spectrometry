@@ -7,7 +7,7 @@ accelerator gap 1 with the mirror/Stripe-selected near-5-eV slow kinetic energy
 in +project-y; the accelerator field supplies the fast -project-z energy.
 """
 from __future__ import annotations
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
+from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
 from msplatform.backends.simion import mrtof_observations as _mrtof_observations
 
 import argparse
@@ -38,7 +38,7 @@ from msplatform.workflows.oa_focus_analysis import (
     _component_energy_per_charge_v,
     _target_axial_energy_per_charge_v,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
+from msplatform.components.multi_reflection_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from msplatform.backends.simion.mr_bunch_source import (
@@ -60,7 +60,7 @@ from msplatform.backends.simion.native_system_geometry import (
     resolve_accelerator_iob_origin, resolve_oa_mr_direct_pose, resolve_static_iob_origins,
 )
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
+from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     CONVERGING_PRISM_ENERGY_RESIDUAL, converging_design_potential_delta_v,
     resolve_converging_prism_target,
 )
@@ -68,13 +68,13 @@ from msplatform.backends.comsol.static_field_binding import (
     load_binding, validate_voltages, _lua_vector, _scalar_field_lua_fields,
     _scalar_refinement_windows_lua,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
     mirror_power_supply_limits,
     resolve_trajectory_profile,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import (
+from msplatform.components.multi_reflection_tof.operating_authority import (
     apply_terminal_mirror_variation as _apply_terminal_mirror_variation,
     finite as _finite,
     fixed_mirror_stripe_source_state as _fixed_mirror_stripe_source_state,

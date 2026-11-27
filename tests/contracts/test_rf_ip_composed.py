@@ -9,7 +9,7 @@ from pathlib import Path
 from tests.contracts import test_joint_ip_model as joint_ip_fixture
 from tests.contracts.test_simion_rf_tracking import rf_tracking_case
 from tests.contracts.test_simion_native_plans import LUA
-from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
 from msplatform.assembly.factory import assemble
 from msplatform.backends.simion import operations
 from msplatform.workflows.multipole_ip import continuous

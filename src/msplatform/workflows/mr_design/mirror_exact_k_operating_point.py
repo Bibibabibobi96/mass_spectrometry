@@ -28,10 +28,10 @@ from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.host_resource_python import ensure_heavy_entry
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
+from msplatform.components.multi_reflection_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
+from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     NativeStripeSpatialShapeRoot,
     materialize_native_stripe_spatial_return_root,
 )
@@ -41,14 +41,14 @@ from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     derive_coupled_drift_state,
     spatial_return_kappa_derivative_residual,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_candidate_receipt import (
+from msplatform.components.multi_reflection_tof.mirror_candidate_receipt import (
     ManagedMirrorRoot,
     load_managed_mirror_candidate,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import (
+from msplatform.components.multi_reflection_tof.mirror_geometry_parameters import (
     derive_mirror_boundaries,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+from msplatform.components.multi_reflection_tof.mirror_l0 import (
     MirrorL0Design,
     derive_mirror_l0_slope_tolerance_per_v,
     effective_axial_width_mm,
@@ -65,10 +65,10 @@ from msplatform.backends.simion.native_stripe_shape_adapter import (
     build_native_stripe_shape_selection,
     load_native_stripe_shape_selection,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
+from msplatform.components.multi_reflection_tof.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     derive_mirror_voltage_bounds,
     derive_operating_energy_envelope,
@@ -215,7 +215,7 @@ def load_managed_exact_k_operating_point(
     manifest = _load_json(path, "exact-K run manifest")
     if (
         manifest.get("schema_version") != 2
-        or manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+        or manifest.get("project") != "multi_reflection_tof"
         or manifest.get("mode") != "analytic_mirror_exact_k_operating_point"
         or manifest.get("status") != "success"
     ):

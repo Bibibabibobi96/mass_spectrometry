@@ -27,7 +27,7 @@ from msplatform.ion_release.cylinder import (
     generate_halton_cylinder_phase_space,
 )
 from msplatform.backends.simion.source import render_standard_beams
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     derive_two_zone_placement,
     load_contract,

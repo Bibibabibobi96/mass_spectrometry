@@ -3,7 +3,7 @@ from msplatform.components.geometry_members import assembly_geometry_members
 import copy
 import unittest
 from tests.workflows.multipole_ip import test_ip_compiler as fixtures
-from tests.components.dual_pressure_rectilinear_ion_processor import test_electrode_contours as contours
+from tests.components.ion_processor import test_electrode_contours as contours
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component
 from msplatform.exporters import step
@@ -54,7 +54,7 @@ class IpStepProjectionTests(unittest.TestCase):
     def test_real_formed_contour_keeps_convex_vertices_and_cuts(self):
         fixture=contours.ElectrodeContourTests(); fixture.setUp()
         fixture.b['physical_design_selection']={'native_grid_mm':.1,'native_aux_segments':60}
-        ip=resolve_component(dict(provider_id='dual_pressure_rectilinear_ion_processor',design=dict(baseline=fixture.b)))
+        ip=resolve_component(dict(provider_id='ion_processor',design=dict(baseline=fixture.b)))
         a=self.assembly; joined=assemble(a.composition_plan['recipe'],dict(a.components,ion_processor=ip))
         rows=self.check_source(joined,'ion_processor')
         self.assertIn('ip_convex_polyhedron',repr([r['shape'] for r in rows]))
@@ -65,7 +65,7 @@ class IpStepProjectionTests(unittest.TestCase):
     def test_parameter_change_reaches_real_step_members(self):
         a=self.assembly; baseline=copy.deepcopy(a.components_source['ion_processor']['baseline'])
         baseline['geometry']['r0_mm']+=.2
-        ip=resolve_component(dict(provider_id='dual_pressure_rectilinear_ion_processor',design=dict(baseline=baseline)))
+        ip=resolve_component(dict(provider_id='ion_processor',design=dict(baseline=baseline)))
         changed=assemble(a.composition_plan['recipe'],dict(a.components,ion_processor=ip))
         old=self.check_source(a,'ion_processor'); new=self.check_source(changed,'ion_processor')
         self.assertNotEqual([r['shape'] for r in old],[r['shape'] for r in new])

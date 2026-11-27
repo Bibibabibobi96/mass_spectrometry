@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class NeutralMrPrimitivesTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        fixture = json.loads((ROOT / 'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture = json.loads((ROOT / 'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         assembly = assemble(fixture['recipe'], {k: resolve_component(v) for k, v in fixture['component_requests'].items()})
         cls.members = [m for m in assembly_geometry_members(dict(composition_plan=assembly.composition_plan,
             components_resolved=assembly.components_resolved, components_source=assembly.components_source)) if m['instance_id'] == 'mrtof']

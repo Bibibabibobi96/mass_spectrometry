@@ -22,8 +22,8 @@ from msplatform.backends.simion.rf_assembly_interface import build_legacy_assemb
 from tests.components.rf_multipole_ion_optics.domain.test_compile_design_request import design_request
 from msplatform.assembly.resolve_assembly import compile_assembly_layout, derive_assembly_scope
 from msplatform.contracts.rigid_transform import RigidTransform
-from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.components.ion_processor.assembly_interface import resolve_assembly_interface
+from msplatform.components.ion_processor.native_geometry import native_projection
 from msplatform.workflows.multipole_ip.prepare import FRAME, prepare
 from msplatform.backends.simion.ip_handoff import load_injected_source
 
@@ -95,7 +95,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         self.state = self.source / "results/mechanical_exit_states__rf_on.csv"
         self.census = self.source / "results/mechanical_exit_census__rf_on.json"
         self.publish_events()
-        model = {name: json.loads((REPO / "src/msplatform/components/dual_pressure_rectilinear_ion_processor/config" / f"{name}.json").read_text())
+        model = {name: json.loads((REPO / "src/msplatform/components/ion_processor/config" / f"{name}.json").read_text())
                  for name in ("baseline", "numerics")}
         write_json(self.receiver / "inputs/resolved_model.json", model)
         self.source_summary = dict(schema_version=1, role="multipole_simion_finite_3d_transport_summary",
@@ -104,7 +104,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         write_json(self.source / "summary.json", self.source_summary)
         self.source_selection = self.publish_manifest(self.source, "rf_multipole_ion_optics", "source_run")
         self.source_selection["case_id"] = "rf_on"
-        receiver_selection = self.publish_manifest(self.receiver, "dual_pressure_rectilinear_ion_processor", "receiver_run")
+        receiver_selection = self.publish_manifest(self.receiver, "ion_processor", "receiver_run")
         def pose(frame, rotation, translation):
             return dict(schema_version=1, role="rigid_transform", from_frame_id=frame, to_frame_id=FRAME,
                         rotation=rotation, translation_mm=translation)
@@ -113,7 +113,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
                 assembly_frame_id=FRAME, position_tolerance_mm=1e-9, angular_tolerance_rad=1e-9,
                 instances=[dict(instance_id="multipole", project_id="rf_multipole_ion_optics",
                     transform=pose(resolved["coordinate"]["coordinate_id"], [[0,0,1],[1,0,0],[0,1,0]], [-exit_z,0.,0.])),
-                    dict(instance_id="ion_processor", project_id="dual_pressure_rectilinear_ion_processor",
+                    dict(instance_id="ion_processor", project_id="ion_processor",
                     transform=pose(FRAME, [[1,0,0],[0,1,0],[0,0,1]], [0.,0.,0.]))],
                 connections=[dict(connection_id="inlet", upstream=dict(instance_id="multipole", port_id="mechanical_exit"),
                     downstream=dict(instance_id="ion_processor", port_id="guide_inlet"), gap_mm=0., coupling_mode="state_handoff")])
@@ -168,7 +168,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         self.parent=compile_assembly_layout(recipe,components)
 
     def test_selected_receiver_projection_and_tampered_identity(self):
-        from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
+        from msplatform.components.ion_processor.native_geometry import select_legacy_physical_design
         from msplatform.workflows.ion_processor.preparation import recorded_native_projection
         module = importlib.import_module('msplatform.workflows.multipole_ip.prepare')
         self.execute()
@@ -184,7 +184,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
         legacy = native_projection(model['baseline'], model['numerics'])
         self.assertNotEqual(expected['electrodes'], legacy['electrodes'])
         write_json(model_path, model)
-        self.request['receiver'] = self.publish_manifest(self.receiver, 'dual_pressure_rectilinear_ion_processor', 'receiver_run')
+        self.request['receiver'] = self.publish_manifest(self.receiver, 'ion_processor', 'receiver_run')
         self.run = self.root/'selected_receiver'
         (self.run/'inputs').mkdir(parents=True)
         with patch.object(module, '_layout', wraps=module._layout) as layout:
@@ -197,7 +197,7 @@ class MultipoleIPPreparationTests(unittest.TestCase):
             self.assertEqual((self.run/relative).read_bytes(), (original_run/relative).read_bytes())
         model['physical_design_selection']['baseline_sha256'] = '0'*64
         write_json(model_path, model)
-        self.request['receiver'] = self.publish_manifest(self.receiver, 'dual_pressure_rectilinear_ion_processor', 'receiver_run')
+        self.request['receiver'] = self.publish_manifest(self.receiver, 'ion_processor', 'receiver_run')
         self.run = self.root/'tampered_receiver'
         (self.run/'inputs').mkdir(parents=True)
         with self.assertRaisesRegex(ValueError, 'recorded physical design identity differs'):

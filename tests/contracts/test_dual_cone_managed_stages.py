@@ -274,11 +274,11 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     reused,
                     gas_field_reference=gas_reference,
                     source_spec_path=ROOT
-                    / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/cylindrical_ion_source.json",
+                    / "src/msplatform/components/dual_cone_tandem_quadrupole/config/cylindrical_ion_source.json",
                     numerics_path=ROOT
-                    / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/simion_solver_numerics.json",
+                    / "src/msplatform/components/dual_cone_tandem_quadrupole/config/simion_solver_numerics.json",
                     interface_path=ROOT
-                    / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/gas_field_interface.json",
+                    / "src/msplatform/components/dual_cone_tandem_quadrupole/config/gas_field_interface.json",
                     collision_science=values["science"]["gas"],
                     collision_sds_dir=sds,
                     source_to_device=source_registration,
@@ -291,9 +291,9 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                                clock_authority_reference=clockrows),
                     fields=dict(numerics=numerics),
                     trajectory=dict(gas_field_reference=gas_reference,
-                        source_spec_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/cylindrical_ion_source.json",
-                        numerics_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/simion_solver_numerics.json",
-                        interface_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/gas_field_interface.json",
+                        source_spec_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config/cylindrical_ion_source.json",
+                        numerics_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config/simion_solver_numerics.json",
+                        interface_path=ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config/gas_field_interface.json",
                         collision_science=values["science"]["gas"], collision_sds_dir=sds))
                 full_plan = plan_to(target="trajectory", request=full_request)
                 self.assertEqual(full_plan["stages"], ["geometry", "model", "fields", "trajectory"])
@@ -364,7 +364,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     source_spec_path=source_path,
                     numerics_path=numerics_path,
                     interface_path=ROOT
-                    / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/gas_field_interface.json",
+                    / "src/msplatform/components/dual_cone_tandem_quadrupole/config/gas_field_interface.json",
                     collision_science=values["science"]["gas"],
                     collision_sds_dir=sds,
                     source_to_device=source_registration,
@@ -417,10 +417,10 @@ class ManagedIndependentStagesTests(unittest.TestCase):
 
     def _gas_source(self, context):
         import csv, hashlib
-        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import _write_fixture
+        from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import _write_fixture
         from msplatform.execution.capacity_ledger import record_capacity_object
 
-        config = ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config"
+        config = ROOT / "src/msplatform/components/dual_cone_tandem_quadrupole/config"
         source = context.workspace / "artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/runs/inert-gas"
         source.mkdir(parents=True)
         csv_path, metadata = _write_fixture(source)
@@ -445,7 +445,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
         meta["field_csv_sha256"] = hashlib.sha256(csv_path.read_bytes()).hexdigest()
         metadata.write_text(json.dumps(meta))
         identity = dict(
-            project="dual_cone_tandem_quadrupole_ion_interface",
+            project="dual_cone_tandem_quadrupole",
             run_id=source.name,
             mode="axisymmetric_gas_flow_screening",
         )

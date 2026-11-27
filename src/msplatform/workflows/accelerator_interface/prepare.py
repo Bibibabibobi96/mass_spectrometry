@@ -147,7 +147,7 @@ def prepare_joint_flight(*, reference_run: Path,
     from msplatform.workflows.prepared_joint.ip_mr_handoff import prepare_handoff
     prepare_handoff(matching, assembly["composition_plan"], interface_results / "mrtof_handoff")
     from msplatform.workflows.ion_processor.preparation import validate_configs
-    from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+    from msplatform.components.ion_processor.timing import derive_native_timing
     seed_config = prepared_geometry["seed_configs"]
     if source.get("source_profile") == "upstream":
         # The resolved model is bound to the measured IP run. Its source is an
@@ -168,7 +168,7 @@ def prepare_joint_flight(*, reference_run: Path,
     plan_path = Path(assembly["field_plan_path"])
     receipt = {
         "schema_version": 1, "role": "mrtof_joint_flight_preparation", "status": "prepared_not_flight_validated",
-        "accelerator_provider": "dual_pressure_rectilinear_ion_processor", "coupling_mode": "state_handoff",
+        "accelerator_provider": "ion_processor", "coupling_mode": "state_handoff",
         "solver_executed": False,
         "assembly": assembly,
         "reference_materialization": references["reference_materialization"], "numerics": references["numerics"],
@@ -315,7 +315,7 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
         return dict(mode="native_static_pa", scalar_pa=level["sources"]["scalar_pa"],
                     origin_mm=grid["origin_mm"], pitch_mm=grid["pitch_mm"], dimensions=grid["dimensions"], symmetry="x")
     native = field_projection(binding)
-    native.update(accelerator_provider="dual_pressure_rectilinear_ion_processor",
+    native.update(accelerator_provider="ion_processor",
                   assembly_scope="full_c0_ion_processor_replacement",
                   analyzer_voltages_v=binding["authority"]["analyzer_electrode_voltages_v"],
                   collision_pa_path=binding["instances"][1]["pa_path"], refinement_windows=[])
@@ -356,7 +356,7 @@ def bind_joint_workbench(*, design_run: Path, field_run: Path, source_run: Path,
         source_directory=output_directory / "measured_source", binding=binding, native=native,
         runtime=runtime, output=output_directory)
     receipt = dict(schema_version=1, role="mrtof_joint_workbench_binding", status="assets_bound_iob_pending",
-                   accelerator_provider="dual_pressure_rectilinear_ion_processor",
+                   accelerator_provider="ion_processor",
                    field_assembly_verified=True, measured_source_matches_workpoint=True,
                    source_workpoint_check="prepared_and_measured_provider_configuration_identity",
                    energy_target_acceptance="not_declared", six_dimensional_match_qualified=False,

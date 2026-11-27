@@ -245,7 +245,7 @@ RF finite COMSOL 的[正常无碰撞入口](../../src/msplatform/workflows/resou
 [test_run_artifact_workflow_sources.py](../../tests/contracts/test_run_artifact_workflow_sources.py)的源／执行路径15方法共同覆盖，
 原37方法及故障断言保持；两者与下列实际CLI消费者仅共用[test_support fixture](../../tests/contracts/test_support/run_artifact_workflow.py)的准备及断言helper。原CLI恢复薄测由
 [RF项目](../../tests/components/rf_multipole_ion_optics/analysis/test_owner_finalization_recovery.py)与
-[IP项目](../../tests/components/dual_pressure_rectilinear_ion_processor/test_owner_finalization_recovery.py)维护。
+[IP项目](../../tests/components/ion_processor/test_owner_finalization_recovery.py)维护。
 项目Static／Repository按现有发现规则各执行一次；只复用零test_方法的公共fixture，
 不导入或继承承载故障方法的测试类而重复发现。
 迁移不减少全仓断言或改变生产恢复行为，也不把测试归属调整当作全仓提速证据。

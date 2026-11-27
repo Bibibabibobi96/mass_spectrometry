@@ -30,7 +30,7 @@ from msplatform.workflows.ion_processor.spatial_crossings import (
     VALUES, prepare_spatial_crossings_from_samples,
 )
 
-PROJECT = "dual_pressure_rectilinear_ion_processor"
+PROJECT = "ion_processor"
 COLORS = ("#0072B2", "#E69F00", "#009E73", "#D55E00")
 MARKERS = ("o", "s", "^", "D")
 

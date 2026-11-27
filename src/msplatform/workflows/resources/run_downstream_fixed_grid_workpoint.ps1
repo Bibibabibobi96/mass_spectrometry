@@ -25,8 +25,8 @@ $packageRootText = & $python -I -B -c 'from pathlib import Path;import msplatfor
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$packageRootText)) { throw 'Installed msplatform package is unavailable.' }
 $packageRoot = (Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
-$project = 'parallel_mirror_dual_stripe_mr_tof'
-$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json' }
+$project = 'multi_reflection_tof'
+$contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json' }
 $perturbationPaths = @($Stripe1PerturbationManifest, $Stripe2PerturbationManifest, $Prism1PerturbationManifest, $Prism2PerturbationManifest)
 $hasAllPerturbations = @($perturbationPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 4
 $hasAnyPerturbation = @($perturbationPaths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -gt 0
@@ -95,7 +95,7 @@ try {
     'src/msplatform/workflows/resources/run_downstream_fixed_grid_workpoint.ps1',
     'src/msplatform/workflows/prepared_joint/joint_mirror_stripe_l0.py',
     'src/msplatform/workflows/prepared_joint/prism_operating_point.py',
-    'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/candidate_contract.py',
+    'src/msplatform/components/multi_reflection_tof/candidate_contract.py',
     'src/msplatform/io/file_identity.py',
     'src/msplatform/execution/manifest_verification.py',
     'src/msplatform/execution/resources/run_artifact_support.ps1'

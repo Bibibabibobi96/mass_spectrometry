@@ -66,7 +66,7 @@ class ScalarWindowTests(unittest.TestCase):
         from msplatform.components.catalog import resolve_component
         from pathlib import Path
         model_fixture.RfIpMrModelTests.setUpClass()
-        fixture=json.loads((model_fixture.ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((model_fixture.ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         example=json.loads(files('msplatform').joinpath('examples/rf_oatof_functional_v1.json').read_text(encoding='utf8'))
         parts={name:resolve_component(value) for name,value in fixture['component_requests'].items()}
         rf=resolve_component(example['component_requests']['multipole']);parts['multipole']=rf

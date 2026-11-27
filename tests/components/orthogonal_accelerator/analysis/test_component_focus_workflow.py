@@ -27,7 +27,7 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
         return {
             "schema_version": 1,
             "role": "orthogonal_accelerator_component_focus_request",
-            "consumer_project_id": "parallel_mirror_dual_stripe_mr_tof",
+            "consumer_project_id": "multi_reflection_tof",
             "geometry_profile_id": self.campaign["geometry_profile_id"],
             "time_focus": {
                 "final_energy_per_charge_v": 4371.2351565,
@@ -63,7 +63,7 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
             request.write_text(json.dumps(self._request()), encoding="utf-8")
             release.write_text(json.dumps(self.campaign["release_spec"]), encoding="utf-8")
             result = compile_workflow(request, release)
-        self.assertEqual(result["consumer_project_id"], "parallel_mirror_dual_stripe_mr_tof")
+        self.assertEqual(result["consumer_project_id"], "multi_reflection_tof")
         self.assertEqual(result["campaign"]["release_spec"], self.campaign["release_spec"])
         self.assertEqual(result["pa_plan"]["geometry_profile_id"], self.campaign["geometry_profile_id"])
         self.assertEqual(result["pa_plan"]["layout"]["source_cylinder"], {"radius_mm": 1.0, "height_mm": 1.0})
@@ -90,7 +90,7 @@ class ComponentFocusWorkflowTests(unittest.TestCase):
         self.assertGreater(second["campaign"]["operating_point"]["instance_center_y_mm"], 0.9)
 
     def test_mr_release_is_frozen_unchanged_while_provider_derives_its_voltage_pair(self) -> None:
-        release = (self.project.parents[3] / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof" /
+        release = (self.project.parents[3] / "src/msplatform/components/multi_reflection_tof" /
                    "config" / "accelerator_component_release_n100.json")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

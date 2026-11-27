@@ -32,9 +32,9 @@ class ManifestOutputListTests(unittest.TestCase):
     def test_same_producer_publication_checks_metadata_without_second_payload_reader(self):
         callers = (
             ("src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1",
-             "Write-RunManifest", "if($null-ne$capacity)", "parallel_mirror_dual_stripe_mr_tof", "native_fixture", ("success", "failed", "interrupted"), ()),
+             "Write-RunManifest", "if($null-ne$capacity)", "multi_reflection_tof", "native_fixture", ("success", "failed", "interrupted"), ()),
             ("src/msplatform/backends/simion/resources/ip_prepare_gui_replay.ps1",
-             "Write-RunManifest", "", "dual_pressure_rectilinear_ion_processor", "gui_fixture", ("checkpoint", "failed"), ("project",)),
+             "Write-RunManifest", "", "ion_processor", "gui_fixture", ("checkpoint", "failed"), ("project",)),
             ("src/msplatform/workflows/resources/run_cross_solver_diagnostics.ps1",
              "& $python -I -B @manifestArgs", "$runRecordComplete", "single_reflection_oa_tof_mass_analyzer", "formal_cross_solver_diagnostics", ("success",), ("project", "mode")),
         )

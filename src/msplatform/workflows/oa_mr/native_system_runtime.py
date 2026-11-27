@@ -18,7 +18,7 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
     native_bank_identity,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 
@@ -100,7 +100,7 @@ def build_native_system_runtime_bundle(
     *, native_corridor_runtime_receipt: Mapping[str, Any],
     component_requests: Mapping[str, Mapping[str, Any]],
     accelerator_provider_receipt: Path,
-    project_id: str = "parallel_mirror_dual_stripe_mr_tof",
+    project_id: str = "multi_reflection_tof",
 ) -> dict[str, Any]:
     """Create a no-payload-copy native system dependency receipt.
 

@@ -702,18 +702,18 @@ def compile_geometry(assembly: Assembly, *, numerics: Mapping[str, Any]) -> Comp
     plan = assembly.composition_plan
     selected = plan["scope"]["instance_ids"]
     projects = [plan["components"][name]["project_id"] for name in selected]
-    if len(projects) == 2 and set(projects) == {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor"}:
+    if len(projects) == 2 and set(projects) == {"rf_multipole_ion_optics", "ion_processor"}:
         from .ip_compiler import compile_ip_assembly_geometry
         return compile_ip_assembly_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
     if len(projects) == 2 and set(projects) == {"rf_multipole_ion_optics", "orthogonal_accelerator"}:
         from .rf_oa_compiler import compile_rf_oa_geometry
         return compile_rf_oa_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
-    if len(projects) == 2 and set(projects) == {"orthogonal_accelerator", "parallel_mirror_dual_stripe_mr_tof"}:
+    if len(projects) == 2 and set(projects) == {"orthogonal_accelerator", "multi_reflection_tof"}:
         from .mr_compiler import compile_complete_mr_geometry
         return compile_complete_mr_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
     if (len(projects) in (2, 3) and set(projects) in (
-            {"dual_pressure_rectilinear_ion_processor", "parallel_mirror_dual_stripe_mr_tof"},
-            {"rf_multipole_ion_optics", "dual_pressure_rectilinear_ion_processor", "parallel_mirror_dual_stripe_mr_tof"})):
+            {"ion_processor", "multi_reflection_tof"},
+            {"rf_multipole_ion_optics", "ion_processor", "multi_reflection_tof"})):
         from .mr_compiler import compile_complete_mr_geometry
         return compile_complete_mr_geometry(assembly, numerics=copy.deepcopy(dict(numerics)))
     if selected and all(plan["components"][name]["project_id"] == "rf_multipole_ion_optics" for name in selected):

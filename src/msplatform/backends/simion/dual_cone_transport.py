@@ -40,7 +40,7 @@ def materialize_published_gas_runtime(opened_gas, *, interface, output_lua, outp
 
     The caller owns source validation and output lifecycle; errors propagate unchanged.
     """
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_cfd_gas_field
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_cfd_gas_field
     from .gas_runtime import materialize_gas_runtime
 
     field, metadata = prepare_cfd_gas_field(opened_gas.data, interface=interface,
@@ -123,7 +123,7 @@ def validate_runtime_manifest(path: Path, interface: dict[str, Any]) -> tuple[di
         raise ValueError("gas-field domain does not cover the governed transport domain exactly")
     if manifest["interpolation_policy"] != interface["runtime_artifact_contract"]["sampling_policies"][source_kind]["interpolation_policy"]:
         raise ValueError("gas-field interpolation policy differs from the governed interface")
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import runtime_support_domain
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_field import runtime_support_domain
     support = runtime_support_domain(interface, source_kind)
     expected_support = dict(minimum_z_mm=support.minimum_z_mm, maximum_z_mm=support.maximum_z_mm,
         minimum_radius_mm=support.minimum_radius_mm, maximum_radius_mm=support.maximum_radius_mm)
@@ -436,7 +436,7 @@ def prepare_transport(
             raise ValueError("Select one explicit gas field product or runtime manifest")
         from msplatform.results.gas_field import read_gas_field
 
-        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+        from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import validate_gas_field_data
         opened_gas = read_gas_field(gas_field_reference)
         validate_gas_field_data(opened_gas.data)
         producer = opened_gas.artifact

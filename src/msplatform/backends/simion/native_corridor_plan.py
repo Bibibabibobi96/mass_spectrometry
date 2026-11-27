@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
 )

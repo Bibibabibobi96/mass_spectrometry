@@ -28,18 +28,18 @@ from msplatform.execution.retention import verify_record
 from msplatform.backends.simion.mr_bunch_source import (
     resolve_bunch_source_interval,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import derive_mirror_l0_slope_tolerance_per_v
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.mirror_l0 import derive_mirror_l0_slope_tolerance_per_v
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _te1_reference
+from msplatform.components.multi_reflection_tof.native_field_science import _te1_reference
 from msplatform.workflows.prepared_joint.event_analysis import histogram_half_height_bin_span, peak_time_metrics
 from msplatform.backends.simion.mrtof_observations import collision_diagnostics, read_scientific_events
 from msplatform.workflows.prepared_joint.prism_trial import _resolve_trial_geometry
 from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
 
 
-_PROJECT = "parallel_mirror_dual_stripe_mr_tof"
+_PROJECT = "multi_reflection_tof"
 _MODE = "oa_mr"
 _CHAIN = (
     ("target_k", "target_k_phase_sample"),

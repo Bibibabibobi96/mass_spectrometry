@@ -11,7 +11,7 @@ import json
 import math
 import re
 
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes
+from msplatform.components.ion_processor.convex_geometry import convex_planes
 from msplatform.backends.simion.gem_primitives import centered_box3d, format_number
 from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
 
@@ -43,7 +43,7 @@ def _represent_selected_ip_design(selected: dict, *, baseline: dict, grid_mm: fl
 
 def represent_selected_ip_design(selected: dict, *, baseline: dict, grid_mm: float) -> dict:
     """Revalidate an external selection before representing its immutable CSG."""
-    from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
+    from msplatform.components.ion_processor.native_geometry import select_legacy_physical_design
     if (not isinstance(selected, dict) or type(selected.get('schema_version')) is not int
             or not isinstance(selected.get('selection'), dict)):
         raise ValueError('explicit selected IP physical design required')

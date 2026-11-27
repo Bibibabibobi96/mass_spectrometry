@@ -9,8 +9,8 @@ is owned by subsequent instrument TE1/TE2 calibration rather than v1/v2/L.
 """
 
 from __future__ import annotations
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
+from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
+from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 import copy
@@ -29,11 +29,11 @@ from scipy.optimize import least_squares
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import (
+from msplatform.components.multi_reflection_tof.drift_phase_contract import (
     resolve_drift_phase_contract,
 )
 from msplatform.workflows.mr_design import analyze_native_dual_stripe_l0
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
+from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     derive_manufactured_basis_voltage_seed,
     exact_k_slow_energy_per_charge_v,
     identify_fixed_cad_component_shapes,
@@ -58,7 +58,7 @@ from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     stripes_from_contract,
     time_platform_derivative_residuals,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_candidate_receipt import (
+from msplatform.components.multi_reflection_tof.mirror_candidate_receipt import (
     FixedHardwareMirrorPoint,
     ManagedMirrorCandidate,
     load_managed_mirror_candidate,
@@ -67,18 +67,18 @@ from msplatform.workflows.mr_design.mirror_exact_k_operating_point import (
     ManagedExactKOperatingPoint,
     load_managed_exact_k_operating_point,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+from msplatform.components.multi_reflection_tof.mirror_l0 import (
     derive_mirror_l0_slope_tolerance_per_v,
     reduced_period,
 )
 from msplatform.backends.simion.native_stripe_shape_adapter import (
     build_native_stripe_shape_selection,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
+from msplatform.components.multi_reflection_tof.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
     dual_stripe_total_path_scale,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     derive_operating_energy_envelope,
 )
@@ -91,7 +91,7 @@ WidthFunction = Callable[[float], float]
 
 
 _PUBLISHABLE_DETERMINATION_STATES = {"square_exact", "overdetermined_consistent"}
-_PROJECT_ID = "parallel_mirror_dual_stripe_mr_tof"
+_PROJECT_ID = "multi_reflection_tof"
 _OPERATING_SEED_MODE = "dual_stripe_paper_theory_instance_seed"
 
 
@@ -1960,7 +1960,7 @@ def build_operating_seed_report_from_fixed_grid(fixed_grid_manifest: Path, downs
     then still determined analytically by the spatial-return and turning-energy
     equations; Stripe never back-fits the independent mirror voltages.
     """
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_grid_mirror_stripe_handoff import (
+    from msplatform.components.multi_reflection_tof.fixed_grid_mirror_stripe_handoff import (
         load_fixed_grid_mirror_point,
     )
 

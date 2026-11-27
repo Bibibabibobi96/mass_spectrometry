@@ -18,7 +18,7 @@ class CanonicalNeutralScheduleTests(unittest.TestCase):
         fixture=primitive_fixture.CanonicalIpNeutralTests(methodName='runTest')
         assembly=fixture.assembly
         geometry=fixture.compile_complete(assembly);print('REAL_PUBLIC_GEOMETRY',len(geometry.frontend_geometry['members']),len(geometry.frontend_geometry['electrode_mapping']),flush=True)
-        identity={'clock_epoch_id':'instrument_clock_epoch_v1','authority_sha256':file_sha256(V/'src/msplatform/examples/instrument_epoch_v1.json')};point=json.loads((V/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
+        identity={'clock_epoch_id':'instrument_clock_epoch_v1','authority_sha256':file_sha256(V/'src/msplatform/examples/instrument_epoch_v1.json')};point=json.loads((V/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
         electrodes=assembly.components_resolved['ion_processor']['projection']['electrodes'];drive={'clock':dict(identity,phase_reference_instrument_time_us=0.),'ip_schedule':{'baseline':assembly.components_source['ion_processor']['baseline'],'native_operating_point':point,'clock':identity},'groups':{'ion_processor':{e['name']:{'kind':'ip_schedule','schedule_index':e['electrode_id']} for e in electrodes}}}
         model=compile_prepared_model(geometry,assembly.components_resolved,drive=drive,physics=RF_PHYSICS);doc=require_prepared_model(model);assert len(doc['native_drive_rows'])==len(electrodes);print('REAL_MODEL',len(electrodes),flush=True)
         recompiled=compile_prepared_model(geometry,assembly.components_resolved,drive=doc['drive'],physics=RF_PHYSICS);assert require_prepared_model(recompiled)==doc

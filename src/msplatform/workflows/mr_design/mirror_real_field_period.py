@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+from msplatform.components.multi_reflection_tof.mirror_l0 import (
     MirrorL0Design,
     normalized_period_slope_per_v,
     reduced_period,
@@ -22,7 +22,7 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
 from msplatform.workflows.mr_design.mirror_real_field_l1_screen import (
     SPEED_MM_US_PER_SQRT_EV_PER_TH,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 
@@ -67,7 +67,7 @@ def load_exact_k_point(run_dir: Path) -> dict[str, Any]:
     root = run_dir.resolve()
     manifest = _object(root / "run_manifest.json", "exact-K run manifest")
     if (
-        manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+        manifest.get("project") != "multi_reflection_tof"
         or manifest.get("status") != "success"
     ):
         raise CandidateContractError("exact-K run is not a successful MR-TOF run")
@@ -181,7 +181,7 @@ def build_real_field_probe_contract(
         refinement_root / "run_manifest.json", "real-field L1 run manifest",
     )
     if (
-        refinement_manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+        refinement_manifest.get("project") != "multi_reflection_tof"
         or refinement_manifest.get("mode") != "real_3d_mirror_l1_continuous_refinement"
         or refinement_manifest.get("status") != "success"
     ):
@@ -253,7 +253,7 @@ def build_real_field_probe_contract(
     axis_root = axis_response_run_dir.resolve()
     axis_manifest = _object(axis_root / "run_manifest.json", "axis response run manifest")
     if (
-        axis_manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+        axis_manifest.get("project") != "multi_reflection_tof"
         or axis_manifest.get("mode") != "real_3d_mirror_l0_voltage_family"
         or axis_manifest.get("status") != "success"
     ):

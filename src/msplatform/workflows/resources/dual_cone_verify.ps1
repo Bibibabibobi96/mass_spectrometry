@@ -8,7 +8,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$componentRoot = 'src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface'
+$componentRoot = 'src/msplatform/components/dual_cone_tandem_quadrupole'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 $powerShellPreflight = Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1'
 if (-not (Test-Path -LiteralPath $powerShellPreflight -PathType Leaf)) {
@@ -34,7 +34,7 @@ try {
       throw 'Dual-cone interface requires Python 3.11.'
     }
 
-    & $PythonExe -m msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry `
+    & $PythonExe -m msplatform.components.dual_cone_tandem_quadrupole.geometry `
       --baseline (Join-Path $repoRoot "$componentRoot\config\baseline.json") `
       --check (Join-Path $repoRoot "$componentRoot\config\resolved_geometry.json")
     if ($LASTEXITCODE -ne 0) {
@@ -58,10 +58,10 @@ try {
       'src/msplatform/backends/comsol/gas_flow.py',
       'src/msplatform/backends/comsol/native_execution.py',
       'src/msplatform/results/gas_field.py',
-      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\geometry.py',
+      'src\msplatform\components\dual_cone_tandem_quadrupole\geometry.py',
       'src\msplatform\contracts\gas_field.py',
-      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_field_validation.py',
-      'src\msplatform\components\dual_cone_tandem_quadrupole_ion_interface\gas_field.py',
+      'src\msplatform\components\dual_cone_tandem_quadrupole\gas_field_validation.py',
+      'src\msplatform\components\dual_cone_tandem_quadrupole\gas_field.py',
       'src\msplatform\backends\simion\gas_runtime.py',
       'src\msplatform\backends\simion\resources\collision_sds_binding.lua',
       'src\msplatform\backends\simion\dual_cone_geometry.py'
@@ -79,19 +79,19 @@ try {
       }
     }
 
-    $legacyProjectRoot = Join-Path $repoRoot 'projects/dual_cone_tandem_quadrupole_ion_interface'
+    $legacyProjectRoot = Join-Path $repoRoot 'projects/dual_cone_tandem_quadrupole'
     if (Test-Path -LiteralPath $legacyProjectRoot) {
       throw "Retired dual-cone project tree remains active: $legacyProjectRoot"
     }
 
     & $PythonExe -m tools.repository.gate_unittest discover `
-      -s tests/components/dual_cone_tandem_quadrupole_ion_interface -p 'test_*.py'
+      -s tests/components/dual_cone_tandem_quadrupole -p 'test_*.py'
     if ($LASTEXITCODE -ne 0) {
       throw 'Dual-cone interface static tests failed.'
     }
 
     if ($RuffHandledByParent) {
-      'RUFF=HANDLED_BY_PARENT PROJECT=dual_cone_tandem_quadrupole_ion_interface'
+      'RUFF=HANDLED_BY_PARENT PROJECT=dual_cone_tandem_quadrupole'
     } else {
       & $PythonExe -m ruff check `
         $componentRoot `
@@ -103,20 +103,20 @@ try {
         src/msplatform/backends/comsol/gas_flow.py `
         src/msplatform/workflows/dual_cone_transport.py `
         src/msplatform/workflows/dual_cone_stages.py `
-        tests/components/dual_cone_tandem_quadrupole_ion_interface
+        tests/components/dual_cone_tandem_quadrupole
       if ($LASTEXITCODE -ne 0) {
         throw 'Dual-cone interface Ruff checks failed.'
       }
     }
 
     if ($Level -ne 'Static') {
-      throw "PROJECT_GATE=BLOCKED PROJECT=dual_cone_tandem_quadrupole_ion_interface LEVEL=$Level REASON=single_ion_uniform_gas_prototype_not_candidate_qualified"
+      throw "PROJECT_GATE=BLOCKED PROJECT=dual_cone_tandem_quadrupole LEVEL=$Level REASON=single_ion_uniform_gas_prototype_not_candidate_qualified"
     }
   } finally {
     Pop-Location
   }
 
-  Write-Output 'PROJECT_GATE=PASS PROJECT=dual_cone_tandem_quadrupole_ion_interface LEVEL=Static'
+  Write-Output 'PROJECT_GATE=PASS PROJECT=dual_cone_tandem_quadrupole LEVEL=Static'
 } finally {
   if ($null -ne $hostExecutionLease) {
     Exit-HostExecutionLease -Lease $hostExecutionLease

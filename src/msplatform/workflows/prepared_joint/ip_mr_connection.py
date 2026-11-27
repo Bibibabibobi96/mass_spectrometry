@@ -9,7 +9,7 @@ def validate_component_exit_binding(component: dict[str, Any]) -> tuple[str, str
     source, target = component.get("source_instance_id"), component.get("target_instance_id")
     if (component.get("schema_version") != 2 or component.get("role") != "ion_processor_component_exit_export"
             or component.get("status") != "prepared"
-            or component.get("source_project") != "dual_pressure_rectilinear_ion_processor"
+            or component.get("source_project") != "ion_processor"
             or not isinstance(source, str) or not source
             or not isinstance(target, str) or not target or source == target):
         raise ValueError("Unsupported measured component instance binding")
@@ -28,8 +28,8 @@ def resolve_ip_mr_connection(plan: dict[str, Any]) -> dict[str, Any]:
     upstream, downstream = edge["upstream"], edge["downstream"]
     source, target = upstream["instance_id"], downstream["instance_id"]
     if (source == target or source not in by_id or target not in by_id
-            or by_id[source]["project_id"] != "dual_pressure_rectilinear_ion_processor"
-            or by_id[target]["project_id"] != "parallel_mirror_dual_stripe_mr_tof"
+            or by_id[source]["project_id"] != "ion_processor"
+            or by_id[target]["project_id"] != "multi_reflection_tof"
             or upstream["port_id"] != "extraction_exit" or downstream["port_id"] != "accelerator_entry"
             or edge["coupling_mode"] != "monolithic_joint_solve"):
         raise ValueError("IP/MR preparation requires one extraction_exit to accelerator_entry monolithic_joint_solve connection")

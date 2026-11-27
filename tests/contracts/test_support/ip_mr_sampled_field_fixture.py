@@ -133,7 +133,7 @@ def _domain(bounds, pitch):
 def _fixture_geometry():
     from importlib.resources import files
     from msplatform.backends.simion.model import scientific_multipole_drive
-    fixture=json.loads((mf.ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+    fixture=json.loads((mf.ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
     example=json.loads(files('msplatform.examples').joinpath('rf_oatof_functional_v1.json').read_text(encoding='utf8'))
     components={name:resolve_component(req) for name,req in fixture['component_requests'].items()}
     rf=resolve_component(example['component_requests']['multipole']);components['multipole']=rf

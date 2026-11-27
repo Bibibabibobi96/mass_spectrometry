@@ -276,7 +276,7 @@ def render_rf_controls(model: Any, plan: Mapping[str, Any], *, assets: Mapping[s
         source_geometry = document['geometry']['frontend_geometry']
         composition = source_geometry['source_snapshot']['composition_plan'] if neutral_sampled else source_geometry['composition_plan']
         ip_ids = sorted({row['instance_id'] for row in document['native_drive_rows'] if row['kind'] == 'ip_schedule'}) if neutral_sampled else [name for name, component in composition['components'].items()
-                  if component['project_id'] == 'dual_pressure_rectilinear_ion_processor']
+                  if component['project_id'] == 'ion_processor']
         if len(ip_ids) != 1:
             raise ValueError('RF-IP gas requires the selected IP component')
         poses = [row['transform'] for row in composition['recipe']['instances']

@@ -78,7 +78,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         request = self.approved_functional_rf_request()
         request["target"] = {
             "family_id": "rf_ion_accumulation_and_pulsed_extraction",
-            "preferred_project_id": "dual_pressure_rectilinear_ion_processor",
+            "preferred_project_id": "ion_processor",
             "function": "ion_capture_cooling_and_extraction", "mode": "native_electrode_functional",
         }
         request["operating_points"] = [{"mass": {"value": 524, "unit": "Da"}, "charge_state": 1}]
@@ -95,7 +95,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         # reference cannot capture this test's temporary no-GEM sentinel.
         self.assertIs(oa_focus_plan.compile_closed_two_zone_accelerator,
                       two_zone_candidate.compile_closed_two_zone_accelerator)
-        source = REPO_ROOT/"src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config"
+        source = REPO_ROOT/"src/msplatform/components/multi_reflection_tof/config"
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as guards:
             root = Path(directory)
             release = root/"release.json"
@@ -124,7 +124,7 @@ class ExecutionCompilerTests(unittest.TestCase):
                  "component_focus", "first_time_focus_distance", "two_zone",
                  dict(component_request_path=str(source/"accelerator_component_request_n100.json"), release_spec_path=str(release),
                       artifact_root=str(artifact))),
-                ("parallel_mirror_dual_stripe_mr_tof", "tof_mass_analyzers", "mass_analysis",
+                ("multi_reflection_tof", "tof_mass_analyzers", "mass_analysis",
                  "native_condition", "detection_fraction", None,
                  dict(condition_path=str(condition), context_path=str(context), composition_plan_path=str(small),
                       artifact_root=str(artifact))),
@@ -163,7 +163,7 @@ class ExecutionCompilerTests(unittest.TestCase):
                     self.assertEqual(refused["status"], "NEEDS_RUNTIME_INPUTS")
                     self.assertIn("actual bound release species", " ".join(refused["blockers"]))
                     self.assertFalse(refused["safe_to_execute"])
-                    if owner == "parallel_mirror_dual_stripe_mr_tof":
+                    if owner == "multi_reflection_tof":
                         body["native_corridor_bank_run_path"] = str(root/"missing-bank")
                         context.write_text(json.dumps(body), encoding="utf-8")
                         request["operating_points"][0]["mass"]["value"] = 524
@@ -214,7 +214,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertEqual(projects["apertured_tube_electron_impact_ion_source"]["execution_support"], "no_registered_physical_entry")
         self.assertEqual(projects["orthogonal_accelerator"]["profiles"][0]["required_bindings"],
                          ["component_request_path", "release_spec_path", "artifact_root"])
-        self.assertEqual(projects["parallel_mirror_dual_stripe_mr_tof"]["profiles"][0]["profile_id"], "native_condition")
+        self.assertEqual(projects["multi_reflection_tof"]["profiles"][0]["profile_id"], "native_condition")
         assemblies = [row for row in view if row["owner_kind"] == "assembly"]
         self.assertEqual([row["owner_id"] for row in assemblies], ["instrument_assembly"])
         self.assertNotIn("instrument_assembly", projects)
@@ -228,9 +228,9 @@ class ExecutionCompilerTests(unittest.TestCase):
     def test_native_registrations_match_actual_mandatory_powershell_parameters(self):
         registered = {}
         for project, profile_id in (
-            ("parallel_mirror_dual_stripe_mr_tof", "native_condition"),
+            ("multi_reflection_tof", "native_condition"),
             ("orthogonal_accelerator", "component_focus"),
-            ("dual_pressure_rectilinear_ion_processor", "native_functional"),
+            ("ion_processor", "native_functional"),
         ):
             document = load_json(resolve_project_root(project)/"config/execution_profiles.json")
             profile = next(item for item in document["profiles"] if item["profile_id"] == profile_id)
@@ -299,7 +299,7 @@ ConvertTo-Json -InputObject $rows -Depth 4 -Compress
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_fixed_input_consumers_freeze_compiled_values_instead_of_current_defaults(self):
-        cases = (("dual_cone_tandem_quadrupole_ion_interface", "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1", "sourceFiles"),
+        cases = (("dual_cone_tandem_quadrupole", "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1", "sourceFiles"),
                  ("transverse_helical_filament_wehnelt_electron_gun", "run_build_only_smoke.ps1", "projectFrozenFiles"))
         for project, relative, variable in cases:
             with self.subTest(project=project), tempfile.TemporaryDirectory() as directory:
@@ -316,7 +316,7 @@ ConvertTo-Json -InputObject $rows -Depth 4 -Compress
                     records.append(dict(file_record(source), name=name, relative_path=path))
                 bundle = root/"resolved.json"
                 bundle.write_text(json.dumps(dict(role="compiled_execution_inputs", project_id=project, root=str(private), files=records)))
-                if project == "dual_cone_tandem_quadrupole_ion_interface":
+                if project == "dual_cone_tandem_quadrupole":
                     from msplatform.backends.comsol.gas_flow import compiled_gas_flow_paths
                     selected = compiled_gas_flow_paths(bundle)
                     self.assertEqual(len(selected), len(profile["fixed_inputs"]))
@@ -839,8 +839,8 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
 
     def test_ordinary_profiles_compile_only_declared_scientific_steps_and_empty_ei_is_unavailable(self):
         from msplatform.contracts.machine_contracts import sha256, validate_schema
-        projects = ("apertured_tube_electron_impact_ion_source", "dual_cone_tandem_quadrupole_ion_interface",
-                    "dual_pressure_rectilinear_ion_processor", "rf_multipole_ion_optics",
+        projects = ("apertured_tube_electron_impact_ion_source", "dual_cone_tandem_quadrupole",
+                    "ion_processor", "rf_multipole_ion_optics",
                     "single_reflection_oa_tof_mass_analyzer", "transverse_helical_filament_wehnelt_electron_gun")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

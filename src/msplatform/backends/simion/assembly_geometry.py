@@ -70,7 +70,7 @@ def _world_primitive(shape: Mapping[str, Any], transform: RigidTransform, roundi
         return ' '.join(term for band in transformed_bands
                         for term in _extrude_polygon_bands(x, band)), lower, upper
     if kind in {'ip_box', 'ip_cylinder_x'}:
-        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        from msplatform.components.ion_processor.convex_geometry import shape_bounds
         from .ip_geometry import _primitive
         local = {'shape': kind[3:], **{key: value for key, value in shape.items() if key != 'kind'}}
         local_lo, local_hi = shape_bounds(local)

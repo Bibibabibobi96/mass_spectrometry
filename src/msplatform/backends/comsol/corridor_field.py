@@ -204,7 +204,7 @@ def prepare(
 ) -> dict[str, Any]:
     """Freeze one explicit request, project runner and installed native closure."""
     plan = compile_request(read(request_path))
-    if run.exists() or run.parent.name != "runs" or run.parent.parent.name != "parallel_mirror_dual_stripe_mr_tof":
+    if run.exists() or run.parent.name != "runs" or run.parent.parent.name != "multi_reflection_tof":
         raise ValueError("prepare requires a new MR project run identity")
     root = run.parents[3]
     repository_root = repository_root.resolve(strict=True)

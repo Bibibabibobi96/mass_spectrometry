@@ -21,13 +21,13 @@ def domain(lo, hi, pitch):
 class IpMrModelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        fixture=json.loads((ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         parts={name:resolve_component(value) for name,value in fixture['component_requests'].items()}
         assembly=assemble(fixture['recipe'],parts)
         cls.compiled=compile_complete_mr_geometry(assembly,numerics={'domains':{
             'ip':domain(-10.,220.,.1),'analyzer':domain(-1000.,1000.,.1),'detector':domain(-1000.,1000.,.1)}})
         identity=dict(clock_epoch_id='instrument_clock_epoch_v1',authority_sha256=file_sha256(ROOT/'src/msplatform/examples/instrument_epoch_v1.json'))
-        point=json.loads((ROOT/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
+        point=json.loads((ROOT/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
         cls.drive=dict(clock=dict(identity,phase_reference_instrument_time_us=0.),
             ip_schedule=dict(baseline=assembly.components_source['ion_processor']['baseline'],native_operating_point=point,clock=identity),
             mr_authority=dict(source=dict(analyzer_electrode_voltages_v=list(range(1,21))),
@@ -88,7 +88,7 @@ class RfIpMrModelTests(unittest.TestCase):
         from importlib.resources import files
         from msplatform.backends.simion.model import scientific_multipole_drive
         IpMrModelTests.setUpClass()
-        fixture=json.loads((ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         example=json.loads(files('msplatform').joinpath('examples/rf_oatof_functional_v1.json').read_text(encoding='utf8'))
         components={name:resolve_component(value) for name,value in fixture['component_requests'].items()}
         rf=resolve_component(example['component_requests']['multipole']);components['multipole']=rf

@@ -20,7 +20,7 @@ class IpMrScalarAdmissionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         model_fixture.IpMrModelTests.setUpClass()
-        fixture=json.loads((model_fixture.ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((model_fixture.ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         cls.assembly=assemble(fixture['recipe'],{name:resolve_component(req) for name,req in fixture['component_requests'].items()})
         compiled=model_fixture.IpMrModelTests.compiled
         cls.model=compile_prepared_model(compiled,compiled.components_resolved,drive=model_fixture.IpMrModelTests.drive,physics=RF_IP_PHYSICS)
@@ -63,7 +63,7 @@ class IpMrScalarAdmissionTests(unittest.TestCase):
     def test_full_rf_ip_mr_seventeen_products(self):
         from importlib.resources import files
         model_fixture.RfIpMrModelTests.setUpClass()
-        fixture=json.loads((model_fixture.ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((model_fixture.ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         example=json.loads(files('msplatform').joinpath('examples/rf_oatof_functional_v1.json').read_text(encoding='utf8'))
         parts={name:resolve_component(value) for name,value in fixture['component_requests'].items()}
         rf=resolve_component(example['component_requests']['multipole']);parts['multipole']=rf

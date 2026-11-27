@@ -21,7 +21,7 @@ from msplatform.backends.simion.ip_handoff import (
     load_injected_source,
 )
 
-from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
+from msplatform.components.ion_processor.coordinates import (
     transform_from_config,
 )
 
@@ -37,7 +37,7 @@ FROZEN_RUNTIME_MODULES = (
     "src/msplatform/execution/resource_profile.py",
     "src/msplatform/backends/simion/particle_batching.py",
 )
-PROJECT = "dual_pressure_rectilinear_ion_processor"
+PROJECT = "ion_processor"
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -236,7 +236,7 @@ def main() -> None:
     elif args.action=="prepare":
         if args.simion_dir is None: parser.error("prepare requires --simion-dir")
         project_root = args.project_root or Path(str(files(
-            "msplatform.components.dual_pressure_rectilinear_ion_processor")))
+            "msplatform.components.ion_processor")))
         prepare(args.run,project_root,args.simion_dir,args.native_field_run,args.source_profile,
                 args.configuration_directory,args.injected_source,args.protected_injected_path)
     elif args.action=="adopt-native-field":

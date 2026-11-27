@@ -30,17 +30,17 @@ from msplatform.execution.retention import verify_record
 from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     classify_constraint_system,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object
+from msplatform.components.multi_reflection_tof.operating_authority import load_object as _load_object
 from msplatform.workflows.prepared_joint.prism_trial import _bunch_center_source_state, _source_release_record
 from msplatform.backends.simion.mrtof_observations import _collision_geometry_projection
 from msplatform.backends.comsol.static_field_binding import (
     load_binding, _record, _validate_native_surface_absence, native_refine_numerics,
     validate_native_consumer_view, load_native_response_basis, native_binding_problem, scalar_binding_problem,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
+from msplatform.components.multi_reflection_tof.candidate_voltage import PS_GROUPS
 
 
 def _trajectory_physics_identity(
@@ -99,7 +99,7 @@ RESIDUAL_NAMES = (
 def workpoint_residual_names(materialization: Mapping[str, Any]) -> tuple[str, ...]:
     """Select explicit scientific residual units without relabelling old angle rows."""
     if materialization.get("prism_handoff_target") is not None:
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL
+        from msplatform.components.multi_reflection_tof.dual_stripe_l0 import CONVERGING_PRISM_ENERGY_RESIDUAL
         return (RESIDUAL_NAMES[0], CONVERGING_PRISM_ENERGY_RESIDUAL, *RESIDUAL_NAMES[2:])
     return RESIDUAL_NAMES
 
@@ -460,7 +460,7 @@ def _trial(manifest_path: Path, freeze_dir: Path | None = None, *, require_targe
     if (manifest.get("status") != "success"
             or (manifest.get("project"), manifest.get("mode")) not in {
                 ("instrument_assembly", "oa_mr"),
-                ("parallel_mirror_dual_stripe_mr_tof", "finite_3d_two_prism_voltage_trial"),
+                ("multi_reflection_tof", "finite_3d_two_prism_voltage_trial"),
             }):
         raise CandidateContractError(f"not a successful downstream trial: {manifest_path}")
     records = {"run_config": manifest["run_config"]}
@@ -856,7 +856,7 @@ def audit_transported(
     prior_manifest_path = Path(definition["prior_workpoint_manifest"])
     prior_manifest = _load_object(prior_manifest_path)
     if (prior_manifest.get("status") != "success"
-            or prior_manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+            or prior_manifest.get("project") != "multi_reflection_tof"
             or prior_manifest.get("mode") != "downstream_fixed_grid_workpoint"):
         raise CandidateContractError("prior Jacobian must come from a successful downstream workpoint run")
     prior_records = [

@@ -14,7 +14,7 @@ from typing import Any
 
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.backends.simion.ip_handoff import frozen_release_states, load_injected_source
-from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
+from msplatform.components.ion_processor.coordinates import (
     to_local_position, to_project_position, to_project_vector, transform_from_config,
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev, mass_to_charge_th
@@ -25,7 +25,7 @@ from msplatform.io.manifest_records import file_record, record_path, verify_reco
 from msplatform.execution.solver_review_retirement import verify_retirement
 from msplatform.io.manifest_records import require_completed_terminal_publication
 
-PROJECT = "dual_pressure_rectilinear_ion_processor"
+PROJECT = "ion_processor"
 EVENT_VALUES = ("t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us")
 
 

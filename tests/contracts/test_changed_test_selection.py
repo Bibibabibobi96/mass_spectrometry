@@ -17,7 +17,7 @@ from tests.contracts.test_support.run_artifact_workflow import copy_workspace_pa
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MR = "tests/components/parallel_mirror_dual_stripe_mr_tof"
+MR = "tests/components/multi_reflection_tof"
 RF = "tests/components/rf_multipole_ion_optics"
 
 
@@ -90,7 +90,7 @@ class ChangedTestSelectionTests(unittest.TestCase):
             single = "single_reflection_oa_tof_mass_analyzer"
             environment = os.environ.copy()
             environment.pop("PYTHONPATH", None)
-            for project, owner_script in (("dual_pressure_rectilinear_ion_processor", "ip_verify.ps1"),
+            for project, owner_script in (("ion_processor", "ip_verify.ps1"),
                                           (single, "oatof_verify.ps1")):
                 tests = root / "tests/components" / project
                 shutil.rmtree(tests)
@@ -820,7 +820,7 @@ foreach($scope in @('Owner','Repository')){
             return selected
 
     def test_reference_chain_sources_and_recipe_select_contracts(self) -> None:
-        paths = ["recipes/reference/uniform_e.toml", "src/msplatform/physics/reference.py",
+        paths = ["recipes/reference/uniform_e.toml", "src/msplatform/contracts/particle_physics.py",
                  "src/msplatform/recipes/reference.py", "src/msplatform/fields/__init__.py",
                  "src/msplatform/tracing/__init__.py", "src/msplatform/storage/store.py",
                  "src/msplatform/results/particle_data.py", "src/msplatform/workflows/reference_tracing.py",
@@ -868,7 +868,7 @@ foreach($scope in @('Owner','Repository')){
         for result in selected[:-1]:
             for name in ("test_dual_cone_transport_execution", "test_dual_cone_transport",
                          "test_dual_cone_stages", "test_dual_cone_managed_stages"):
-                self.assertIn(f"tests/components/dual_cone_tandem_quadrupole_ion_interface/{name}.py", result["Modules"])
+                self.assertIn(f"tests/components/dual_cone_tandem_quadrupole/{name}.py", result["Modules"])
         self.assertEqual(selected[-1]["Modules"], ["tests/simion/test_analyze_terminal_plane.py"])
 
     def test_single_reflection_frontend_producer_selects_actual_owner_consumers(self) -> None:
@@ -918,8 +918,8 @@ foreach($scope in @('Owner','Repository')){
     def test_existing_modules_and_support_have_explicit_selection(self) -> None:
         cases = []
         for prefix, production, stage, filename in (
-            (MR, "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof",
-             "parallel_mirror_dual_stripe_mr_tof_static", "test_simion_event_analysis.py"),
+            (MR, "src/msplatform/components/multi_reflection_tof",
+             "multi_reflection_tof_static", "test_simion_event_analysis.py"),
             (RF, "src/msplatform/components/rf_multipole",
              "rf_multipole_quadrupole_static", "test_mass_filter_l1.py"),
             ("tests/components/single_reflection_oa_tof_mass_analyzer", "src/msplatform/components/single_reflection_oa_tof",
@@ -954,10 +954,10 @@ foreach($scope in @('Owner','Repository')){
         changed = f"{MR}/analysis/test_workpoint_controller_state.py"
         script = r"""
 . __SUPPORT__
-$route=(Read-GateCatalog -RepoRoot $PWD.Path)|Where-Object stage -eq 'parallel_mirror_dual_stripe_mr_tof_static'
+$route=(Read-GateCatalog -RepoRoot $PWD.Path)|Where-Object stage -eq 'multi_reflection_tof_static'
 $route.repository_gate_partition.parameter='ChangedTestModules'
 $selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots @($route.test_selection.roots) `
- -ChangedPaths @(__TEST__, 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/analysis/unknown_source.py')
+ -ChangedPaths @(__TEST__, 'src/msplatform/components/multi_reflection_tof/analysis/unknown_source.py')
 @{selection=$selected}|ConvertTo-Json -Depth 8 -Compress
 """.replace("__SUPPORT__", powershell_literal(REPO_ROOT / "tools/repository/gate_catalog_support.ps1"))
         script = script.replace("__TEST__", powershell_literal(changed))
@@ -967,7 +967,7 @@ $selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots
         self.assertIsNone(json.loads(result.stdout)["selection"])
 
     def test_mr_workpoint_sources_augment_core_with_actual_consumers(self) -> None:
-        stage = "parallel_mirror_dual_stripe_mr_tof_static"
+        stage = "multi_reflection_tof_static"
         dependencies = (
             ("src/msplatform/workflows/prepared_joint/controller_state.py", ("test_workpoint_controller_state", "test_downstream_workpoint_iteration_runner")),
             ("src/msplatform/workflows/prepared_joint/downstream_workpoint.py", ("test_downstream_workpoint_iteration",
@@ -982,7 +982,7 @@ $selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots
                      for index, (source, modules) in enumerate(dependencies)]
             cases.append(dict(name="union", paths=[path for case in cases for path in case["paths"]],
                               modules=sorted({module for case in cases for module in case["modules"]})))
-            cases.append(dict(name="unknown", paths=["src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/unmapped_source.py"], modules=[]))
+            cases.append(dict(name="unknown", paths=["src/msplatform/components/multi_reflection_tof/unmapped_source.py"], modules=[]))
             request = root / "cases.json"
             request.write_text(json.dumps(cases), encoding="utf-8")
             script = r"""
@@ -1016,8 +1016,8 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                     self.assertEqual(len(selected), len(set(selected)))
 
     def test_installed_mirror_l0_and_search_augment_core_with_actual_consumers(self) -> None:
-        stage = 'parallel_mirror_dual_stripe_mr_tof_static'
-        domain = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/mirror_l0.py'
+        stage = 'multi_reflection_tof_static'
+        domain = 'src/msplatform/components/multi_reflection_tof/mirror_l0.py'
         workflow = 'src/msplatform/workflows/mr_design/__init__.py'
         math_modules = sorted(f"{MR}/analysis/{name}.py" for name in (
             'test_dual_stripe_l0_math', 'test_fixed_grid_mirror_stripe_handoff',
@@ -1040,7 +1040,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             dict(stage=stage, paths=[workflow], modules=search_modules),
             dict(stage=stage, paths=[domain, workflow, changed_test],
                  modules=sorted([*math_modules, changed_test])),
-            dict(stage=stage, paths=["src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/deleted_source.py"], modules=None),
+            dict(stage=stage, paths=["src/msplatform/components/multi_reflection_tof/deleted_source.py"], modules=None),
         ]
         for runner in ('run_dual_stripe_operating_seed.ps1',
                        'run_mirror_exact_k_operating_point.ps1',
@@ -1092,11 +1092,11 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             dict(stage='simion_backend', paths=[cache], modules=[common + 'test_operating_pa_cache.py']),
             dict(stage='simion_backend', paths=[composer], modules=common_composer),
             dict(stage='simion_backend', paths=[cache, composer], modules=common_composer),
-            dict(stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[cache], modules=mr),
-            dict(stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[composer], modules=mr),
+            dict(stage='multi_reflection_tof_static', paths=[cache], modules=mr),
+            dict(stage='multi_reflection_tof_static', paths=[composer], modules=mr),
             dict(stage='instrument_assembly', paths=[composer], modules=local),
-            dict(stage='parallel_mirror_dual_stripe_mr_tof_static',
-                 paths=['src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/operating_pa_identity.py'],
+            dict(stage='multi_reflection_tof_static',
+                 paths=['src/msplatform/components/multi_reflection_tof/operating_pa_identity.py'],
                  modules=None),
         ]
         for case, selected in zip(cases, self.selections(REPO_ROOT, cases), strict=True):
@@ -1110,8 +1110,8 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                     self.assertFalse(selected['OnlyTestModules'])
 
     def test_installed_mr_prism_phase_sources_augment_core_with_actual_consumers(self) -> None:
-        stage = 'parallel_mirror_dual_stripe_mr_tof_static'
-        canonical = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/'
+        stage = 'multi_reflection_tof_static'
+        canonical = 'src/msplatform/components/multi_reflection_tof/'
         dependencies = {
             'drift_phase_contract': [
                 'test_downstream_fixed_grid_workpoint',
@@ -1239,8 +1239,8 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                     self.assertFalse(selected['OnlyTestModules'])
 
     def test_installed_mr_stripe_and_native_analysis_select_actual_consumers(self) -> None:
-        stage = 'parallel_mirror_dual_stripe_mr_tof_static'
-        canonical = 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py'
+        stage = 'multi_reflection_tof_static'
+        canonical = 'src/msplatform/components/multi_reflection_tof/dual_stripe_l0.py'
         workflow = 'src/msplatform/workflows/mr_design/__init__.py'
         stripe_names = [
             'test_downstream_fixed_grid_workpoint',
@@ -1279,7 +1279,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             dict(stage=stage, paths=[canonical, workflow],
                  modules=sorted(set(stripe_names + search_names))),
             # Deleted production sources cannot authorize stale leaf selection.
-            dict(stage=stage, paths=["src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/deleted_source.py"], modules=None),
+            dict(stage=stage, paths=["src/msplatform/components/multi_reflection_tof/deleted_source.py"], modules=None),
         ]
         for runner in [
             'run_dual_stripe_operating_seed.ps1',
@@ -1326,7 +1326,7 @@ $selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots
 $routes=(Get-Content -LiteralPath __CATALOG__ -Raw|ConvertFrom-Json).routes
 $roots=@($routes|ForEach-Object {if($null-ne$_.PSObject.Properties['test_selection']){$_.test_selection.roots}})
 $results=@{}
-foreach($route in @($routes|Where-Object stage -in @('parallel_mirror_dual_stripe_mr_tof_static',
+foreach($route in @($routes|Where-Object stage -in @('multi_reflection_tof_static',
  'instrument_assembly','single_reflection_oa_tof_mass_analyzer_static','rf_multipole_quadrupole_static'))){
 $selection=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots $roots -FullScope -ChangedPaths @()
 $partitions=@(Get-GateRepositoryTestPartitions -Route $route -RepoRoot $PWD.Path -Modules $selection.Modules)
@@ -1464,12 +1464,12 @@ $results|ConvertTo-Json -Depth 8 -Compress
                             self.assertIn(f"tests.components.rf_multipole_ion_optics.analysis.{name}",
                                           rf["ChangedTestModules"])
                         if path == rf_paths[0]:
-                            ip = stages["dual_pressure_rectilinear_ion_processor_static"]
+                            ip = stages["ion_processor_static"]
                             self.assertEqual(ip["command"]["script"],
                                 "src/msplatform/workflows/resources/ip_verify.ps1")
                             ip_gate = (REPO_ROOT / ip["command"]["script"]).read_text(encoding="utf-8")
                             self.assertIn("tools.repository.gate_unittest discover", ip_gate)
-                            self.assertTrue((REPO_ROOT / "tests/components/dual_pressure_rectilinear_ion_processor/test_functional.py").is_file())
+                            self.assertTrue((REPO_ROOT / "tests/components/ion_processor/test_functional.py").is_file())
                             modules = set()
                             for name, stage in stages.items():
                                 if name.startswith("instrument_assembly"):
@@ -1523,10 +1523,10 @@ $results|ConvertTo-Json -Depth 8 -Compress
             write_planned_request(REPO_ROOT, request, ["src/msplatform/backends/simion/mr_prepared_field.py"])
             stages = {row["name"]: row for row in json.loads(
                 request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
-            parameters = stages["parallel_mirror_dual_stripe_mr_tof_static"]["command"]["parameters"]
-            self.assertIn("tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_trial",
+            parameters = stages["multi_reflection_tof_static"]["command"]["parameters"]
+            self.assertIn("tests.components.multi_reflection_tof.analysis.test_prepared_joint_trial",
                           parameters["ChangedTestModules"])
-            self.assertIn("tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_joint_flight_preparation",
+            self.assertIn("tests.components.multi_reflection_tof.analysis.test_joint_flight_preparation",
                           parameters["ChangedTestModules"])
             self.assertTrue(any(name.startswith("instrument_assembly") for name in stages))
 
@@ -1545,9 +1545,9 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     write_planned_request(REPO_ROOT, request, [path])
                     stages = {row["name"]: row for row in json.loads(
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
-                    mr = stages["parallel_mirror_dual_stripe_mr_tof_static"]["command"]["parameters"]
+                    mr = stages["multi_reflection_tof_static"]["command"]["parameters"]
                     self.assertIn(
-                        "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_trial",
+                        "tests.components.multi_reflection_tof.analysis.test_prepared_joint_trial",
                         mr["ChangedTestModules"])
                     integration = set()
                     for name, stage in stages.items():
@@ -1558,7 +1558,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                         self.assertIn("rf_multipole_domain_tests", stages)
                     if not path.endswith("frozen_python_package.ps1"):
                         self.assertIn(
-                            "tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source",
+                            "tests.components.multi_reflection_tof.analysis.test_measured_component_source",
                             mr["ChangedTestModules"])
                         self.assertIn("tests.assembly.accelerator_interface.test_accelerator_interface", integration)
 
@@ -1572,7 +1572,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     write_planned_request(REPO_ROOT, request, [path])
                     stages = {row["name"]: row for row in json.loads(
                         request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
-                    self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
+                    self.assertIn("ion_processor_static", stages)
                     common = common_stage(stages)["command"]["arguments"]
                     self.assertIn("tests/contracts/test_installed_scientific_core.py", common)
                     self.assertIn("tests/contracts/test_scientific_core_boundaries.py", common)
@@ -1650,7 +1650,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                                              project + "test_solver_diagnostics"})
                         self.assertTrue(expected <= selected, (path, selected))
                     else:
-                        self.assertIn("dual_pressure_rectilinear_ion_processor_static", stages)
+                        self.assertIn("ion_processor_static", stages)
                         args = stages["rf_multipole_domain_tests"]["command"]["arguments"]
                         self.assertIn("tests/components/rf_multipole_ion_optics/domain/test_exit_state_plot.py", args)
 
@@ -1679,7 +1679,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
     def test_changed_mixed_deleted_and_shared_inputs_preserve_original_core_contract(self) -> None:
         mr_test = f"{MR}/analysis/test_mirror_fixed_grid_voltage_correction.py"
         rf_test = f"{RF}/analysis/test_mass_filter_l1.py"
-        cases = [("mr_mixed", ["src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/unknown_partition_probe.py", mr_test]),
+        cases = [("mr_mixed", ["src/msplatform/components/multi_reflection_tof/unknown_partition_probe.py", mr_test]),
                  ("rf_mixed", ["src/msplatform/components/rf_multipole/unknown_partition_probe.ps1", rf_test]),
                  ("rf_gate", ["src/msplatform/workflows/resources/verify_project.ps1"]),
                  ("rf_deleted", [f"{RF}/analysis/test_deleted_partition_probe.py"]),
@@ -1705,7 +1705,7 @@ $results|ConvertTo-Json -Depth 20 -Compress
             expected_rf = {path.relative_to(REPO_ROOT).with_suffix('').as_posix().replace('/', '.')
                            for path in (REPO_ROOT / RF / 'analysis').rglob('test_*.py')}
             for name, stages in json.loads(result.stdout).items():
-                owner = 'parallel_mirror_dual_stripe_mr_tof_static' if name == 'mr_mixed' else 'rf_multipole_quadrupole_static'
+                owner = 'multi_reflection_tof_static' if name == 'mr_mixed' else 'rf_multipole_quadrupole_static'
                 selected = [stage for stage in stages if stage['name'].startswith(owner) and stage['selected']]
                 self.assertEqual(len(selected), 1, name)
                 parameters = selected[0]['command']['parameters']
@@ -1987,8 +1987,8 @@ Invoke-GateCatalogCommand -Command $command -RepoRoot $PWD.Path -PythonExe __PYT
 
     def test_integration_ip_provider_tests_keep_only_real_fixture_consumers(self) -> None:
         integration = ["tests/workflows/single_reflection/test_single_reflection_owner_recovery.py"]
-        ip = "tests/components/dual_pressure_rectilinear_ion_processor/"
-        production = "src/msplatform/components/dual_pressure_rectilinear_ion_processor/"
+        ip = "tests/components/ion_processor/"
+        production = "src/msplatform/components/ion_processor/"
         consumers = integration + [
             RF + "/analysis/test_comsol_owner_finalization.py",
             RF + "/analysis/test_owner_finalization_recovery.py",
@@ -2478,8 +2478,8 @@ $reports|ConvertTo-Json -Depth 100|Set-Content -LiteralPath (Join-Path $Root 'pl
                 str(REPO_ROOT.parent / "artifacts/common/host_resources.sqlite3"),
             )
             cases = (
-                (MR, "test_simion_event_analysis.py", "parallel_mirror_dual_stripe_mr_tof_static"),
-                (MR, "test_changed_gate_probe.py", "parallel_mirror_dual_stripe_mr_tof_static"),
+                (MR, "test_simion_event_analysis.py", "multi_reflection_tof_static"),
+                (MR, "test_changed_gate_probe.py", "multi_reflection_tof_static"),
                 (RF, "test_mass_filter_l1.py", "rf_multipole_quadrupole_static"),
                 (RF, "test_changed_gate_probe.py", "rf_multipole_quadrupole_static"),
             )
@@ -2542,7 +2542,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             shutil.copyfile(REPO_ROOT / "tools/repository/gate_unittest.py", root / "tools/repository/gate_unittest.py")
             # Check both actual project gates still consume and propagate a new test.
             for index, (prefix, stage) in enumerate((
-                (MR, "parallel_mirror_dual_stripe_mr_tof_static"),
+                (MR, "multi_reflection_tof_static"),
                 (RF, "rf_multipole_quadrupole_static"),
             )):
                 owner_script = "mr_verify.ps1" if prefix == MR else "verify_project.ps1"
@@ -2568,11 +2568,11 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                     (root / second).write_text(
                         "import unittest\nclass SecondProbe(unittest.TestCase):\n"
                         "    def test_second(self): self.assertTrue(True)\n", encoding="utf-8")
-                    unknown_source = "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/unknown_gate_fixture.py"
+                    unknown_source = "src/msplatform/components/multi_reflection_tof/unknown_gate_fixture.py"
                     (root / unknown_source).write_text("# Unmapped production authority.\n", encoding="utf-8")
                     # An explicitly changed Core module must still run once.
                     changed_paths += [second, f"{prefix}/analysis/test_prism_analytic.py",
-                                      unknown_source, "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md"]
+                                      unknown_source, "src/msplatform/components/multi_reflection_tof/docs/PROJECT.md"]
                 for fails in ((True, False) if prefix == MR else (True,)):
                     with self.subTest(actual_owner=prefix, mixed=prefix == MR, fails=fails):
                         (root / relative).write_text(
@@ -2609,7 +2609,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                             self.assertIn("Ran 6 tests", output)
 
     def test_scalar_adapter_and_freezers_augment_core_with_actual_consumers(self) -> None:
-        stage = "parallel_mirror_dual_stripe_mr_tof_static"
+        stage = "multi_reflection_tof_static"
         adapter = "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         lookup = "src/msplatform/backends/simion/resources.py"
         prepared = "src/msplatform/workflows/prepared_joint/trial.py"
@@ -2651,8 +2651,8 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             'src/msplatform/backends/simion/native_plans.py',
             'src/msplatform/backends/simion/resources/build_model_iob.lua',
             'src/msplatform/backends/simion/resources/native_drive.lua',
-            'src/msplatform/components/dual_pressure_rectilinear_ion_processor/timing.py',
-            'tests/contracts/test_support/ip_mr_lp60_requests.json',
+            'src/msplatform/components/ion_processor/timing.py',
+            'tests/contracts/test_support/ip_mr_current_requests.json',
             'tests/contracts/test_support/generic_scalar_owner_harness.py',
             'tests/contracts/test_neutral_ip_schedule_managed.py',
         ]
@@ -2750,7 +2750,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             paths=['src/msplatform/backends/simion/oa_compiler.py'])])[0]
         self.assertIn('tests/assembly/rf_oa_compiler/test_rf_oa_compiler.py', oa['Modules'])
         mr = self.selections(REPO_ROOT, [dict(
-            stage='parallel_mirror_dual_stripe_mr_tof_static', paths=[paths[0]])])[0]
+            stage='multi_reflection_tof_static', paths=[paths[0]])])[0]
         self.assertCountEqual(mr['Modules'], [
             MR + '/analysis/test_mr_compiler.py',
             MR + '/analysis/test_two_prism_simion_trial.py',
@@ -2760,7 +2760,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         script = (
             '. ' + powershell_literal(REPO_ROOT / 'tools/repository/gate_catalog_support.ps1') + '; '
             "$r=@(Read-GateCatalog -RepoRoot $PWD.Path|Where-Object stage -eq "
-            "'parallel_mirror_dual_stripe_mr_tof_static')[0]; "
+            "'multi_reflection_tof_static')[0]; "
             "if(-not(Get-ChangedRouteReason -Route $r -Paths @('" + paths[0] + "'))){throw 'missing MR shape route'}"
         )
         result = subprocess.run(['pwsh', '-NoProfile', '-Command', script], cwd=REPO_ROOT,
@@ -2787,7 +2787,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                  "src/msplatform/backends/comsol/assembly_geometry.py",
                  "src/msplatform/backends/comsol/geometry_execution.py",
                  "src/msplatform/backends/comsol/ip_prism.py",
-                 "src/msplatform/components/dual_pressure_rectilinear_ion_processor/convex_geometry.py",
+                 "src/msplatform/components/ion_processor/convex_geometry.py",
                  "src/msplatform/backends/comsol/matlab/assembly_geometry_stage.m"]
         selected = self.selections(REPO_ROOT, [dict(stage="machine_contracts", paths=[path]) for path in paths])
         for path, row in zip(paths, selected, strict=True):
@@ -2804,15 +2804,15 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
     def test_joint_geometry_changes_select_actual_consumers(self) -> None:
         common = "machine_contracts"
         integration = "instrument_assembly"
-        mr = "parallel_mirror_dual_stripe_mr_tof_static"
+        mr = "multi_reflection_tof_static"
         mr_test = MR + "/analysis/test_mr_compiler.py"
         cases = [
             dict(stage=common, paths=["src/msplatform/backends/simion/operations.py"]),
             dict(stage=common, paths=["src/msplatform/backends/simion/resources/iob_core.lua"]),
             dict(stage=common, paths=["tests/workflows/multipole_ip/test_ip_compiler.py"]),
-            dict(stage=common, paths=["tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py"]),
+            dict(stage=common, paths=["tests/components/dual_cone_tandem_quadrupole/test_dual_cone_iob.py"]),
             dict(stage=integration, paths=["src/msplatform/backends/simion/ip_compiler.py"]),
-            dict(stage=integration, paths=["src/msplatform/components/dual_pressure_rectilinear_ion_processor/provider.py"]),
+            dict(stage=integration, paths=["src/msplatform/components/ion_processor/provider.py"]),
             dict(stage=mr, paths=["src/msplatform/backends/simion/mr_compiler.py"]),
             dict(stage=mr, paths=[MR + "/analysis/fixtures/mr_legacy_analyzer.gem.txt"]),
             dict(stage=common, paths=["src/msplatform/gas/field.py"]),
@@ -2822,7 +2822,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             for module in ("test_joint_geometry_plan.py", "test_joint_geometry_iob.py"):
                 self.assertIn("tests/contracts/" + module, row["Modules"])
         self.assertIn("tests/contracts/test_joint_geometry_plan.py", selected[2]["Modules"])
-        self.assertIn("tests/components/dual_cone_tandem_quadrupole_ion_interface/test_dual_cone_iob.py", selected[3]["Modules"])
+        self.assertIn("tests/components/dual_cone_tandem_quadrupole/test_dual_cone_iob.py", selected[3]["Modules"])
         self.assertIn("tests/contracts/test_joint_geometry_iob.py", selected[3]["Modules"])
         for row in selected[4:6]:
             self.assertIn("tests/workflows/multipole_ip/test_ip_compiler.py", row["Modules"])
@@ -2854,9 +2854,9 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         script = (
             ". " + powershell_literal(REPO_ROOT / "tools/repository/gate_catalog_support.ps1") + "; "
             "$r=@(Read-GateCatalog -RepoRoot $PWD.Path|Where-Object stage -eq "
-            "'dual_pressure_rectilinear_ion_processor_static')[0]; "
+            "'ion_processor_static')[0]; "
             "foreach($p in @('src/msplatform/backends/simion/ip_assembly_geometry.py',"
-            "'src/msplatform/components/dual_pressure_rectilinear_ion_processor/assembly_interface.py')) "
+            "'src/msplatform/components/ion_processor/assembly_interface.py')) "
             "{if(-not (Get-ChangedRouteReason -Route $r -Paths @($p))){throw $p}}"
         )
         result = subprocess.run(["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,

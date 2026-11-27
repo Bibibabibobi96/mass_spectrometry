@@ -25,7 +25,7 @@ $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -ArtifactRoot $allArti
 $allArtifacts=[string]$pathContext.artifact_root
 $hostContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
-$project='parallel_mirror_dual_stripe_mr_tof'
+$project='multi_reflection_tof'
 $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $allArtifacts -OwnerKind component -OwnerId $project -Python $python
 $field=(Resolve-Path -LiteralPath $FieldRunPath).Path
 $assembly=(Resolve-Path -LiteralPath $AssemblyRunPath).Path

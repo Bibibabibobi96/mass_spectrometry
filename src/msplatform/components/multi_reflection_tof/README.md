@@ -1,0 +1,67 @@
+# 开放路径平行镜双条带 MR-TOF
+
+本项目研究伸长等时镜与形状化漂移条带的空间返回和时间响应。当前工程候选为关于z=0对称会聚的双镜、
+五次项偏置Stripe及保留实体的接地线性Stripe；此前平行镜双偏压方案保留为对照。
+本项目是与单反射 oa-TOF 平级的独立硬件设计线。候选实施与资格状态见PROJECT。
+
+旧 `projects/multi_reflection_tof/` 已退出活动源码树。本组件拥有几何、物理与科研配置；
+`msplatform.workflows.mr_design` 拥有研究执行算法，`msplatform.workflows.oa_mr` 和 `prepared_joint`
+继续拥有已迁移的跨器件工作流；原生资源分别归 SIMION/COMSOL backend。回归统一位于
+`tests/components/multi_reflection_tof/`，公开软件入口为
+`src/msplatform/workflows/resources/mr_verify.ps1`。不存在旧目录回退或第二 runner。
+
+返回[仓库导航](../../../../README.md)。
+
+## 阅读与操作入口
+
+先读[当前状态](docs/PROJECT.md)确认能力、证据和开放任务，再按实际工作选择：
+
+| 任务 | 入口 |
+|---|---|
+| 理解模型、符号、推导和验证范围 | [理论索引](docs/theory/index.md) |
+| 科学事件／轨迹与历史日志读取 | [结构化科学记录](docs/PROJECT.md#结构化科学记录) |
+| 构建、检查或运行 SIMION | [SIMION 实施说明](docs/SIMION.md) |
+| 准备、执行或收尾 COMSOL corridor 改压场 | [COMSOL corridor 操作边界](docs/PROJECT.md#comsol-corridor-操作边界) |
+| 启动或恢复原生候选campaign | [显式装配输入与恢复身份](docs/PROJECT.md#oamr-运行组装合同) |
+| 维护staged工作点控制与恢复 | [控制决策职责](docs/PROJECT.md#工作点控制决策职责) |
+| 选择OA／IP并准备或执行跨器件链 | [统一集成入口](../../../../docs/ASSEMBLY.md)、[组装当前边界](docs/PROJECT.md#统一组装迁移任务) |
+| 处理原始装配、曲线或机械证据 | [CAD 实施说明](docs/CAD.md) |
+| 查项目身份、旧资产位置、Candidate 成熟度和机器登记的 baseline | [项目描述符](config/project.json) |
+| 查活动几何与 CAD 变换 | [候选几何合同](../../../../src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json)、[坐标合同](config/cad_to_theory_frame.json) |
+
+COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说明为准，不从目录名或理论计划推定。
+实际执行的前提、输入、资源限制与产物检查由对应实施说明提供。
+
+## 项目边界
+
+本项目自2026-10-12起新建SIMION场的各轴网格间距必须为0.01 mm的正整数倍，
+最小间距0.01 mm，不再向下细分。该规则适用于全局场、局域场及导入场的规则采样；
+各轴可采用不同间距。已有冻结资产及正在执行的旧网格试验保持原输入作为历史证据，
+不得静默取整、改写旧结果或因此删除仍有消费者的PA；后续新网格方案按此规则重新规划。
+
+原 Astral 的“收敛镜 + 单 Stripe/Ion Foil”为当前会聚候选提供理论依据；
+现候选保留额外接地线性Stripe实体，不能视为原论文几何或已复现论文性能。
+二区／三区正交加速器的局部理论、几何与复用实现由独立
+[正交加速器项目](../orthogonal_accelerator/README.md)拥有。MR保留分析器几何、棱镜、镜组、系统布局约束、
+匹配与验收；器件实例组装和跨项目飞行从[统一集成入口](../../../../docs/ASSEMBLY.md)进入。
+组件请求与公共release由实际工作流冻结，不复制另一仪器的PA或Formal/integration结果作为自身资格。
+
+知识权威与单向几何链见[仓库架构](../../../../docs/REPOSITORY_ARCHITECTURE.md)，原始 CAD 只提供已审计
+机械约束；归档、运行和发布见[生命周期](../../../../docs/LIFECYCLE.md)。新运行使用当前项目身份，
+历史 `mr_tof` 资产按描述符保留原记录身份。
+
+项目描述符只登记已经稳定的机器能力和合同路径；当前物理状态、运行证据与未关闭任务仍以
+[PROJECT](docs/PROJECT.md)为准。尚未形成单一正式执行链的试验 runner 不会为了目录可发现性而全部登记成
+execution profile。软件验证从仓库根使用`tools/repository/verify.ps1 -Scope Changed`，指定本项目完整软件范围时
+使用`tools/repository/verify.ps1 -Scope Owner -Owner multi_reflection_tof`；范围与失败策略见
+[统一验证入口](../../../../docs/REPOSITORY_OPERATIONS.md#门禁编排)，不启动商业求解器。
+[`src/msplatform/workflows/resources/mr_verify.ps1`](../../workflows/resources/mr_verify.ps1)承接目录选出的项目职责：内部`Core`保留固定合同并合并所选模块，
+`Static`承接完整软件集合或显式分片。摘要只证明实际执行范围，不赋予求解或科学资格。
+
+The project software gate selects this checkout's `src` and repository root for its Python child,
+including when the Python 3.11 executable belongs to another environment. It restores the caller's
+`PYTHONPATH` after success or failure; an unrelated editable installation cannot replace selected resources.
+
+## 历史补充索引
+
+[历史索引](../../../../docs/history/projects/parallel_mirror_dual_stripe_mr_tof/README.md)集中列出已冻结实验、迁移和旧方案；需要追溯证据时按需进入。

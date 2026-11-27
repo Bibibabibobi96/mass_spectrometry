@@ -1056,8 +1056,8 @@ M2/M3按workflow闭合后可分别进入M4，不等待无关物理优化。当�
 其他工况不自动获得资格。公共机制的提升仍须满足实际复用条件，不将MR专属几何调整、匹配或工作点闭合整体搬入common。
 
 参与方任务入口：[OA](../src/msplatform/components/orthogonal_accelerator/docs/PROJECT.md#统一组装迁移任务)、
-[IP](../src/msplatform/components/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md#统一组装迁移任务)、
-[MR](../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#统一组装迁移任务)、
+[IP](../src/msplatform/components/ion_processor/docs/PROJECT.md#统一组装迁移任务)、
+[MR](../src/msplatform/components/multi_reflection_tof/docs/PROJECT.md#统一组装迁移任务)、
 [单反射TOF](../src/msplatform/components/single_reflection_oa_tof/docs/PROJECT.md#统一组装迁移任务)、
 [直属集成](INTEGRATION.md)。
 真实多极杆提供方由[多极杆项目](../src/msplatform/components/rf_multipole/README.md)按四／六／八极结构变体

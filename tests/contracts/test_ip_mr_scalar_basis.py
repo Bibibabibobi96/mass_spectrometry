@@ -17,7 +17,7 @@ class IpMrScalarBasisTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         fixtures.RfIpMrModelTests.setUpClass()
-        fixture=json.loads((fixtures.ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((fixtures.ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         parts={name:resolve_component(request) for name,request in fixture['component_requests'].items()}
         rf_request=json.loads(files('msplatform').joinpath('examples/rf_oatof_functional_v1.json').read_text(encoding='utf8'))['component_requests']['multipole']
         cls.cases=[]

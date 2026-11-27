@@ -73,8 +73,8 @@ $packageRoot = (Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Pat
 $executionResources = Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'run_artifact_support.ps1')
 . (Join-Path $packageRoot 'backends/simion/resources/native_corridor_runtime_support.ps1')
-$project = 'parallel_mirror_dual_stripe_mr_tof'
-$projectRoot = Join-Path $packageRoot 'components/parallel_mirror_dual_stripe_mr_tof'
+$project = 'multi_reflection_tof'
+$projectRoot = Join-Path $packageRoot 'components/multi_reflection_tof'
 $pathContext = Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot -Python $python
 $artifactWorkspaceRoot = [string]$pathContext.artifact_root
 $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_path=[string]$pathContext.host_resource_state_path;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
@@ -1918,7 +1918,7 @@ from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepar
 from msplatform.backends.comsol.static_field_binding import load_binding,load_native_response_basis,native_response_operator
 a=load_prepared_centroid_trial(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]))
 b=load_binding(Path(sys.argv[4]))
-assert b['accelerator_provider']=='dual_pressure_rectilinear_ion_processor' and len(b['refinement_windows'])==4,'Prepared field must retain the five-layer IP operator'
+assert b['accelerator_provider']=='ion_processor' and len(b['refinement_windows'])==4,'Prepared field must retain the five-layer IP operator'
 assert native_response_operator(b,b['authority'])==a['frozen_problem']['static_field_problem'],'Prepared source/field operator differs'
 if sys.argv[6]=='refine':
     assert not b.get('consumer_view'),'Direct Refine requires the full sealed solve source'

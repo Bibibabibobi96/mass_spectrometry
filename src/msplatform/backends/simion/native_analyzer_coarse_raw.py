@@ -1,6 +1,6 @@
 """Identity for the symmetric full-domain 1 mm analyzer raw PA."""
 from __future__ import annotations
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
+from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 from importlib.resources import files
@@ -14,7 +14,7 @@ from msplatform.backends.simion.pa_family_cache import canonical_pa_family_cache
 from msplatform.backends.simion.native_system_geometry import (
     build_analyzer_gem,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
 
 
 def derive(contract_path: Path, simion_executable: Path, simion_release: str, *, accelerator_geometry_authority) -> tuple[dict[str, Any], str]:

@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "project_id": "multi_reflection_tof",
+  "family_id": "tof_mass_analyzers",
+  "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
+  "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
+  "lifecycle_status": "candidate",
+  "toolchains": [
+    "python",
+    "simion",
+    "solidworks"
+  ],
+  "contracts": {
+    "baseline": "src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json",
+    "resolved": null,
+    "analysis": null,
+    "interface": null,
+    "execution": "config/execution_profiles.json",
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "multiple_reflection_mass_analysis",
+      "function": "mass_analysis",
+      "status": "candidate",
+      "modes": [
+        "native_condition"
+      ],
+      "metrics": [
+        "detection_fraction",
+        "target_oscillation_fraction",
+        "time_of_flight",
+        "mass_resolving_power",
+        "spatial_return_residual"
+      ],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "Resolved geometry is deterministically derived and frozen per run; no standalone checked-in resolved JSON is promoted as a second authority",
+    "The native corridor PA family still requires real-build equivalence, IOB priority and end-to-end flight qualification",
+    "No independent COMSOL field or trajectory model currently qualifies the three-dimensional SIMION candidate",
+    "Manufacturing tolerances, complete source distributions, space charge and Formal performance acceptance remain open"
+  ],
+  "retired_project_descriptors": [
+    {
+      "project_id": "parallel_mirror_dual_stripe_mr_tof",
+      "path": "docs/history/projects/multi_reflection_tof/retired_projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
+      "bytes": 2743,
+      "sha256": "166a9c2da20c85cff23a2088258cf8a875e558fb16933c7821c76415e78ca5f7",
+      "source_commit": "00c6d23cc1ec7a1eb4d6f4d4e081f0136b8bbde4",
+      "artifact_access": "read_only",
+      "new_runs_allowed": false,
+      "verification_identity": "recorded_project_id",
+      "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+    }
+  ]
+}

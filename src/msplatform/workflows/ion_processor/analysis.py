@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.backends.simion.ip_handoff import frozen_release_states
-from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import (
+from msplatform.components.ion_processor.coordinates import (
     transform_from_config, to_project_position, to_project_vector, to_local_position, to_local_vector,
 )
-from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+from msplatform.components.ion_processor.timing import derive_native_timing
 from msplatform.components.rf_multipole.event_table import PARTICLE_STATE_COLUMNS, ENUMS, validate_rf_event_table
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.workflows.ion_processor import preparation

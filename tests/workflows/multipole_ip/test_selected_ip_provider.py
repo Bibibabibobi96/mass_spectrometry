@@ -8,8 +8,8 @@ from pathlib import Path
 
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component
-from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
+from msplatform.components.ion_processor.assembly_interface import resolve_assembly_interface
+from msplatform.components.ion_processor.native_geometry import select_legacy_physical_design
 from msplatform.contracts.machine_contracts import ContractError
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -17,9 +17,9 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class SelectedIpProviderTests(unittest.TestCase):
     def setUp(self):
-        self.baseline = json.loads((ROOT / "src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/baseline.json").read_text(encoding="utf-8"))
+        self.baseline = json.loads((ROOT / "src/msplatform/components/ion_processor/config/baseline.json").read_text(encoding="utf-8"))
         self.baseline["physical_design_selection"] = {"native_grid_mm": 0.1, "native_aux_segments": 60}
-        self.request = {"provider_id": "dual_pressure_rectilinear_ion_processor", "design": {"baseline": self.baseline}}
+        self.request = {"provider_id": "ion_processor", "design": {"baseline": self.baseline}}
 
     def test_selected_complete_authority_and_legacy_ports(self):
         before = copy.deepcopy(self.request)
@@ -55,7 +55,7 @@ class SelectedIpProviderTests(unittest.TestCase):
         rf_instance, ip_instance = recipe["instances"]
         exit_z = rf.assembly_interface["ports"]["mechanical_exit"]["center_mm"][2]
         rf_instance["transform"]["translation_mm"] = [-exit_z, 0, 0]
-        ip_instance.update(instance_id="ion_processor", project_id="dual_pressure_rectilinear_ion_processor")
+        ip_instance.update(instance_id="ion_processor", project_id="ion_processor")
         ip_instance["transform"]["from_frame_id"] = ip.assembly_interface["local_frame_id"]
         recipe["connections"] = [dict(connection_id="mp_ip", upstream=dict(instance_id="multipole", port_id="mechanical_exit"),
                                       downstream=dict(instance_id="ion_processor", port_id="guide_inlet"),

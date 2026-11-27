@@ -15,7 +15,7 @@ if(-not(Test-Path -LiteralPath $planPath -PathType Leaf)){throw 'GUI replay plan
 $configPath=Join-Path $run 'run_config.json'
 if(-not(Test-Path -LiteralPath $configPath -PathType Leaf)){throw 'GUI replay run config is missing'}
 $config=Get-Content -LiteralPath $configPath -Raw -Encoding UTF8|ConvertFrom-Json
-if($config.project-ne'dual_pressure_rectilinear_ion_processor'-or$config.mode-ne'native_gui_replay'){
+if($config.project-ne'ion_processor'-or$config.mode-ne'native_gui_replay'){
  throw 'Finalize requires an independently prepared native_gui_replay run'
 }
 $plan=Get-Content -LiteralPath $planPath -Raw -Encoding UTF8|ConvertFrom-Json
@@ -58,11 +58,11 @@ try {
  $outputs=@(Get-ChildItem -LiteralPath $run -Recurse -File|Where-Object{$_.Name-notin@('run_manifest.json','run_config.json')-and-not$_.Name.StartsWith('.')}|ForEach-Object{$_.FullName})
  $status=$(if($accepted){'success'}else{'failed'})
  Write-RunManifest -Python $PythonExe -RepoRoot $repoRoot -RunConfig $configPath -Status $status -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
- & $PythonExe -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $run 'run_manifest.json') --require-status $status --require-project dual_pressure_rectilinear_ion_processor --require-local-run-config
+ & $PythonExe -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $run 'run_manifest.json') --require-status $status --require-project ion_processor --require-local-run-config
  if($LASTEXITCODE-ne0){throw 'Final GUI replay manifest verification failed'}
  Exit-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -Session $capacity|Out-Null
  $capacity=$null
- & $PythonExe -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root (Join-Path $workspaceRoot 'artifacts') --run-config $configPath --owner dual_pressure_rectilinear_ion_processor --confirm-writing-stopped --retention-reason 'Retain independent GUI replay field references, workbench and measured comparison'
+ & $PythonExe -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root (Join-Path $workspaceRoot 'artifacts') --run-config $configPath --owner ion_processor --confirm-writing-stopped --retention-reason 'Retain independent GUI replay field references, workbench and measured comparison'
  if($LASTEXITCODE-ne0){throw 'Final GUI replay payload sealing failed'}
  $published=$true
  Write-Output "GUI_REPLAY_FINALIZED STATUS=$(if($accepted){'success'}else{'failed'}) MANUAL_GUI_CONFIRMED=$([bool]$ManualGuiConfirmed) RUN=$run"

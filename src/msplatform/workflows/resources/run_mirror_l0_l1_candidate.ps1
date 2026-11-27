@@ -10,7 +10,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$projectId = 'parallel_mirror_dual_stripe_mr_tof'
+$projectId = 'multi_reflection_tof'
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $repoRoot = $workspaceRoot
 $artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
@@ -22,7 +22,7 @@ $packageRoot = (Resolve-Path -LiteralPath $packageRootText).Path
 $contractInput = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
-  Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+  Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json'
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__mirror-l0-l1-family'
@@ -76,15 +76,15 @@ try {
     'src\msplatform\components\orthogonal_accelerator\accelerator_time_focus.py',
     'src\msplatform\components\orthogonal_accelerator\two_zone_geometry.py',
     'src\msplatform\components\orthogonal_accelerator\two_zone_theory.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_geometry_parameters.py',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\mirror_l0.py',
+    'src\msplatform\components\multi_reflection_tof\mirror_geometry_parameters.py',
+    'src\msplatform\components\multi_reflection_tof\mirror_l0.py',
     'src\msplatform\workflows\mr_design\__init__.py',
     'src\msplatform\workflows\mr_design\mirror_l0_hardware_candidate.py',
     'src\msplatform\workflows\mr_design\mirror_l0_l1_hardware_candidate.py',
     'src\msplatform\workflows\mr_design\mirror_l0_l1_run_summary.py',
     'src\msplatform\workflows\mr_design\mirror_l1.py',
     'src\msplatform\workflows\resources\run_mirror_l0_l1_candidate.ps1',
-    'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\candidate_contract.py'
+    'src\msplatform\components\multi_reflection_tof\candidate_contract.py'
   )
   $sourcePaths = @($sourceRelativePaths | ForEach-Object { Join-Path $packageRoot ($_ -replace '^src\\msplatform\\', '') })
   $inputCopyBytes = [int64](Get-Item -LiteralPath $contractInput).Length

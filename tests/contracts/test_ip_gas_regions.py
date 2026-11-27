@@ -10,8 +10,8 @@ import unittest
 from tests.contracts.test_simion_prepared_model import LUA
 from msplatform.backends.simion.gas_runtime import compile_gas_runtime
 from msplatform.backends.simion.resources import native_resource_path
-from msplatform.components.dual_pressure_rectilinear_ion_processor.gas_regions import build_gas_field_spec
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.components.ion_processor.gas_regions import build_gas_field_spec
+from msplatform.components.ion_processor.native_geometry import native_projection
 from msplatform.contracts.gas import BoxDomain, GasState
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.gas.field import prepare_gas_field, sample_gas
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def inputs():
-    directory = ROOT / "src/msplatform/components/dual_pressure_rectilinear_ion_processor/config"
+    directory = ROOT / "src/msplatform/components/ion_processor/config"
     return tuple(json.loads((directory / (name + ".json")).read_text(encoding="utf-8")) for name in ("baseline", "numerics"))
 
 

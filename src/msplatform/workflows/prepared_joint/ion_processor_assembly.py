@@ -32,7 +32,7 @@ def transform_shape(shape: dict, rotation: list, translation: list) -> dict:
     if any(sorted(abs(v) for v in row) != [0, 0, 1] for row in rotation):
         raise ValueError("assembly CSG requires axis permutation rotation")
     if shape["shape"] == "convex_polyhedron":
-        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        from msplatform.components.ion_processor.convex_geometry import shape_bounds
 
         shape_bounds(shape)
         return {"shape": "convex_polyhedron",

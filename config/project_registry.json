@@ -7,20 +7,20 @@
       "sha256": "D528FF6FB6481620D85D914E1504BE072F94EBC60F52B4DE4C7B388E419A3423"
     },
     {
-      "descriptor": "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config/project.json",
-      "sha256": "B9F52F6C658B01DF6226F608278FBCA67042D541BC67EB99011BF33DA6FF3256"
+      "descriptor": "src/msplatform/components/dual_cone_tandem_quadrupole/config/project.json",
+      "sha256": "4262501543CB86D39B1ED82AE79DB945E357CF197FF1B74F15BBA19301E3F712"
     },
     {
-      "descriptor": "src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/project.json",
-      "sha256": "58781C4579C73024AB81F4E6DF2097F3E812026B4D2B5AC0FC502156C397DEF0"
+      "descriptor": "src/msplatform/components/ion_processor/config/project.json",
+      "sha256": "135CCD7CFA35638DF6E77F88785A360838ED46C83ABDEF80FE1A0B0AC537AA72"
+    },
+    {
+      "descriptor": "src/msplatform/components/multi_reflection_tof/config/project.json",
+      "sha256": "D09405691242F52417D6DB837FCBC3584763E525B500F1BDB6A957A754E13BB6"
     },
     {
       "descriptor": "src/msplatform/components/orthogonal_accelerator/config/project.json",
       "sha256": "6319CB332787DBDDE0BCF1A0711FA858E43990A7F2B2A3AA0302273958B306B8"
-    },
-    {
-      "descriptor": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/project.json",
-      "sha256": "166A9C2DA20C85CFF23A2088258CF8A875E558FB16933C7821C76415E78CA5F7"
     },
     {
       "descriptor": "src/msplatform/components/rf_multipole/config/project.json",
@@ -104,7 +104,7 @@
     },
     {
       "schema_version": 1,
-      "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+      "project_id": "dual_cone_tandem_quadrupole",
       "family_id": "atmospheric_pressure_ion_interfaces",
       "display_name": "双锥串联四极杆离子传输接口",
       "purpose": "以COMSOL气流场到SIMION气体辅助轨迹的冻结依赖链验证双锥及两级RF四极导引接口",
@@ -171,11 +171,24 @@
         "The registered COMSOL-to-SIMION handoff and uniform-400 Pa control produce only unqualified qualitative Prototype evidence",
         "The current ion source, 570 kHz and 300 V peak-to-ground RF point, and official SIMION SDS collision closure are explicit but not experimentally qualified",
         "CAD, pump type and geometry, intermediate pressure measurements, Candidate evidence and Formal evidence are unavailable"
+      ],
+      "retired_project_descriptors": [
+        {
+          "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+          "path": "docs/history/projects/dual_cone_tandem_quadrupole/retired_projects/dual_cone_tandem_quadrupole_ion_interface/config/project.json",
+          "bytes": 2384,
+          "sha256": "b9f52f6c658b01df6226f608278fbca67042d541bc67eb99011bf33da6ff3256",
+          "source_commit": "00c6d23cc1ec7a1eb4d6f4d4e081f0136b8bbde4",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
       ]
     },
     {
       "schema_version": 1,
-      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "project_id": "ion_processor",
       "family_id": "rf_ion_accumulation_and_pulsed_extraction",
       "display_name": "双压力区矩形射频离子处理器",
       "purpose": "由简化实体电极与原生SIMION求场复现多极杆输运、捕获、碰撞冷却、聚集、整体抬升和正交引出",
@@ -225,6 +238,83 @@
         "COMSOL projection remains unimplemented; measured upstream multipole admission and downstream MR state/clock handoff exist, but their original performance gates did not pass",
         "Analytical prescribed-field workflow is retired; the active functional workflow uses native solid-electrode fields",
         "Public execution planning covers only the existing 524 Da/+1 functional source and fixed configuration; custom, exploration and upstream-injected workflows retain their project-specific entrypoints"
+      ],
+      "retired_project_descriptors": [
+        {
+          "project_id": "dual_pressure_rectilinear_ion_processor",
+          "path": "docs/history/projects/ion_processor/retired_projects/dual_pressure_rectilinear_ion_processor/config/project.json",
+          "bytes": 2308,
+          "sha256": "58781c4579c73024ab81f4e6df2097f3e812026b4d2b5ac0fc502156c397def0",
+          "source_commit": "00c6d23cc1ec7a1eb4d6f4d4e081f0136b8bbde4",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "project_id": "multi_reflection_tof",
+      "family_id": "tof_mass_analyzers",
+      "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
+      "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
+      "lifecycle_status": "candidate",
+      "toolchains": [
+        "python",
+        "simion",
+        "solidworks"
+      ],
+      "contracts": {
+        "baseline": "src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json",
+        "resolved": null,
+        "analysis": null,
+        "interface": null,
+        "execution": "config/execution_profiles.json",
+        "design_variables": null,
+        "optimization_envelope": null
+      },
+      "capabilities": [
+        {
+          "capability_id": "multiple_reflection_mass_analysis",
+          "function": "mass_analysis",
+          "status": "candidate",
+          "modes": [
+            "native_condition"
+          ],
+          "metrics": [
+            "detection_fraction",
+            "target_oscillation_fraction",
+            "time_of_flight",
+            "mass_resolving_power",
+            "spatial_return_residual"
+          ],
+          "design_variables": []
+        }
+      ],
+      "formal_assets": {
+        "status": "none",
+        "types": [],
+        "identity_contract": null
+      },
+      "known_gaps": [
+        "Resolved geometry is deterministically derived and frozen per run; no standalone checked-in resolved JSON is promoted as a second authority",
+        "The native corridor PA family still requires real-build equivalence, IOB priority and end-to-end flight qualification",
+        "No independent COMSOL field or trajectory model currently qualifies the three-dimensional SIMION candidate",
+        "Manufacturing tolerances, complete source distributions, space charge and Formal performance acceptance remain open"
+      ],
+      "retired_project_descriptors": [
+        {
+          "project_id": "parallel_mirror_dual_stripe_mr_tof",
+          "path": "docs/history/projects/multi_reflection_tof/retired_projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
+          "bytes": 2743,
+          "sha256": "166a9c2da20c85cff23a2088258cf8a875e558fb16933c7821c76415e78ca5f7",
+          "source_commit": "00c6d23cc1ec7a1eb4d6f4d4e081f0136b8bbde4",
+          "artifact_access": "read_only",
+          "new_runs_allowed": false,
+          "verification_identity": "recorded_project_id",
+          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+        }
       ]
     },
     {
@@ -301,76 +391,6 @@
         "No standalone hardware baseline or independent component CAD/field/trajectory qualification has been published",
         "Two-zone and three-zone structural variants require separate geometry and validation identities",
         "Instrument transforms and accelerator-reflectron or MR-TOF coupling remain consumer responsibilities"
-      ]
-    },
-    {
-      "schema_version": 1,
-      "project_id": "parallel_mirror_dual_stripe_mr_tof",
-      "legacy_identities": [
-        {
-          "mapping_id": "mr_tof_rename_20260728",
-          "project_id": "mr_tof",
-          "retired_at_utc": "2026-07-28T08:19:11Z",
-          "migration_kind": "administrative_rename_only",
-          "artifact_location": {
-            "schema_version": 1,
-            "state": "archived_verified",
-            "archive_id": "20260801_130002__migration-snapshot__repo__mr-tof",
-            "archive_root": "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/archive/20260801_130002__migration-snapshot__repo__mr-tof/legacy-project-root",
-            "migration_manifest": "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/archive/20260801_130002__migration-snapshot__repo__mr-tof/identity_migration_manifest.json"
-          },
-          "artifact_access": "read_only",
-          "new_runs_allowed": false,
-          "verification_identity": "recorded_project_id",
-          "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
-        }
-      ],
-      "family_id": "tof_mass_analyzers",
-      "display_name": "开放路径平行镜双条带多次反射飞行时间质量分析器",
-      "purpose": "平行等时镜与两套独立偏压、独立形状漂移条带构成的开放路径MR-TOF质量分析",
-      "lifecycle_status": "candidate",
-      "toolchains": [
-        "python",
-        "simion",
-        "solidworks"
-      ],
-      "contracts": {
-        "baseline": "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json",
-        "resolved": null,
-        "analysis": null,
-        "interface": null,
-        "execution": "config/execution_profiles.json",
-        "design_variables": null,
-        "optimization_envelope": null
-      },
-      "capabilities": [
-        {
-          "capability_id": "multiple_reflection_mass_analysis",
-          "function": "mass_analysis",
-          "status": "candidate",
-          "modes": [
-            "native_condition"
-          ],
-          "metrics": [
-            "detection_fraction",
-            "target_oscillation_fraction",
-            "time_of_flight",
-            "mass_resolving_power",
-            "spatial_return_residual"
-          ],
-          "design_variables": []
-        }
-      ],
-      "formal_assets": {
-        "status": "none",
-        "types": [],
-        "identity_contract": null
-      },
-      "known_gaps": [
-        "Resolved geometry is deterministically derived and frozen per run; no standalone checked-in resolved JSON is promoted as a second authority",
-        "The native corridor PA family still requires real-build equivalence, IOB priority and end-to-end flight qualification",
-        "No independent COMSOL field or trajectory model currently qualifies the three-dimensional SIMION candidate",
-        "Manufacturing tolerances, complete source distributions, space charge and Formal performance acceptance remain open"
       ]
     },
     {

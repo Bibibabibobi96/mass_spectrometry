@@ -15,11 +15,11 @@ from msplatform.workflows.prepared_joint.downstream_workpoint import (
     assert_trial_matches_jacobian,
     resolve_operating_cache_binding,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 
-PROJECT = "parallel_mirror_dual_stripe_mr_tof"
+PROJECT = "multi_reflection_tof"
 CHILD_MODE = "oa_mr"
 PARENT_MODE = "downstream_fixed_grid_workpoint_iteration"
 

@@ -48,7 +48,7 @@
       },
       {
         "instance_id": "ion_processor",
-        "project_id": "dual_pressure_rectilinear_ion_processor",
+        "project_id": "ion_processor",
         "transform": {
           "schema_version": 1,
           "role": "rigid_transform",
@@ -80,7 +80,7 @@
       },
       {
         "instance_id": "mrtof",
-        "project_id": "parallel_mirror_dual_stripe_mr_tof",
+        "project_id": "multi_reflection_tof",
         "transform": {
           "schema_version": 1,
           "role": "rigid_transform",
@@ -179,7 +179,7 @@
     "ion_processor": {
       "schema_version": 1,
       "role": "component_geometry_interface",
-      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "project_id": "ion_processor",
       "variant_id": "native_ion_processor",
       "geometry_profile_id": null,
       "local_frame_id": "dual_pressure_ion_processor_local_v1",
@@ -314,7 +314,7 @@
     "mrtof": {
       "schema_version": 1,
       "role": "component_geometry_interface",
-      "project_id": "parallel_mirror_dual_stripe_mr_tof",
+      "project_id": "multi_reflection_tof",
       "variant_id": "complete_mr_analyzer",
       "geometry_profile_id": null,
       "local_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",

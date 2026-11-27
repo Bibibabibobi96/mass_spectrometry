@@ -16,7 +16,7 @@ import math
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 

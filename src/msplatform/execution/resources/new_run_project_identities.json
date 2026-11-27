@@ -3,6 +3,36 @@
   "role": "new_run_project_identity_registry",
   "identities": [
     {
+      "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+      "artifact_owner_project_id": "dual_cone_tandem_quadrupole_ion_interface",
+      "policy": {
+        "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+        "path": "docs/history/projects/dual_cone_tandem_quadrupole/retired_projects/dual_cone_tandem_quadrupole_ion_interface/config/project.json",
+        "bytes": 2384,
+        "sha256": "b9f52f6c658b01df6226f608278fbca67042d541bc67eb99011bf33da6ff3256",
+        "source_commit": "00c6d23cc1ec7a1eb4d6f4d4e081f0136b8bbde4",
+        "artifact_access": "read_only",
+        "new_runs_allowed": false,
+        "verification_identity": "recorded_project_id",
+        "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+      }
+    },
+    {
+      "project_id": "dual_pressure_rectilinear_ion_processor",
+      "artifact_owner_project_id": "dual_pressure_rectilinear_ion_processor",
+      "policy": {
+        "project_id": "dual_pressure_rectilinear_ion_processor",
+        "path": "docs/history/projects/ion_processor/retired_projects/dual_pressure_rectilinear_ion_processor/config/project.json",
+        "bytes": 2308,
+        "sha256": "58781c4579c73024ab81f4e6df2097f3e812026b4d2b5ac0fc502156c397def0",
+        "source_commit": "00c6d23cc1ec7a1eb4d6f4d4e081f0136b8bbde4",
+        "artifact_access": "read_only",
+        "new_runs_allowed": false,
+        "verification_identity": "recorded_project_id",
+        "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+      }
+    },
+    {
       "project_id": "electron_impact_ion_source",
       "artifact_owner_project_id": "apertured_tube_electron_impact_ion_source",
       "policy": {
@@ -59,6 +89,21 @@
           "archive_root": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root",
           "migration_manifest": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/archive/20260801_130003__migration-snapshot__repo__oa-tof/identity_migration_manifest.json"
         },
+        "artifact_access": "read_only",
+        "new_runs_allowed": false,
+        "verification_identity": "recorded_project_id",
+        "claim_policy": "preserve_original_status_and_claim_limits_no_promotion"
+      }
+    },
+    {
+      "project_id": "parallel_mirror_dual_stripe_mr_tof",
+      "artifact_owner_project_id": "parallel_mirror_dual_stripe_mr_tof",
+      "policy": {
+        "project_id": "parallel_mirror_dual_stripe_mr_tof",
+        "path": "docs/history/projects/multi_reflection_tof/retired_projects/parallel_mirror_dual_stripe_mr_tof/config/project.json",
+        "bytes": 2743,
+        "sha256": "166a9c2da20c85cff23a2088258cf8a875e558fb16933c7821c76415e78ca5f7",
+        "source_commit": "00c6d23cc1ec7a1eb4d6f4d4e081f0136b8bbde4",
         "artifact_access": "read_only",
         "new_runs_allowed": false,
         "verification_identity": "recorded_project_id",

@@ -8,10 +8,10 @@ from typing import Any
 
 from msplatform.backends.comsol.static_field_binding import load_binding, native_response_operator
 from msplatform.backends.simion.resources import structural_seed_path
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority, PS_GROUPS
+from msplatform.components.multi_reflection_tof.candidate_voltage import candidate_authority, PS_GROUPS
 
 # Existing binding protocol provider identifier (see prepare_accelerator_interface).
-ION_PROCESSOR = "dual_pressure_rectilinear_ion_processor"
+ION_PROCESSOR = "ion_processor"
 
 
 def collision_workbench_layout(binding: dict[str, Any]) -> dict[str, Any]:
@@ -26,7 +26,7 @@ def collision_workbench_layout(binding: dict[str, Any]) -> dict[str, Any]:
     if [item["role"] for item in binding["instances"]] != roles:
         raise ValueError("IP collision instances differ from the verified four/five-role topology")
     priority = dict(schema_version=1, role="mrtof_native_corridor_iob_priority_contract",
-        accelerator_provider="dual_pressure_rectilinear_ion_processor",
+        accelerator_provider="ion_processor",
         instances=[dict(role=role, priority_number=index) for index, role in enumerate(roles, 1)])
     if overlay is not None:
         priority["collision_overlay"] = dict(overlay, pa_path=binding["instances"][4]["pa_path"])

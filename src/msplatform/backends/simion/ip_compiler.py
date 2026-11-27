@@ -15,7 +15,7 @@ from msplatform.backends.simion.ip_assembly_geometry import render_selected_ip_b
 from msplatform.backends.simion.numerics import normalize_cell_mm_xyz
 from msplatform.backends.simion.rf_electrode_mapping import build_simion_electrode_map
 from msplatform.backends.simion.rf_geometry import render_physical_gem
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import contains_shape, convex_planes, shape_bounds
+from msplatform.components.ion_processor.convex_geometry import contains_shape, convex_planes, shape_bounds
 from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
 from msplatform.contracts.rigid_transform import RigidTransform
 
@@ -129,7 +129,7 @@ def compile_ip_assembly_geometry(assembly: Assembly, *, numerics: Mapping[str, A
     plan, components, sources = fresh.composition_plan, fresh.components_resolved, fresh.components_source
     names = plan["scope"]["instance_ids"]
     rf = [n for n in names if plan["components"][n]["project_id"] == "rf_multipole_ion_optics"]
-    ip = [n for n in names if plan["components"][n]["project_id"] == "dual_pressure_rectilinear_ion_processor"]
+    ip = [n for n in names if plan["components"][n]["project_id"] == "ion_processor"]
     if len(names) != 2 or len(rf) != 1 or len(ip) != 1 or set(names) != set(components):
         raise ValueError("IP geometry requires exactly one complete RF and one IP")
     rf, ip = rf[0], ip[0]

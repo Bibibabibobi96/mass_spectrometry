@@ -67,7 +67,7 @@ for index, role in ipairs(expected_roles) do
 end
 local operating = assert(loadfile(native_path(operating_path)), 'operating point sidecar missing')()
 if measured_mode then
-  assert(operating.accelerator_provider == 'dual_pressure_rectilinear_ion_processor'
+  assert(operating.accelerator_provider == 'ion_processor'
     and priority.accelerator_provider == operating.accelerator_provider
     and operating.field_assembly_verified == true and operating.measured_source_matches_workpoint == true,
     'measured workbench requires verified new fields and matching source')

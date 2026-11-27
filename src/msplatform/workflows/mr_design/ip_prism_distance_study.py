@@ -389,7 +389,7 @@ def _contour_geometry_and_voltage(case: dict, registration: dict, geometry: dict
         if file_record(inputs / source_relative)["sha256"] != file_record(installed_resource(current_relative))["sha256"]:
             raise ValueError("current native voltage schedule differs from frozen source schedule: " + source_relative)
     shutil.copyfile(installed_resource(
-        "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/ion_processor_dependency.json"),
+        "src/msplatform/components/multi_reflection_tof/config/ion_processor_dependency.json"),
                     inputs / "accelerator_dependency.json")
     mass = model["source"]["species"]["mass_amu"]
     charge = model["source"]["species"]["charge_state"]
@@ -481,7 +481,7 @@ def _freeze_completed_field_source(owner: Path, field_id: str, destination: Path
     owner = owner.resolve()
     require_completed_terminal_publication(owner/"run_manifest.json")
     manifest = read_json(owner/"run_manifest.json")
-    if (manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+    if (manifest.get("project") != "multi_reflection_tof"
             or manifest.get("status") not in {"success", "failed"}):
         raise ValueError("field reuse requires a terminal successful or failed local producer")
     destination.mkdir(parents=True, exist_ok=False)
@@ -1056,7 +1056,7 @@ def _completed_native_stage(source_run: Path):
     if failed_native:
         from msplatform.io.manifest_records import record_path
         from msplatform.execution.retention import verify_record
-        project="parallel_mirror_dual_stripe_mr_tof"
+        project="multi_reflection_tof"
         if manifest.get("project")!=project or record_path(manifest["run_config"],base_dir=source_run)!=(source_run/"run_config.json"):
             raise ValueError("Failed native producer project/config binding mismatch")
         verify_record("failed native producer config",manifest["run_config"],base_dir=source_run)

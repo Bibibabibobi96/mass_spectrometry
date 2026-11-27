@@ -29,8 +29,8 @@ def compile_ip_mr_model(compiled: CompiledSimionGeometry, components: Mapping[st
     plan=geo['composition_plan'];selected=plan['scope']['instance_ids']
     if len(selected) not in (2,3) or set(components)!=set(selected) or set(compiled.components_resolved)!=set(selected):
         raise ValueError('IP–MR selected component scope differs')
-    ip=[name for name in selected if plan['components'][name]['project_id']=='dual_pressure_rectilinear_ion_processor']
-    mr=[name for name in selected if plan['components'][name]['project_id']=='parallel_mirror_dual_stripe_mr_tof']
+    ip=[name for name in selected if plan['components'][name]['project_id']=='ion_processor']
+    mr=[name for name in selected if plan['components'][name]['project_id']=='multi_reflection_tof']
     rf=[name for name in selected if plan['components'][name]['project_id']=='rf_multipole_ion_optics']
     if len(ip)!=1 or len(mr)!=1 or len(rf)>1 or len(ip)+len(mr)+len(rf)!=len(selected):
         raise ValueError('IP–MR requires one IP, one MR and at most one RF multipole')

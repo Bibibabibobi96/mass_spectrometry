@@ -22,10 +22,10 @@
       "const": "mrtof_ion_processor_matching_request"
     },
     "provider_project_id": {
-      "const": "dual_pressure_rectilinear_ion_processor"
+      "const": "ion_processor"
     },
     "consumer_project_id": {
-      "const": "parallel_mirror_dual_stripe_mr_tof"
+      "const": "multi_reflection_tof"
     },
     "target_source": {
       "type": "object",

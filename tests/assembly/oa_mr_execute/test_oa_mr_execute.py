@@ -266,9 +266,9 @@ if(@($pendingSpecs).Count-ne1-or$pendingSpecs[0].index-ne3){{throw 'observed or 
         Capacity admission is inert; the public checkpoint writer and scientific
         input/terminal identity checks execute normally.
         """
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mrtof_batch_continuation import MrtofBatchContinuationTests
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import NativeStaticBindingTest
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_bunch_source_and_schedule import _states
+        from tests.components.multi_reflection_tof.analysis.test_mrtof_batch_continuation import MrtofBatchContinuationTests
+        from tests.components.multi_reflection_tof.analysis.test_static_field_binding import NativeStaticBindingTest
+        from tests.components.multi_reflection_tof.analysis.test_bunch_source_and_schedule import _states
         from msplatform.backends.simion.mr_bunch_source import materialize_bunch_source
         from msplatform.backends.comsol.static_field_binding import load_binding
         from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
@@ -575,7 +575,7 @@ $checkpointAssemblyInputs=(Get-Content (Join-Path $Current run_manifest.json) -R
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_native_payload_identity_is_checked_inside_guards_before_vendor(self):
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import NativeStaticBindingTest
+        from tests.components.multi_reflection_tof.analysis.test_static_field_binding import NativeStaticBindingTest
         from msplatform.backends.comsol.static_field_binding import load_binding
         source = RUNNER.read_text()
         start = source.index("    $guardPaths=@($staticFieldBinding.instances")
@@ -775,10 +775,10 @@ foreach($staticFieldRequested in @($false,$true)){
             source_root.mkdir()
             oa_contract = package_root / "components/orthogonal_accelerator/component_contract.json"
             oa_profile = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
-            from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
-            from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+            from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
+            from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
             expected_authority = read_accelerator_geometry_authority(
-                load_contract(REPO / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json"),
+                load_contract(REPO / "src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json"),
                 component_contract_path=oa_contract, geometry_profile_id=oa_profile,
             )
             (root / "expected_oa_authority.json").write_text(json.dumps(expected_authority), encoding="utf-8")
@@ -839,15 +839,15 @@ Push-Location -LiteralPath $script:pythonRoot
 try{
  & $Python -B -s -c "from pathlib import Path; from msplatform.workflows.prepared_joint import prism_trial as two_prism_simion_trial; from msplatform.backends.simion import mrtof_batch_flight; assert Path(two_prism_simion_trial.__file__).is_relative_to(Path.cwd()); assert Path(mrtof_batch_flight.__file__).is_relative_to(Path.cwd()); from msplatform.contracts import trajectory_recording; assert Path(trajectory_recording.__file__).is_relative_to(Path.cwd()/'src')"
  if($LASTEXITCODE-ne0){throw 'Detached provider import failed'}
- & $Python -B -s -m msplatform.contracts.trajectory_recording --contract (Join-Path $script:pythonRoot 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json')
+ & $Python -B -s -m msplatform.contracts.trajectory_recording --contract (Join-Path $script:pythonRoot 'src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json')
  if($LASTEXITCODE-ne0){throw 'Detached provider compilation failed'}
- & $Python -B -s -c "import json; from pathlib import Path; from msplatform.contracts.particle_count_policy import validate_standard_particle_count; from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority; import sys; validate_standard_particle_count(100); c=json.loads(Path('src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json').read_text(encoding='utf-8')); selected=read_accelerator_geometry_authority(c,component_contract_path=Path(sys.argv[1]),geometry_profile_id=sys.argv[2]); assert selected['accelerator_requirements']['variant_id']=='two_zone'; assert selected['source_refs'][0]['path']==str(Path(sys.argv[1]).resolve())" $oaComponentContractLocal $AcceleratorGeometryProfileId
+ & $Python -B -s -c "import json; from pathlib import Path; from msplatform.contracts.particle_count_policy import validate_standard_particle_count; from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority; import sys; validate_standard_particle_count(100); c=json.loads(Path('src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json').read_text(encoding='utf-8')); selected=read_accelerator_geometry_authority(c,component_contract_path=Path(sys.argv[1]),geometry_profile_id=sys.argv[2]); assert selected['accelerator_requirements']['variant_id']=='two_zone'; assert selected['source_refs'][0]['path']==str(Path(sys.argv[1]).resolve())" $oaComponentContractLocal $AcceleratorGeometryProfileId
  if($LASTEXITCODE-ne0){throw 'Detached source policy or physical provider requirements failed'}
 """ + stage_fixture + r"""
 }finally{Pop-Location}
 'OA_MR_FROZEN_PROVIDER_PASS'
 """, encoding="utf-8")
-            for owner in ("instrument_assembly", "parallel_mirror_dual_stripe_mr_tof"):
+            for owner in ("instrument_assembly", "multi_reflection_tof"):
                 with self.subTest(owner=owner):
                     output = root / owner
                     output.mkdir()
@@ -892,7 +892,7 @@ function Check-Source {
  if($required-ne$script:sourceOwner){throw 'SOURCE_OWNER_REJECTED'}
 }
 """ + identities + "\n" + create + "\n" + r"""
-$script:sourceOwner='parallel_mirror_dual_stripe_mr_tof'
+$script:sourceOwner='multi_reflection_tof'
 """ + checks + "\n" + r"""
 $script:sourceOwner='instrument_assembly'
 $caught=$false
@@ -1799,7 +1799,7 @@ if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
                     run.mkdir()
                     config = run / "run_config.json"
                     config.write_text(json.dumps({
-                        "project": "parallel_mirror_dual_stripe_mr_tof",
+                        "project": "multi_reflection_tof",
                         "mode": "fixture", "parameters": {}, "provenance": {},
                     }), encoding="utf-8")
                     paths = {}
@@ -1809,12 +1809,12 @@ if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
                         paths[name] = path
                     manifest = run / "run_manifest.json"
                     manifest.write_text(json.dumps({
-                        "schema_version": 1, "run_id": label, "project": "parallel_mirror_dual_stripe_mr_tof",
+                        "schema_version": 1, "run_id": label, "project": "multi_reflection_tof",
                         "mode": "fixture", "status": "success", "run_config": file_record(config),
                         "inputs": {}, "outputs": [file_record(path) for path in paths.values()],
                     }), encoding="utf-8")
                     command = [sys.executable, str(verifier), str(manifest), "--require-status", "success",
-                               "--require-project", "parallel_mirror_dual_stripe_mr_tof",
+                               "--require-project", "multi_reflection_tof",
                                "--consumer-projection-id", projection_id]
                     for name in consumed_names:
                         command.extend(("--consumed-output", str(paths[name])))

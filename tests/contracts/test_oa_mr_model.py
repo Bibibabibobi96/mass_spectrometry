@@ -11,8 +11,8 @@ from msplatform.backends.simion.native_plans import plan_model_preparation
 from msplatform.backends.simion.resources import structural_seed_path
 from msplatform.components.catalog import resolve_component
 from msplatform.io.manifest_records import file_record
-from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
-from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+from tests.components.multi_reflection_tof.analysis.test_mr_provider_trial_transport import _plans
+from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import geometry_authority
 from tests.contracts.test_simion_rf_prepared_model import assets_at
 
 
@@ -23,11 +23,11 @@ class OaMrModelTests(unittest.TestCase):
         a = geometry_authority(contract)
         oa = resolve_component(dict(provider_id='orthogonal_accelerator', geometry_profile_id=a['geometry_profile_id'],
             design=dict(requirements=a['accelerator_requirements'], geometry_profile=a['geometry_profile'])))
-        mr = resolve_component(dict(provider_id='parallel_mirror_dual_stripe_mr_tof', geometry_profile_id=a['geometry_profile_id'],
+        mr = resolve_component(dict(provider_id='multi_reflection_tof', geometry_profile_id=a['geometry_profile_id'],
             design=dict(contract=contract, accelerator_requirements=a['accelerator_requirements'], geometry_profile=a['geometry_profile'])))
         components = {name: oa if row['project_id'] == 'orthogonal_accelerator' else mr for name, row in plan['components'].items()}
         cls.oa = next(k for k,v in plan['components'].items() if v['project_id'] == 'orthogonal_accelerator')
-        cls.mr = next(k for k,v in plan['components'].items() if v['project_id'] == 'parallel_mirror_dual_stripe_mr_tof')
+        cls.mr = next(k for k,v in plan['components'].items() if v['project_id'] == 'multi_reflection_tof')
         assembly = assemble(plan['recipe'], components)
         d = dict(cell_mm_xyz=dict.fromkeys('xyz', .1), pa_bounds_mm={axis+suffix: (-1000. if suffix == '_min' else 1000.) for axis in 'xyz' for suffix in ('_min','_max')})
         names = [r['electrode_group_id'] for r in mr.assembly_interface['component_electrodes']]
@@ -64,7 +64,7 @@ class OaMrModelTests(unittest.TestCase):
             model_geometry(self.compiled_model(), downstream_drive=True)
 
     def test_component_group_voltages_and_native_binding_remain_independent(self):
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drive import scientific_group_voltages
+        from msplatform.components.multi_reflection_tof.drive import scientific_group_voltages
         from msplatform.backends.simion.mr_model import _validated_mr_voltages
         authority = copy.deepcopy(self.drive['mr_authority'])
         authority['candidate']['s1'] = -31.

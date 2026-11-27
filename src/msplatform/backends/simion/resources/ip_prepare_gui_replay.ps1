@@ -23,11 +23,11 @@ $sourceRun=(Resolve-Path -LiteralPath $BaselineRun).Path
 $sourceManifest=Join-Path $sourceRun 'run_manifest.json'
 if(-not(Test-Path -LiteralPath $sourceManifest -PathType Leaf)){throw 'Explicit baseline manifest is missing'}
 $manifest=Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8|ConvertFrom-Json
-if($manifest.project-ne'dual_pressure_rectilinear_ion_processor'-or$manifest.status-notin@('success','failed')){
+if($manifest.project-ne'ion_processor'-or$manifest.status-notin@('success','failed')){
  throw 'GUI replay requires a terminal run of this project; failed physical acceptance is allowed only with complete solver evidence'
 }
 $artifacts=Join-Path $workspaceRoot 'artifacts'
-$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifacts -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $PythonExe
+$projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifacts -OwnerKind component -OwnerId ion_processor -Python $PythonExe
 $capacity=$null;$package=$null;$lease=$null;$prepared=$false
 Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
 try {
@@ -46,7 +46,7 @@ try {
  if(-not$SimionExe){$SimionExe=Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
  if(-not(Test-Path -LiteralPath $SimionExe -PathType Leaf)){throw 'SIMION executable missing for private GUI field build'}
  $capacity=Enter-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -ArtifactRoot $artifacts -RunDirectory (Join-Path $projectArtifacts "runs/$RunId") -CommittedNewBytes $guiCommitted -ProtectedPaths @($sourceRun)
- $package=New-RunPackage -Python $PythonExe -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project dual_pressure_rectilinear_ion_processor -Mode native_gui_replay -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Retain new private native field and IOB for user Load/Fly; trajectory comparison unverified' -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
+ $package=New-RunPackage -Python $PythonExe -RepoRoot $repoRoot -ArtifactRoot $projectArtifacts -RunId $RunId -Project ion_processor -Mode native_gui_replay -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Retain new private native field and IOB for user Load/Fly; trajectory comparison unverified' -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion')
  & $PythonExe -m msplatform.workflows.ion_processor.functional prepare-replay --run $package.run_dir --baseline-run $sourceRun --repeat-fly-count $RepeatFlyCount
  if($LASTEXITCODE-ne0){throw 'GUI replay input preparation failed'}
  $guiBudget=Join-Path $package.input_dir 'gui_execution_budget.json'
@@ -99,12 +99,12 @@ try {
    # Keep this caller's identity constraints after the complete public publication.
    $published=Get-Content -LiteralPath (Join-Path $package.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json
    $publishedConfig=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json
-   if($published.status-cne$status-or$published.project-cne'dual_pressure_rectilinear_ion_processor'-or
-      $publishedConfig.project-cne'dual_pressure_rectilinear_ion_processor'){throw 'Private GUI manifest identity differs'}
+   if($published.status-cne$status-or$published.project-cne'ion_processor'-or
+      $publishedConfig.project-cne'ion_processor'){throw 'Private GUI manifest identity differs'}
   }
   if($null-ne$capacity){Exit-ArtifactWorkflowCapacitySession -Python $PythonExe -RepoRoot $repoRoot -Session $capacity|Out-Null;$capacity=$null}
   if($null-ne$package){
-   & $PythonExe -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $package.run_config --owner dual_pressure_rectilinear_ion_processor --confirm-writing-stopped --retention-reason 'New private fractional field and IOB prepared for user Load/Fly'
+   & $PythonExe -m msplatform.execution.run_capacity_lifecycle --action seal-stopped-payload --artifact-root $artifacts --run-config $package.run_config --owner ion_processor --confirm-writing-stopped --retention-reason 'New private fractional field and IOB prepared for user Load/Fly'
    if($LASTEXITCODE-ne0){throw 'Private GUI payload sealing failed'}
   }
  } finally {

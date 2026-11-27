@@ -25,7 +25,7 @@ $hostContext=@{workspace=$repoRoot;python_executable=$python;host_state_path=[st
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $executionResources 'simion_dispatch_support.ps1')
 $module='msplatform.workflows.mr_design.ip_prism_distance_study'
-$projectId='parallel_mirror_dual_stripe_mr_tof'
+$projectId='multi_reflection_tof'
 $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $projectId -Python $python
 $contract=(Resolve-Path -LiteralPath $ContractPath).Path
 $author=Get-Content -LiteralPath $contract -Raw|ConvertFrom-Json

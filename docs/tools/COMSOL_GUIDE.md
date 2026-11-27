@@ -41,9 +41,9 @@
 | 对象 | 路线与阅读入口 | 首要区别 |
 |---|---|---|
 | 单反射 OA-TOF | [OA 项目](../../src/msplatform/components/single_reflection_oa_tof/README.md)：静电 FEM、原生 CPT、事件导出和 Python 分析 | 固定 FEM 上的时间一致性不能授予电场空间收敛；诊断配置不自动成为 Formal |
-| MR-TOF | [MR 项目](../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/README.md)：独立静电 FEM → 标量电势导出／PA → SIMION 追踪 | 场求解、转换、返回链的失败不能直接归因于 COMSOL 原生 CPT |
+| MR-TOF | [MR 项目](../../src/msplatform/components/multi_reflection_tof/README.md)：独立静电 FEM → 标量电势导出／PA → SIMION 追踪 | 场求解、转换、返回链的失败不能直接归因于 COMSOL 原生 CPT |
 | RF 四／六／八极杆 | [四极](../../src/msplatform/components/rf_multipole/variants/quadrupole/README.md)、[六极](../../src/msplatform/components/rf_multipole/variants/hexapole/README.md)、[八极](../../src/msplatform/components/rf_multipole/variants/octupole/README.md)：有限三维场与粒子传输 | 传输功能、连续相空间等价、过滤及下游 TOF 是不同资格 |
-| Ion Processor | [IP 项目](../../src/msplatform/components/dual_pressure_rectilinear_ion_processor/README.md)：按项目状态确认 SIMION RF/DC／脉冲／碰撞链与 COMSOL 对照范围 | 不从 OA 无碰撞时间门推导 IP 的数值配置或已验证能力 |
+| Ion Processor | [IP 项目](../../src/msplatform/components/ion_processor/README.md)：按项目状态确认 SIMION RF/DC／脉冲／碰撞链与 COMSOL 对照范围 | 不从 OA 无碰撞时间门推导 IP 的数值配置或已验证能力 |
 
 其他器件从根 README 的项目导航进入，不根据软件目录是否存在推断物理能力。
 

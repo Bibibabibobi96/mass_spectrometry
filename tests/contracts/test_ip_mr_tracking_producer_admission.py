@@ -35,7 +35,7 @@ def exercise_published_ip_mr_tracking(test, fields, context, tmp):
     from msplatform.backends.simion.ip_mr_tracking_admission import admit_ip_mr_tracking_fields
     from msplatform import examples as example_api, ion_release as ion_release_api
     from msplatform.contracts.gas import BoxDomain,GasFieldSpec,GasSource,GasSpecies,GasState
-    from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+    from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
     root=Path(tmp)/'public_tracking_fixture';root.mkdir()
     ref=fields.reference;ad=admit_ip_mr_tracking_fields(ref);baseline=ad['model'].document['drive']['ip_schedule']['baseline']
     box=lambda lo,hi:BoxDomain(lo,hi,(True,True,True),(True,True,True))

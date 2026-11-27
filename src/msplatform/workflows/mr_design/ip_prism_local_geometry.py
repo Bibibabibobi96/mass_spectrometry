@@ -15,7 +15,7 @@ import numpy as np
 from scipy.spatial import ConvexHull
 
 from msplatform.backends.simion.gem_primitives import format_number
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import convex_planes
+from msplatform.components.ion_processor.convex_geometry import convex_planes
 from msplatform.backends.simion.mr_geometry import (
     _extrude_polygon_bands, _prism_ground_shield_lines,
 )

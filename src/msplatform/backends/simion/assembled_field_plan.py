@@ -24,7 +24,7 @@ def _finite(value: Any) -> float:
 
 def _bounds(shape: dict) -> list:
     if shape["shape"] == "convex_polyhedron":
-        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        from msplatform.components.ion_processor.convex_geometry import shape_bounds
 
         lower, upper = shape_bounds(shape)
         return lower + upper
@@ -82,7 +82,7 @@ def compile_materializable_fields(request: dict) -> dict:
     manifest = _read(manifest_path)
     identity = (manifest.get("project"), manifest.get("mode"))
     if manifest.get("status") != "success" or not (
-        identity[0] == "parallel_mirror_dual_stripe_mr_tof"
+        identity[0] == "multi_reflection_tof"
         or identity == ("instrument_assembly", "accelerator_interface_preparation")
     ):
         raise ValueError("replacement assembly must belong to a successful sealed MR or instrument assembly preparation")
@@ -138,7 +138,7 @@ def compile_materializable_fields(request: dict) -> dict:
         for i, v in enumerate(provider_values)
     ] + [{"component_namespace": "detector", "component_electrode_id": 25, "voltage_v": detector_voltage}]
     authority["assembly"] = {
-        "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+        "accelerator_provider": "ion_processor",
         "assembly_scope": "full_c0_ion_processor_replacement",
         "detector": geometry["detector"],
         "ion_processor_registration": receipt["assembly_coordinate_transform"],
@@ -206,7 +206,7 @@ def compile_materializable_fields(request: dict) -> dict:
             gem=render_assembled_ip_gem(
                 geometry, geometry["ion_processor_electrodes"], provider_values, values, detector_voltage, grid),
             geometry_report={
-                "status": "prepared", "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+                "status": "prepared", "accelerator_provider": "ion_processor",
                 "full_c0_new_assembly": True,
             },
         )
@@ -254,8 +254,8 @@ def compile_materializable_fields(request: dict) -> dict:
         item["committed_new_bytes"] for item in (collision, ip_collision, detector))
     return {
         "schema_version": 1, "role": "mrtof_native_static_field_provider_plan", "operation": "refine",
-        "run_id": run_id, "project": "parallel_mirror_dual_stripe_mr_tof",
-        "accelerator_provider": "dual_pressure_rectilinear_ion_processor",
+        "run_id": run_id, "project": "multi_reflection_tof",
+        "accelerator_provider": "ion_processor",
         "assembly_scope": "full_c0_ion_processor_replacement",
         "replacement_assembly": file_record(receipt_path), "inputs": inputs, "protected_paths": [str(owner)],
         "candidate_authority": authority, "resolved_geometry": geometry, "levels": levels,

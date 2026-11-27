@@ -9,10 +9,10 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.backends.simion.gem_primitives import format_number
 from msplatform.workflows.prepared_joint.ip_mr_handoff import resolve_ip_mr_transform
 from msplatform.execution.retention import verify_record
-from msplatform.components.dual_pressure_rectilinear_ion_processor.assembly_interface import resolve_assembly_interface as ip_interface
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.components.ion_processor.assembly_interface import resolve_assembly_interface as ip_interface
+from msplatform.components.ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface as mr_interface
+from msplatform.components.multi_reflection_tof.assembly_interface import resolve_assembly_interface as mr_interface
 from msplatform.backends.simion.ip_geometry import render_assembled_ip_gem as _gem, _assembled_primitive as _primitive
 from msplatform.backends.simion.assembled_field_plan import _bounds, _grid_plan
 from msplatform.workflows.prepared_joint.ion_processor_assembly import (

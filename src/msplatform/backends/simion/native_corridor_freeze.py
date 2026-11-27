@@ -6,7 +6,7 @@ three files.  Large PA payloads are never hashed here: their already-published
 generation manifests supply the trusted byte counts and SHA-256 identities.
 """
 from __future__ import annotations
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
+from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 import copy
@@ -30,7 +30,7 @@ from msplatform.backends.simion.native_corridor_plan import (
 from msplatform.backends.simion.native_corridor_geometry import (
     build_native_corridor_gem,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError, load_contract,
 )
 from msplatform.backends.simion.native_corridor_identity import (
@@ -44,7 +44,7 @@ IDENTITY_NAME = "native_corridor_identity.json"
 RECIPE_NAME = "native_corridor_response_recipe.json"
 MANIFEST_NAME = "native_corridor_freeze_manifest.json"
 FROZEN_NAMES = (PLAN_NAME, IDENTITY_NAME, RECIPE_NAME, MANIFEST_NAME)
-PROJECT_ID = "parallel_mirror_dual_stripe_mr_tof"
+PROJECT_ID = "multi_reflection_tof"
 RESPONSE_BANK_MODE = "native_corridor_detached_response_bank"
 FREEZE_RELATIVE_DIRECTORY = Path("inputs") / "native_corridor_freeze"
 

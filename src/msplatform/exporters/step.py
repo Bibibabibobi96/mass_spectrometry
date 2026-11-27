@@ -81,7 +81,7 @@ def step_member_names(assembly: Mapping, members) -> dict[tuple[str, str], str]:
                 tokens += [f'rod_{rod:04d}', f"rf_group_{row['electrode_group']}"]
             else:
                 tokens = [row['role']]
-        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator', 'dual_cone_tandem_quadrupole_ion_interface', 'dual_pressure_rectilinear_ion_processor', 'parallel_mirror_dual_stripe_mr_tof'}:
+        elif project in {'single_reflection_oa_tof_mass_analyzer', 'orthogonal_accelerator', 'dual_cone_tandem_quadrupole', 'ion_processor', 'multi_reflection_tof'}:
             tokens = identity.split('/')
         else:
             raise ValueError('STEP naming provider is unsupported: ' + project)

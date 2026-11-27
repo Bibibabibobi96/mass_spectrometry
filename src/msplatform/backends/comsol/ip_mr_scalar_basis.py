@@ -61,8 +61,8 @@ def project_ip_mr_scalar_basis(model: Any, *, assembly: Assembly, projection: Ma
     if len(rows)!=len(by_group) or set(by_group)!=set(groups):
         raise ValueError('model and projection scientific group coverage differs')
     projects={name:plan['components'][name]['project_id'] for name in plan['scope']['instance_ids']}
-    ips=[name for name,project in projects.items() if project=='dual_pressure_rectilinear_ion_processor']
-    mrs=[name for name,project in projects.items() if project=='parallel_mirror_dual_stripe_mr_tof']
+    ips=[name for name,project in projects.items() if project=='ion_processor']
+    mrs=[name for name,project in projects.items() if project=='multi_reflection_tof']
     rfs=[name for name,project in projects.items() if project=='rf_multipole_ion_optics']
     if len(ips)!=1 or len(mrs)!=1 or len(rfs)>1 or len(projects)!=2+len(rfs):
         raise ValueError('one complete IP, one MR and at most one RF required')

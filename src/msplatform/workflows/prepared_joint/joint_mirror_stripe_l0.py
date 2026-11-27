@@ -16,23 +16,23 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
+from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     endpoint_regularized_kappa,
     gauss_legendre_rule,
     kappa_derivative_at_turn,
     tau_g_derivative_at_turn,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
+from msplatform.components.multi_reflection_tof.resolved_geometry import (
     compile_dual_stripe_edge_evaluators,
     compile_dual_stripe_path_length_evaluator,
     dual_stripe_total_path_scale,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import (
+from msplatform.components.multi_reflection_tof.mirror_l0 import (
     MirrorL0Design,
     reduced_period,
 )
 from scipy.optimize import brentq, least_squares
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 from msplatform.workflows.prepared_joint.prism_handoff import (

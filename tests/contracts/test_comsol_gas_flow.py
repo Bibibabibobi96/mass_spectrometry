@@ -9,7 +9,7 @@ from unittest.mock import patch
 from msplatform.backends.comsol import gas_flow
 from msplatform.io.manifest_records import file_record
 from tests.contracts.test_support.comsol_model import InertComsolSession
-from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
+from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import (
     PROJECT_ROOT,
     _write_fixture,
 )
@@ -189,7 +189,7 @@ class GasModelResumeTests(unittest.TestCase):
 class GasFieldReaderTests(unittest.TestCase):
     def test_readable_published_data_does_not_grant_project_quality(self):
         from msplatform.results.gas_field import read_gas_field
-        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import (
+        from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import (
             validate_gas_field_data,
         )
 

@@ -7,12 +7,12 @@ import struct
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import candidate_contract
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.geometry_contract import CENTRAL_GROUND_ELECTRODE_ID
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_geometry_parameters import derive_mirror_boundaries
+from msplatform.components.multi_reflection_tof import candidate_contract
+from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
+from msplatform.components.multi_reflection_tof.geometry_contract import CENTRAL_GROUND_ELECTRODE_ID
+from msplatform.components.multi_reflection_tof.mirror_geometry_parameters import derive_mirror_boundaries
 
-IP_PROVIDER = "dual_pressure_rectilinear_ion_processor"
+IP_PROVIDER = "ion_processor"
 
 
 def _number(value: float) -> str:
@@ -232,7 +232,7 @@ def _analyzer_geometry_lines(resolved: dict[str, object], *, native_group_ids: M
     id_map = None
     shield_ids = None
     if native_group_ids is not None:
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import _component_electrodes, _scientific_groups
+        from msplatform.components.multi_reflection_tof.assembly_interface import _component_electrodes, _scientific_groups
         from .rf_electrode_mapping import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
         electrodes = _component_electrodes(resolved)
         groups = _scientific_groups(resolved, electrodes)
@@ -356,7 +356,7 @@ def resolve_mr_geometry(contract: dict[str, Any], *, accelerator_geometry_author
     Source records are verified by their existing consuming workflow boundary.
     """
     from msplatform.backends.simion.two_zone_candidate import resolve_closed_two_zone_layout
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import resolve_geometry
+    from msplatform.components.multi_reflection_tof.resolved_geometry import resolve_geometry
 
     if not isinstance(accelerator_geometry_authority, Mapping):
         raise CandidateContractError("new MR geometry requires complete explicit OA geometry authority")

@@ -4,7 +4,7 @@ import unittest
 
 from tests.contracts.test_ip_step_projection import snapshot
 from tests.workflows.multipole_ip import test_ip_compiler as fixtures
-from tests.components.dual_pressure_rectilinear_ion_processor import test_electrode_contours as contours
+from tests.components.ion_processor import test_electrode_contours as contours
 from msplatform.assembly.factory import assemble
 from msplatform.components.catalog import resolve_component
 from msplatform.components.geometry_members import assembly_geometry_members
@@ -65,14 +65,14 @@ class IpComsolProjectionTests(unittest.TestCase):
         """Exercise backend dispatch only, without claiming an IP–MR layout."""
         from pathlib import Path
         from unittest.mock import patch
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+        from tests.components.multi_reflection_tof.analysis.test_mr_provider_trial_transport import _plans
+        from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import geometry_authority
         _, plan, contract = _plans()
         authority = geometry_authority(contract)
         oa = resolve_component({'provider_id': 'orthogonal_accelerator',
             'design': {'requirements': authority['accelerator_requirements'], 'geometry_profile': authority['geometry_profile']},
             'geometry_profile_id': authority['geometry_profile_id']})
-        mr = resolve_component({'provider_id': 'parallel_mirror_dual_stripe_mr_tof',
+        mr = resolve_component({'provider_id': 'multi_reflection_tof',
             'design': {'contract': contract, 'accelerator_requirements': authority['accelerator_requirements'],
                        'geometry_profile': authority['geometry_profile']},
             'geometry_profile_id': authority['geometry_profile_id']})
@@ -93,7 +93,7 @@ class IpComsolProjectionTests(unittest.TestCase):
         self.assertEqual(actual, groups)
         self.assertEqual(sum(len(g['member_ids']) for g in result['electrode_groups']), len(before))
         mr_ids = {name for name, row in plan['components'].items()
-                  if row['project_id'] == 'parallel_mirror_dual_stripe_mr_tof'}
+                  if row['project_id'] == 'multi_reflection_tof'}
         indices = [i for i, member in enumerate(before) if member['instance_id'] in mr_ids]
         self.assertTrue(indices)
         self.assertTrue(any('extruded_yz_polygon' in repr(before[i]['shape']) for i in indices))
@@ -119,7 +119,7 @@ class IpComsolProjectionTests(unittest.TestCase):
                     fixture.c['nose_halfwidth_mm'] = .9
                 if mode.endswith('parabolic_inner'): fixture.c['inner_parabola_sag_mm'] = .1
                 fixture.b['physical_design_selection'] = {'native_grid_mm':.1, 'native_aux_segments':60}
-                ip = resolve_component(dict(provider_id='dual_pressure_rectilinear_ion_processor',
+                ip = resolve_component(dict(provider_id='ion_processor',
                                             design=dict(baseline=fixture.b)))
                 a = assemble(self.assembly.composition_plan['recipe'], dict(self.assembly.components, ion_processor=ip))
                 with self.subTest(mode=mode, perturbed=variation):
@@ -129,7 +129,7 @@ class IpComsolProjectionTests(unittest.TestCase):
     def test_perturbed_design_and_two_instance_poses_preserve_source(self):
         baseline = copy.deepcopy(self.assembly.components_source['ion_processor']['baseline'])
         baseline['geometry']['r0_mm'] += .2
-        ip = resolve_component(dict(provider_id='dual_pressure_rectilinear_ion_processor',
+        ip = resolve_component(dict(provider_id='ion_processor',
                                     design=dict(baseline=baseline)))
         recipe = copy.deepcopy(self.assembly.composition_plan['recipe'])
         row = copy.deepcopy(next(r for r in recipe['instances'] if r['instance_id']=='ion_processor'))

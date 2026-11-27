@@ -29,7 +29,7 @@ local collisions = {}
 if collision and collision:lower():match('%.pa$') then collisions[1] = collision end
 local overlay = operating.static_field and operating.static_field.collision_overlay
 if overlay then
-  assert(operating.accelerator_provider == 'dual_pressure_rectilinear_ion_processor'
+  assert(operating.accelerator_provider == 'ion_processor'
       and operating.field_assembly_verified == true and overlay.schema_version == 1
       and overlay.role == 'mrtof_analyzer_collision_overlay'
       and type(overlay.pa_path) == 'string' and overlay.pa_path:lower():match('%.pa$')

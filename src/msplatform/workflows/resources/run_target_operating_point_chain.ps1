@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$projectId = 'parallel_mirror_dual_stripe_mr_tof'
+$projectId = 'multi_reflection_tof'
 $workspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $artifactRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $python = [IO.Path]::GetFullPath($PythonExe)
@@ -25,7 +25,7 @@ $workflowResources = Join-Path $packageRoot 'workflows/resources'
 $contract = if ($ContractPath) {
   (Resolve-Path -LiteralPath $ContractPath).Path
 } else {
-  Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+  Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json'
 }
 $mirrorManifest = (Resolve-Path -LiteralPath $MirrorRunManifest).Path
 if ([string]::IsNullOrWhiteSpace($ChainStamp)) {

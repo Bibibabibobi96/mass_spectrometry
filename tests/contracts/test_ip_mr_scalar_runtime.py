@@ -9,7 +9,7 @@ from pathlib import Path
 from tests.contracts.test_simion_prepared_model import LUA
 from msplatform.backends.simion.resources import native_resource_path
 from msplatform.backends.simion.source import lua_value
-from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+from msplatform.components.ion_processor.timing import derive_native_timing
 
 ROOT=Path(__file__).resolve().parents[2]
 
@@ -81,9 +81,9 @@ local noid=binding('legacy');noid.mask_identity=nil;adapter(noid);assert(masks==
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_actual_model_drive_edges_and_all_supports(self):
-        fixture=json.loads((ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         baseline=fixture['component_requests']['ion_processor']['design']['baseline']
-        point=json.loads((ROOT/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
+        point=json.loads((ROOT/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
         schedule=dict(baseline=baseline,native_operating_point=point,native_timing=derive_native_timing(baseline),
                       clock={'clock_epoch_id':'test','authority_sha256':'A'*64})
         groups=[dict(instance_id='ion_processor',electrode_group_id='ip'+str(i),kind='ip_schedule',schedule_index=i,native_targets=[]) for i in range(1,16)]

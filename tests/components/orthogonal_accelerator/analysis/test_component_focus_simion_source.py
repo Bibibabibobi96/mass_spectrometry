@@ -146,7 +146,7 @@ Invoke-Expression $calls[0].Extent.Text
 
  def test_mr_component_release_uses_local_y_drift_and_not_nominal_negative_z_direction(self):
   repo=Path(__file__).resolve().parents[4]
-  spec=json.loads((repo/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/accelerator_component_release_n100.json').read_text(encoding='utf-8'))
+  spec=json.loads((repo/'src/msplatform/components/multi_reflection_tof/config/accelerator_component_release_n100.json').read_text(encoding='utf-8'))
   self.assertEqual(spec['frame_id'],'orthogonal_accelerator_exit_origin_v1')
   self.assertEqual(spec['geometry'],{'shape':'cylinder','center_mm':[0.0,0.0,32.0],'axis':'y','radius_mm':0.5,'height_mm':1.0})
   self.assertEqual(spec['sampling']['nominal_direction'],[0.0,1.0,0.0])
@@ -158,7 +158,7 @@ Invoke-Expression $calls[0].Extent.Text
 
  def test_fly2_retains_each_common_particle_energy(self):
   repo=Path(__file__).resolve().parents[4]
-  spec=json.loads((repo/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/config/accelerator_component_release_n100.json').read_text(encoding='utf-8'))
+  spec=json.loads((repo/'src/msplatform/components/multi_reflection_tof/config/accelerator_component_release_n100.json').read_text(encoding='utf-8'))
   campaign={'release_spec':spec,'simion_projection':{'source_frame':'orthogonal_accelerator_exit_origin_v1','workbench_mapping':'identity_xyz_with_local_exit_z_translation_v1','local_pa_span_mm':[44.5,24.5,50.0],'iob_origin_rule':'x_mirror_plane__negative_half_y__local_z_zero_v1','local_exit_z_mm':6,'focus_plane_padding_mm':6,'positive_z_enclosure_padding_mm':6,'semantics':'test'}}
   with tempfile.TemporaryDirectory() as d:
    root=Path(d);receipt=root/'r.json';state=root/'s.csv';campaign_path=root/'c.json';fly=root/'x.fly2';source_states=root/'states.lua'

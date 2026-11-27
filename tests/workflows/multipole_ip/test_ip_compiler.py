@@ -17,15 +17,15 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class IpCompilerTests(unittest.TestCase):
     def setUp(self):
-        baseline = json.loads((ROOT / "src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/baseline.json").read_text(encoding="utf-8"))
+        baseline = json.loads((ROOT / "src/msplatform/components/ion_processor/config/baseline.json").read_text(encoding="utf-8"))
         baseline["physical_design_selection"] = {"native_grid_mm": .1, "native_aux_segments": 60}
         example = json.loads((ROOT / "src/msplatform/examples/rf_oatof_functional_v1.json").read_text(encoding="utf-8"))
         rf = resolve_component(example["component_requests"]["multipole"])
-        ip = resolve_component(dict(provider_id="dual_pressure_rectilinear_ion_processor", design=dict(baseline=baseline)))
+        ip = resolve_component(dict(provider_id="ion_processor", design=dict(baseline=baseline)))
         recipe = copy.deepcopy(example["recipe"])
         rf_row, ip_row = recipe["instances"]
         rf_row["transform"]["translation_mm"] = [-rf.assembly_interface["ports"]["mechanical_exit"]["center_mm"][2], 0, 0]
-        ip_row.update(instance_id="ion_processor", project_id="dual_pressure_rectilinear_ion_processor")
+        ip_row.update(instance_id="ion_processor", project_id="ion_processor")
         ip_row["transform"]["from_frame_id"] = ip.assembly_interface["local_frame_id"]
         recipe["connections"] = [dict(connection_id="mp_ip", upstream=dict(instance_id="multipole", port_id="mechanical_exit"), downstream=dict(instance_id="ion_processor", port_id="guide_inlet"), gap_mm=0., coupling_mode="monolithic_joint_solve")]
         self.assembly = assemble(recipe, {"multipole": rf, "ion_processor": ip})

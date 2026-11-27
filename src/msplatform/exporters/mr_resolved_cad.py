@@ -803,7 +803,7 @@ def frozen_mirror_pose_transforms(source_geometry: dict, target_geometry: dict,
 def electrical_step_groups(source: Path, frozen_inputs: dict[str,Path], *, frozen_mirror_pose: bool=False) -> list[dict]:
     """Reuse sealed native bodies/poses; separate C0 from actual conductors."""
     manifest=json.loads((source/'run_manifest.json').read_text(encoding='utf-8-sig'))
-    if manifest['status']!='success' or manifest['project']!='parallel_mirror_dual_stripe_mr_tof':
+    if manifest['status']!='success' or manifest['project']!='multi_reflection_tof':
         raise ValueError('Electrical STEP requires a successful project CAD source')
     records={Path(r['path']).resolve():r for r in manifest['outputs']}
     records.update({Path(r['path']).resolve():r for r in manifest.get('inputs',{}).values() if isinstance(r,dict) and r.get('path')})
@@ -1344,7 +1344,7 @@ def publish_validated_step_delivery(source_run: Path, output: Path,
     """Republish already cold-read electrical STEP bytes, without invoking CAD."""
     source_run=source_run.resolve()
     manifest=json.loads((source_run/'run_manifest.json').read_text(encoding='utf-8-sig'))
-    if manifest.get('status')!='success' or manifest.get('project')!='parallel_mirror_dual_stripe_mr_tof':
+    if manifest.get('status')!='success' or manifest.get('project')!='multi_reflection_tof':
         raise ValueError('STEP publication requires the verified completed CAD manifest')
     records={Path(r['path']).resolve():r for r in [manifest['run_config'],*manifest['inputs'].values(),*manifest['outputs']]
              if isinstance(r,dict) and r.get('path')}
@@ -1427,7 +1427,7 @@ def publish_validated_delivery(source_run: Path,overview: Path,output: Path,
     """Publish an English guide plus immutable validated ZIP bytes; never call CAD."""
     source_run=source_run.resolve()
     manifest=json.loads((source_run/'run_manifest.json').read_text(encoding='utf-8-sig'))
-    if manifest.get('status')!='success' or manifest.get('project')!='parallel_mirror_dual_stripe_mr_tof':
+    if manifest.get('status')!='success' or manifest.get('project')!='multi_reflection_tof':
         raise ValueError('Publication requires a sealed successful CAD source')
     records={Path(r['path']).resolve():r for r in [manifest['run_config'],*manifest['inputs'].values(),*manifest['outputs']]
              if isinstance(r,dict) and r.get('path')}

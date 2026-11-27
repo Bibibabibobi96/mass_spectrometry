@@ -7,7 +7,7 @@ electrode IDs; the stream runner remaps those IDs to the dense native family
 namespace before creating ``pa#``/``pa0``.
 """
 from __future__ import annotations
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
+from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 import re
@@ -20,7 +20,7 @@ from msplatform.backends.simion.native_corridor_plan import (
 from msplatform.backends.simion.mr_geometry import _number
 from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
 )

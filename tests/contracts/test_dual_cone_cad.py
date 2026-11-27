@@ -15,7 +15,7 @@ from msplatform.exporters.step import step_member_names
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG = ROOT / 'src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config'
+CONFIG = ROOT / 'src/msplatform/components/dual_cone_tandem_quadrupole/config'
 
 
 def source():
@@ -43,7 +43,7 @@ def snapshot():
 
 class DualConeCadTests(unittest.TestCase):
     def test_component_shell_profile_preserves_original_flat_c0_gem_bytes(self):
-        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import resolve_geometry
+        from msplatform.components.dual_cone_tandem_quadrupole.geometry import resolve_geometry
         from msplatform.backends.simion.dual_cone_geometry import render_gem
 
         numerics = json.loads((CONFIG/'simion_solver_numerics.json').read_text())
@@ -100,7 +100,7 @@ class DualConeCadTests(unittest.TestCase):
         self.assertEqual({row['electrode_group_id'] for row in part.assembly_interface['component_electrodes']}, expected)
 
     def test_shell_normal_thickness_and_declared_cone_following_cut_are_independent_of_pa(self):
-        from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry_members import cone_shell_profile, stage_1_cut_profile
+        from msplatform.components.dual_cone_tandem_quadrupole.geometry_members import cone_shell_profile, stage_1_cut_profile
         value = instrument().components_resolved['interface']
         geometry = value['geometry_mm']
         for name in ('first_cone', 'second_cone'):

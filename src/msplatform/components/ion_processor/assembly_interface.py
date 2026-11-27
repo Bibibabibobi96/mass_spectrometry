@@ -1,0 +1,166 @@
+"""Mechanical interfaces of the native guide inlet and LP extraction shield.
+
+Consume the provider's resolved CSG in its native local frame. No geometry,
+voltages, particle observations or solver electrode numbering are generated.
+"""
+from __future__ import annotations
+
+import math
+from typing import Any
+
+def _number(value: Any, label: str, *, positive: bool = False) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{label} must be finite")
+    if positive and value <= 0:
+        raise ValueError(f"{label} must be positive")
+    return float(value)
+
+
+def _guide_solids(projection: dict[str, Any]) -> list[dict[str, Any]]:
+    if type(projection.get("schema_version")) is not int or projection["schema_version"] != 1 or projection.get("role") != "native_electrode_geometry_projection":
+        raise ValueError("unsupported native guide projection schema")
+    electrodes = projection["electrodes"]
+    ids = [item["electrode_id"] for item in electrodes]
+    if len(ids) != len(set(ids)):
+        raise ValueError("native projection has duplicate electrode IDs")
+    by_id = {item["electrode_id"]: item for item in electrodes}
+    solids = []
+    fields = {"shape", "x_min_mm", "x_max_mm", "center_y_mm", "center_z_mm", "radius_mm"}
+    for group, name in ((1, "guide_positive"), (2, "guide_negative")):
+        electrode = by_id[group]
+        if set(electrode) != {"electrode_id", "name", "solids", "cutouts"} or electrode["name"] != name:
+            raise ValueError("native guide electrode identity differs")
+        if electrode["cutouts"] != [] or len(electrode["solids"]) != 4:
+            raise ValueError("bare guide requires four continuous uncut rods per RF group")
+        for solid in electrode["solids"]:
+            if set(solid) != fields or solid["shape"] != "cylinder_x":
+                raise ValueError("unsupported native guide solid")
+            for key in fields - {"shape"}:
+                _number(solid[key], key, positive=key == "radius_mm")
+            solids.append({**solid, "electrode_group": group})
+    return solids
+
+
+def _guide_inlet_port(native_projection: dict[str, Any]) -> dict[str, Any]:
+    """Publish the actual upstream ends of the native guide's eight rods.
+
+    This open rod envelope is neither a plate aperture nor a particle cut. The
+    HP entrance lens lies downstream and is not the entrance of the full IP.
+    """
+    rods = _guide_solids(native_projection)
+    first = rods[0]
+    x = first["x_min_mm"]
+    radius = math.hypot(first["center_y_mm"], first["center_z_mm"]) - first["radius_mm"]
+    if len({(rod["center_y_mm"], rod["center_z_mm"]) for rod in rods}) != len(rods):
+        raise ValueError("IP guide inlet requires distinct physical rods")
+    if radius <= 0 or any(
+        rod["x_min_mm"] != x or rod["x_max_mm"] <= x or rod["x_max_mm"] != first["x_max_mm"]
+        or not math.isclose(math.hypot(rod["center_y_mm"], rod["center_z_mm"])
+                            - rod["radius_mm"], radius, rel_tol=0, abs_tol=1e-12)
+        for rod in rods
+    ):
+        raise ValueError("IP guide inlet requires a common circular open rod end")
+    return dict(surface_kind="open_rod_entrance", center_mm=[x, 0., 0.],
+        outward_normal=[-1, 0, 0], wall_thickness_mm=None,
+        cross_section=dict(shape="open_rod_envelope", inscribed_radius_mm=radius))
+
+
+def _box(shape: dict[str, Any]) -> tuple[list, list]:
+    if shape.get("shape") != "box":
+        raise ValueError("IP E14 extraction shield requires resolved box solids and cutout")
+    low, high = shape["min_mm"], shape["max_mm"]
+    if (len(low) != 3 or len(high) != 3
+            or any(not math.isfinite(v) for v in [*low, *high])
+            or any(a >= b for a, b in zip(low, high, strict=True))):
+        raise ValueError("IP E14 extraction shield has invalid box bounds")
+    return low, high
+
+
+def _extraction_exit_port(native_projection: dict[str, Any]) -> dict[str, Any]:
+    """Publish the +y outer opening of the single E14 shield in native mm.
+
+    The current provider represents this continuous shield by four box walls
+    and one rectangular extraction subtraction. Other topologies are rejected.
+    """
+    selected = [e for e in native_projection.get("electrodes", []) if e["electrode_id"] == 14]
+    if len(selected) != 1:
+        raise ValueError("IP E14 extraction shield is missing or ambiguous")
+    shield = selected[0]
+    if (shield.get("name") != "lp_commonmode_shield"
+            or len(shield["solids"]) != 4 or len(shield["cutouts"]) != 1):
+        raise ValueError("IP E14 extraction shield requires its four walls and one cutout")
+    solids = [_box(shape) for shape in shield["solids"]]
+    outer_y = max(high[1] for _, high in solids)
+    walls = [(low, high) for low, high in solids if high[1] == outer_y]
+    if len(walls) != 1:
+        raise ValueError("IP E14 extraction outer wall is ambiguous")
+    low, high = walls[0]
+    cut_low, cut_high = _box(shield["cutouts"][0])
+    if not (cut_low[1] <= low[1] < high[1] <= cut_high[1]
+            and all(low[a] < cut_low[a] < cut_high[a] < high[a] for a in (0, 2))):
+        raise ValueError("IP E14 extraction cutout does not pass through the outer wall with a closed rim")
+    return {
+            "surface_kind": "aperture_outer_face",
+            "center_mm": [(cut_low[0] + cut_high[0]) / 2, outer_y, (cut_low[2] + cut_high[2]) / 2],
+            "outward_normal": [0, 1, 0], "wall_thickness_mm": high[1] - low[1],
+            "cross_section": {
+                "shape": "rectangle", "width_mm": cut_high[2] - cut_low[2],
+                "height_mm": cut_high[0] - cut_low[0],
+                "width_axis": [0, 0, -1], "height_axis": [1, 0, 0],
+            },
+    }
+
+
+def resolve_assembly_interface(
+    native_projection: dict[str, Any], *, geometry_profile_id: str | None = None,
+) -> dict[str, Any]:
+    """Publish both ports and the provider's named electrode assemblies.
+
+    Electrode IDs retain the native provider objects and their electrical groups.
+    A multi-solid object is not split into new electrodes or SIMION PA numbers.
+    """
+    frame = native_projection.get("frame_id")
+    if (frame != "dual_pressure_ion_processor_local_v1"
+            or native_projection.get("length_unit") != "mm"
+            or native_projection.get("role") != "native_electrode_geometry_projection"):
+        raise ValueError("IP assembly requires the provider native local frame and mm projection")
+    electrodes = sorted(native_projection["electrodes"], key=lambda item: item["electrode_id"])
+    ids = [item["electrode_id"] for item in electrodes]
+    if len(ids) != len(set(ids)):
+        raise ValueError("IP assembly electrode identities are ambiguous")
+    if not {1, 2, 14}.issubset(ids):
+        raise ValueError("IP assembly requires the guide rods and extraction shield")
+    return dict(schema_version=1, role="component_geometry_interface",
+        project_id="ion_processor", variant_id="native_ion_processor",
+        geometry_profile_id=geometry_profile_id, local_frame_id=frame, length_unit="mm",
+        ports=dict(guide_inlet=_guide_inlet_port(native_projection),
+                   extraction_exit=_extraction_exit_port(native_projection)),
+        component_electrodes=[dict(component_electrode_id=item["electrode_id"], role=item["name"],
+                                   electrical_group_id=item["electrode_id"]) for item in electrodes])
+
+
+def build_assembly_interface(selected: dict[str, Any], *, geometry_profile_id: str | None = None) -> dict[str, Any]:
+    """Publish schema 3 from the complete explicitly selected physical projection."""
+    from msplatform.contracts.machine_contracts import validate_schema
+
+    if geometry_profile_id is not None:
+        raise ValueError("IP provider uses the explicit selected physical design")
+    if (not isinstance(selected, dict) or selected.get("schema_version") != 1
+            or type(selected.get("schema_version")) is not int
+            or selected.get("role") != "ip_legacy_selected_physical_design"):
+        raise ValueError("IP interface requires the selected physical design")
+    legacy = resolve_assembly_interface(selected["projection"])
+    expected = ["guide_positive", "guide_negative", "hp_y_rf", "hp_z_rf", "lp_pull",
+                "lp_push", "lp_side_upper", "lp_side_lower", "hp_corner_auxiliary",
+                "lp_outer_auxiliary", "lp_inner_auxiliary", "entrance_lens", "exit_lens",
+                "lp_commonmode_shield", "hp_commonmode_shield"]
+    rows = legacy["component_electrodes"]
+    if [(row["component_electrode_id"], row["role"]) for row in rows] != list(enumerate(expected, 1)):
+        raise ValueError("IP interface requires all 15 distinct physical electrode groups")
+    result = dict(schema_version=3, role=legacy["role"], project_id=legacy["project_id"],
+                  variant_id=legacy["variant_id"], geometry_profile_id=None,
+                  local_frame_id=legacy["local_frame_id"], length_unit=legacy["length_unit"],
+                  ports=legacy["ports"],
+                  component_electrodes=[dict(electrode_group_id=name, role=name) for name in expected])
+    validate_schema(result, "component_geometry_interface_v3.schema.json")
+    return result

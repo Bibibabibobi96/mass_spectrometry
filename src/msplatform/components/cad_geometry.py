@@ -25,7 +25,7 @@ def _validate_shape(spec, *, surface=False):
         area=sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(points,(*points[1:],points[0]),strict=True))
         if area==0: raise ValueError('revolved profile must enclose a nonzero section')
     elif kind in {'ip_box','ip_cylinder_x','ip_convex_polyhedron'}:
-        from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+        from msplatform.components.ion_processor.convex_geometry import shape_bounds
         lo, hi = shape_bounds(dict(shape=kind[3:], **{k:v for k,v in spec.items() if k != 'kind'}))
         if any(a >= b for a,b in zip(lo,hi,strict=True)):
             raise ValueError('IP CAD physical solid must have strictly positive extents')
@@ -83,7 +83,7 @@ def _shape(cq, spec):
             return cq.Solid.makeCylinder(spec['radius_mm'], spec['x_max_mm']-spec['x_min_mm'],
                 (spec['x_min_mm'],spec['center_y_mm'],spec['center_z_mm']), (1,0,0))
         if kind == 'ip_convex_polyhedron':
-            from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import _convex_hull
+            from msplatform.components.ion_processor.convex_geometry import _convex_hull
             import numpy as np
             hull = _convex_hull(dict(shape='convex_polyhedron',vertices_mm=spec['vertices_mm']))
             faces = []

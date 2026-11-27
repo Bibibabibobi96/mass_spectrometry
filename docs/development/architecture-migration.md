@@ -63,13 +63,15 @@ Agent1定向新旧消费者16 PASS（11.302s），最后未知版本拒绝补验
 
 ### C-r2 组件规范身份与公共运行职责拆分（WORKTREE）
 
+规范命名主题采用`2823fa42`的独立源码快照，仅抽取命名/路径/安装声明/生成registry及历史身份必要变更；未把工作区的气体science v2、粒子schema3、旧工作流分解和各Agent其它在途补丁混入。实际原样移动3个component与其component/assembly测试共8目录；当前作者请求另存`ip_mr_current_requests.json`，原LP60历史夹具不改。独立快照48项合同初次47 PASS/1 FAIL：漏更新包内new-run identity派生JSON；用现有生成函数更新后该唯一失败方法PASS（0.028s），不改物理校验；新增IP历史选择方法PASS（0.015s），默认当前continuation不借用旧身份、显式history只读原字节。完整普通安装留到最终必要节点，此命名单元不称CA19退休完成。 随后Changed selector两方法中一项暴露已提交C1删除`physics/reference.py`后遗留的过期测试路径；改为实际中性常量owner并补同一catalog精确依赖后，两项针对性检查PASS（2.377s），未恢复旧wrapper。独立源码快照文档gate初次因无Git metadata无法枚举，补临时验证库metadata/longpaths后StructureOnly PASS（322 files，0 errors）；该临时库不属于任务tracking分支、无remote。
+
 三组件与对应测试目录已实际迁到`multi_reflection_tof`、`ion_processor`、`dual_cone_tandem_quadrupole`；当前源码、跨语言资源、配置、机器registry/profile、打包和文档的完整旧ID按精确映射切换。原生模型的实际双压力区、平行镜双条带等结构未删除或捏造为新variant。3份原`00c6d23c`之前的版本化project描述符以原字节冻结到`docs/history/projects/<规范名>/retired_projects/<原ID>/config/project.json`，当前描述符严格绑定原commit/bytes/SHA；原旧history与研究资产不搬动。旧身份仅可历史读取，不注册能力、不作为新run别名。历史README仅修可变导航链接，冻结报告/manifest/old_witness/原LP60请求字节未改。外部精确改动备份与映射为`component-names/mapping.json`。
 
 公共`recipes.__init__`现在独占`SimulationRecipe/load_recipe/validate_recipe/assembly_name`与一次外部TOML读取；`recipes.reference`只负责编译/核验参考科学输入，不再兼任native总路由。公共`workflows.tracing.run_recipe/inspect_results`接同一已捕获author bytes，按实际schema选择native或reference实现；`reference_tracing.run_loaded_recipe`只保参考缓存/数值工作，跨backend批结果合并体实际移到已有`results.model.merge_trace_batches`。CLI及当前调用方同步，不留旧通用函数转发壳。
 
 真实验证：project registry生成成功，8个当前项目；registry/历史身份/科学边界联合47 PASS（17.183s），新增3组件当前发现/旧包不可import/旧身份新run拒绝同一方法PASS（3.623s）；公共入口拆分后的参考作者/参考运行/三类Species/科学边界32 PASS（22.104s），含单次author读取后外部改变、独立解析数值与冷读既有反例。文档StructureOnly首次发现9个导航断链，修可变索引后PASS（322 current files，0 errors）；失败不改写为首次通过。Ruff/diff-check PASS。普通wheel/sdist和新组合native尚未执行；这些WORKTREE结果不是CA19完成。共同冻结后再进行必要发行和Repository，避免每阶段重跑。
 
-C3基础已提交并普通push`00c6d23c`；其最终复验Store/历史guard29 PASS（8.454s）、终态seal成功/失败恢复2 PASS（1.745s），与之前方法有重复。其后新增formal v1精确OS只读保护覆盖材料化复制，软件fixture通过；仍未把真实大PA重新hash或启动商业native。Agent1继续OA数值/历史reader和response编译实际拆分，Agent2补粒子自有名/发行probe，Agent3迁旧发布恢复能力到Store，Agent4整合recorded/IPMR/diagnostic公共链，Agent5双锥唯一环境消费者，Agent6历史mass分析与旧执行退役；以上各单元未完成不得等同全C完成。
+C3基础已提交并普通push`00c6d23c`（后续OA reader退出`a7c1e018`、唯一物性/电子修正基础`2823fa42`也均已推同任务分支）；其最终复验Store/历史guard29 PASS（8.454s）、终态seal成功/失败恢复2 PASS（1.745s），与之前方法有重复。其后新增formal v1精确OS只读保护覆盖材料化复制，软件fixture通过；仍未把真实大PA重新hash或启动商业native。Agent1继续OA数值/历史reader和response编译实际拆分，Agent2补粒子自有名/发行probe，Agent3迁旧发布恢复能力到Store，Agent4整合recorded/IPMR/diagnostic公共链，Agent5双锥唯一环境消费者，Agent6历史mass分析与旧执行退役；以上各单元未完成不得等同全C完成。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 

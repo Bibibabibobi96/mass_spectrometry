@@ -9,7 +9,7 @@ from collections.abc import Mapping
 import numpy as np
 from scipy.spatial import ConvexHull
 
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+from msplatform.components.ion_processor.convex_geometry import shape_bounds
 
 
 def _fraction_points(vertices):

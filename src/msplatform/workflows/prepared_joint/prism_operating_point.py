@@ -14,10 +14,10 @@ import numpy as np
 from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
     classify_constraint_system,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import finite as _finite
+from msplatform.components.multi_reflection_tof.operating_authority import finite as _finite
 
 
 RESIDUAL_NAMES = (

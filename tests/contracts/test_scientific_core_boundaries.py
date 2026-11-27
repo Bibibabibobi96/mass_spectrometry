@@ -18,8 +18,8 @@ SCIENTIFIC_DOMAINS = {"analysis", "assembly", "contracts", "io", "ion_release"}
 PROVIDER_DOMAINS = {"rf_multipole", "orthogonal_accelerator", "single_reflection_oa_tof",
                     "single_reflection_tof",
                     "apertured_tube_electron_impact_ion_source", "transverse_helical_filament_wehnelt_electron_gun",
-                    "dual_cone_tandem_quadrupole_ion_interface", "parallel_mirror_dual_stripe_mr_tof",
-                    "dual_pressure_rectilinear_ion_processor"}
+                    "dual_cone_tandem_quadrupole", "multi_reflection_tof",
+                    "ion_processor"}
 # Provider dispatch belongs to components; neutral Assembly data may not import
 # individual providers merely because this shared traversal exists.
 COMPONENT_INFRASTRUCTURE = {"model", "catalog", "geometry_members", "shape_query", "registry", "cad_geometry"}
@@ -417,7 +417,7 @@ class ScientificCoreBoundaryTests(unittest.TestCase):
 
     def test_gas_layer_has_only_explicit_pure_dependencies(self):
         self.assertEqual(core_boundary_errors("from msplatform.gas.field import prepare_gas_field",
-                         "msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field", dependencies=set()), [])
+                         "msplatform.components.dual_cone_tandem_quadrupole.gas_field", dependencies=set()), [])
         self.assertEqual(core_boundary_errors("from msplatform.gas.field import GasField",
                          "msplatform.backends.simion.gas_runtime", dependencies=set()), [])
         self.assertEqual(core_boundary_errors("from msplatform.gas.field import prepare_gas_field",
@@ -498,7 +498,7 @@ def parallel_global_l0_family_search():
         module = "msplatform.workflows.mr_design"
         self.assertEqual(core_boundary_errors(source, module, dependencies=set()), [])
         for other in ("msplatform.workflows.other", "msplatform.analysis.example",
-                      "msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0"):
+                      "msplatform.components.multi_reflection_tof.mirror_l0"):
             with self.subTest(module=other):
                 self.assertTrue(core_boundary_errors(source, other, dependencies=set()))
         rejected = (

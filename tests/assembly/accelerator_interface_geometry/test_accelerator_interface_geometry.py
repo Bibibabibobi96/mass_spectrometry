@@ -15,7 +15,7 @@ from msplatform.execution.retention import file_record
 from msplatform.contracts.rigid_transform import RigidTransform
 from msplatform.workflows.accelerator_interface import geometry
 from tests.workflows.multipole_ip import test_multipole_ip_prepare as multipole_tests
-from tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis import test_ion_processor_assembly as assembly_tests
+from tests.assembly.multi_reflection_tof.analysis import test_ion_processor_assembly as assembly_tests
 
 
 class AcceleratorGeometryTests(unittest.TestCase):
@@ -285,7 +285,7 @@ roots = list(map(Path, json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 sys.path[:0] = list(map(str, roots))
 from msplatform.workflows.accelerator_interface.geometry import prepare_ion_processor_assembly
 from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface
+from msplatform.components.multi_reflection_tof import assembly_interface
 assert Path(assembly_interface.__file__).resolve().is_relative_to(Path.cwd() / "src")
 paths = list(map(Path, sys.argv[2:5]))
 values = [json.loads(path.read_text()) for path in paths]

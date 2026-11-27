@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from msplatform.io.manifest_records import verify_record
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
+from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
 from msplatform.backends.simion.resources import native_resource_path as simion_native_resource_path
 
 
@@ -158,7 +158,7 @@ def _approve_retired_operator_owner(owner: Path) -> dict:
     verify_record("operator_ancestry_binding", _record(owner, canonical))
     descriptor = _read(canonical)
     if (descriptor.get("role") not in {"mrtof_native_static_field_binding", "mrtof_native_static_field_response_basis"}
-            or descriptor.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
+            or descriptor.get("accelerator_provider") != "ion_processor"
             or any(key in descriptor for key in ("local_domain_update", "response_level_reuse", "consumer_view"))
             or len(descriptor.get("refinement_windows", [])) != 4):
         raise ValueError("retired operator requires the original full five-level IP declaration")
@@ -639,7 +639,7 @@ def validate_native_consumer_view(value: Any) -> dict[str, Any] | None:
 def _load_native_binding(binding: dict[str, Any], *, pure_response: bool = False) -> dict[str, Any]:
     """Consume sealed native static fields, with independent explicit collision assets."""
     provider = binding.get("accelerator_provider")
-    ip_replacement = provider == "dual_pressure_rectilinear_ion_processor"
+    ip_replacement = provider == "ion_processor"
     required = {"schema_version", "role", "parent", "refinement_windows", "instances"}
     if ip_replacement:
         required |= {"accelerator_provider", "assembly_scope", "replacement_assembly"}
@@ -755,7 +755,7 @@ def _load_native_binding(binding: dict[str, Any], *, pure_response: bool = False
         _validate_ip_replacement(binding, base, windows, resolved, pure_response=pure_response)
         return dict(binding, **base, instances=resolved, refinement_windows=windows,
                     accelerator_front_z_mm=None)
-    if assembly.get("accelerator_provider") == "dual_pressure_rectilinear_ion_processor":
+    if assembly.get("accelerator_provider") == "ion_processor":
         raise ValueError("IP assembly requires its explicit replacement binding identity")
     if (resolved[2]["origin_mm"] != assembly["accelerator_iob_origin_mm"]
             or geometry["detector"]["box"] != assembly["detector"]["box"]):
@@ -769,7 +769,7 @@ def _load_native_binding(binding: dict[str, Any], *, pure_response: bool = False
 
 def _validate_ip_fine_extension(binding: dict, base: dict, windows: list, instances: list) -> None:
     """Verify the one declared mixed-owner exception without weakening ordinary fields."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
+    from msplatform.components.multi_reflection_tof.native_field_science import extend_fine_z_domain
     from msplatform.backends.simion.mr_geometry import ordinary_pa_file_bytes
     if [w["name"] for w in windows] != ["ion_processor_local", "positive_integer_grid_a",
                                           "negative_integer_grid_a", "covered_local"]:
@@ -835,10 +835,10 @@ def _validate_ip_fine_extension(binding: dict, base: dict, windows: list, instan
 
 def validate_ip_fine_response_reuse(old: dict, source: dict, axis: str) -> None:
     """Accept only the existing pure P1/P2 operator outside its extended fine domain."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import _response_authority
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import extend_fine_z_domain
+    from msplatform.components.multi_reflection_tof.native_field_science import _response_authority
+    from msplatform.components.multi_reflection_tof.native_field_science import extend_fine_z_domain
     if (axis not in {"p1", "p2"} or old["response_basis"]["axis"] != axis
-            or source.get("accelerator_provider") != "dual_pressure_rectilinear_ion_processor"
+            or source.get("accelerator_provider") != "ion_processor"
             or not source.get("local_domain_update") or source.get("consumer_view")
             or _response_authority(source["authority"], old["response_basis"]) != old["authority"]):
         raise ValueError("IP fine response reuse requires same-axis pure35 and an extended ordinary source")
@@ -939,7 +939,7 @@ def _sealed_fresh_ip_origin(owner: Path, source_path: Path, binding: dict[str, A
             or request.get("role") != "mrtof_native_static_field_provider_request"
             or plan.get("schema_version") != 1 or plan.get("role") != "mrtof_native_static_field_provider_plan"
             or request.get("run_id") != plan.get("run_id") or plan.get("run_id") != owner.parent.name
-            or plan.get("project") != "parallel_mirror_dual_stripe_mr_tof" or plan.get("operation") != "refine"
+            or plan.get("project") != "multi_reflection_tof" or plan.get("operation") != "refine"
             or any(plan.get(key) != binding.get(key) for key in ("accelerator_provider", "assembly_scope", "replacement_assembly"))
             or not isinstance(levels, dict) or not levels
             or any(forbidden.intersection(value) or value.get("refine_performed") is False
@@ -961,7 +961,7 @@ def _validate_ip_replacement(binding: dict[str, Any], base: dict[str, Any],
     Only small authority documents are hashed here. PA records retain the common
     immutable-source/consumer verification boundary used by native field flights.
     """
-    provider = "dual_pressure_rectilinear_ion_processor"
+    provider = "ion_processor"
     scope = "full_c0_ion_processor_replacement"
     assembly, geometry = base["authority"]["assembly"], base["geometry"]
     if (binding.get("assembly_scope") != scope or assembly.get("assembly_scope") != scope
@@ -1113,7 +1113,7 @@ def _static_solver_numerics(solver: Mapping[str, Any]) -> dict[str, Any]:
 def native_binding_problem(binding: Mapping[str, Any], materialization: Mapping[str, Any], *,
                            layout_resolver: Callable[[], list[Mapping[str, Any]]] | None = None) -> dict[str, Any]:
     """Keep native discretization fixed while allowing the existing four P/S axes."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
+    from msplatform.components.multi_reflection_tof.candidate_voltage import PS_GROUPS
 
     if binding.get("mode") != "native_static_pa":
         raise CandidateContractError("native trial must consume its actual native static binding")
@@ -1156,8 +1156,8 @@ def native_binding_problem(binding: Mapping[str, Any], materialization: Mapping[
 def _parameterized_static_plan(binding: Mapping[str, Any], manifest: Path,
                                records: Mapping[str, Any], diagnostic: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Separate the saved mesh origin from a real parameterized solve; no equivalence claim."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object, finite as _finite
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS, candidate_authority
+    from msplatform.components.multi_reflection_tof.operating_authority import load_object as _load_object, finite as _finite
+    from msplatform.components.multi_reflection_tof.candidate_voltage import PS_GROUPS, candidate_authority
     from msplatform.backends.comsol.corridor_field import compile_request
     def read_sealed(owner: Path, path: Path) -> dict[str, Any]:
         _record(owner, path)
@@ -1249,8 +1249,8 @@ def _parameterized_static_plan(binding: Mapping[str, Any], manifest: Path,
 def _strict_saved_static_plan(binding: Mapping[str, Any], manifest: Path,
                               records: Mapping[str, Any], diagnostic: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Consume an honestly sealed saved-field rerun; stopping changes are not mesh origins."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object, finite as _finite
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
+    from msplatform.components.multi_reflection_tof.operating_authority import load_object as _load_object, finite as _finite
+    from msplatform.components.multi_reflection_tof.candidate_voltage import PS_GROUPS
     from msplatform.backends.comsol.corridor_field import compile_request
     def read(owner: Path, path: Path) -> dict[str, Any]:
         _record(owner, path)
@@ -1327,9 +1327,9 @@ def _strict_saved_static_plan(binding: Mapping[str, Any], manifest: Path,
 def scalar_binding_problem(binding: Mapping[str, Any], materialization: Mapping[str, Any],
                             binding_path: str, source_diagnostic: dict[str, Any] | None = None) -> dict[str, Any]:
     """The existing resolved-binding family projection, shared by response validation."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.operating_authority import load_object as _load_object
+    from msplatform.components.multi_reflection_tof.operating_authority import load_object as _load_object
     from .candidate_authority import named_record as _named_record
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
+    from msplatform.components.multi_reflection_tof.candidate_voltage import PS_GROUPS
     from msplatform.backends.comsol.corridor_field import compile_request
     manifest = Path(binding["export_manifest"])
     records = _load_object(manifest)["inputs"]
@@ -1437,14 +1437,14 @@ def native_response_operator(binding: dict[str, Any], authority: dict[str, Any])
 @_within_record_lookup
 def _load_native_response_metadata(path: Path, baseline: dict[str, Any]) -> dict[str, Any]:
     """Resolve the unique sealed pure-response math and operator, without PA access."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import (
+    from msplatform.components.multi_reflection_tof.native_field_science import (
         PS_GROUPS, RESPONSE_NORMALIZATION_V, TE1_AXIS, _response_authority, _te1_basis_metadata,
     )
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
+    from msplatform.components.multi_reflection_tof.candidate_voltage import candidate_authority
     descriptor = _read(path)
     required = {"schema_version", "role", "parent", "refinement_windows", "instances",
                 "fly_authorized", "response_basis", "source_authority_path", "source_binding_path"}
-    if descriptor.get("accelerator_provider") == "dual_pressure_rectilinear_ion_processor":
+    if descriptor.get("accelerator_provider") == "ion_processor":
         required |= {"accelerator_provider", "assembly_scope", "replacement_assembly"}
     if "consumer_view" in descriptor:
         required.add("consumer_view")
@@ -1492,7 +1492,7 @@ def _load_native_response_metadata(path: Path, baseline: dict[str, Any]) -> dict
     ordinary["role"] = "mrtof_native_static_field_binding"
     if "consumer_view" in descriptor:
         ordinary["consumer_view"] = descriptor["consumer_view"]
-    if descriptor.get("accelerator_provider") == "dual_pressure_rectilinear_ion_processor":
+    if descriptor.get("accelerator_provider") == "ion_processor":
         ordinary.update({key: descriptor[key] for key in
                          ("accelerator_provider", "assembly_scope", "replacement_assembly")})
     if "response_level_reuse" in descriptor:
@@ -1516,7 +1516,7 @@ def load_native_response_basis(path: Path, baseline: dict[str, Any]) -> dict[str
 
 def _load_native_materialized(descriptor: dict[str, Any], path: Path) -> dict[str, Any]:
     """Verify composition lineage/receipts, then reuse the ordinary native loader."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.native_field_science import compile_response_coefficients, TE1_AXIS
+    from msplatform.components.multi_reflection_tof.native_field_science import compile_response_coefficients, TE1_AXIS
     metadata = descriptor["materialization"]
     ordinary = {k: v for k, v in descriptor.items() if k != "materialization"}
     result = _load_native_binding(ordinary)
@@ -1818,7 +1818,7 @@ def _response_scientific_family(family: dict[str, Any]) -> dict[str, Any]:
 
 def _resolve_voltage_responses(binding: dict[str, Any], path: Path) -> dict[str, Any]:
     """Resolve PS increments at their declared origins without relabeling saved fields."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import (
+    from msplatform.components.multi_reflection_tof.candidate_voltage import (
         PS_GROUPS, candidate_authority,
     )
     responses = binding["voltage_responses"]
@@ -1985,7 +1985,7 @@ def validate_voltages(binding: dict[str, Any], analyzer: list[float], accelerato
     if len(analyzer) != 20 or len(expected) != 20 or any(
             not math.isclose(float(a), float(b), rel_tol=0, abs_tol=1e-9) for a, b in zip(analyzer, expected)):
         raise ValueError("analyzer voltages differ from frozen COMSOL authority")
-    if binding.get("accelerator_provider") == "dual_pressure_rectilinear_ion_processor":
+    if binding.get("accelerator_provider") == "ion_processor":
         rows = binding["authority"]["component_voltages_v"]
         expected_ip = [row["voltage_v"] for row in rows if row["component_namespace"] == "ion_processor"]
         if (len(accelerator) != 15 or len(expected_ip) != 15

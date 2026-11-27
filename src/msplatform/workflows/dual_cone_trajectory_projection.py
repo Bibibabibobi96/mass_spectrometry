@@ -89,7 +89,7 @@ def main() -> int:
     parser.add_argument("--geometry", type=Path)
     parser.add_argument("--numerics", type=Path)
     args = parser.parse_args()
-    package = "msplatform.components.dual_cone_tandem_quadrupole_ion_interface"
+    package = "msplatform.components.dual_cone_tandem_quadrupole"
     if args.geometry is None:
         args.geometry = Path(str(files(package).joinpath("config", "resolved_geometry.json")))
     if args.numerics is None:

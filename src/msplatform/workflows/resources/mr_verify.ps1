@@ -13,8 +13,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-$projectRoot = Join-Path $repoRoot 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof'
-$testRoot = Join-Path $repoRoot 'tests/components/parallel_mirror_dual_stripe_mr_tof'
+$projectRoot = Join-Path $repoRoot 'src/msplatform/components/multi_reflection_tof'
+$testRoot = Join-Path $repoRoot 'tests/components/multi_reflection_tof'
 . (Join-Path $repoRoot 'src\msplatform\execution\resources\require_powershell7.ps1')
 $lease = $null
 $savedPythonPath = $env:PYTHONPATH
@@ -63,7 +63,7 @@ try {
     } elseif ($SelectedTestModules.Count) {
       $testModules = @($SelectedTestModules | Sort-Object -Unique)
       if ($testModules.Count -ne $SelectedTestModules.Count -or @($testModules | Where-Object {
-        $_ -notmatch '^tests\.(?:components|assembly)\.parallel_mirror_dual_stripe_mr_tof\.[A-Za-z0-9_.]+$'
+        $_ -notmatch '^tests\.(?:components|assembly)\.multi_reflection_tof\.[A-Za-z0-9_.]+$'
       }).Count) { throw 'MR-TOF test partition has duplicate or foreign modules.' }
       & $python -m tools.repository.gate_unittest @testModules
       if ($LASTEXITCODE -ne 0) { throw 'MR-TOF test partition failed.' }
@@ -71,10 +71,10 @@ try {
       return
     } elseif ($Level -eq 'Core') {
       $coreTests = @(
-        'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_drift_phase_contract',
-        'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prism_analytic',
-        'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_native_corridor_plan',
-        'tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_native_corridor_freeze'
+        'tests.components.multi_reflection_tof.analysis.test_drift_phase_contract',
+        'tests.components.multi_reflection_tof.analysis.test_prism_analytic',
+        'tests.components.multi_reflection_tof.analysis.test_native_corridor_plan',
+        'tests.components.multi_reflection_tof.analysis.test_native_corridor_freeze'
       )
       $coreTests = @($coreTests + $ChangedTestModules | Sort-Object -Unique)
       Write-Output "PROJECT_TEST_MODULES=$($coreTests -join ',')"
@@ -158,7 +158,7 @@ try {
   }
 
   if ($PreflightOnly) { 'MRTOF_STATIC_PREFLIGHT=PASS PYTHON_TESTS=DEFERRED' }
-  else { "PROJECT_GATE=PASS PROJECT=parallel_mirror_dual_stripe_mr_tof LEVEL=$Level COMMERCIAL_SOLVER_EXECUTED=false" }
+  else { "PROJECT_GATE=PASS PROJECT=multi_reflection_tof LEVEL=$Level COMMERCIAL_SOLVER_EXECUTED=false" }
 } finally {
   $env:PYTHONPATH = $savedPythonPath
   $env:PYTHONDONTWRITEBYTECODE = $savedNoBytecode

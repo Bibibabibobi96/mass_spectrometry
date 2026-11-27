@@ -20,7 +20,7 @@ from msplatform.backends.simion.native_corridor_geometry import (
 from msplatform.backends.simion.native_corridor_plan import (
     derive_native_corridor_plan,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 

@@ -6,7 +6,7 @@ it does not derive a second accelerator geometry or a trajectory qualification.
 """
 
 from __future__ import annotations
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
+from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 import math
@@ -16,10 +16,10 @@ from pathlib import Path
 from msplatform.contracts.rigid_transform import FramedPosition, RigidTransform, relative_transform
 from msplatform.assembly.resolve_assembly import derive_assembly_scope
 from msplatform.backends.simion.mr_geometry import _box, _number
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import resolve_assembly_interface as resolve_mr_assembly_interface
+from msplatform.components.multi_reflection_tof.assembly_interface import resolve_assembly_interface as resolve_mr_assembly_interface
 from msplatform.backends.simion.mr_geometry import _analyzer_geometry_lines
 from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolve_geometry
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
 )
@@ -354,7 +354,7 @@ def resolve_oa_mr_direct_pose(
         and edge["downstream"]["instance_id"] in selected
         and components[edge["upstream"]["instance_id"]]["project_id"] == "orthogonal_accelerator"
         and edge["upstream"]["port_id"] == "axial_exit"
-        and components[edge["downstream"]["instance_id"]]["project_id"] == "parallel_mirror_dual_stripe_mr_tof"
+        and components[edge["downstream"]["instance_id"]]["project_id"] == "multi_reflection_tof"
         and edge["downstream"]["port_id"] == "accelerator_entry"
     ]
     if len(edges) != 1:
@@ -439,7 +439,7 @@ def resolve_accelerator_iob_origin(contract: dict[str, object], provider_plan: d
             resolved, geometry_profile_id=resolved["metadata"]["accelerator_component_geometry_profile_id"],
         )
     else:
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.provider import resolve_component as resolve_mr_provider
+        from msplatform.components.multi_reflection_tof.provider import resolve_component as resolve_mr_provider
         if mr_source_design is None:
             raise CandidateContractError("MR v3 geometry requires explicit provider source design")
         if (mr_source_design.get("accelerator_requirements") != accelerator_geometry_authority["accelerator_requirements"]

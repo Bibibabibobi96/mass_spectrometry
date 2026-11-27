@@ -52,7 +52,7 @@ class ComponentContractTest(unittest.TestCase):
         self.assertEqual(descriptor["formal_assets"]["status"], "none")
 
     def test_consumers_explicitly_declare_provider_and_variant(self) -> None:
-        for consumer in ("single_reflection_oa_tof_mass_analyzer", "parallel_mirror_dual_stripe_mr_tof"):
+        for consumer in ("single_reflection_oa_tof_mass_analyzer", "multi_reflection_tof"):
             contract = REPO / "src/msplatform/components" / ("single_reflection_oa_tof" if consumer == "single_reflection_oa_tof_mass_analyzer" else consumer) / "config/accelerator_dependency.json"
             dependency = json.loads(contract.read_text(encoding="utf-8"))
             self.assertEqual(dependency["consumer_project_id"], consumer)
@@ -95,7 +95,7 @@ class ComponentContractTest(unittest.TestCase):
         return path, provider_path
 
     def test_declared_dependency_versions_are_not_inferred_from_role_aliases(self) -> None:
-        for consumer in ("single_reflection_oa_tof_mass_analyzer", "parallel_mirror_dual_stripe_mr_tof"):
+        for consumer in ("single_reflection_oa_tof_mass_analyzer", "multi_reflection_tof"):
             dependency = REPO / "src/msplatform/components" / ("single_reflection_oa_tof" if consumer == "single_reflection_oa_tof_mass_analyzer" else consumer) / "config/accelerator_dependency.json"
             result = load_accelerator_dependency(REPO, dependency, consumer_project_id=consumer, required_variant="two_zone")
             self.assertEqual(result["api_version"], 2)

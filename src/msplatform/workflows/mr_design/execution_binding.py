@@ -9,7 +9,7 @@ from msplatform.ion_release.release import validate_release_spec
 
 def resolve_execution_binding(repo_root: Path, project_id: str, bindings: dict[str, str],
                               *, request_path: Path | None = None) -> dict[str, Any]:
-    if project_id != "parallel_mirror_dual_stripe_mr_tof":
+    if project_id != "multi_reflection_tof":
         raise ValueError("MR execution binding project identity differs")
     condition = load_json(Path(bindings["condition_path"]))
     context_path = Path(bindings["context_path"]).resolve()

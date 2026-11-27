@@ -364,15 +364,15 @@ try {
         throw "Ordinary workspace supplied a same-name module: $origin"
       }
     }
-    $mrProjectRoot=Join-Path $governedRoot 'components\parallel_mirror_dual_stripe_mr_tof'
+    $mrProjectRoot=Join-Path $governedRoot 'components\multi_reflection_tof'
     $mrPackage=New-RunPackage -Python $python -RepoRoot $ordinaryRoot -ArtifactRoot $mrProjectRoot `
-      -RunId '20260723_165957__test__python__installed-mr-binding' -Project parallel_mirror_dual_stripe_mr_tof `
+      -RunId '20260723_165957__test__python__installed-mr-binding' -Project multi_reflection_tof `
       -Mode native_static_field_provider -Software @('contract test') -RetentionContractEnabled `
       -CapacityLedgerLifecycleEnabled
     Assert-Equal (Get-Content (Join-Path $mrPackage.run_dir 'run_manifest.json') -Raw|ConvertFrom-Json).status checkpoint `
       'Approved MR run-package initialization did not retain checkpoint behavior.'
     $mrLedger=Get-Content -LiteralPath (Join-Path $governedRoot 'platform\capacity_ledger.json') -Raw|ConvertFrom-Json
-    Assert-Equal @($mrLedger.objects|Where-Object{$_.path-eq'components/parallel_mirror_dual_stripe_mr_tof/runs/20260723_165957__test__python__installed-mr-binding'}).Count 1 `
+    Assert-Equal @($mrLedger.objects|Where-Object{$_.path-eq'components/multi_reflection_tof/runs/20260723_165957__test__python__installed-mr-binding'}).Count 1 `
       'Approved MR package did not retain capacity preflight registration.'
 
     $frozenRoot=Join-Path $testRoot 'verified_frozen_code'
@@ -398,7 +398,7 @@ try {
     $invalidFailure=$null
     try{
       New-RunPackage -Python $python -RepoRoot $frozenRoot -ArtifactRoot $mrProjectRoot -RunId $invalidRunId `
-        -Project parallel_mirror_dual_stripe_mr_tof -Mode native_static_field_provider -Software @('contract test') `
+        -Project multi_reflection_tof -Mode native_static_field_provider -Software @('contract test') `
         -RetentionContractEnabled -CapacityLedgerLifecycleEnabled -FrozenPythonPackage $frozenEvidence|Out-Null
     }catch{$invalidFailure=$_.Exception.Message}
     if($invalidFailure-notlike '*Frozen Python dependency hash differs*'){throw "Invalid frozen policy was not rejected: $invalidFailure"}

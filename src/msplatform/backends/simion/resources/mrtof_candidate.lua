@@ -9,8 +9,8 @@ local operating_point_path = assert(program_path:gsub('%.lua$', '.operating_poin
 local operating_point = assert(loadfile(operating_point_path), 'missing run-local operating-point sidecar: '..operating_point_path)()
 local accelerator_provider = operating_point.accelerator_provider or 'orthogonal_accelerator'
 assert(accelerator_provider == 'orthogonal_accelerator'
-    or accelerator_provider == 'dual_pressure_rectilinear_ion_processor', 'unknown accelerator provider')
-local measured_mode = accelerator_provider == 'dual_pressure_rectilinear_ion_processor'
+    or accelerator_provider == 'ion_processor', 'unknown accelerator provider')
+local measured_mode = accelerator_provider == 'ion_processor'
 local static_field = operating_point.static_field
 local measured_source
 if measured_mode then

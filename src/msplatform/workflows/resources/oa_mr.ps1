@@ -222,7 +222,7 @@ function Get-ManifestOutputRecord {
   return $records[0]
 }
 $projectId='instrument_assembly'
-$providerProjectId='parallel_mirror_dual_stripe_mr_tof'
+$providerProjectId='multi_reflection_tof'
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $packageParent=Split-Path -Parent $packageRoot
 $researchRootExplicit=[bool]$RepoRoot
@@ -275,7 +275,7 @@ $acceleratorRun=Split-Path -Parent (Split-Path -Parent $acceleratorProviderRecei
 $acceleratorPulseSchedule=if([string]::IsNullOrWhiteSpace($AcceleratorPulseSchedulePath)){$null}else{(Resolve-Path -LiteralPath $AcceleratorPulseSchedulePath).Path}
 $mirrorVoltageVariation=if([string]::IsNullOrWhiteSpace($MirrorVoltageVariationPath)){$null}else{(Resolve-Path -LiteralPath $MirrorVoltageVariationPath).Path}
 $trajectoryContractInput=if([string]::IsNullOrWhiteSpace($ContractPath)){
-  Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'
+  Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json'
 }else{(Resolve-Path -LiteralPath $ContractPath).Path}
 $trajectoryRecording=((@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$trajectoryContractInput))-join"`n")|ConvertFrom-Json)
 $trajectoryRetentionClass=if($null-eq$trajectoryRecording){'compact'}else{[string]$trajectoryRecording.retention_class}
@@ -496,7 +496,7 @@ try{
   $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'src/msplatform/workflows/resources/oa_mr.ps1'})
   $frozenEntryRecord=if($entryIdentity.Count-eq1){@{path=$entryIdentity[0].snapshot_path;exists=$true;bytes=[long](Get-Item -LiteralPath $entryIdentity[0].snapshot_path).Length;sha256=$entryIdentity[0].sha256}}else{$null}
   if([string]::IsNullOrWhiteSpace($ContractPath)){
-    $trajectoryContractInput=Join-Path $script:pythonRoot 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json'
+    $trajectoryContractInput=Join-Path $script:pythonRoot 'src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json'
   }
   $backendSimionRoot=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources'
   . (Join-Path $backendSimionRoot 'native_corridor_runtime_support.ps1')
@@ -536,7 +536,7 @@ try{
   $acceleratorReceipt=$acceleratorProviderReceipt
   $acceleratorProviderPlan=[string]$providerAccelerator.provider_plan.path
   $acceleratorResolvedCampaign=[string]$providerAccelerator.resolved_campaign.path
-  $fixedMirrorStripeLoader=Join-Path $script:pythonRoot 'src\msplatform\components\parallel_mirror_dual_stripe_mr_tof\fixed_mirror_stripe_operating_point.py'
+  $fixedMirrorStripeLoader=Join-Path $script:pythonRoot 'src\msplatform\components\multi_reflection_tof\fixed_mirror_stripe_operating_point.py'
   $trialTool=Join-Path $script:pythonRoot 'src\msplatform\workflows\prepared_joint\prism_trial.py'
   $batchTool=Join-Path $script:pythonRoot 'src\msplatform\backends\simion\mrtof_batch_flight.py'
   $programSource=Join-Path $backendSimionRoot 'mrtof_candidate.lua'
@@ -551,7 +551,7 @@ try{
   if([string]$stripeRunConfig.mode-eq'dual_stripe_fixed_grid_native_downstream_seed'){
     $fixedMirrorStripeAuthority=Join-Path $resultDir 'fixed_mirror_stripe_downstream_authority.json'
     Invoke-ProjectPython -Arguments @(
-      '-m','msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_mirror_stripe_operating_point',
+      '-m','msplatform.components.multi_reflection_tof.fixed_mirror_stripe_operating_point',
       '--manifest',$stripeManifest,'--output',$fixedMirrorStripeAuthority
     )|Out-Host
     $authority=Get-Content -Raw -LiteralPath $fixedMirrorStripeAuthority|ConvertFrom-Json -Depth 30

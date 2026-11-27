@@ -28,7 +28,7 @@ class JointIpModelTests(unittest.TestCase):
         fixture=ip_fixture.IpCompilerTests();fixture.setUp()
         self.compiled=operations.compile_geometry(fixture.assembly,numerics=fixture.numerics)
         self.baseline=fixture.assembly.components_source['ion_processor']['baseline']
-        self.point=json.loads((ROOT/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf-8'))
+        self.point=json.loads((ROOT/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf-8'))
         epoch=ROOT/'src/msplatform/examples/instrument_epoch_v1.json'
         self.identity=dict(clock_epoch_id='instrument_clock_epoch_v1',authority_sha256=file_sha256(epoch))
         self.clock=dict(self.identity,phase_reference_instrument_time_us=0.)

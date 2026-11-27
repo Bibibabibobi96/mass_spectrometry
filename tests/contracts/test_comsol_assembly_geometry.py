@@ -32,8 +32,8 @@ class ComsolOaMrPolygonTests(unittest.TestCase):
     """Use the complete canonical OA–MR consumer without a native solver."""
 
     def test_public_request_retains_complete_oa_mr_members_and_groups(self):
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+        from tests.components.multi_reflection_tof.analysis.test_mr_provider_trial_transport import _plans
+        from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import geometry_authority
         from msplatform.assembly.factory import assemble
         from msplatform.backends.comsol.geometry_execution import resolve_geometry_request
         from msplatform.components.catalog import resolve_component
@@ -43,7 +43,7 @@ class ComsolOaMrPolygonTests(unittest.TestCase):
         oa = resolve_component({'provider_id': 'orthogonal_accelerator',
             'design': {'requirements': authority['accelerator_requirements'], 'geometry_profile': authority['geometry_profile']},
             'geometry_profile_id': authority['geometry_profile_id']})
-        mr = resolve_component({'provider_id': 'parallel_mirror_dual_stripe_mr_tof',
+        mr = resolve_component({'provider_id': 'multi_reflection_tof',
             'design': {'contract': contract, 'accelerator_requirements': authority['accelerator_requirements'],
                        'geometry_profile': authority['geometry_profile']},
             'geometry_profile_id': authority['geometry_profile_id']})

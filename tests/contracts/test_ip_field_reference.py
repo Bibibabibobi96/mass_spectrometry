@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 from msplatform.workflows.ion_processor import field_reference as reference
-from tests.components.dual_pressure_rectilinear_ion_processor import test_functional as fixtures
+from tests.components.ion_processor import test_functional as fixtures
 
 
 class IpFieldReferenceTests(unittest.TestCase):

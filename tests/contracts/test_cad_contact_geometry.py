@@ -187,7 +187,7 @@ class ContactGeometryTests(unittest.TestCase):
         from msplatform.components.catalog import resolve_component
         from msplatform.components.geometry_members import assembly_geometry_members
         root=Path(__file__).resolve().parents[2]
-        fixture=json.loads((root/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((root/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         assembly=assemble(fixture['recipe'],{k:resolve_component(v) for k,v in fixture['component_requests'].items()})
         snapshot=dict(composition_plan=assembly.composition_plan,components_resolved=assembly.components_resolved,
                       components_source=assembly.components_source)

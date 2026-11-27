@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from tests.contracts import test_neutral_ip_primitives as fixture
-from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
 from msplatform.backends.simion.model import RF_PHYSICS, compile_prepared_model
 from msplatform.backends.simion.rf_tracking_execution import prepare_neutral_ip_hs1
 from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
@@ -23,7 +23,7 @@ class NeutralCanonicalHs1Tests(unittest.TestCase):
         assembly=case.assembly
         geometry=case.compile_complete(assembly)
         epoch={'clock_epoch_id':'instrument_clock_epoch_v1','authority_sha256':file_sha256(SOURCE/'src/msplatform/examples/instrument_epoch_v1.json')}
-        point=json.loads((SOURCE/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
+        point=json.loads((SOURCE/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
         electrodes=assembly.components_resolved['ion_processor']['projection']['electrodes']
         drive={'clock':dict(epoch,phase_reference_instrument_time_us=0.),'ip_schedule':{'baseline':assembly.components_source['ion_processor']['baseline'],'native_operating_point':point,'clock':epoch},'groups':{'ion_processor':{e['name']:{'kind':'ip_schedule','schedule_index':e['electrode_id']} for e in electrodes}}}
         model=compile_prepared_model(geometry,assembly.components_resolved,drive=drive,physics=RF_PHYSICS)

@@ -57,7 +57,7 @@ def run_gas_assisted_transport(
     }
     graph = plan_transport_operations(**values, placement=placement, source_to_device=source_to_device)
     request.update({key: graph[key] for key in ("placement", "source_to_device") if key in graph})
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import validate_gas_field_data
     opened_gas = read_gas_field(request["gas_field_reference"])
     validate_gas_field_data(opened_gas.data)
     gas = opened_gas.artifact
@@ -74,7 +74,7 @@ def run_gas_assisted_transport(
     result = run_managed_stage(
         context,
         descriptor=dict(
-            project="dual_cone_tandem_quadrupole_ion_interface",
+            project="dual_cone_tandem_quadrupole",
             mode="gas_field_driven_simion_transport",
             software=["SIMION"],
         ),

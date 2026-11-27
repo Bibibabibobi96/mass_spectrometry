@@ -14,8 +14,11 @@ def _read(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def continuation_ancestry(predecessor: Path) -> list[Path]:
+def continuation_ancestry(predecessor: Path, *, historical: bool = False) -> list[Path]:
     """Validate and return the explicit predecessor and its bound data ancestors."""
+    if type(historical) is not bool:
+        raise ValueError("historical selection must be explicit")
+    project = "dual_pressure_rectilinear_ion_processor" if historical else "ion_processor"
     chain = []
     origins = []
     current = predecessor.resolve(strict=True)
@@ -26,7 +29,10 @@ def continuation_ancestry(predecessor: Path) -> list[Path]:
         manifest_path = current / "run_manifest.json"
         require_completed_terminal_publication(manifest_path)
         manifest = _read(manifest_path)
-        if (manifest.get("project") != "dual_pressure_rectilinear_ion_processor"
+        if (type(manifest.get("schema_version")) is not int
+                or manifest.get("schema_version") not in (1, 2)
+                or manifest.get("role") != "simulation_run_manifest"
+                or manifest.get("project") != project
                 or manifest.get("mode") != "native_electrode_functional"
                 or manifest.get("run_id") != current.name
                 or manifest.get("status") not in {"success", "failed"}):
@@ -61,13 +67,13 @@ def continuation_ancestry(predecessor: Path) -> list[Path]:
         current = direct_path.parent
 
 
-def continuation_protection_paths(predecessor: Path) -> list[Path]:
+def continuation_protection_paths(predecessor: Path, *, historical: bool = False) -> list[Path]:
     """Protect direct and partial-replay provenance, including data ancestors."""
     result: list[Path] = []
     pending = [predecessor.resolve(strict=True)]
     while pending:
         current = pending.pop()
-        for source in continuation_ancestry(current):
+        for source in continuation_ancestry(current, historical=historical):
             if source in result:
                 continue
             result.append(source)

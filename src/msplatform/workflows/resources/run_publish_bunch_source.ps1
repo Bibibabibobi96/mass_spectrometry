@@ -11,7 +11,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$projectId='parallel_mirror_dual_stripe_mr_tof'
+$projectId='multi_reflection_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $repoRoot=$workspaceRoot
 $artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)

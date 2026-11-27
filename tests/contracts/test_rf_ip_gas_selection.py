@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tests.contracts.test_simion_native_plans import LUA
 from msplatform.backends.simion.gas_runtime import compile_gas_runtime
-from msplatform.components.dual_pressure_rectilinear_ion_processor.gas_regions import (
+from msplatform.components.ion_processor.gas_regions import (
     build_gas_field_spec, validate_continuous_hs1_gas, validate_continuous_parent_coverage
 )
 from msplatform.contracts.gas import BoxDomain, GasFieldSpec, GasSource, GasSpecies, GasState
@@ -21,7 +21,7 @@ BINDING = ROOT / 'src/msplatform/backends/simion/resources/collision_hs1_gas.lua
 @unittest.skipUnless(LUA.is_file(), 'plain Lua unavailable')
 class ContinuousIpGasSelectionTests(unittest.TestCase):
     def test_actual_bath_and_explicit_outer_keep_boundaries_and_refuse_unknown(self):
-        baseline = json.loads((ROOT/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/baseline.json').read_text(encoding='utf-8'))
+        baseline = json.loads((ROOT/'src/msplatform/components/ion_processor/config/baseline.json').read_text(encoding='utf-8'))
         box = lambda lo, hi: BoxDomain(lo, hi, (True, True, True), (True, True, True))
         bath = build_gas_field_spec(baseline, domain=box((0, -10, -10), (211, 10, 10)))
         outer = GasFieldSpec(field_id='explicit_outer', frame_id=bath.frame_id, representation='uniform',

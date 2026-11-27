@@ -78,7 +78,7 @@ class IpMrGeometryTests(unittest.TestCase):
                                 native_path_resource=root/'native_run_path.lua')
 
     def test_bare_rf_ip_mr_geometry_uses_complete_selected_sources(self):
-        fixture=json.loads((Path(__file__).parent/'test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((Path(__file__).parent/'test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         example=json.loads(files('msplatform').joinpath('examples/rf_oatof_functional_v1.json').read_text(encoding='utf8'))
         rf=resolve_component(example['component_requests']['multipole'])
         self.assertEqual(rf.assembly_interface['ports']['mechanical_exit']['center_mm'][2],79.6)
@@ -135,7 +135,7 @@ class IpMrGeometryTests(unittest.TestCase):
     def test_complete_ip_mr_selected_geometry(self):
         # Full component requests and recipe captured from the selected canonical
         # IP60/MR case; this fixture supplies inputs, not a second geometry formula.
-        fixture=json.loads((Path(__file__).parent/'test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+        fixture=json.loads((Path(__file__).parent/'test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
         recipe=fixture['recipe']; components={name:resolve_component(request) for name,request in fixture['component_requests'].items()}
         original=copy.deepcopy((recipe,components,fixture))
         assembly=assemble(recipe,components)

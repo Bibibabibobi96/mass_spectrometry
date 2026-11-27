@@ -15,7 +15,7 @@ from msplatform.execution.manifest_verification import verify_run_manifest
 from msplatform.backends.simion.native_completion import retention_api
 from msplatform.workflows.ion_processor import preparation
 
-PROJECT = "dual_pressure_rectilinear_ion_processor"
+PROJECT = "ion_processor"
 
 
 def read_json(path: Path) -> dict:

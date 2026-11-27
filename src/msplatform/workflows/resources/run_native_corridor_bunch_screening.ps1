@@ -25,7 +25,7 @@ param(
 # native Fast Adjust family; no PA is rebuilt, copied, Refined, or materialized.
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$projectId='parallel_mirror_dual_stripe_mr_tof'
+$projectId='multi_reflection_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $artifactWorkspaceRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $repoRoot=$workspaceRoot
@@ -90,7 +90,7 @@ function Assert-VerifiedManifest {
   if($ReadOnlyFlightEvidence){
     $identity=Get-Content -LiteralPath $ManifestPath -Raw|ConvertFrom-Json -AsHashtable
     if(-not(($identity.project-eq'instrument_assembly'-and$identity.mode-eq'oa_mr')-or
-      ($identity.project-eq'parallel_mirror_dual_stripe_mr_tof'-and$identity.mode-eq'finite_3d_two_prism_voltage_trial'))){
+      ($identity.project-eq'multi_reflection_tof'-and$identity.mode-eq'finite_3d_two_prism_voltage_trial'))){
       throw 'Read-only flight evidence has an unsupported owner/mode pair.'
     }
     $Owner=[string]$identity.project;$Mode=[string]$identity.mode
@@ -199,7 +199,7 @@ import copy, json, sys
 from pathlib import Path
 from msplatform.backends.comsol.static_field_binding import load_binding, _record
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
+from msplatform.components.multi_reflection_tof.candidate_voltage import candidate_authority
 from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _native_static_binding_problem
 def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))

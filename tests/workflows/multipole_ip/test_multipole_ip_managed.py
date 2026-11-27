@@ -48,7 +48,7 @@ class ManagedMultipoleIPTests(unittest.TestCase):
         context = dataclasses.replace(context, capacity_policy_path=policy, stage_policy_path=stage_policy)
         root = context.workspace / "artifacts"
         for name, project, run_id in (("source", "rf_multipole_ion_optics", "source_run"),
-                                     ("receiver", "dual_pressure_rectilinear_ion_processor", "receiver_run")):
+                                     ("receiver", "ion_processor", "receiver_run")):
             old = getattr(fixture, name)
             target = root / "projects" / project / "runs" / run_id
             target.parent.mkdir(parents=True)

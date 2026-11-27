@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from msplatform.backends.simion.dual_cone_transport import prepare_transport
 
-PROJECT = Path(__file__).resolve().parents[2] / "src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface"
+PROJECT = Path(__file__).resolve().parents[2] / "src/msplatform/components/dual_cone_tandem_quadrupole"
 
 
 class ObservationCadenceTests(unittest.TestCase):

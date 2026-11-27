@@ -30,7 +30,7 @@ class MultiIpPublicFieldTests(unittest.TestCase):
  @patch.dict(os.environ,{'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN':''})
  def test_two_ip_public_model_and_field_admission(self):
   ip_fixture.CanonicalIpNeutralTests.setUpClass();case=ip_fixture.CanonicalIpNeutralTests(methodName='runTest')
-  raw=json.loads((ROOT/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+  raw=json.loads((ROOT/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
   other=copy.deepcopy(raw['component_requests']['ion_processor'])
   for key in other['design']['baseline']['schedule']:other['design']['baseline']['schedule'][key]+=10
   component=resolve_component(other);recipe=copy.deepcopy(case.assembly.composition_plan['recipe'])
@@ -45,7 +45,7 @@ class MultiIpPublicFieldTests(unittest.TestCase):
   projection=project_assembly_geometry(snapshot,outer_box_mm={'min':[-1000]*3,'max':[1000]*3});groups=[(r['instance_id'],r['electrode_group_id']) for r in projection['electrode_groups']]
   self.assertEqual(len(groups),30)
   clock=dict(clock_epoch_id='instrument_clock_epoch_v1',authority_sha256=file_sha256(ROOT/'src/msplatform/examples/instrument_epoch_v1.json'))
-  point=json.loads((ROOT/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
+  point=json.loads((ROOT/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf8'))
   group_drive={};schedules={}
   for name in ('ion_processor','renamed_second'):
    group_drive[name]={e['name']:dict(kind='ip_schedule',schedule_index=e['electrode_id']) for e in assembly.components_resolved[name]['projection']['electrodes']}

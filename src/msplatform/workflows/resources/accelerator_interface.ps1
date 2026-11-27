@@ -15,7 +15,7 @@ docs/ASSEMBLY.md (simulation path selection).
 [CmdletBinding()]
 param(
   [string]$ReferenceMrRunPath='',
-  [ValidateSet('orthogonal_accelerator','dual_pressure_rectilinear_ion_processor')]
+  [ValidateSet('orthogonal_accelerator','ion_processor')]
   [string]$AcceleratorProvider='orthogonal_accelerator',
   [string]$IonProcessorRunPath='',
   [string]$MultipoleIpRequestPath='',
@@ -92,8 +92,8 @@ if(-not$researchRootExplicit-and-not[string]::Equals($selectedPackageRoot,[IO.Pa
 $pathContext=Resolve-WorkspacePaths -SourceRoot $repoRoot -Python $python
 $artifactRoot=[string]$pathContext.artifact_root
 $assemblyArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly -OwnerId $projectId -Python $python
-$mrArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId parallel_mirror_dual_stripe_mr_tof -Python $python
-$ipArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId dual_pressure_rectilinear_ion_processor -Python $python
+$mrArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId multi_reflection_tof -Python $python
+$ipArtifactRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId ion_processor -Python $python
 $pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot;
   MASS_SPECTROMETRY_EXECUTION_ROOT=[string]$pathContext.execution_root;
   MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=[string]$pathContext.host_resource_state_path}
@@ -122,8 +122,8 @@ function Get-MultipoleIpPreparation {
 import json, sys
 from pathlib import Path
 from msplatform.execution.retention import verified_successful_run_reference, verify_record; from msplatform.io.manifest_records import record_path
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
-from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import transform_from_config
+from msplatform.components.ion_processor.native_geometry import native_projection
+from msplatform.components.ion_processor.coordinates import transform_from_config
 run, config = map(Path, sys.argv[1:])
 path = verified_successful_run_reference(run, 'results/multipole_ip/preparation_receipt.json', project='instrument_assembly', mode='multipole_ip_preparation')
 receipt = json.loads(path.read_text(encoding='utf-8-sig'))
@@ -286,7 +286,7 @@ function Invoke-JointWorkflow {
     }
     return
   }
-  if($AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'-or-not$ReferenceMrRunPath-or-not$ContractPath){
+  if($AcceleratorProvider-ne'ion_processor'-or-not$ReferenceMrRunPath-or-not$ContractPath){
     throw 'FullJoint requires IP provider, MR reference and observation contract.'
   }
   if($MultipoleIpRequestPath){
@@ -438,10 +438,10 @@ if($ResumeFinalization){
   return
 }
 if($FullJoint-and-not$PreparedJointWorkbenchRunPath-and-not$ContinuousReleaseRequest){
-  if($PSBoundParameters.ContainsKey('AcceleratorProvider')-and$AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'){
-    throw 'FullJoint supports only the dual_pressure_rectilinear_ion_processor provider.'
+  if($PSBoundParameters.ContainsKey('AcceleratorProvider')-and$AcceleratorProvider-ne'ion_processor'){
+    throw 'FullJoint supports only the ion_processor provider.'
   }
-  $AcceleratorProvider='dual_pressure_rectilinear_ion_processor'
+  $AcceleratorProvider='ion_processor'
 }
 if($ResultPath-and-not$FullJoint){throw 'ResultPath requires FullJoint.'}
 if($FullJoint){Invoke-JointWorkflow;return}
@@ -452,25 +452,25 @@ if($PreparedJointWorkbenchRunPath){throw 'PreparedJointWorkbenchRunPath requires
 if($MultipoleIpRequestPath-or$MultipoleIpRunId-or$IonProcessorRunId-or$IonProcessorConfigurationDirectory-or$IonProcessorFieldRunPath-or$IonProcessorContinuationPredecessorManifestPath-or$ContinueOnIpScientificFailure){throw 'MP-to-IP source options require FullJoint.'}
 if(-not$ReferenceMrRunPath){throw 'ReferenceMrRunPath is required for interface preparation.'}
 $reference=(Resolve-Path -LiteralPath $ReferenceMrRunPath).Path
-if($AcceleratorProvider-eq'dual_pressure_rectilinear_ion_processor'-and-not$IonProcessorRunPath){
+if($AcceleratorProvider-eq'ion_processor'-and-not$IonProcessorRunPath){
   throw 'Ion processor selection requires an explicit source run.'
 }
-if($AcceleratorProvider-eq'dual_pressure_rectilinear_ion_processor'-and-not$FinalizeJointWorkbench-and-not$MatchingRequestPath){
+if($AcceleratorProvider-eq'ion_processor'-and-not$FinalizeJointWorkbench-and-not$MatchingRequestPath){
   throw 'IP preparation requires an explicit MatchingRequestPath.'
 }
-if($FinalizeJointWorkbench-and($AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor'-or-not$PreparedInterfaceRunPath-or-not$JointFieldRunPath)){
+if($FinalizeJointWorkbench-and($AcceleratorProvider-ne'ion_processor'-or-not$PreparedInterfaceRunPath-or-not$JointFieldRunPath)){
   throw 'Joint workbench finalization requires explicit IP provider, design and new field runs.'
 }
 if(-not$FinalizeJointWorkbench-and($PreparedInterfaceRunPath-or$JointFieldRunPath)){throw 'Design/field run arguments require FinalizeJointWorkbench.'}
 if($ContractPath-and-not$FinalizeJointWorkbench){throw 'ContractPath requires FinalizeJointWorkbench.'}
-if($MatchingRequestPath-and($FinalizeJointWorkbench-or$AcceleratorProvider-ne'dual_pressure_rectilinear_ion_processor')){
+if($MatchingRequestPath-and($FinalizeJointWorkbench-or$AcceleratorProvider-ne'ion_processor')){
   throw 'MatchingRequestPath selects an IP design request; finalization consumes the design-frozen request.'
 }
 $executionContract=if($ContractPath){(Resolve-Path -LiteralPath $ContractPath).Path}else{''}
 $designRun=if($PreparedInterfaceRunPath){(Resolve-Path -LiteralPath $PreparedInterfaceRunPath).Path}else{''}
 $fieldRun=if($JointFieldRunPath){(Resolve-Path -LiteralPath $JointFieldRunPath).Path}else{''}
 $sourceRun=if($IonProcessorRunPath){(Resolve-Path -LiteralPath $IonProcessorRunPath).Path}else{''}
-if($AcceleratorProvider-eq'dual_pressure_rectilinear_ion_processor'){
+if($AcceleratorProvider-eq'ion_processor'){
   if(-not$LuaExe){$LuaExe=Join-Path $env:ProgramFiles 'SIMION-2020/lua.exe'}
   $LuaExe=(Resolve-Path -LiteralPath $LuaExe).Path
   $software+=@('Plain Lua (SIMION 2020 bundled interpreter; no solver)')

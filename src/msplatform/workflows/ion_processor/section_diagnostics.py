@@ -1,6 +1,6 @@
 """Default English electrode sections and bounded recorded-state clouds."""
 from pathlib import Path
-from msplatform.components.dual_pressure_rectilinear_ion_processor import section_geometry
+from msplatform.components.ion_processor import section_geometry
 import csv
 import hashlib
 import json

@@ -510,7 +510,7 @@ def plan_saved_fly_inputs(
     from .dual_cone_transport import SDS_FILES
 
     model = require_model_projection(model)
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import validate_gas_field_data
     opened_gas = read_gas_field(gas_field_reference)
     validate_gas_field_data(opened_gas.data)
     gas = opened_gas.artifact

@@ -28,9 +28,9 @@
 | 多极杆场、阶数、电压约定、质量筛选、碰撞和出口相空间 | [多极杆理论](../src/msplatform/components/rf_multipole/docs/theory/index.md)，四／六／八极适用范围分别解释 |
 | 二区／三区加速器的局部时间聚焦与源状态 | [正交加速器理论](../src/msplatform/components/orthogonal_accelerator/docs/theory/README.md) |
 | 单反射器及加速器—反射器联合聚焦、条件相空间 | [单反射oa-TOF理论](../src/msplatform/components/single_reflection_oa_tof/docs/theory/README.md) |
-| 多反射镜、漂移、Stripe及注入光学 | [MR-TOF理论](../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/theory/index.md) |
-| 双压力区捕获、碰撞冷却与脉冲提取的当前物理范围 | [Ion Processor状态](../src/msplatform/components/dual_pressure_rectilinear_ion_processor/docs/PROJECT.md) |
-| 双锥气流与离子输运的模型假设及耦合范围 | [双锥接口状态](../src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/docs/PROJECT.md) |
+| 多反射镜、漂移、Stripe及注入光学 | [MR-TOF理论](../src/msplatform/components/multi_reflection_tof/docs/theory/index.md) |
+| 双压力区捕获、碰撞冷却与脉冲提取的当前物理范围 | [Ion Processor状态](../src/msplatform/components/ion_processor/docs/PROJECT.md) |
+| 双锥气流与离子输运的模型假设及耦合范围 | [双锥接口状态](../src/msplatform/components/dual_cone_tandem_quadrupole/docs/PROJECT.md) |
 | 电子轰击电离与离子出生状态的已有范围 | [EI离子源状态](../src/msplatform/components/apertured_tube_electron_impact_ion_source/docs/PROJECT.md) |
 | 热电子发射、收集与电子枪的模型限制 | [Wehnelt电子枪状态](../src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun/docs/PROJECT.md) |
 | 网格、时间步、粒子统计、峰宽和跨求解器比较 | [验证方法](science/VALIDATION_METHODS.md) |

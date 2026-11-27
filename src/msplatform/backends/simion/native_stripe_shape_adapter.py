@@ -13,7 +13,7 @@ import math
 from typing import Any
 
 from msplatform.io.file_identity import canonical_json_sha256
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 import (
+from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     ManufacturedStripeBasisPathScales,
     NativeStripeSpatialReturnNumerics,
     NativeStripeSpatialShapeRoot,
@@ -24,10 +24,10 @@ from msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0 imp
     project_y_from_theory_drift_mm,
     solve_native_stripe_spatial_shape_branch,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
+from msplatform.components.multi_reflection_tof.resolved_geometry import (
     compile_dual_stripe_path_length_evaluator,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 

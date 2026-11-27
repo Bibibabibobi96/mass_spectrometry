@@ -98,7 +98,7 @@ class PreparedJointAnalysisTests(unittest.TestCase):
 
     def test_source_admission_rejects_wrong_owner_and_incomplete_native_before_output(self):
         from msplatform.workflows.prepared_joint.analysis_inputs import prepare_analysis_inputs
-        for owner, complete, message in (("parallel_mirror_dual_stripe_mr_tof", True, "instrument_assembly/prepared_joint"),
+        for owner, complete, message in (("multi_reflection_tof", True, "instrument_assembly/prepared_joint"),
                                          ("instrument_assembly", False, "complete original-ID")):
             with self.subTest(owner=owner, complete=complete), tempfile.TemporaryDirectory() as directory:
                 workspace = Path(directory)
@@ -239,7 +239,7 @@ if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit iner
                 (repo / "src/msplatform/execution/run_capacity_lifecycle.py").write_text(seal_fixture)
                 (installed / "execution/run_capacity_lifecycle.py").write_text(seal_fixture)
                 source, contract = analysis_source_fixture(workspace,
-                    owner="parallel_mirror_dual_stripe_mr_tof" if scenario == "wrong_owner" else "instrument_assembly",
+                    owner="multi_reflection_tof" if scenario == "wrong_owner" else "instrument_assembly",
                     complete=scenario != "incomplete_native")
                 contract_bytes = contract.read_bytes()
                 contract_sha256 = hashlib.sha256(contract_bytes).hexdigest().upper()
@@ -796,7 +796,7 @@ if($script:assetChecks-ne$(if($Scenario-eq'zero'){0}else{1})){throw 'Native payl
                 with self.subTest(scenario=scenario):
                     case_root = Path(directory) / scenario
                     case_root.mkdir()
-                    from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import NativeStaticBindingTest
+                    from tests.components.multi_reflection_tof.analysis.test_static_field_binding import NativeStaticBindingTest
                     field_root = case_root / "live_fields"
                     field_root.mkdir()
                     binding = NativeStaticBindingTest().fixture(field_root)
@@ -832,7 +832,7 @@ if(Test-Path -LiteralPath $old){throw 'Old public entry remains'}
 $controller=Join-Path $Repository 'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($controller,[ref]$null,[ref]$null)
 $selected=$ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-in@('$trialRunner','$trialArtifactRoot')},$true)
-$repoRoot=$Repository;$packageRoot=Join-Path $Repository 'src/msplatform';$controllerDirectory=Split-Path -Parent $controller;$artifactWorkspaceRoot='artifacts';$artifactRoot='artifacts/components/parallel_mirror_dual_stripe_mr_tof'
+$repoRoot=$Repository;$packageRoot=Join-Path $Repository 'src/msplatform';$controllerDirectory=Split-Path -Parent $controller;$artifactWorkspaceRoot='artifacts';$artifactRoot='artifacts/components/multi_reflection_tof'
 function Resolve-RunArtifactRoot {param($ArtifactRoot,$OwnerKind,$OwnerId,$Python)
  if($OwnerKind-ne'assembly'-or$OwnerId-ne'instrument_assembly'){throw 'Unexpected trial owner'}
  Join-Path $ArtifactRoot 'assemblies/instrument_assembly'
@@ -857,7 +857,7 @@ foreach($kind in @('Prepared','Legacy')){
         from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial
         with tempfile.TemporaryDirectory() as directory:
             manifest = Path(directory) / "run_manifest.json"
-            for owner, mode in (("parallel_mirror_dual_stripe_mr_tof", "two_prism_joint_measured_trial"),
+            for owner, mode in (("multi_reflection_tof", "two_prism_joint_measured_trial"),
                                 ("orthogonal_accelerator", "prepared_joint"),
                                 ("instrument_assembly", "two_prism_joint_measured_trial")):
                 manifest.write_text(json.dumps(dict(status="success", project=owner, mode=mode)))
@@ -865,7 +865,7 @@ foreach($kind in @('Prepared','Legacy')){
                     load_prepared_centroid_trial(manifest, manifest, manifest)
 
     def test_frozen_prepared_consumer_materializes_without_repository(self):
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
+        from tests.components.multi_reflection_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell 7 is unavailable")
@@ -972,8 +972,8 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{frozen_
             receipt.write_text(json.dumps(dict(preparation, measured_source_directory=str(prior / "results/source"))))
             records = [file_record(path) for path in [receipt, log, *sorted((prior / "results/source").iterdir())]]
             for index, (owner, mode) in enumerate((("instrument_assembly", "prepared_joint"),
-                ("parallel_mirror_dual_stripe_mr_tof", "two_prism_joint_measured_trial"),
-                ("parallel_mirror_dual_stripe_mr_tof", "prepared_joint"))):
+                ("multi_reflection_tof", "two_prism_joint_measured_trial"),
+                ("multi_reflection_tof", "prepared_joint"))):
                 (prior / "run_manifest.json").write_text(json.dumps(dict(project=owner, mode=mode, status="interrupted", outputs=records)))
                 destination = root / str(index)
                 destination.mkdir()

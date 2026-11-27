@@ -184,7 +184,7 @@ def prepare_interface_field_audit(*, source_run: Path, handoff: dict, source_dir
                 raise ValueError("native field source manifest identity differs from consumption")
             verify_record("native field source manifest", field_manifest_record)
             field_manifest = _read(field_manifest_path)
-            if (field_manifest.get("project") != "dual_pressure_rectilinear_ion_processor"
+            if (field_manifest.get("project") != "ion_processor"
                     or field_manifest.get("status") not in {"success", "failed"}):
                 raise ValueError("native field source must be an explicit terminal IP run")
             field_directory = Path(declaration["directory"]).resolve()
@@ -454,7 +454,7 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
                                     field_assets_verified: bool = False, source_identity_verified: bool = False,
                                     native_path_projection: bool = False) -> str:
     """Retain the MR core operating point, removing every OA launch-only field."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import PS_GROUPS
+    from msplatform.components.multi_reflection_tof.candidate_voltage import PS_GROUPS
 
     voltages = native_field["analyzer_voltages_v"]
     # Finalization may bind a closed P/S candidate after the design was frozen.
@@ -467,7 +467,7 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
     return (
         "-- Generated measured-state handoff; old OA fields are not consumed.\n" + transport +
         "local t=assert(loadfile(native_path(" + _lua(str(reference_path)) + ")))()\n"
-        "t.accelerator_provider='dual_pressure_rectilinear_ion_processor'\n"
+        "t.accelerator_provider='ion_processor'\n"
         "t.measured_source_directory=native_path(" + _lua(str(source_directory)) + ")\n"
         + "".join("t." + name + "=" + _lua(numerics[name]) + "\n"
                   for name in ("trajectory_quality", "maximum_step_us", "full_path_timeout_us")) +
@@ -486,8 +486,8 @@ def render_measured_operating_point(reference_path: Path, source_directory: Path
 
 def freeze_field_reference(reference_run: Path, inputs: Path, *, compiler_contract: dict[str, Any]) -> dict[str, Any]:
     """Bind only original field geometry/voltage/grid authors; never open old PA."""
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import resolve_trajectory_profile
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.drift_phase_contract import resolve_drift_phase_contract
+    from msplatform.components.multi_reflection_tof.candidate_contract import resolve_trajectory_profile
+    from msplatform.components.multi_reflection_tof.drift_phase_contract import resolve_drift_phase_contract
     from msplatform.backends.simion.prototype_materialization import _full_path_timeout_us
 
     materialization_path = verified_reference(reference_run, "results/two_prism_trial_materialization.json")

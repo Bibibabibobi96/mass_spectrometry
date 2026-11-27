@@ -58,8 +58,8 @@ check(5,-3,-224,1,5)
             geometry=doc['geometry']['frontend_geometry']
             projects=geometry['composition_plan']['components']
             rf=next(k for k,v in projects.items() if v['project_id']=='rf_multipole_ion_optics')
-            ip=next(k for k,v in projects.items() if v['project_id']=='dual_pressure_rectilinear_ion_processor')
-            mr=next(k for k,v in projects.items() if v['project_id']=='parallel_mirror_dual_stripe_mr_tof')
+            ip=next(k for k,v in projects.items() if v['project_id']=='ion_processor')
+            mr=next(k for k,v in projects.items() if v['project_id']=='multi_reflection_tof')
             roles=dict(background='background',rf=rf,ip=ip,analyzer=mr+'_analyzer',detector=mr+'_detector')
             policy=dict(role='ip_mr_collision_priority',roles=roles,
                 instances=[dict(role=name,instance_index=i,priority_number=i) for i,name in enumerate(roles.values(),1)],

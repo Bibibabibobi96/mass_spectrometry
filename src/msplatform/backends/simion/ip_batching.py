@@ -31,7 +31,7 @@ from msplatform.backends.simion.particle_batching import merge_rebased_particle_
 from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import project_direct_velocity, render_standard_beams, render_source_states
 from msplatform.backends.simion.ip_handoff import frozen_release_states
-from msplatform.components.dual_pressure_rectilinear_ion_processor.coordinates import to_project_position, to_project_vector
+from msplatform.components.ion_processor.coordinates import to_project_position, to_project_vector
 from msplatform.results import ip_continuation
 from msplatform.results.ip_continuation import continuation_ancestry, continuation_protection_paths
 from msplatform.backends.simion.lua_serialization import lua_literal
@@ -58,7 +58,7 @@ def frozen_runtime_profile(run: Path, *, allow_legacy: bool = False) -> dict:
         path, role = legacy, "ion_processor_execution_profiles"
     registry = _read(path)
     if (registry.get("schema_version") != 1 or registry.get("role") != role
-            or registry.get("project_id") != "dual_pressure_rectilinear_ion_processor"):
+            or registry.get("project_id") != "ion_processor"):
         raise ValueError("frozen runtime profile identity differs")
     matches = [item for item in registry["profiles"] if item["profile_id"] == "native_functional"]
     if len(matches) != 1:
@@ -112,7 +112,7 @@ def _validate_continuation_science(run: Path, predecessor: Path) -> tuple[dict, 
     manifest_path = predecessor / "run_manifest.json"
     require_completed_terminal_publication(manifest_path)
     manifest = _read(manifest_path)
-    if (manifest.get("project") != "dual_pressure_rectilinear_ion_processor"
+    if (manifest.get("project") != "ion_processor"
             or manifest.get("mode") != "native_electrode_functional"
             or manifest.get("status") not in {"success", "failed"}
             or manifest.get("run_id") != predecessor.name):

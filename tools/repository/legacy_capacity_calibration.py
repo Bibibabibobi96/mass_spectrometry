@@ -61,11 +61,11 @@ LEGACY_PROJECT_EVIDENCE_DIRECTORIES = {
 }
 LEGACY_SCRATCH_ENGINEERING_SOURCE_DIRECTORIES = {
     (
-        "parallel_mirror_dual_stripe_mr_tof",
+        "multi_reflection_tof",
         "20260902__ion-foil-recovery",
     ),
     (
-        "dual_cone_tandem_quadrupole_ion_interface",
+        "dual_cone_tandem_quadrupole",
         "20260914_084035__dual-cone__gas-field",
     ),
 }

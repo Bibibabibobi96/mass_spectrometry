@@ -1,7 +1,7 @@
 """Deterministic branch coverage for the solver-neutral segmented P1/P2 model."""
 from __future__ import annotations
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.accelerator_requirements import read_accelerator_geometry_authority
+from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
+from msplatform.components.multi_reflection_tof.accelerator_requirements import read_accelerator_geometry_authority
 
 import argparse
 from collections import Counter, defaultdict
@@ -22,19 +22,19 @@ from msplatform.execution.host_resource_python import ensure_heavy_entry
 from msplatform.workflows.mr_design.accelerator_exit_transport_source import (
     materialize_accelerator_exit_transport_source,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.fixed_mirror_stripe_operating_point import (
+from msplatform.components.multi_reflection_tof.fixed_mirror_stripe_operating_point import (
     load_fixed_mirror_stripe_operating_point,
 )
 from msplatform.workflows.mr_design.mirror_exact_k_operating_point import (
     ManagedExactKOperatingPoint,
     load_managed_exact_k_operating_point,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import axial_potential_v
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import MirrorL0Design
+from msplatform.components.multi_reflection_tof.mirror_l0 import axial_potential_v
+from msplatform.components.multi_reflection_tof.mirror_l0 import MirrorL0Design
 from msplatform.workflows.mr_design.prism_mirror_transport import (
     TransportNumerics,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 from msplatform.workflows.prepared_joint.prism_operating_point import (
@@ -110,7 +110,7 @@ def _load_stripe_seed(
     if (
         not isinstance(manifest, dict)
         or manifest.get("schema_version") != 2
-        or manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+        or manifest.get("project") != "multi_reflection_tof"
         or manifest.get("mode") != "dual_stripe_exact_k_downstream_seed"
         or manifest.get("status") != "success"
     ):

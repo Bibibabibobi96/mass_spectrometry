@@ -108,14 +108,14 @@ class OaMrJointPlanTests(unittest.TestCase):
     def test_actual_three_asset_public_geometry_and_owner_plan(self):
         from msplatform.assembly.factory import assemble
         from msplatform.components.catalog import resolve_component
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_mr_provider_trial_transport import _plans
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
+        from tests.components.multi_reflection_tof.analysis.test_mr_provider_trial_transport import _plans
+        from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import geometry_authority
 
         _, plan, contract = _plans()
         authority = geometry_authority(contract)
         oa = resolve_component(dict(provider_id="orthogonal_accelerator", geometry_profile_id=authority["geometry_profile_id"],
             design=dict(requirements=authority["accelerator_requirements"], geometry_profile=authority["geometry_profile"])))
-        mr = resolve_component(dict(provider_id="parallel_mirror_dual_stripe_mr_tof", geometry_profile_id=authority["geometry_profile_id"],
+        mr = resolve_component(dict(provider_id="multi_reflection_tof", geometry_profile_id=authority["geometry_profile_id"],
             design=dict(contract=contract, accelerator_requirements=authority["accelerator_requirements"], geometry_profile=authority["geometry_profile"])))
         components = {name: oa if row["project_id"] == "orthogonal_accelerator" else mr for name,row in plan["components"].items()}
         assembly = assemble(plan["recipe"], components)

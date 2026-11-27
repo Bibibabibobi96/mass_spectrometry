@@ -17,7 +17,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$projectId='parallel_mirror_dual_stripe_mr_tof'
+$projectId='multi_reflection_tof'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path
 $artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
 $publishedPinReason='MR-TOF native adjustable analyzer PA family; rebuild only on frozen geometry identity change'
@@ -27,7 +27,7 @@ $packageRootText=& $python -I -B -c 'from pathlib import Path;import msplatform;
 if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'}
 $packageRoot=(Resolve-Path -LiteralPath $packageRootText).Path
 $repoRoot=$workspaceRoot
-$contract=if($ContractPath){[IO.Path]::GetFullPath($ContractPath)}else{Join-Path $packageRoot 'components\parallel_mirror_dual_stripe_mr_tof\simion_candidate_two_zone.json'}
+$contract=if($ContractPath){[IO.Path]::GetFullPath($ContractPath)}else{Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json'}
 $frozenDirectory=(Resolve-Path -LiteralPath $FrozenInputDirectory).Path
 $identityPath=Join-Path $frozenDirectory 'native_corridor_identity.json'
 $planPath=Join-Path $frozenDirectory 'native_corridor_plan.json'

@@ -178,8 +178,8 @@ pre-pulse历史包含接续。结果同时记录体积状态重启时刻与实�
 ```powershell
 $artifacts = Join-Path (Split-Path -Parent (Get-Location).Path) 'artifacts'
 $assembly = Join-Path $artifacts 'projects/instrument_assembly'
-$mr = Join-Path $artifacts 'projects/parallel_mirror_dual_stripe_mr_tof'
-$ip = Join-Path $artifacts 'projects/dual_pressure_rectilinear_ion_processor'
+$mr = Join-Path $artifacts 'projects/multi_reflection_tof'
+$ip = Join-Path $artifacts 'projects/ion_processor'
 & src/msplatform/workflows/resources/accelerator_interface.ps1 -FullJoint `
   -IonProcessorRunPath (Join-Path $ip 'runs/20261023_095324__sim__simion__multipole-524da-injected-ip-n100') `
   -ReferenceMrRunPath (Join-Path $mr 'runs/20261015_040845__sim__simion__converging-y360-z002-gaussian-ey-sigma0p15-n100') `

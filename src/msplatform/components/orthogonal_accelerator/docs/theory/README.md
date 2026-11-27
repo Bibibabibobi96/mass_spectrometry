@@ -21,7 +21,7 @@
 单次反射 oa-TOF 的源到 detector 框架、加速器—反射器联合一至三阶闭合、有限束宽分辨率与
 T0—T5实验仍由其[理论入口](../../../../../../src/msplatform/components/single_reflection_oa_tof/docs/theory/README.md)导航。
 MR-TOF 的坐标、中央交接面及多次反射由其
-[理论入口](../../../../components/parallel_mirror_dual_stripe_mr_tof/docs/theory/index.md)导航。
+[理论入口](../../../../components/multi_reflection_tof/docs/theory/index.md)导航。
 
 ## 迁移与证据边界
 

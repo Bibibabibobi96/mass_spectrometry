@@ -242,8 +242,8 @@ def _validate_oa_drive(drive: Mapping[str, Any], mappings: Mapping) -> None:
 def _validated_ip_schedule(schedule, clock, compiled, components, selected, ip):
     """Validate the actual IP source, operating point, clock and schedule."""
     from msplatform.contracts.clock import require_same_clock
-    from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import select_legacy_physical_design
-    from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+    from msplatform.components.ion_processor.native_geometry import select_legacy_physical_design
+    from msplatform.components.ion_processor.timing import derive_native_timing
 
     neutral = compiled.frontend_geometry.get('role') in {'simion_neutral_world_collision_geometry', 'simion_neutral_multi_domain_collision_geometry'}
     snapshot = compiled.frontend_geometry['source_snapshot'] if neutral else None
@@ -299,7 +299,7 @@ def _compile_rf_ip_model(compiled: CompiledSimionGeometry, components: Mapping[s
     plan, maps = geometry['composition_plan'], geometry['electrode_bindings']
     selected = plan['scope']['instance_ids']
     rf = [n for n in selected if plan['components'][n]['project_id'] == 'rf_multipole_ion_optics']
-    ip = [n for n in selected if plan['components'][n]['project_id'] == 'dual_pressure_rectilinear_ion_processor']
+    ip = [n for n in selected if plan['components'][n]['project_id'] == 'ion_processor']
     if len(selected) != 2 or len(rf) != 1 or len(ip) != 1 or set(components) != set(selected):
         raise ValueError('joint model requires exact RF and IP providers')
     rf, ip = rf[0], ip[0]

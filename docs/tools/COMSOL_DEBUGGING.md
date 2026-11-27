@@ -53,7 +53,7 @@
 [rf-release-case]: ../../docs/history/projects/rf_multipole_ion_optics/retired_projects/rf_quadrupole_ion_optics/docs/history/20260911__solver-sensitivity-and-retired-interface.md#comsol-数值与物理边界
 [octupole-state]: ../../src/msplatform/components/rf_multipole/docs/PROJECT.md#oct
 [oa-small-n-case]: ../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md
-[mr-field-route]: ../../src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md#电场表示与数值资格
+[mr-field-route]: ../../src/msplatform/components/multi_reflection_tof/docs/PROJECT.md#电场表示与数值资格
 
 ## 属性和Feature发现
 

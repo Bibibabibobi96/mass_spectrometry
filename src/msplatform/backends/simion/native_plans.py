@@ -375,8 +375,8 @@ def _plan_joint_geometry_build(compiled, root, seed_record, path_resource):
     if ip_mr:
         plan = geometry['composition_plan']
         projects = {name:plan['components'][name]['project_id'] for name in plan['scope']['instance_ids']}
-        ips = [name for name,project in projects.items() if project == 'dual_pressure_rectilinear_ion_processor']
-        mrs = [name for name,project in projects.items() if project == 'parallel_mirror_dual_stripe_mr_tof']
+        ips = [name for name,project in projects.items() if project == 'ion_processor']
+        mrs = [name for name,project in projects.items() if project == 'multi_reflection_tof']
         rfs = [name for name,project in projects.items() if project == 'rf_multipole_ion_optics']
         if len(ips) != 1 or len(mrs) != 1 or len(rfs) != count-3 or len(projects) != count-1:
             raise ValueError('IP–MR geometry selected components differ')

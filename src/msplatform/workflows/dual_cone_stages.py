@@ -47,7 +47,7 @@ def _run(context, action, ids, implementation, arguments, sources, kind):
     sources = list({str(source.manifest_location): source for source in sources}.values())
     result = run_managed_stage(
         context,
-        descriptor=dict(project="dual_cone_tandem_quadrupole_ion_interface", mode=action, software=["SIMION"]),
+        descriptor=dict(project="dual_cone_tandem_quadrupole", mode=action, software=["SIMION"]),
         run_id=datetime.now().strftime("%Y%m%d_%H%M%S")
         + "__sim__simion__"
         + action.replace("_", "-")
@@ -178,7 +178,7 @@ def track_fields(
         collision_sds_records=sds,
         placement=placement, source_to_device=source_to_device,
     )
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import validate_gas_field_data
     opened_gas = read_gas_field(gas_field_reference)
     validate_gas_field_data(opened_gas.data)
     gas = opened_gas.artifact

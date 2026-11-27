@@ -30,9 +30,9 @@ from msplatform.backends.simion.geometry import _numerical_box
 from msplatform.backends.simion.numerics import normalize_cell_mm_xyz
 from msplatform.backends.simion.ip_assembly_geometry import render_selected_ip_body
 from msplatform.backends.simion.ip_compiler import _ip_physical_samples
-from msplatform.components.dual_pressure_rectilinear_ion_processor.convex_geometry import shape_bounds
+from msplatform.components.ion_processor.convex_geometry import shape_bounds
 from msplatform.components.geometry_members import assembly_geometry_members
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.assembly_interface import (
+from msplatform.components.multi_reflection_tof.assembly_interface import (
     _component_electrodes,
     _scientific_groups,
 )
@@ -406,12 +406,12 @@ def compile_complete_mr_geometry(
     oa = [
         name for name, project in groups.items() if project == "orthogonal_accelerator"
     ]
-    ip = [name for name, project in groups.items() if project == 'dual_pressure_rectilinear_ion_processor']
+    ip = [name for name, project in groups.items() if project == 'ion_processor']
     rf = [name for name, project in groups.items() if project == 'rf_multipole_ion_optics']
     mr = [
         name
         for name, project in groups.items()
-        if project == "parallel_mirror_dual_stripe_mr_tof"
+        if project == "multi_reflection_tof"
     ]
     if (len(mr) != 1 or not ((len(selected),len(oa),len(ip),len(rf))
                               in ((2,1,0,0),(2,0,1,0),(3,0,1,1)))):

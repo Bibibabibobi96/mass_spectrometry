@@ -534,7 +534,7 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
         _protected_source(session, selected.reference["manifest"], required_paths=[row["path"] for row in guards])
     from msplatform.results.gas_field import read_gas_field
 
-    from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field_validation import validate_gas_field_data
+    from msplatform.components.dual_cone_tandem_quadrupole.gas_field_validation import validate_gas_field_data
     opened_gas = read_gas_field(request["gas_field_reference"])
     validate_gas_field_data(opened_gas.data)
     gas = opened_gas.artifact
@@ -546,7 +546,7 @@ def execute_saved_fly(session, *, fields, producer, plan, request, model, limits
     science = dict(
         schema_version=1,
         role="dual_cone_simion_ion_transport_science",
-        project_id="dual_cone_tandem_quadrupole_ion_interface",
+        project_id="dual_cone_tandem_quadrupole",
         trajectory_authority="simion",
         gas=request.pop("collision_science"),
         electric_field=model["electric_field"],

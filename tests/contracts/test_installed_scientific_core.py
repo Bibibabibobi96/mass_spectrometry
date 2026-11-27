@@ -904,7 +904,7 @@ with section_timing('ip_missing_owners', sys.argv[2]):
             ipm_held.rename(ipm_file)
         assert ipm_file.read_bytes()==ipm_original
     for ipm_legacy in ('diagnostics.py','section_diagnostics.py','post_extraction_diagnostics.py','field_diagnostics.py','extraction_force_budget.py'):
-        assert not (rfe_purelib/'projects/dual_pressure_rectilinear_ion_processor/analysis'/ipm_legacy).exists()
+        assert not (rfe_purelib/'projects/ion_processor/analysis'/ipm_legacy).exists()
 # IP_MISSING_OWNER_INSTALLED_END
 # TOF_MASS_SPECTRUM_INSTALLED_BEGIN
 with section_timing('tof_mass_spectrum', sys.argv[2]):
@@ -1104,8 +1104,8 @@ from importlib.util import find_spec as installed_find_spec
 for retired_module in (
     "msplatform.workflows.cooled_frontend",
     "msplatform.workflows.local_frontend",
-    "msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_buncher",
-    "msplatform.components.dual_pressure_rectilinear_ion_processor.cooled_field_design",
+    "msplatform.components.ion_processor.cooled_buncher",
+    "msplatform.components.ion_processor.cooled_field_design",
     "msplatform.backends.simion.cooled_frontend_geometry",
     "msplatform.backends.simion.ip_frontend_geometry",
 ):
@@ -1120,7 +1120,7 @@ for retired_resource in ("cooled_frontend.lua", "sample_cooled_field.lua"):
     assert not installed_resource_files("msplatform.backends.simion").joinpath("resources", retired_resource).is_file()
 
 # IP exact CSG sections: pure installed geometry, not a renderer or native PA.
-from msplatform.components.dual_pressure_rectilinear_ion_processor import section_geometry as ip_sections
+from msplatform.components.ion_processor import section_geometry as ip_sections
 assert pathlib.Path(ip_sections.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
 ip_wedge = dict(shape='convex_polyhedron',vertices_mm=[[x,y,z] for x in (0,10) for y,z in ((0,0),(2,0),(0,2))])
 ip_cut_metal = dict(solids=[dict(shape='box',min_mm=[0,-2,-2],max_mm=[10,2,2])],
@@ -1144,7 +1144,7 @@ ip_module_hold=ip_module_path.with_suffix('.missing-test-held')
 ip_module_path.rename(ip_module_hold)
 try:
     ip_section_missing=subprocess.run([sys.executable,'-I','-B','-c',
-        'from msplatform.components.dual_pressure_rectilinear_ion_processor import section_geometry'],
+        'from msplatform.components.ion_processor import section_geometry'],
         cwd=root,capture_output=True,text=True,timeout=30,check=False)
     assert ip_section_missing.returncode!=0 and 'section_geometry' in ip_section_missing.stderr
 finally:
@@ -1269,8 +1269,8 @@ for project_id, documents in fixture['standalone_contracts'].items():
     origin = pathlib.Path(resolver.__file__).resolve()
     assert origin.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
     origins[module_name] = str(origin)
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.geometry import resolve_geometry
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_uniform_rear_gas_field
+from msplatform.components.dual_cone_tandem_quadrupole.geometry import resolve_geometry
+from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_uniform_rear_gas_field
 from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
 from msplatform.contracts.gas import GasSpecies
 from msplatform.backends.simion.dual_cone_geometry import render_gem
@@ -1287,7 +1287,7 @@ field, runtime_metadata = prepare_uniform_rear_gas_field(cone['uniform_rear_gas_
 manifest = materialize_gas_runtime(field,root/'uniform.lua',root/'uniform-manifest.json',manifest_metadata=runtime_metadata)
 assert manifest['role'] == 'dual_cone_gas_field_export'
 assert (root/'uniform.lua').read_bytes() == cone['uniform_lua'].encode()
-import msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field as cone_gas_module
+import msplatform.components.dual_cone_tandem_quadrupole.gas_field as cone_gas_module
 import msplatform.backends.simion.gas_runtime as joint_gas_module
 assert pathlib.Path(cone_gas_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
 assert pathlib.Path(joint_gas_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
@@ -1324,7 +1324,7 @@ except ValueError as gm_error: assert str(gm_error)==gm_mr_original['candidate_r
 else: raise AssertionError('invalid candidate role accepted')
 # Existing sealed synthetic IP binding; actual loader/operator, no mocks or solver.
 from msplatform.backends.comsol.static_field_binding import load_binding as gm_load_binding
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority as gm_candidate_authority
+from msplatform.components.multi_reflection_tof.candidate_voltage import candidate_authority as gm_candidate_authority
 gm_operator_binding=gm_load_binding(pathlib.Path(fixture['mr_prepared_field_operator_binding']))
 gm_operator_candidate=copy.deepcopy(gm_operator_binding)
 gm_expected_candidate=dict(s1=1.0,s2=2.0,p1=3.0,p2=4.0)
@@ -1445,7 +1445,7 @@ assert source_world.from_frame_id==cone['source_spec']['frame_id'] and source_wo
 from msplatform import components as dual_components, assembly as dual_assembly
 from msplatform.components.geometry_members import assembly_geometry_members as dual_cad_members
 from msplatform.exporters.step import step_member_names as dual_cad_names
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import geometry_members as dual_member_owner, assembly_interface as dual_port_owner
+from msplatform.components.dual_cone_tandem_quadrupole import geometry_members as dual_member_owner, assembly_interface as dual_port_owner
 for module in (dual_member_owner,dual_port_owner):
     assert pathlib.Path(module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
 dual_component=dual_components.resolve_component(dict(provider_id='dual_cone_tandem_quadrupole',design=cone['baseline']))
@@ -1532,7 +1532,7 @@ assert 'device_placement=' in (placed_source_only/'solver/simion/run_config.lua'
 assert not list(placed_source_only.rglob('*.gem')) and not list(placed_source_only.rglob('*.pa*'))
 
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_voltage import candidate_authority
+from msplatform.components.multi_reflection_tof.candidate_voltage import candidate_authority
 from msplatform.backends.comsol import corridor_field
 assert callable(corridor_field.compile_request)
 from msplatform.backends.comsol import rf_stationary_field
@@ -1706,7 +1706,7 @@ try:
 finally:
     wehnelt_report_held.rename(wehnelt_report_path)
 assert wehnelt_report_path.read_bytes()==wehnelt_report_bytes
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
+from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
 assert callable(load_contract)
 candidate = candidate_authority({'analyzer_electrode_voltages_v': [0.]*20}, dict(s1=1., s2=2., p1=3., p2=4.))
 assert [candidate['analyzer_electrode_voltages_v'][i-1] for i in (11,12,13,14,16,17)] == [1.,1.,2.,2.,3.,4.]
@@ -1719,7 +1719,7 @@ for name in ('build_and_export_paired_accelerator_field.m', 'oatof_build_acceler
     assert native_resource_path(name).resolve() == matlab_directory / name
     assert native_resource_path(name).read_bytes() == text.encode('utf-8')
     assert text.startswith('function') and 'mfilename' not in text
-from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+from msplatform.components.ion_processor.native_geometry import native_projection
 from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
 
 # COOLING_DIAGNOSTICS_INSTALLED_BEGIN
@@ -1776,11 +1776,11 @@ assert (ip_output/'simion/collision_hs1.lua').read_text() == adapt_hs1_for_repea
 assert not (ip_output/'simion/processor.iob').exists() and not list((ip_output/'simion').glob('*.pa*'))
 assert not (ip_output/'simion/iob_seed').exists()
 # Explicit selected CSG is preserved across representation grids in the installed API.
-from msplatform.components.dual_pressure_rectilinear_ion_processor import native_geometry as ip_design_owner
+from msplatform.components.ion_processor import native_geometry as ip_design_owner
 from msplatform.backends.simion import ip_geometry as ip_geometry_owner
 ip_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
 assert pathlib.Path(ip_preparation.__file__).resolve() == ip_purelib/'msplatform/workflows/ion_processor/preparation.py'
-assert pathlib.Path(ip_design_owner.__file__).resolve() == ip_purelib/'msplatform/components/dual_pressure_rectilinear_ion_processor/native_geometry.py'
+assert pathlib.Path(ip_design_owner.__file__).resolve() == ip_purelib/'msplatform/components/ion_processor/native_geometry.py'
 assert pathlib.Path(ip_geometry_owner.__file__).resolve() == ip_purelib/'msplatform/backends/simion/ip_geometry.py'
 ip_choice = {name: ip['preparation_config']['numerics'][name] for name in ('native_grid_mm', 'native_aux_segments')}
 ip_selected_config = copy.deepcopy(ip['preparation_config'])
@@ -1889,7 +1889,7 @@ try:
         cwd=root, capture_output=True, text=True, timeout=30)
     assert missing_reference.returncode != 0 and 'field_reference' in missing_reference.stderr
 finally: hidden_reference_module.rename(reference_module_path)
-from msplatform.components.dual_pressure_rectilinear_ion_processor.timing import derive_native_timing
+from msplatform.components.ion_processor.timing import derive_native_timing
 from importlib.resources import files
 from msplatform.backends.simion.resources import native_resource_path
 timing = derive_native_timing(ip['baseline'])
@@ -1913,7 +1913,7 @@ for name, count, digest in (
 ):
     payload = native_resource_path(name).read_bytes()
     assert len(payload) == count and hashlib.sha256(payload).hexdigest() == digest
-from msplatform.components.dual_pressure_rectilinear_ion_processor.guide_interface import export_guide_contract
+from msplatform.components.ion_processor.guide_interface import export_guide_contract
 from msplatform.contracts.rigid_transform import RigidTransform
 guide = export_guide_contract(dict(ip['model'], native_projection=projection), ip['identities'])
 assert len(guide['rod_array']['rods']) == 8
@@ -2274,12 +2274,12 @@ ip_comsol_baseline = copy.deepcopy(ip['baseline'])
 ip_comsol_baseline['physical_design_selection'] = {'native_grid_mm':.1,'native_aux_segments':60}
 ip_comsol_baseline['electrode_contours'] = copy.deepcopy(ip['formed_contours'])
 ip_comsol_rf = component_api.resolve_component(study.component_requests['multipole'])
-ip_comsol_ip = component_api.resolve_component(dict(provider_id='dual_pressure_rectilinear_ion_processor',
+ip_comsol_ip = component_api.resolve_component(dict(provider_id='ion_processor',
     design=dict(baseline=ip_comsol_baseline)))
 ip_comsol_recipe = study.recipe
 ip_comsol_rf_row, ip_comsol_ip_row = ip_comsol_recipe['instances']
 ip_comsol_rf_row['transform']['translation_mm'] = [-ip_comsol_rf.assembly_interface['ports']['mechanical_exit']['center_mm'][2],0,0]
-ip_comsol_ip_row.update(instance_id='ion_processor',project_id='dual_pressure_rectilinear_ion_processor')
+ip_comsol_ip_row.update(instance_id='ion_processor',project_id='ion_processor')
 ip_comsol_ip_row['transform']['from_frame_id'] = ip_comsol_ip.assembly_interface['local_frame_id']
 ip_comsol_recipe['connections'] = [dict(connection_id='mp_ip',upstream=dict(instance_id='multipole',port_id='mechanical_exit'),
     downstream=dict(instance_id='ion_processor',port_id='guide_inlet'),gap_mm=0.,coupling_mode='monolithic_joint_solve')]
@@ -2747,7 +2747,7 @@ def deny_source(event,args):
    raise AssertionError('GAS_POLICY_AUTHOR_READ:'+str(path))
 sys.addaudithook(deny_source)
 from msplatform.results.gas_field import read_gas_field
-from msplatform.components.dual_cone_tandem_quadrupole_ion_interface import gas_field_validation
+from msplatform.components.dual_cone_tandem_quadrupole import gas_field_validation
 opened=read_gas_field(json.loads(sys.argv[1]))
 summary=gas_field_validation.validate_gas_field_data(opened.data)
 assert summary['status']=='PASS'
@@ -2759,7 +2759,7 @@ gas_blocked_roots = json.dumps([str(path) for path in blocked_source_roots])
 gas_policy = subprocess.run([sys.executable, '-I', '-c', gas_policy_code, gas_reference, gas_blocked_roots],
                             cwd=root, capture_output=True, timeout=30)
 assert gas_policy.returncode == 0 and b'INSTALLED_PROJECT_GAS_POLICY=PASS' in gas_policy.stdout, gas_policy.stderr
-gas_policy_path = pathlib.Path(sysconfig.get_path('purelib'))/'msplatform/components/dual_cone_tandem_quadrupole_ion_interface/gas_field_validation.py'
+gas_policy_path = pathlib.Path(sysconfig.get_path('purelib'))/'msplatform/components/dual_cone_tandem_quadrupole/gas_field_validation.py'
 gas_policy_backup = gas_policy_path.with_suffix('.absent')
 gas_policy_path.rename(gas_policy_backup)
 try:
@@ -3476,16 +3476,16 @@ mrp_request = fixture['mr_public_provider']
 mrp_fixture_before = copy.deepcopy(mrp_request)
 from msplatform import components as mrp_components
 from msplatform.capabilities import capabilities as mrp_capabilities
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import provider as mrp_provider
+from msplatform.components.multi_reflection_tof import provider as mrp_provider
 from msplatform.components.catalog import _from_provider as mrp_from_provider
 from msplatform.assembly.resolve_assembly import validate_component_geometry_interface as mrp_validate_interface
 mrp_purelib = pathlib.Path(sysconfig.get_path('purelib')).resolve()
 mrp_owner = pathlib.Path(mrp_provider.__file__).resolve()
-assert mrp_owner == mrp_purelib / 'msplatform/components/parallel_mirror_dual_stripe_mr_tof/provider.py'
+assert mrp_owner == mrp_purelib / 'msplatform/components/multi_reflection_tof/provider.py'
 mrp_result = mrp_components.resolve_component(mrp_request)
 mrp_design = mrp_result.resolved_design
 mrp_interface = mrp_result.assembly_interface
-assert mrp_design['project_id'] == 'parallel_mirror_dual_stripe_mr_tof'
+assert mrp_design['project_id'] == 'multi_reflection_tof'
 assert mrp_interface['schema_version'] == 3 and len(mrp_interface['component_electrodes']) == 22
 assert 'accelerator_entry' in mrp_interface['ports'] and mrp_validate_interface(mrp_interface) == 3
 assert len({row['electrode_group_id'] for row in mrp_interface['component_electrodes']}) == 22
@@ -3522,9 +3522,9 @@ class DenyRepository(importlib.abc.MetaPathFinder):
     def find_spec(self,fullname,path=None,target=None):
         if fullname.split('.')[0] in {'projects','common','integrations'}: raise AssertionError('author import: '+fullname)
 sys.meta_path.insert(0,DenyRepository())
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import provider
+from msplatform.components.multi_reflection_tof import provider
 from msplatform import components
-assert pathlib.Path(provider.__file__).resolve()==pathlib.Path(sysconfig.get_path('purelib')).resolve()/'msplatform/components/parallel_mirror_dual_stripe_mr_tof/provider.py'
+assert pathlib.Path(provider.__file__).resolve()==pathlib.Path(sysconfig.get_path('purelib')).resolve()/'msplatform/components/multi_reflection_tof/provider.py'
 part=components.resolve_component(json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')))
 assert part.assembly_interface['schema_version']==3
 """
@@ -3545,7 +3545,7 @@ print('INSTALLED_MR_PUBLIC_PROVIDER=PASS')
 # MR_PUBLIC_PROVIDER_INSTALLED_END
 
 # MR_INTERFACE_INSTALLED_BEGIN
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface as mr_interface_owner
+from msplatform.components.multi_reflection_tof import assembly_interface as mr_interface_owner
 mr_owner_path = pathlib.Path(mr_interface_owner.__file__).resolve()
 assert mr_owner_path.is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
 mr_cases = fixture['mr_interface']
@@ -3581,7 +3581,7 @@ class DenyRepository(importlib.abc.MetaPathFinder):
         if fullname.split('.')[0] in {'common','projects','integrations'}:
             raise AssertionError('MR child imported repository owner: '+fullname)
 sys.meta_path.insert(0,DenyRepository())
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import assembly_interface
+from msplatform.components.multi_reflection_tof import assembly_interface
 from msplatform.contracts.machine_contracts import validate_schema
 assert pathlib.Path(assembly_interface.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
 case=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))[0]
@@ -3618,7 +3618,7 @@ print('INSTALLED_MR_INTERFACE=PASS cases=16')
 # MR_BACKEND_GEOMETRY_INSTALLED_BEGIN
 from msplatform.backends.simion import mr_geometry as mr_gem_owner
 assert pathlib.Path(mr_gem_owner.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
-assert importlib.util.find_spec('msplatform.components.parallel_mirror_dual_stripe_mr_tof.analyzer_candidate_geometry') is None
+assert importlib.util.find_spec('msplatform.components.multi_reflection_tof.analyzer_candidate_geometry') is None
 mr_gem_fixture = fixture['mr_backend_geometry']
 mr_gem_input_before = pathlib.Path(sys.argv[1]).read_bytes()
 for mr_gem_case in mr_gem_fixture['cases']:
@@ -3661,7 +3661,7 @@ class NeutralOnly(importlib.abc.MetaPathFinder):
         if any(fullname==p or fullname.startswith(p+'.') for p in ('common','projects','integrations','tools','msplatform.backends','msplatform.execution')):
             raise AssertionError('non-neutral import: '+fullname)
 sys.meta_path.insert(0,NeutralOnly())
-m=importlib.import_module('msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry')
+m=importlib.import_module('msplatform.components.multi_reflection_tof.resolved_geometry')
 assert pathlib.Path(m.__file__).resolve().is_relative_to(purelib)
 payload=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))
 for case in payload['cases']:
@@ -3694,7 +3694,7 @@ mr_neutral_child=subprocess.run(mr_neutral_argv,cwd=root,capture_output=True,tex
 assert mr_neutral_child.returncode==0,mr_neutral_child.stdout+mr_neutral_child.stderr
 assert 'INSTALLED_MR_NEUTRAL_RESOLVER=PASS cases=2' in mr_neutral_child.stdout
 import importlib.util as mr_neutral_util
-mr_neutral_path=pathlib.Path(mr_neutral_util.find_spec('msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry').origin)
+mr_neutral_path=pathlib.Path(mr_neutral_util.find_spec('msplatform.components.multi_reflection_tof.resolved_geometry').origin)
 assert mr_neutral_path.resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
 mr_neutral_original=mr_neutral_path.read_bytes()
 mr_neutral_held=mr_neutral_path.with_name(mr_neutral_path.name+'.missing-test-held')
@@ -4901,7 +4901,7 @@ mr_l0_script=root/('installed-mr-l0-'+sys.argv[2]+'.py')
 mr_l0_script.write_text(r"""import functools,hashlib,importlib,importlib.abc,json,math,os,pathlib,sys,sysconfig
 from concurrent.futures import ProcessPoolExecutor
 from unittest.mock import patch
-NAMES=('msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0','msplatform.workflows.mr_design')
+NAMES=('msplatform.components.multi_reflection_tof.mirror_l0','msplatform.workflows.mr_design')
 def guards(authors):
     roots=[pathlib.Path(p).resolve() for p in authors]
     def deny(event,args):
@@ -4933,7 +4933,7 @@ def main():
     authors=json.loads(sys.argv[1]);directory=pathlib.Path(sys.argv[2]);guards(authors)
     expected=origins()
     m=importlib.import_module(NAMES[0]);w=importlib.import_module(NAMES[1])
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError
+    from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
     assert m.CandidateContractError is CandidateContractError and w.CandidateContractError is CandidateContractError
     assert m.step_response(0.)==.5 and m.step_response_derivative(0.)==.5
     design=m.MirrorL0Design(15.,(0.,164.5,226.5,258.5,288.5),(0.,-500.,2000.,3500.,7000.),320.,7000.)
@@ -5013,7 +5013,7 @@ scalar_resource_path=scalar_resources.native_resource_path('scalar_field_adapter
 assert scalar_module_path==scalar_purelib/'msplatform/backends/comsol/static_field_binding.py'
 assert scalar_resources_module_path==scalar_purelib/'msplatform/backends/simion/resources.py'
 assert scalar_resource_path==scalar_purelib/'msplatform/backends/simion/resources/scalar_field_adapter.lua'
-assert not (scalar_purelib/'msplatform/components/parallel_mirror_dual_stripe_mr_tof/resources/scalar_field_adapter.lua').exists()
+assert not (scalar_purelib/'msplatform/components/multi_reflection_tof/resources/scalar_field_adapter.lua').exists()
 for scalar_relative,scalar_path in (('backends/comsol/static_field_binding.py',scalar_module_path),
                                     ('backends/simion/resources.py',scalar_resources_module_path),
                                     ('backends/simion/resources/scalar_field_adapter.lua',scalar_resource_path)):
@@ -5070,19 +5070,19 @@ print('INSTALLED_SCALAR_ADAPTER_TRANSPORT=PASS')
 # MR_PRISM_PHASE_INSTALLED_BEGIN
 # Ideal/reference scientific APIs only; finite-field calibration remains separate.
 import unittest as prism_unittest
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import prism_l0 as prism_l0_api
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import prism_analytic as prism_analytic_api
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof import drift_phase_contract as prism_phase_api
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError as prism_contract_error
+from msplatform.components.multi_reflection_tof import prism_l0 as prism_l0_api
+from msplatform.components.multi_reflection_tof import prism_analytic as prism_analytic_api
+from msplatform.components.multi_reflection_tof import drift_phase_contract as prism_phase_api
+from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError as prism_contract_error
 prism_fixture=fixture['mr_prism_phase']
 prism_purelib=pathlib.Path(sysconfig.get_paths()['purelib']).resolve()
 for prism_name,prism_module in (('prism_l0',prism_l0_api),('prism_analytic',prism_analytic_api),('drift_phase_contract',prism_phase_api)):
     prism_path=pathlib.Path(prism_module.__file__).resolve()
-    assert prism_path==prism_purelib/'msplatform/components/parallel_mirror_dual_stripe_mr_tof'/(prism_name+'.py')
+    assert prism_path==prism_purelib/'msplatform/components/multi_reflection_tof'/(prism_name+'.py')
     prism_content=prism_path.read_bytes()
     assert len(prism_content)==prism_fixture['sources'][prism_name]['bytes']
     assert hashlib.sha256(prism_content).hexdigest()==prism_fixture['sources'][prism_name]['sha256']
-    try:importlib.import_module('projects.parallel_mirror_dual_stripe_mr_tof.analysis.'+prism_name)
+    try:importlib.import_module('projects.multi_reflection_tof.analysis.'+prism_name)
     except AssertionError as prism_error:
         assert 'installed action imported a repository owner' in str(prism_error)
     else:raise AssertionError('installed MR reference accepted a repository import')
@@ -5169,14 +5169,14 @@ def main():
                 raise AssertionError('installed Stripe imported forbidden owner '+fullname)
     sys.meta_path.insert(0,StripePureOnly())
     stripe_fixture=json.loads(pathlib.Path(sys.argv[2]).read_text(encoding='utf-8'))
-    stripe_api=importlib.import_module('msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0')
+    stripe_api=importlib.import_module('msplatform.components.multi_reflection_tof.dual_stripe_l0')
     stripe_workflow=importlib.import_module('msplatform.workflows.mr_design')
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import CandidateContractError as stripe_error
+    from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError as stripe_error
     stripe_check=unittest.TestCase()
     stripe_purelib=pathlib.Path(sysconfig.get_path('purelib')).resolve()
     stripe_origins={}
     for stripe_name,stripe_module,stripe_relative in (
-        ('dual_stripe_l0',stripe_api,'msplatform/components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py'),
+        ('dual_stripe_l0',stripe_api,'msplatform/components/multi_reflection_tof/dual_stripe_l0.py'),
         ('mr_design',stripe_workflow,'msplatform/workflows/mr_design/__init__.py')):
         stripe_path=pathlib.Path(stripe_module.__file__).resolve()
         assert stripe_path==stripe_purelib/stripe_relative
@@ -5185,7 +5185,7 @@ def main():
         assert hashlib.sha256(stripe_bytes).hexdigest()==stripe_fixture['sources'][stripe_name]['sha256']
         stripe_origins[stripe_name]=str(stripe_path)
     with stripe_check.assertRaisesRegex(AssertionError,'forbidden owner projects'):
-        importlib.import_module('projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0')
+        importlib.import_module('projects.multi_reflection_tof.analysis.dual_stripe_l0')
     stripe_response_results=[]
     for stripe_case in stripe_fixture['responses']:
         stripe_contract=copy.deepcopy(stripe_case['contract'])
@@ -5234,7 +5234,7 @@ def main():
     stripe_check.assertAlmostEqual(stripe_api.endpoint_regularized_tau_g(lambda eta:eta,lambda eta:1.,1.),2.,places=8)
     stripe_check.assertAlmostEqual(stripe_api.tau_g_derivative_at_turn(lambda eta:eta,lambda eta:1.,1.,step=1e-3),1.,places=5)
     with stripe_check.assertRaises(stripe_error):stripe_api.endpoint_regularized_kappa(lambda eta:1.)
-    from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import compile_dual_stripe_path_length_evaluator
+    from msplatform.components.multi_reflection_tof.resolved_geometry import compile_dual_stripe_path_length_evaluator
     stripe_shape_contract=stripe_first['contract']
     stripe_path_functions=tuple(compile_dual_stripe_path_length_evaluator(stripe_shape_contract,value)
                                 for value in ('set_1','set_2'))
@@ -5312,7 +5312,7 @@ assert not stripe_held.exists()
 stripe_selected_path.rename(stripe_held)
 try:
     stripe_missing=subprocess.run(stripe_args,cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-    assert stripe_missing.returncode!=0 and 'ModuleNotFoundError' in stripe_missing.stderr and 'msplatform.components.parallel_mirror_dual_stripe_mr_tof.dual_stripe_l0' in stripe_missing.stderr,stripe_missing.stderr
+    assert stripe_missing.returncode!=0 and 'ModuleNotFoundError' in stripe_missing.stderr and 'msplatform.components.multi_reflection_tof.dual_stripe_l0' in stripe_missing.stderr,stripe_missing.stderr
     missing_rejected.append('mr_stripe_domain')
 finally:stripe_held.rename(stripe_selected_path)
 assert stripe_selected_path.read_bytes()==stripe_original_bytes
@@ -6070,9 +6070,9 @@ class InstalledScientificCoreTests(unittest.TestCase):
     def stripe_probe_fixture():
         """Serialize explicit original Stripe cases; clients never read author inputs."""
         import copy
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import pure_geometry_inputs
-        stripe_contract=load_contract(REPO_ROOT/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json')
+        from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
+        from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import pure_geometry_inputs
+        stripe_contract=load_contract(REPO_ROOT/'src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json')
         stripe_converging=copy.deepcopy(stripe_contract)
         stripe_converging['mirror']['convergence_transform']={'angle_deg':.025688744787259285,'pivot_y_mm':0.}
         stripe_converging['downstream_fixed_grid_workpoint_profile']['active_stripe_axes']=['stripe_1_voltage_v']
@@ -6086,7 +6086,7 @@ class InstalledScientificCoreTests(unittest.TestCase):
                           for stripe_case,stripe_energy in ((stripe_contract,None),(stripe_contract,4050.),(stripe_converging,None))]
         stripe_sources={}
         for stripe_name,stripe_relative in (
-            ('dual_stripe_l0','components/parallel_mirror_dual_stripe_mr_tof/dual_stripe_l0.py'),
+            ('dual_stripe_l0','components/multi_reflection_tof/dual_stripe_l0.py'),
             ('mr_design','workflows/mr_design/__init__.py')):
             stripe_content=(REPO_ROOT/'src/msplatform'/stripe_relative).read_bytes()
             stripe_sources[stripe_name]=dict(bytes=len(stripe_content),sha256=hashlib.sha256(stripe_content).hexdigest())
@@ -6122,15 +6122,15 @@ class InstalledScientificCoreTests(unittest.TestCase):
     @staticmethod
     def prism_phase_probe_fixture():
         """Transport explicit original MR reference inputs, never author paths to clients."""
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract as prism_load_contract
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prism_analytic import PrismAnalyticTest as prism_reference
-        prism_contract = prism_load_contract(REPO_ROOT/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json')
+        from msplatform.components.multi_reflection_tof.candidate_contract import load_contract as prism_load_contract
+        from tests.components.multi_reflection_tof.analysis.test_prism_analytic import PrismAnalyticTest as prism_reference
+        prism_contract = prism_load_contract(REPO_ROOT/'src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json')
         prism_contract['accelerator']['focus_y_anchor']['project_y_mm'] = -45.0
         prism_trace, prism_direction, prism_beta = prism_reference._right_angle_trace()
         assert prism_trace.status == 'transmitted'
         prism_sources = {}
         for prism_name in ('prism_l0', 'prism_analytic', 'drift_phase_contract'):
-            prism_content = (REPO_ROOT/'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof'/(prism_name+'.py')).read_bytes()
+            prism_content = (REPO_ROOT/'src/msplatform/components/multi_reflection_tof'/(prism_name+'.py')).read_bytes()
             prism_sources[prism_name] = dict(bytes=len(prism_content),sha256=hashlib.sha256(prism_content).hexdigest())
         return dict(contract=prism_contract,sources=prism_sources,
                     analytic=dict(triangle=[[0.,0.],[1.,0.],[0.,1.]],
@@ -6398,7 +6398,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         namespace = {'math': math}
         exec(compile(ast.Module(body=helpers, type_ignores=[]), '<actual-installed-field-check>', 'exec'), namespace)
         check = namespace['ipd_assert_field_equivalence']
-        fixture = json.loads((REPO_ROOT / 'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8'))
+        fixture = json.loads((REPO_ROOT / 'tests/components/ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8'))
         expected = fixture['field_diagnostics']['scientific_metadata']
         images = fixture['field_diagnostics']['image_sha256']
         check(expected, copy.deepcopy(expected), images, dict(images))
@@ -6489,7 +6489,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return cases
 
     def prepared_joint_diagnostics_probe_fixture(self) -> list[dict]:
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_prepared_joint_diagnostics import PreparedJointDiagnosticsTests
+        from tests.components.multi_reflection_tof.analysis.test_prepared_joint_diagnostics import PreparedJointDiagnosticsTests
         from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
         result = []
         for structured in (False, True):
@@ -6531,14 +6531,14 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             workspace.mkdir()
             source, contract = analysis_source_fixture(workspace,
                 status="success" if scenario == "success" else "failed",
-                owner="parallel_mirror_dual_stripe_mr_tof" if scenario == "wrong_owner" else "instrument_assembly",
+                owner="multi_reflection_tof" if scenario == "wrong_owner" else "instrument_assembly",
                 complete=scenario != "incomplete_native")
             result.append(dict(scenario=scenario, source=str(source), contract=str(contract),
                 error="instrument_assembly/prepared_joint" if scenario == "wrong_owner" else "complete original-ID"))
         return result
 
     def gas_field_probe_fixture(self, root: Path) -> dict:
-        from tests.components.dual_cone_tandem_quadrupole_ion_interface.test_gas_flow_contract import (
+        from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import (
             PROJECT_ROOT, _write_fixture,
         )
         from msplatform.io.manifest_records import file_record
@@ -6552,7 +6552,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             inputs[name] = file_record(target)
         manifest = producer / "run_manifest.json"
         manifest.write_text(json.dumps(dict(schema_version=2, role="simulation_run_manifest",
-            project="dual_cone_tandem_quadrupole_ion_interface", mode="axisymmetric_gas_flow_screening",
+            project="dual_cone_tandem_quadrupole", mode="axisymmetric_gas_flow_screening",
             run_id="installed-gas-reader", status="success", inputs=inputs,
             outputs=[file_record(csv_path), file_record(metadata)])), encoding="utf-8")
         return dict(manifest=file_record(manifest), product_id="gas_field")
@@ -6609,7 +6609,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
     def mr_cad_parts_probe_fixture(self) -> dict:
         """Original tiny CAD input fixture; expected coordinates remain independent."""
         from msplatform.exporters import mr_cad_parts
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_resolved_cad_export import fixture as mr_cad_original_fixture
+        from tests.components.multi_reflection_tof.analysis.test_resolved_cad_export import fixture as mr_cad_original_fixture
 
         mr_cad_geometry, mr_cad_authority = mr_cad_original_fixture()
         mr_cad_raw = Path(mr_cad_parts.__file__).read_bytes()
@@ -6984,11 +6984,11 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
 
     def mr_backend_geometry_probe_fixture(self) -> dict:
         import copy
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.resolved_geometry import (
+        from msplatform.components.multi_reflection_tof.resolved_geometry import (
             resolve_geometry, build_two_zone_accelerator_requirements)
         from msplatform.components.orthogonal_accelerator.two_zone_geometry import validate_geometry_profile
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-        contract = load_contract(REPO_ROOT / "src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json")
+        from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
+        contract = load_contract(REPO_ROOT / "src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json")
         provider_path = REPO_ROOT / "src/msplatform/components/orthogonal_accelerator/component_contract.json"
         provider_bytes = provider_path.read_bytes()
         profile_id = "closed_two_zone_compact_mr_axial_r3_gap1_4mm"
@@ -7017,9 +7017,9 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     profile_source=dict(bytes=len(provider_bytes), sha256=hashlib.sha256(provider_bytes).hexdigest()))
 
     def mr_public_provider_probe_fixture(self) -> dict:
-        from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import load_contract
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.test_support.mr_geometry_inputs import geometry_authority
-        mrp_contract_path = REPO_ROOT / 'src/msplatform/components/parallel_mirror_dual_stripe_mr_tof/simion_candidate_two_zone.json'
+        from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
+        from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import geometry_authority
+        mrp_contract_path = REPO_ROOT / 'src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json'
         mrp_oa_path = REPO_ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json'
         mrp_contract_bytes, mrp_oa_bytes = mrp_contract_path.read_bytes(), mrp_oa_path.read_bytes()
         assert hashlib.sha256(mrp_contract_bytes).hexdigest() == '257e10f381b566db9eb85f63776081fbe8ada140bdc99eb44bda4e148fda066f'
@@ -7028,7 +7028,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         mrp_authority = geometry_authority(mrp_contract)
         assert mrp_authority['geometry_profile_id'] == 'closed_two_zone_compact_mr_axial_r3_gap1_4mm'
         assert mrp_contract_path.read_bytes() == mrp_contract_bytes and mrp_oa_path.read_bytes() == mrp_oa_bytes
-        return dict(provider_id='parallel_mirror_dual_stripe_mr_tof', geometry_profile_id=mrp_authority['geometry_profile_id'],
+        return dict(provider_id='multi_reflection_tof', geometry_profile_id=mrp_authority['geometry_profile_id'],
                     design=dict(contract=mrp_contract, accelerator_requirements=mrp_authority['accelerator_requirements'],
                                 geometry_profile=mrp_authority['geometry_profile']))
 
@@ -7037,11 +7037,11 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         # recorded from the retired original publisher at 574ae974 (8849a767...).
         # This is an explicit test oracle, not a second design/default authority.
         import copy
-        from tests.assembly.parallel_mirror_dual_stripe_mr_tof.analysis import test_assembly_interface as fixtures
+        from tests.assembly.multi_reflection_tof.analysis import test_assembly_interface as fixtures
         baseline = json.loads(r'''{
   "schema_version": 1,
   "role": "component_geometry_interface",
-  "project_id": "parallel_mirror_dual_stripe_mr_tof",
+  "project_id": "multi_reflection_tof",
   "variant_id": "complete_mr_analyzer",
   "geometry_profile_id": null,
   "local_frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
@@ -7291,7 +7291,7 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         import copy
         from unittest import mock
         from msplatform.backends.comsol import static_field_binding
-        from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis import test_native_static_field_provider as fixture
+        from tests.components.multi_reflection_tof.analysis import test_native_static_field_provider as fixture
 
         work.mkdir(parents=True, exist_ok=False)
         class Keep:
@@ -7683,10 +7683,10 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                     for key, filename in (('baseline', 'baseline.json'), ('modes', 'numerical_modes.json'),
                                           ('expected', 'resolved_model.json'))}
             from msplatform.backends.simion.dual_cone_geometry import render_gem
-            from msplatform.components.dual_cone_tandem_quadrupole_ion_interface.gas_field import prepare_uniform_rear_gas_field
+            from msplatform.components.dual_cone_tandem_quadrupole.gas_field import prepare_uniform_rear_gas_field
             from msplatform.backends.simion.gas_runtime import materialize_gas_runtime
             from msplatform.contracts.gas import GasSpecies
-            cone_config = REPO_ROOT / 'src/msplatform/components/dual_cone_tandem_quadrupole_ion_interface/config'
+            cone_config = REPO_ROOT / 'src/msplatform/components/dual_cone_tandem_quadrupole/config'
             dual_cone = {name: json.loads((cone_config / filename).read_text(encoding='utf-8'))
                 for name, filename in (('baseline', 'baseline.json'), ('resolved', 'resolved_geometry.json'),
                     ('numerics', 'simion_solver_numerics.json'), ('uniform_rear_gas_field', 'uniform_rear_gas_field.json'),
@@ -7707,16 +7707,16 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 interface_record=dual_cone['uniform_source_records']['interface'])
             materialize_gas_runtime(field,root/'fixture-uniform.lua',root/'fixture-uniform-manifest.json',manifest_metadata=runtime_metadata)
             dual_cone['uniform_lua'] = (root/'fixture-uniform.lua').read_text(encoding='utf-8')
-            from msplatform.components.dual_pressure_rectilinear_ion_processor.native_geometry import native_projection
+            from msplatform.components.ion_processor.native_geometry import native_projection
             from msplatform.backends.simion.ip_geometry import render_gem as render_ip_gem
-            ip_config = REPO_ROOT / 'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config'
+            ip_config = REPO_ROOT / 'src/msplatform/components/ion_processor/config'
             ip = {name: json.loads((ip_config/(name+'.json')).read_text(encoding='utf-8'))
                   for name in ('baseline', 'numerics', 'source', 'native_operating_point', 'acceptance')}
-            from tests.components.dual_pressure_rectilinear_ion_processor.test_electrode_contours import ElectrodeContourTests
+            from tests.components.ion_processor.test_electrode_contours import ElectrodeContourTests
             ip_contour_fixture = ElectrodeContourTests()
             ip_contour_fixture.setUp()
             ip['formed_contours'] = copy.deepcopy(ip_contour_fixture.c)
-            from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+            from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
             ip['preparation_config'] = {name: ip[name] for name in ('baseline', 'numerics', 'source', 'native_operating_point', 'acceptance')}
             ip['preparation_config'].update(source_profile='functional', source_authority_file='source.json')
             selected_hs1 = environment.get('MASS_SPECTROMETRY_INSTALLED_IP_HS1_SOURCE')
@@ -7724,7 +7724,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
             ip['hs1_input_bytes_hex'] = hs1_bytes.hex()
             ip['hs1_input_kind'] = 'explicit_vendor_source' if selected_hs1 else 'inert_unit_fixture'
             ip['hs1_input_sha256'] = hashlib.sha256(hs1_bytes).hexdigest()
-            from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import NativeFieldReferenceTests
+            from tests.components.ion_processor.test_functional import NativeFieldReferenceTests
             field_parent, _, field_model, field_family = NativeFieldReferenceTests().make_family_fixture(root / 'inert-ip-field-reference')
             ip['field_reference_parent'] = str(field_parent)
             ip['field_reference_model'] = field_model
@@ -7744,7 +7744,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 SameSolverNumericalConvergenceTests, PORTABLE_INPUT_ROLES, PORTABLE_SIMION_OUTPUT_ROLES,
             )
             rfconv_oracle = json.loads((REPO_ROOT / 'tests/components/rf_multipole_ion_optics/fixtures/rf_convergence_old_witness.json').read_text(encoding='utf-8'))
-            ipread_oracle = json.loads((REPO_ROOT / 'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_reader_old_witness.json').read_text(encoding='utf-8'))
+            ipread_oracle = json.loads((REPO_ROOT / 'tests/components/ion_processor/fixtures/ip_reader_old_witness.json').read_text(encoding='utf-8'))
             rfconv_project = REPO_ROOT / 'src/msplatform/components/rf_multipole'
             for rfconv_name, rfconv_hash in rfconv_oracle['authorities'].items():
                 authority = rfconv_project / rfconv_name
@@ -7795,17 +7795,17 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 shutil.copyfile(rfconv_path,rfconv_copy_path)
                 rfconv_data[rfconv_key] = str(rfconv_copy_path)
             rfconv_fixture = dict(manifests=rfconv_manifests,data=rfconv_data,oracle=rfconv_oracle)
-            from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_static_field_binding import IonProcessorNativeBindingTest
+            from tests.components.multi_reflection_tof.analysis.test_static_field_binding import IonProcessorNativeBindingTest
             mr_operator_root = root / 'mr-prepared-field-operator'
             mr_operator_root.mkdir()
             _, mr_operator_binding_path, _ = IonProcessorNativeBindingTest().fixture(mr_operator_root)
             import ast
-            from tests.components.parallel_mirror_dual_stripe_mr_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
+            from tests.components.multi_reflection_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
             mr_measured_fixture = MeasuredComponentSourceTests('test_irregular_ids_birth_offsets_and_exact_six_dimensions')
             mr_measured_fixture.setUp()
             self.addCleanup(mr_measured_fixture.doCleanups)
             mr_measured_inputs = {path: path.read_bytes() for path in mr_measured_fixture.root.rglob('*') if path.is_file()}
-            mr_test_path = REPO_ROOT / 'tests/components/parallel_mirror_dual_stripe_mr_tof/analysis/test_measured_component_source.py'
+            mr_test_path = REPO_ROOT / 'tests/components/multi_reflection_tof/analysis/test_measured_component_source.py'
             mr_test_ast = ast.parse(mr_test_path.read_text(encoding='utf-8'))
             mr_callbacks = [node.value for node in ast.walk(mr_test_ast) if isinstance(node, ast.Constant)
                             and isinstance(node.value, str) and 'READ_ONLY_TOF=PASS' in node.value and 'setfenv(chunk' in node.value]
@@ -7836,7 +7836,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                 'tests.contracts.test_simion_geometry_compiler', 'tests.contracts.test_simion_model_execution',
                                 'tests.contracts.test_simion_prepared_model', 'tests.contracts.test_component_particle_state',
                                 'tests.workflows.multipole_ip.test_ip_compiler',
-                                'tests.components.dual_pressure_rectilinear_ion_processor.test_functional'):
+                                'tests.components.ion_processor.test_functional'):
                 module = importlib.import_module(module_name)
                 actual = Path(module.__file__).resolve()
                 relative = Path(*module_name.split('.')).with_suffix('.py')
@@ -7857,7 +7857,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
             from msplatform.execution.owner import run_managed_stage
             from msplatform.execution.completion import no_particle_batch_completion_api
             from msplatform.io.manifest_records import file_record
-            from tests.components.dual_pressure_rectilinear_ion_processor.test_functional import HS1_SOURCE_FIXTURE
+            from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
             ip_mr_source=source/'tests/contracts/test_support/ip_mr_sampled_field_fixture.py'
             self.assertEqual(Path(ip_mr_fixture.__file__).read_bytes(),ip_mr_source.read_bytes())
             ip_mr_root=root/'ip-mr-shared-inert-producer';ip_mr_started=time.perf_counter_ns()
@@ -7898,15 +7898,15 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                                               tof_mass_spectrum_inputs=dict(mode=str(tof_spectrum_mode), comsol_dir=str(tof_spectrum_comsol), simion=str(tof_spectrum_simion), geometry=str(tof_spectrum_geometry)),
                                               tof_mass_spectrum_old_witness=tof_spectrum_old_witness,
                                               rf_event_old_capture=json.loads((REPO_ROOT / 'tests/components/rf_multipole_ion_optics/fixtures/rf_event_old_capture.json').read_text(encoding='utf-8')),
-                                              ip_analyzer_old_witness=json.loads((REPO_ROOT / 'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_analyzer_old_witness.json').read_text(encoding='utf-8')),
-                                              ip_exporters_old_witness=json.loads((REPO_ROOT / 'tests/components/dual_pressure_rectilinear_ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8')),
+                                              ip_analyzer_old_witness=json.loads((REPO_ROOT / 'tests/components/ion_processor/fixtures/ip_analyzer_old_witness.json').read_text(encoding='utf-8')),
+                                              ip_exporters_old_witness=json.loads((REPO_ROOT / 'tests/components/ion_processor/fixtures/ip_exporters_old_witness.json').read_text(encoding='utf-8')),
                                               mr_measured_handoff=str(mr_measured_fixture.handoff),
                                               mr_measured_callback=mr_callbacks[0],
-                                              mr_measured_source_old_witness=json.loads((REPO_ROOT / 'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_measured_source_old_witness.json').read_text(encoding='utf-8')),
+                                              mr_measured_source_old_witness=json.loads((REPO_ROOT / 'tests/components/multi_reflection_tof/fixtures/mr_measured_source_old_witness.json').read_text(encoding='utf-8')),
                                               strict_json_old_witness=json.loads((REPO_ROOT / 'tests/contracts/fixtures/strict_json_old_witness.json').read_text(encoding='utf-8')),
-                                              mr_prepared_field_old_witness=json.loads((REPO_ROOT / 'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_prepared_field_old_witness.json').read_text(encoding='utf-8')),
+                                              mr_prepared_field_old_witness=json.loads((REPO_ROOT / 'tests/components/multi_reflection_tof/fixtures/mr_prepared_field_old_witness.json').read_text(encoding='utf-8')),
                                               ion_reader_old_witness=json.loads((REPO_ROOT / 'tests/components/single_reflection_oa_tof_mass_analyzer/fixtures/ion_reader_old_witness.json').read_text(encoding='utf-8')),
-                                              mr_interface_coverage_vectors=json.loads((REPO_ROOT / 'tests/components/parallel_mirror_dual_stripe_mr_tof/fixtures/mr_interface_coverage_vectors.json').read_text(encoding='utf-8')),
+                                              mr_interface_coverage_vectors=json.loads((REPO_ROOT / 'tests/components/multi_reflection_tof/fixtures/mr_interface_coverage_vectors.json').read_text(encoding='utf-8')),
                                               mr_prepared_field_operator_binding=str(mr_operator_binding_path),
                                               prepared_joint_admission=self.prepared_joint_admission_probe_fixture(root),
                                               single_reflection_collection=self.single_reflection_collection_probe_fixture(),
@@ -7981,14 +7981,14 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
             neutral_ip_fixture.CanonicalIpNeutralTests.setUpClass()
             ip_case=neutral_ip_fixture.CanonicalIpNeutralTests(methodName='runTest')
             ip_geometry=ip_case.compile_complete(ip_case.assembly).frontend_geometry
-            ip_requests=json.loads((source/'tests/contracts/test_support/ip_mr_lp60_requests.json').read_text(encoding='utf8'))
+            ip_requests=json.loads((source/'tests/contracts/test_support/ip_mr_current_requests.json').read_text(encoding='utf8'))
             ip_recipe=copy.deepcopy(ip_requests['recipe']);ip_recipe['instances']=ip_recipe['instances'][:1];ip_recipe['connections']=[]
             ip_numerics={k:copy.deepcopy(ip_geometry[k]) for k in ('domain','pitch_mm','boundary','metal_witnesses','void_witnesses')}
             ip_numerics['representation']='neutral_world_collision'
             ip_tree=ast.parse((source/'tests/contracts/test_ip_mr_tracking_program.py').read_text(encoding='utf8'))
             ip_prefix=next(ast.literal_eval(n.value) for n in ast.walk(ip_tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='prefix' for t in n.targets)).replace('BG_INDEX','2')
             ip_input=dict(request=ip_requests['component_requests']['ion_processor'],recipe=ip_recipe,numerics=ip_numerics,
-                operating_point=json.loads((source/'src/msplatform/components/dual_pressure_rectilinear_ion_processor/config/native_operating_point.json').read_text(encoding='utf8')),
+                operating_point=json.loads((source/'src/msplatform/components/ion_processor/config/native_operating_point.json').read_text(encoding='utf8')),
                 clock=dict(clock_epoch_id='instrument_clock_epoch_v1',authority_sha256=file_sha256(source/'src/msplatform/examples/instrument_epoch_v1.json')),lua_prefix=ip_prefix)
             (root/'installed_neutral_ip_fixture.json').write_text(json.dumps(ip_input),encoding='utf8')
             ip_mr_probe_source=source/'tests/contracts/test_support/installed_ip_mr_tracking_probe.py'
@@ -8105,7 +8105,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                     'tests/contracts/test_simion_prepared_model.py',
                     'tests/contracts/test_component_particle_state.py',
                     'tests/workflows/multipole_ip/test_ip_compiler.py',
-                    'tests/components/dual_pressure_rectilinear_ion_processor/test_functional.py',
+                    'tests/components/ion_processor/test_functional.py',
                     'tests/contracts/test_simion_tracking_execution.py',
                     'tests/workflows/single_reflection/test_single_reflection_program.py',
                     'tests/contracts/test_installed_scientific_core.py',

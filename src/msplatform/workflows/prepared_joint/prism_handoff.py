@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import math
 from typing import Any, Sequence
 
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
 

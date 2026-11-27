@@ -13,13 +13,13 @@ from pathlib import Path
 import scipy
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.mirror_l0 import MirrorL0Design
+from msplatform.components.multi_reflection_tof.mirror_l0 import MirrorL0Design
 from msplatform.workflows.mr_design.mirror_l1 import (
     continue_fixed_e_l0_family_to_gamma,
     refine_l0_gamma_intersection,
     screen_l1_fixed_geometry,
 )
-from msplatform.components.parallel_mirror_dual_stripe_mr_tof.candidate_contract import (
+from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     derive_mirror_voltage_bounds,
     derive_operating_energy_envelope,

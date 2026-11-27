@@ -15,7 +15,7 @@ from msplatform.execution import capacity_maintenance as capacity_ledger
 
 IDENTITY = "a" * 64
 READY_RANGE = {
-    "owner": "parallel_mirror_dual_stripe_mr_tof",
+    "owner": "multi_reflection_tof",
 }
 WRITING_RANGE = {
     **READY_RANGE,

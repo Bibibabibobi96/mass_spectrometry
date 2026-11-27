@@ -36,7 +36,7 @@ def read_gas_field(reference: Mapping[str, Any], *, resolver: ArtifactResolver |
             or manifest["schema_version"] not in (1, 2)
             or manifest.get("role") != "simulation_run_manifest"
             or manifest.get("status") != "success"
-            or manifest.get("project") != "dual_cone_tandem_quadrupole_ion_interface"
+            or manifest.get("project") not in {"dual_cone_tandem_quadrupole_ion_interface", "dual_cone_tandem_quadrupole"}
             or manifest.get("mode") != "axisymmetric_gas_flow_screening"
             or manifest.get("lifecycle_state") == "provisional"
             or reference["product_id"] != "gas_field"
@@ -109,7 +109,7 @@ def read_gas_model(reference: Mapping[str, Any], expected_contracts: Mapping[str
         type(manifest.get("schema_version")) is not int
         or manifest.get("schema_version") not in (1, 2)
         or manifest.get("role") != "simulation_run_manifest"
-        or manifest.get("project") != "dual_cone_tandem_quadrupole_ion_interface"
+        or manifest.get("project") != "dual_cone_tandem_quadrupole"
         or manifest.get("mode") != "axisymmetric_gas_flow_screening"
         or manifest.get("status") not in {"success", "failed", "interrupted", "superseded"}
         or manifest.get("lifecycle_state") == "provisional"
