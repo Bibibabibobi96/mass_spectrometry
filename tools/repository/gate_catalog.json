@@ -4521,7 +4521,7 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/prepared_joint/controller_state.py",
+                "exact": "src/msplatform/workflows/mr_design/workpoint_controller.py",
                 "reason": "mr_workpoint_actual_consumers"
               }
             ],

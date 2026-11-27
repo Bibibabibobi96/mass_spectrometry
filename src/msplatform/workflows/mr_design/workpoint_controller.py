@@ -1,4 +1,4 @@
-"""Legacy stdio transport for the MR controller state owner."""
+"""Stdio transport for the MR workpoint controller component."""
 from __future__ import annotations
 
 from typing import Any, Mapping

@@ -7,10 +7,11 @@ from pathlib import Path
 import unittest
 
 from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
-from msplatform.workflows.prepared_joint.controller_state import (
+from msplatform.workflows.mr_design.workpoint_controller import dispatch_controller_request
+from msplatform.components.multi_reflection_tof.workpoint_controller_state import (
     RECOVERY_VERSION, advance_recovery_round, import_recovery_checkpoint,
     prepare_recovery_state, relative_voltage_step, voltage_stencil_steps, validate_recovery_policy,
-    complete_staged_trial, dispatch_controller_request, plan_staged_trial,
+    complete_staged_trial, plan_staged_trial,
     recovery_probe_directions, interrupted_topology_recovery_decision,
     bootstrap_stencil_configuration, continuation_transport_candidates, center_trial_physical_gate,
     plan_bootstrap_stencil,
@@ -586,7 +587,7 @@ class ControllerStateTests(unittest.TestCase):
         import sys
         from tempfile import TemporaryDirectory
 
-        module = "msplatform.workflows.prepared_joint.controller_state"
+        module = "msplatform.workflows.mr_design.workpoint_controller"
         command = [sys.executable, "-X", "utf8", "-m", module,
                    "--controller-request", "-", "--output", "-"]
         request = dict(action="center_trial_physical_gate", observation=dict(status="lost"),

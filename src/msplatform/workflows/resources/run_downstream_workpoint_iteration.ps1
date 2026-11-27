@@ -317,7 +317,7 @@ function Invoke-WorkpointControllerRequest {
   Push-Location -LiteralPath $RepoRoot
   try{
     $PSNativeCommandUseErrorActionPreference=$false
-    $captured=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -I -B -X utf8 -m msplatform.workflows.prepared_joint.controller_state --controller-request - --output - 2>&1)
+    $captured=@($Request|ConvertTo-Json -Depth 100 -Compress|& $Python -I -B -X utf8 -m msplatform.workflows.mr_design.workpoint_controller --controller-request - --output - 2>&1)
     $exitCode=$LASTEXITCODE
     $output=@($captured|Where-Object{$_-isnot[Management.Automation.ErrorRecord]})
     $stderr=@($captured|Where-Object{$_-is[Management.Automation.ErrorRecord]})
