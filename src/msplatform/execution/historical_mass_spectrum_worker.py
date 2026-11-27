@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 from msplatform.execution.context import python_runtime_version
-from msplatform.results.historical_mass_spectrum import OUTPUT_NAMES
+from msplatform.results.historical_mass_spectrum import OUTPUT_NAMES, read_mass_spectrum_inputs
 from msplatform.analysis.mass_spectrum import analyze_mass_spectrum
 
 
@@ -45,12 +45,10 @@ def run_frozen_analysis(*, selection_path: Path, output: Path, code_root: Path) 
         if (name == "msplatform" or name.startswith("msplatform.")) and origin:
             if not Path(origin).resolve().is_relative_to(root):
                 raise ValueError("Mass-spectrum analyzer escaped its frozen source root")
-    result = analyze_mass_spectrum(
+    inputs = read_mass_spectrum_inputs(
         Path(selection["frozen_mode"]), Path(selection["source_directory"]) / "comsol",
-        Path(selection["exports"]["simion_csv"]["path"]), output,
-        Path(selection["frozen_geometry"]),
-        python_version=python_runtime_version(),
-    )
+        Path(selection["exports"]["simion_csv"]["path"]), Path(selection["frozen_geometry"]))
+    result = analyze_mass_spectrum(**inputs, output_dir=output, python_version=python_runtime_version())
     expected = {"mode_config": selection["inputs"]["mode_config"]["sha256"],
                 "simion_csv": selection["exports"]["simion_csv"]["sha256"]}
     expected.update({name: row["sha256"] for name, row in selection["exports"].items()

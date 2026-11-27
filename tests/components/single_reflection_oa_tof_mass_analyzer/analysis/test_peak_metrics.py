@@ -33,14 +33,19 @@ from msplatform.workflows.oa_candidate.reference_analysis import (
 )
 from msplatform.results.historical_mass_spectrum import (
     _normalized_simion_rows as canonical_simion_rows,
-    load_mode,
+    load_mode, read_mass_spectrum_inputs,
 )
-from msplatform.analysis.mass_spectrum import fit_calibration, analyze_mass_spectrum as canonical_mass_spectrum
+from msplatform.analysis.mass_spectrum import fit_calibration, analyze_mass_spectrum as analyze_mass_tables
 from msplatform.workflows.oa_tof_design.truncation_diagnostics import _common_intersection_masks
 
 
 def _normalized_simion_rows(path):
     return canonical_simion_rows(path, DEFAULT_DETECTOR_CENTER_X_MM, 0.0)
+
+
+def canonical_mass_spectrum(mode, comsol, simion, output, geometry, *, python_version):
+    inputs = read_mass_spectrum_inputs(mode, comsol, simion, geometry)
+    return analyze_mass_tables(**inputs, output_dir=output, python_version=python_version)
 
 
 def analyze_mass_spectrum(mode, comsol, simion, output):
@@ -639,7 +644,7 @@ class SourceMappingAndBootstrapTest(unittest.TestCase):
                 frame.to_csv(simion, index=False)
                 result = subprocess.run([
                     sys.executable, "-B", "-c",
-                    "import sys;from pathlib import Path;from msplatform.analysis.mass_spectrum import analyze_mass_spectrum;analyze_mass_spectrum(*map(Path,sys.argv[1:]),python_version='test')",
+                    "import sys;from pathlib import Path;from msplatform.analysis.mass_spectrum import analyze_mass_spectrum;from msplatform.results.historical_mass_spectrum import read_mass_spectrum_inputs;p=list(map(Path,sys.argv[1:]));analyze_mass_spectrum(**read_mass_spectrum_inputs(p[0],p[1],p[2],p[4]),output_dir=p[3],python_version='test')",
                     str(mode), str(comsol), str(simion), str(root / "output"),
                     str(ANALYSIS_DIR.parent / "config/resolved_geometry.json"),
                 ], cwd=ANALYSIS_DIR.parents[2], capture_output=True, text=True, timeout=60)
@@ -911,11 +916,11 @@ class PeakResultProtocolTests(unittest.TestCase):
 
     def test_legacy_default_and_strict_writer_share_spectra_and_input(self) -> None:
         from msplatform.analysis import peak_metrics as canonical
-        from msplatform.workflows.oa_candidate import reference_analysis_core
+        from msplatform.analysis import single_reflection_peak_analysis
 
-        self.assertIs(reference_analysis_core.compute_nominal_mass_peak_metrics,
+        self.assertIs(single_reflection_peak_analysis.compute_nominal_mass_peak_metrics,
                       canonical.compute_nominal_mass_peak_metrics)
-        self.assertEqual(reference_analysis_core.compute_nominal_mass_peak_metrics.__module__,
+        self.assertEqual(single_reflection_peak_analysis.compute_nominal_mass_peak_metrics.__module__,
                          "msplatform.analysis.peak_metrics")
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

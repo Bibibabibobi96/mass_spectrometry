@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from msplatform.io.file_identity import file_sha256
 from msplatform.results import single_reflection_particle_table as particle_table
 from msplatform.contracts.particle_identity import parse_charge_state
 
@@ -176,3 +177,26 @@ def _normalized_comsol_rows(path: Path, emitted: int, detector_x: float, detecto
         raise ValueError("COMSOL particle ID exceeds its species mother population")
     result, _ = particle_table.normalize_particle_table(source, source_format, detector_x, detector_y)
     return result
+
+
+def read_mass_spectrum_inputs(mode_path: Path, comsol_dir: Path, simion_csv: Path,
+                              geometry_path: Path) -> dict[str, Any]:
+    """Decode selected historical files to normalized us/mm tables and hashes.
+
+    The managed caller holds the original file guards for this read. This
+    decoder neither executes a producer nor performs calibration or plotting.
+    """
+    geometry = json.loads(geometry_path.read_text(encoding="utf-8"))
+    detector_x = float(geometry["coordinate_convention"]["detector_x"])
+    mode = load_mode(mode_path)
+    simion = _normalized_simion_rows(simion_csv, detector_x, 0.0)
+    hashes = {"mode_config": file_sha256(mode_path), "simion_csv": file_sha256(simion_csv),
+              "resolved_geometry": file_sha256(geometry_path)}
+    frames = {}
+    for item in mode["species"]:
+        species_id = str(item["species_id"])
+        path = comsol_dir / f"{species_id}.csv"
+        hashes[f"comsol_{species_id}"] = file_sha256(path)
+        frames[species_id] = _normalized_comsol_rows(path, item["particle_count"], detector_x, 0.0)
+    return {"mode": mode, "comsol_particles": frames, "simion_particles": simion,
+            "input_hashes": hashes}

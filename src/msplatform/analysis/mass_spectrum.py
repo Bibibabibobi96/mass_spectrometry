@@ -13,8 +13,6 @@ import numpy as np
 import pandas as pd
 
 from msplatform.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
-from msplatform.io.file_identity import file_sha256
-from msplatform.results.historical_mass_spectrum import load_mode, _normalized_simion_rows, _normalized_comsol_rows
 
 
 def fit_calibration(mean_tof_us: np.ndarray, mz: np.ndarray) -> dict[str, Any]:
@@ -160,27 +158,20 @@ def _plot_mass_detector_landings(
     plt.close(figure)
 
 
-def analyze_mass_spectrum(
-    mode_path: Path,
-    comsol_dir: Path,
-    simion_csv: Path,
-    output_dir: Path,
-    geometry_path: Path,
-    *,
-    python_version: str,
-) -> dict[str, Any]:
-    """Analyze recorded solver hits using the explicitly selected detector geometry.
+def analyze_mass_spectrum(*, mode: dict[str, Any], comsol_particles: dict[str, pd.DataFrame],
+                          simion_particles: pd.DataFrame, input_hashes: dict[str, str],
+                          output_dir: Path, python_version: str) -> dict[str, Any]:
+    """Analyze normalized tables in us/mm and write the six declared diagnostics.
 
-    Write six candidate diagnostics and return their metrics with input hashes,
-    including the selected geometry; no scientific qualification is implied.
+    The caller decodes and authenticates source files before this calculation.
+    COMSOL tables use original species-local IDs and SIMION uses original mixed
+    mother IDs. Hashes and the actual Python version are explicit provenance;
+    no scientific qualification is implied by the resulting fit or plots.
     """
     if not isinstance(python_version, str) or not python_version:
         raise ValueError("python_version must be an explicit nonempty provenance value")
-    geometry = json.loads(geometry_path.read_text(encoding="utf-8"))
-    detector_x = float(geometry["coordinate_convention"]["detector_x"])
-    detector_y = 0.0
-    mode = load_mode(mode_path)
-    simion = _normalized_simion_rows(simion_csv, detector_x, detector_y)
+    simion = simion_particles
+    input_hashes = dict(input_hashes)
     total_emitted = sum(item["particle_count"] for item in mode["species"])
     if (simion["particle_id"] > total_emitted).any():
         raise ValueError("SIMION particle ID exceeds the mixed-species mother population")
@@ -194,12 +185,6 @@ def analyze_mass_spectrum(
     combined_frames: list[pd.DataFrame] = []
     summary_rows: list[dict[str, Any]] = []
     peak_shape_rows: list[dict[str, Any]] = []
-    input_hashes = {
-        "mode_config": file_sha256(mode_path),
-        "simion_csv": file_sha256(simion_csv),
-        "resolved_geometry": file_sha256(geometry_path),
-    }
-
     for item, species_mask in zip(mode["species"], species_masks, strict=True):
         species_id = str(item["species_id"])
         mass = float(item["mass_amu"])
@@ -207,15 +192,10 @@ def analyze_mass_spectrum(
         mz = float(item["mz"])
         emitted = int(item["particle_count"])
         abundance = float(item["relative_abundance"])
-        comsol_path = comsol_dir / f"{species_id}.csv"
-        if not comsol_path.is_file():
-            raise FileNotFoundError(comsol_path)
-        input_hashes[f"comsol_{species_id}"] = file_sha256(comsol_path)
-
         if int(species_mask.sum()) > emitted:
             raise ValueError(f"SIMION {species_id} has more particle rows than emitted particles")
         solver_frames = {
-            "COMSOL": _normalized_comsol_rows(comsol_path, emitted, detector_x, detector_y),
+            "COMSOL": comsol_particles[species_id].copy(),
             "SIMION": simion[species_mask & simion["hit"]].copy(),
         }
         for solver, frame in solver_frames.items():
