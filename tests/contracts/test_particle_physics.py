@@ -19,11 +19,12 @@ from msplatform.contracts.particle_physics import (
 
 
 class ParticlePhysicsConstantTests(unittest.TestCase):
-    """Freeze the NIST 2022 CODATA electron constants."""
+    """Bind electron mass to its versioned kg value and repository mass unit."""
 
     def test_electron_constants_match_nist_2022_codata(self) -> None:
         self.assertEqual(ELECTRON_MASS_KG, 9.1093837139e-31)
-        self.assertEqual(ELECTRON_MASS_U, 5.485799090441e-4)
+        self.assertEqual(ELECTRON_MASS_U, ELECTRON_MASS_KG / AMU_KG)
+        self.assertNotEqual(ELECTRON_MASS_U, 5.485799090441e-4)
         self.assertEqual(ELEMENTARY_CHARGE_C, 1.602176634e-19)
 
     def test_energy_speed_round_trip_uses_mass_in_unified_atomic_mass_units(self) -> None:

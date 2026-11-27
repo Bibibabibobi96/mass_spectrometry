@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "dataset_id": "electron_mass_codata2022_repository_u_v1",
+  "mass_kg": "9.1093837139e-31",
+  "mass_kg_source": "https://physics.nist.gov/cgi-bin/cuu/Value?me",
+  "mass_u_definition": "mass_kg / repository_particle_physics_v1.atomic_mass_constant_kg",
+  "note": "The repository's frozen atomic mass constant is not the CODATA 2022 atomic mass constant; the derived mass in u is therefore not the published CODATA 2022 mass in u."
+}

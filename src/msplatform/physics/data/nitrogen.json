@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "dataset_id": "nitrogen_effective_hard_sphere_v1",
+  "species_id": "n2",
+  "relative_molecular_mass": "28.0134",
+  "relative_molecular_mass_source": "https://webbook.nist.gov/cgi/cbook.cgi?ID=C7727379",
+  "effective_hard_sphere_diameter_m": "3.64e-10",
+  "diameter_source": "https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=928548",
+  "diameter_scope": "An effective kinetic diameter adopted as a hard-sphere approximation for the existing gas mean-free-path estimate and SDS background molecule. It is not a universal energy-independent ion-neutral collision cross section.",
+  "avogadro_constant_per_mol": "6.02214076e23",
+  "avogadro_source": "https://physics.nist.gov/cuu/pdf/wall_2022.pdf"
+}

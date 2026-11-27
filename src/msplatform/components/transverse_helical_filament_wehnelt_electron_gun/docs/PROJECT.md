@@ -1,5 +1,11 @@
 # 横置螺旋灯丝Wehnelt电子枪当前状态
 
+## C1 电子质量单位一致性修正（2026-11-27）
+
+当前唯一质量数据为`electron_mass_codata2022_repository_u_v1`：kg值沿用[NIST CODATA 2022电子质量](https://physics.nist.gov/cgi-bin/cuu/Value?me)的`9.1093837139e-31 kg`，u值由仓库现有`1.66053906660e-27 kg/u`推导为`0.0005485799098091511 u`。此前`0.0005485799090441 u`使用2022 u，与仓库冻结2018质量单位不一致。本轮修正活动baseline/profile及由resolver生成的resolved模型；质量数据version与SHA随输入冻结，baseline/resolved身份改变，旧输入不得误作当前缓存。原科学run/历史数据原字节保留，未重跑COMSOL，未新增热发射或轨迹科学资格。
+
+唯一值由`contracts.particle_physics`加载`physics/data/electron.json`；kg↔u不再各自指定。冻结包由模块的具名数据声明包含JSON，缺件/篡改失败关闭。以下此前所有权迁移的参数不变与逐字相同说明记录当时阶段；不覆盖本轮明确单列的数值修正。
+
 活动实现、科学配置、当前文档和长期测试已迁出 `projects/transverse_helical_filament_wehnelt_electron_gun/`；该旧树不再存在。规范owner为本组件目录，既有COMSOL后端和workflow runner继续承担原生执行，来源固定为`7c272feb442945b2a415e1673a760e66ae098243`。本次仅迁移源码所有权和路径，科学参数、build-only边界、来源哈希、防缺件／篡改、失败释放及资格状态不变。
 
 迁移后的公开Static入口通过49个父测试（183条outcome，53秒）和Ruff；真实operation、能力查询及编译输入定向套件通过6个父测试（10条outcome，4秒）。纯MATLAB合同20项通过（15秒），未启动COMSOL或执行求解。五份科学／身份JSON与来源SHA-256逐字一致；完整编译、wheel/sdist和全活动文档仍待其他并行迁移与共享registry／gate收口，不把其共享失败归因于本组件或原生模型。

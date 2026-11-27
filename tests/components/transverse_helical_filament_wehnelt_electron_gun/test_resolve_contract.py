@@ -57,6 +57,12 @@ class ResolveContractTests(unittest.TestCase):
         resolved = resolve_contract(self.baseline, self.modes, "build_only_smoke", 1)
         self.assertEqual(resolved, tracked)
 
+    def test_old_electron_mass_unit_is_not_admitted_as_current(self) -> None:
+        legacy = copy.deepcopy(self.baseline)
+        legacy["particle"]["mass_u"] = 5.485799090441e-4
+        with self.assertRaises(ContractError):
+            validate_baseline(legacy)
+
     def test_resolver_runs_with_only_frozen_package_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             snapshot = Path(directory)

@@ -11,6 +11,7 @@ from typing import Any
 from msplatform.contracts.particle_physics import (
     ELECTRON_MASS_KG,
     ELECTRON_MASS_U,
+    ELECTRON_CONSTANTS,
     ELEMENTARY_CHARGE_C,
 )
 from msplatform.io.file_identity import canonical_json_sha256
@@ -162,7 +163,7 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
         raise ContractError("baseline project/model identity mismatch")
     if (
         raw["constants_authority"]
-        != "NIST 2022 CODATA via common.contracts.particle_physics"
+        != ELECTRON_CONSTANTS["version"]
     ):
         raise ContractError("baseline constants authority mismatch")
 
@@ -697,6 +698,7 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(
         json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 

@@ -3,7 +3,7 @@
   "role": "wehnelt_electron_gun_physical_baseline",
   "project_id": "transverse_helical_filament_wehnelt_electron_gun",
   "model_id": "wehnelt.transverse_helical_filament.thermal_transport.v1",
-  "constants_authority": "NIST 2022 CODATA via common.contracts.particle_physics",
+  "constants_authority": "electron_mass_codata2022_repository_u_v1",
   "capability": {
     "id": "wehnelt_thermal_electron_transport",
     "imaging_quality_claim_allowed": false,
@@ -30,7 +30,7 @@
   "particle": {
     "species_id": "electron",
     "mass_kg": 9.1093837139e-31,
-    "mass_u": 0.0005485799090441,
+    "mass_u": 0.0005485799098091511,
     "charge_state": -1,
     "charge_C": -1.602176634e-19
   },

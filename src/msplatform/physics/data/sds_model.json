@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "model_id": "simion_official_collision_sds",
+  "version": "simion_official_collision_sds_v1",
+  "source": "SIMION-2020 examples/collision_sds/collision_sds.lua, version 8.1.2.7.20140407",
+  "qualification": "implemented_unqualified",
+  "limitation": "SDS describes ion mobility and diffusion using its documented approximations. This record does not establish electron collision support or qualify a particular instrument or operating condition."
+}

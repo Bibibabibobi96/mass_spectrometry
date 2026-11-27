@@ -45,6 +45,14 @@ C 已按用户 2026-11-27 指令实际启动；用户随后更新整个执行包
 
 实际软件验证：Store+历史sourceguard完整29 PASS/7.885s；必要成功/失败terminal到seal崩溃与活/未知writer4 PASS/2.546s（有重复方法，不另当全新覆盖）；真实Windows短child+OS输入不可写保护PASS/10.272s，真实invalid-image未启动→failed证据PASS/6.483s；四项stage/source组合PASS/17.583s；显式旧源借用保护PASS/1.159s。命令结果来自本轮工具记录，没有虚构独立stdout日志。Ruff/diff PASS；未新增商业原生运行。默认旧owner、旧retention执行及全部生产caller仍待接管/删除，C3/CA19未完成；此基础提交不是最终退役结论。
 
+### C1 唯一物性数据与电子质量修正基础
+
+数据唯一权威为`physics/data/{reference,electron,nitrogen,hs1_example_assumption,sds_model}.json`，中性导出在`contracts.particle_physics/gas_species/gas_environment`，`physics`公开同一对象；旧`physics/reference.py`实际删除，无同义species壳。N₂采用NIST WebBook相对分子质量28.0134，kg/mol由现有u和精确Avogadro常量推导。IP proxy指压力场，归同一`n2`身份；0.370/0.364 nm均实际用于有效气体直径近似，不能以COMSOL/SDS名字不同豁免，统一选NIST-hosted来源的0.364 nm。旧0.370→0.364的Kn/MFP比例变化为(0.370/0.364)^2，属授权科学输入变化，须数据版本/SHA改变缓存；气体真实消费者仍逐个接线，尚不称全部统一已验。
+
+HS1的2.27e-18 m²保留为原SIMION helium/~200u例子的未标定粒子对假设，不再命名为N₂固有截面；不是N₂/524u或电子碰撞资格。电子kg值沿用CODATA2022，u由仓库冻结2018u推导，0.0005485799090441→0.0005485799098091511 u；电子枪作者、profile和resolved实际修正并更新来源版本，原run不改。独立科学输入改变与纯软件改名分别记录。完整来源notes外部`gas-unification/source-notes-working.md`，机器JSON含直接来源与适用限定，最近电子枪PROJECT写入该修正。
+
+新数据加载必须闭合真实冻结运行：`execution.inputs.enumerate_python_sources`静态读取各模块literal `FROZEN_PACKAGE_RESOURCES`，将其唯一JSON加入原source closure，不执行模块、不建第二数据表；冷隔离导入、缺件与篡改负例已覆盖。reference数据SHA由同次捕获bytes导出`REFERENCE_DATASET_SHA256`，不改B的CONSTANTS序列化/版本；后续消费者须校冻结record与实际导入数据身份，不能把第二次读取的新源与旧内存值混绑。IP/双锥环境与native views不在此基础验收内；当前WIP尚未最终安装/原生验证。 本单元按独立暂存源码树`756722d39dc0a397d384be8dc055f302f2968de1`验证，实际从仓库外源码快照运行：物性/数据/冻结/电子枪48 PASS（35.091s），注册表/科学边界35 PASS（14.815s），未夹带C4 schema2与组件命名WIP；这是源码测试而非普通发行安装。
+
 ### C-r2 OA 跨求解器历史验证器实际退出
 
 原`workflows/oa_formal/verify_formal_validation.py`已删除，不保留CLI/转发。精确v1–v5历史格式由`results.cross_solver_history.read_cross_solver_record(config_path, artifact_root)`校验原输入/来源身份；逐字段metric一致性比较真实拆入`analysis.cross_solver_validation.validate_cross_solver_metrics`。既有`verify_reference_analysis.ps1`直接调用新reader，结果仅证明历史记录一致，不重新授Candidate/Formal总等级或仪器误差资格。未知schema失败关闭，原1e-10/1e-12只用于记录内metric表示一致，未改变C0不设阈值决定。

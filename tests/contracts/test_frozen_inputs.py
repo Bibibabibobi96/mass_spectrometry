@@ -14,6 +14,43 @@ from msplatform.execution.retention import file_record
 
 
 class FrozenInputTests(unittest.TestCase):
+    def test_real_particle_physics_declares_frozen_data_for_isolated_consumer(self):
+        from msplatform.execution.inputs import freeze_python_package
+        from msplatform.io.manifest_records import verify_record
+        repository = Path(__file__).resolve().parents[2]
+        module = "src/msplatform/contracts/particle_physics.py"
+        expected = {"src/msplatform/physics/data/reference.json", "src/msplatform/physics/data/electron.json"}
+        selected = enumerate_python_sources(repository, module_paths=[module], provider_root="src/msplatform",
+                                            resource_suffixes=[".schema.json"])
+        self.assertTrue(expected <= set(selected))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frozen = root / "frozen"
+            package = freeze_python_package(repository, frozen, relative_paths=selected)
+            self.assertTrue(expected <= {row["relative_path"] for row in package["files"]})
+            code = ("import pathlib,sys;root=pathlib.Path(sys.argv[1]).resolve();sys.path.insert(0,str(root/'src'));"
+                    "import msplatform.contracts.particle_physics as p;"
+                    "assert pathlib.Path(p.__file__).resolve().is_relative_to(root);"
+                    "assert p.ELECTRON_CONSTANTS['mass_kg']>0 and p.AMU_KG>0;print('FROZEN_PHYSICS=PASS')")
+            result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(frozen)], cwd=root,
+                                    env={k: v for k, v in os.environ.items() if k.upper() not in {"PYTHONPATH", "PYTHONHOME"}},
+                                    capture_output=True, text=True, check=False, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FROZEN_PHYSICS=PASS", result.stdout)
+            target = frozen / "src/msplatform/physics/data/electron.json"
+            record = file_record(target)
+            target.write_bytes(target.read_bytes() + b" ")
+            with self.assertRaises((ValueError, AssertionError)):
+                verify_record("frozen electron dataset", record)
+            author = root / "author"
+            for relative in selected:
+                dest = author / relative
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(repository / relative, dest)
+            (author / "src/msplatform/physics/data/electron.json").unlink()
+            with self.assertRaisesRegex(ValueError, "declared frozen package resource is missing"):
+                enumerate_python_sources(author, module_paths=[module], provider_root="src/msplatform")
+
     def test_explicit_owned_staging_overwrite_and_original_default(self):
         import stat
         with tempfile.TemporaryDirectory() as directory:

@@ -3,19 +3,70 @@
 from __future__ import annotations
 
 import math
+from decimal import Decimal, localcontext
+from hashlib import sha256
+from importlib.resources import files
+import json
+from types import MappingProxyType
+
+FROZEN_PACKAGE_RESOURCES = ("physics/data/reference.json", "physics/data/electron.json")
 
 
-AMU_KG = 1.66053906660e-27
-ELEMENTARY_CHARGE_C = 1.602176634e-19
-BOLTZMANN_CONSTANT_J_K = 1.380649e-23  # Exact SI definition, J/K.
+_root = files("msplatform").joinpath("physics/data")
+_reference_bytes = _root.joinpath("reference.json").read_bytes()
+REFERENCE_DATASET_SHA256 = sha256(_reference_bytes).hexdigest().upper()
+_reference = json.loads(_reference_bytes)
+if _reference["schema_version"] != 1 or _reference["dataset_id"] != "repository_reference_physics_v1":
+    raise ValueError("unsupported reference physics dataset")
+_constants = _reference["constants"]
+CONSTANTS = MappingProxyType({
+    "version": _constants["version"],
+    "atomic_mass_constant_kg": float(_constants["atomic_mass_constant_kg"]),
+    "elementary_charge_c": float(_constants["elementary_charge_c"]),
+    "boltzmann_constant_j_k": float(_constants["boltzmann_constant_j_k"]),
+})
+AMU_KG = CONSTANTS["atomic_mass_constant_kg"]
+ELEMENTARY_CHARGE_C = CONSTANTS["elementary_charge_c"]
+BOLTZMANN_CONSTANT_J_K = CONSTANTS["boltzmann_constant_j_k"]
 # Frozen oa-TOF references predate the repository-wide mass authority and bind
 # this value into their published numerical fixtures.  New calculations must
 # use ``AMU_KG``; this named compatibility constant exists only so those
 # references do not silently change while their contracts are requalified.
 LEGACY_OA_TOF_ATOMIC_MASS_CONSTANT_KG = 1.66053906892e-27
-# NIST 2022 CODATA recommended values.
-ELECTRON_MASS_KG = 9.1093837139e-31
-ELECTRON_MASS_U = 5.485799090441e-4
+_electron_bytes = _root.joinpath("electron.json").read_bytes()
+_electron = json.loads(_electron_bytes)
+if _electron["schema_version"] != 1 or _electron["dataset_id"] != "electron_mass_codata2022_repository_u_v1":
+    raise ValueError("unsupported electron mass dataset")
+_electron_mass_kg = float(_electron["mass_kg"])
+ELECTRON_CONSTANTS = MappingProxyType({
+    "version": _electron["dataset_id"],
+    "dataset_sha256": sha256(_electron_bytes).hexdigest(),
+    "mass_kg": _electron_mass_kg,
+    "mass_u": _electron_mass_kg / AMU_KG,
+    "atomic_mass_constant_version": CONSTANTS["version"],
+})
+
+# The kg value uses CODATA 2022; u is derived using the frozen repository unit.
+ELECTRON_MASS_KG = ELECTRON_CONSTANTS["mass_kg"]
+ELECTRON_MASS_U = ELECTRON_CONSTANTS["mass_u"]
+
+
+def normalize_charge_c(charge_state: int, charge_c: float | Decimal | int) -> float:
+    """Validate charge against the frozen constant and return canonical binary64."""
+    if type(charge_state) is not int or charge_state == 0 or not -(2**63) <= charge_state < 2**63:
+        raise ValueError("charge_state must be a nonzero signed int64")
+    if isinstance(charge_c, bool) or not isinstance(charge_c, (int, float, Decimal)):
+        raise ValueError("charge_c must be finite and numeric")
+    value = float(charge_c)
+    if not math.isfinite(value):
+        raise ValueError("charge_c must be finite and numeric")
+    canonical = charge_state * CONSTANTS["elementary_charge_c"]
+    with localcontext() as context:
+        context.prec = 50
+        decimal_product = float(Decimal(charge_state) * Decimal(str(CONSTANTS["elementary_charge_c"])))
+    if value != canonical and value != decimal_product:
+        raise ValueError("charge_c disagrees with charge_state and constants")
+    return canonical
 
 
 def kinetic_energy_ev(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import ast
 from pathlib import Path
 import os
 import re
@@ -216,6 +217,42 @@ def enumerate_python_sources(source_root: Path, *, package_roots: Sequence[str] 
             if initializer.exists():
                 include(initializer)
             parent = parent.parent
+    # A scientific module declares its own small package data in a literal;
+    # inspect source, never import it, so frozen closure selection has no side effects.
+    for path in tuple(selected.values()):
+        if path.suffix != ".py":
+            continue
+        source = path.read_bytes()
+        if b"FROZEN_PACKAGE_RESOURCES" not in source:
+            continue
+        tree = ast.parse(source, filename=str(path))
+        declarations = [node for node in tree.body if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == "FROZEN_PACKAGE_RESOURCES"
+                                for target in node.targets)]
+        if not declarations:
+            continue
+        if len(declarations) != 1 or len(declarations[0].targets) != 1:
+            raise ValueError(f"one literal FROZEN_PACKAGE_RESOURCES declaration required: {path}")
+        try:
+            resources = ast.literal_eval(declarations[0].value)
+        except (ValueError, TypeError, SyntaxError) as error:
+            raise ValueError(f"frozen package resources must be a literal tuple: {path}") from error
+        if (not isinstance(resources, tuple) or not resources or any(not isinstance(item, str) for item in resources)
+                or len(set(resources)) != len(resources)):
+            raise ValueError(f"frozen package resources must be a nonempty unique tuple: {path}")
+        parent = path.parent
+        package_root = None
+        while parent != root and (parent / "__init__.py").is_file():
+            package_root = parent
+            parent = parent.parent
+        if package_root is None:
+            raise ValueError(f"frozen resource owner has no explicit Python package root: {path}")
+        for resource in resources:
+            relative = _python_source_relative(resource, "frozen package resource")
+            candidate = package_root / relative
+            if not candidate.is_file():
+                raise ValueError(f"declared frozen package resource is missing: {candidate}")
+            include(candidate)
     if not selected:
         raise ValueError("Python package/module selection is empty")
     return sorted(path.relative_to(root).as_posix() for path in selected.values())

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "model_id": "simion_hs1_helium_example_uncalibrated_assumption",
+  "version": "simion_hs1_helium_example_uncalibrated_assumption_v1",
+  "cross_section_m2": "2.27e-18",
+  "original_example": "SIMION HS1 helium background and an approximately 200 u ion",
+  "source": "SIMION-2020 examples/collision_hs1/collision_hs1.lua; component docs/SIMION.md",
+  "qualification": "uncalibrated_assumption",
+  "limitation": "Historical placeholder only: not a measurement or calibration for nitrogen and a 524 u ion, other ion species, or electrons."
+}
