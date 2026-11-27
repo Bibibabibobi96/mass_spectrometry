@@ -242,7 +242,13 @@ Agent 8 将 prepared_joint_execute 的完整 Flight 参数、两种 source mode�
 
 旧 `prepared_joint.controller_state` 仅是 MR 纯组件的 stdio/CLI 适配，已移为 `workflows.mr_design.workpoint_controller`；原科学计算仍唯一来自 `components.multi_reflection_tof.workpoint_controller_state`，没有复制算法或旧名转发。实际 PowerShell 调用、测试、catalog 和 SIMION 文档同步切换，旧模块路径零现行引用。
 
-直接模块30父测试／72回执全部成功（5.010s）；同命令中 path::method 写法不被 runner 支持，另以点分方法名复验路由。首次路由复验因新位置命中既有 `mr_design` 前缀而暴露5个额外实际测试，已更新对账而非缩范围；修正后1父测试／6回执PASS。精确索引首轮31父测试为77 success／1 failure；非法参数用例沿实际 import 发现 `prism_trial` 仍从旧 OA workflow 取已迁移函数，同步到组件 owner 后复验31父测试／78回执全PASS（11.968s），没有改错误门槛。该单元保留最终门禁欠项，不代表 Prepared 其他容器已经退役。
+直接模块30父测试／72回执全部成功（5.010s）；同命令中 path::method 写法不被 runner 支持，另以点分方法名复验路由。首次路由复验因新位置命中既有 `mr_design` 前缀而暴露5个额外实际测试，已更新对账而非缩范围；修正后1父测试／6回执PASS。精确索引首轮31父测试为77 success／1 failure；非法参数用例沿实际 import 发现 `prism_trial` 仍从旧 OA workflow 取已迁移函数，同步到组件 owner 后复验31父测试／78回执全PASS（11.968s），没有改错误门槛。该单元保留最终门禁欠项，不代表 Prepared 其他容器已经退役。提交/普通 push 为 `c734366a`；规范 CLOC 2.10 `0b5a472d→c734366a` PASS：total code +4、production +0、tests +4，unclassified=0，完整口径在外部 `mr-controller-c734366a-cloc.log`。
+
+### Store 输入前置与离仓宿主边界（WORKTREE）
+
+公共双锥 Changed 的失败已逐项定位：实际 Lua 5.1.5 通过 `SIMION_LUA_EXE` 显式选择；安装夹具改用唯一气体/环境/几何来源及记录；MR 当前组件和轴响应资源绑定实际字节；错误文本中的乱码统一恢复为规范 IP–MR/OA–MR/RF–IP/OA–TOF。`execute_fields` 在任何 Store/文件/进程操作前完成预算、I/O、materializer 与 artifact-reference 结构校验，保持原错误语义。
+
+离仓历史质量谱曾因父级 token 泄漏而无法取得非继承 owner。公共进程适配现在仅清除 token、owner PID 和 role，保留显式状态库与 Python，原保护握手仍严格要求独立 owner；回归同时核原宿主错误/退出码保留。相关 Store/IPMR 正反例、原生资产与完整响应绑定模块均PASS；独立索引4父测试／9回执全PASS。公共离仓运行中历史质量谱/场读取、参考三类物种和记录出生已PASS；最终仍在历史 IP 旧 source schema 处失败，需只读事件解码，不能重新采样冒充历史，故未标最终通过。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 

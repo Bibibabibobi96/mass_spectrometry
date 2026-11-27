@@ -1,4 +1,4 @@
-"""Compile one explicit OA鈥揗R assembly into source-free SIMION GEM specifications.
+"""Compile one explicit OA–MR assembly into source-free SIMION GEM specifications.
 
 The physical OA is the selected canonical OA instance; the MR embedded OA
 projection is matching authority only. This pure stage does not build, refine,
@@ -397,7 +397,7 @@ def compile_complete_mr_geometry(
         or set(numerics) - {"domains", "electrode_group_native_ids"}
     ):
         raise ValueError(
-            "OA鈥揗R geometry requires explicit domains and optional mappings"
+            "OA–MR geometry requires explicit domains and optional mappings"
         )
     plan = assembly.composition_plan
     selected = plan["scope"]["instance_ids"]
@@ -416,7 +416,7 @@ def compile_complete_mr_geometry(
     if (len(mr) != 1 or not ((len(selected),len(oa),len(ip),len(rf))
                               in ((2,1,0,0),(2,0,1,0),(3,0,1,1)))):
         raise ValueError(
-            "OA鈥揗R geometry requires exactly one canonical OA and one complete MR; mixed IP is unsupported"
+            "OA–MR geometry requires exactly one canonical OA and one complete MR; mixed IP is unsupported"
         )
     is_ip = bool(ip)
     oa_id, mr_id = (ip if is_ip else oa)[0], mr[0]
@@ -473,7 +473,7 @@ def compile_complete_mr_geometry(
         plan["components"],
         local_scope={
             "instance_ids": [oa_id],
-            "research_scope": "OA geometry asset within selected OA鈥揗R assembly",
+            "research_scope": "OA geometry asset within selected OA–MR assembly",
             "boundary_assumptions": "Geometry asset only; no field boundary or coupling is asserted",
         },
     )

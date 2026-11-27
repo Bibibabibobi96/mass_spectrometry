@@ -31,7 +31,7 @@ def _reject_legacy_composite_execution(geometry: Mapping[str, Any]) -> None:
     interfaces = plan.get('components', {})
     if any(interfaces.get(name, {}).get('project_id') == 'single_reflection_oa_tof_mass_analyzer'
            for name in selected):
-        raise ContractError('legacy composite OA鈥揟OF is historical read-only; use independent OA + single_reflection_tof')
+        raise ContractError('legacy composite OA–TOF is historical read-only; use independent OA + single_reflection_tof')
 
 
 def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContext,
@@ -665,7 +665,7 @@ def _track(fields: OpenedArtifact | Mapping[str, Any],
     if (tracking_geometry.get("role") == "simion_split_oa_tof_geometry" or legacy_oa_tof) and (
             isinstance(particles, HandoffResult) or
             (isinstance(propagation, Mapping) and propagation.get("scope") in {"segmented_upstream", "state_relaunch"})):
-        raise ContractError("OA鈥揟OF requires original births and continuous_assembly; cross-component relaunch is retired")
+        raise ContractError("OA–TOF requires original births and continuous_assembly; cross-component relaunch is retired")
     sampled_neutral = meta.get('field_representation') in {'neutral_sampled_basis_with_collision_geometry','neutral_multi_sampled_basis_with_collision_geometry'}
     neutral_admission = None
     if sampled_neutral:

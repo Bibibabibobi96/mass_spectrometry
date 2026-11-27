@@ -190,16 +190,16 @@ def _split_tracking_contract(geometry: Mapping, propagation: Mapping, observatio
     """Require continuous original-birth split tracking and its actual detector disk."""
     if (not isinstance(propagation, Mapping) or propagation.get('scope') != 'continuous_assembly'
             or propagation.get('stop') is not None or propagation.get('consumed_plane_events') != []):
-        raise ValueError('split OA鈥揟OF requires one original-birth continuous flight without relaunch')
+        raise ValueError('split OA–TOF requires one original-birth continuous flight without relaunch')
     face = geometry['detector_active_face']
     definitions = observations.get('plane_observations') if isinstance(observations, Mapping) else None
     selected = [item for item in definitions or [] if isinstance(item, Mapping) and item.get('schema_version') == 2
                 and item.get('source_instance_id') == face['instance_id'] and item.get('surface_id') == face['surface_id']]
     if len(selected) != 1 or len(definitions) != 1:
-        raise ValueError('split OA鈥揟OF requires exactly one observation of its actual detector active face')
+        raise ValueError('split OA–TOF requires exactly one observation of its actual detector active face')
     detector = [row for row in geometry['downstream_pa_instances'] if row.get('role') == 'detector']
     if len(detector) != 1 or type(detector[0].get('workbench_index')) is not int or detector[0]['workbench_index'] < 1:
-        raise ValueError('split OA鈥揟OF requires one explicit detector native workbench instance')
+        raise ValueError('split OA–TOF requires one explicit detector native workbench instance')
     return detector[0]['workbench_index']
 
 
@@ -224,7 +224,7 @@ def _guard_complete_tof_flight(geometry, particles, propagation):
         for instance in scope)
     if complete_tof and (isinstance(particles, HandoffResult) or not isinstance(propagation, Mapping)
                          or propagation.get('scope') != 'continuous_assembly'):
-        raise ValueError('complete OA鈥揟OF requires original births and continuous assembly propagation')
+        raise ValueError('complete OA–TOF requires original births and continuous assembly propagation')
 
 
 def resolve_discovery_selection(discovery, model, *, field_manifest_record=None, field_product_id=None, provenance=None):
@@ -335,21 +335,21 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
             raise ValueError('neutral sampled field manifest differs')
     if ip_mr:
         if ip_mr_field_reference is None:
-            raise ValueError('IP鈥揗R tracking requires a published common-field binding')
+            raise ValueError('IP–MR tracking requires a published common-field binding')
         from .ip_mr_tracking_admission import admit_ip_mr_tracking_fields
         admission = admit_ip_mr_tracking_fields(ip_mr_field_reference)
         if require_prepared_model(admission['model'])['model_identity_sha256'] != document['model_identity_sha256']:
-            raise ValueError('IP鈥揗R field and tracking model identities differ')
+            raise ValueError('IP–MR field and tracking model identities differ')
         if field_manifest_record is not None and any(
                 str(field_manifest_record[k]).lower() != str(admission['source'].reference['manifest'][k]).lower()
                 for k in ('bytes', 'sha256')):
-            raise ValueError('IP鈥揗R tracking field manifest differs')
+            raise ValueError('IP–MR tracking field manifest differs')
         field_manifest_record = admission['source'].reference['manifest']
         from .rf_tracking_execution import prepare_ip_mr_hs1
         hs1 = prepare_ip_mr_hs1(model, hs1_request, common_world_domain=admission['world_domain'],
                                  common_world_frame_id=admission['world_frame_id'])
     elif ip_mr_field_reference is not None:
-        raise ValueError('IP鈥揗R field reference requires IP鈥揗R geometry')
+        raise ValueError('IP–MR field reference requires IP–MR geometry')
     independent_component = raw_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry'} or joint_ip or ip_mr or static_world
     neutral_hs1 = neutral_sampled and hs1_request is not None
     if neutral_hs1 and raw_geometry.get('role') == 'simion_neutral_multi_domain_collision_geometry':
@@ -580,7 +580,7 @@ def plan_tracking_execution(model, *, particles, clock_records: Mapping, propaga
         result['discovery_resolution'] = discovery_resolution
         result['discovery_field_product_id'] = field_product_id
     if ip_mr and (isinstance(particles,HandoffResult) or propagation['scope'] != 'continuous_assembly'):
-        raise ValueError('IP鈥揗R requires one continuous original-birth cohort')
+        raise ValueError('IP–MR requires one continuous original-birth cohort')
     if neutral_sampled:
         result['scalar_field_basis'] = copy.deepcopy(neutral_admission['basis'])
         result['neutral_source_identity'] = {name: {key: record[key] for key in ('bytes', 'sha256')}
@@ -621,12 +621,12 @@ def plan_tracking_workbench(compiled, *, field_design, components_resolved, carr
         return plan_neutral_sampled_tracking_workbench(compiled, admission=neutral_admission, run_directory=run_directory, program=program, native_source_rows=native_source_rows, native_path_resource=native_path_resource)
     if compiled.frontend_geometry.get('role') == 'simion_ip_mr_complete_geometry':
         if ip_mr_admission is None:
-            raise ValueError('verified sampled IP鈥揗R FieldBundle admission required')
+            raise ValueError('verified sampled IP–MR FieldBundle admission required')
         from .rf_tracking_execution import plan_ip_mr_tracking_workbench
         return plan_ip_mr_tracking_workbench(compiled, admission=ip_mr_admission, run_directory=run_directory,
             program=program, program_metadata=program_metadata, native_source_rows=native_source_rows, native_path_resource=native_path_resource)
     if ip_mr_admission is not None:
-        raise ValueError('sampled IP鈥揗R admission requires the matching geometry role')
+        raise ValueError('sampled IP–MR admission requires the matching geometry role')
     if compiled.frontend_geometry.get('role') in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry','simion_neutral_world_collision_geometry'}:
         from .rf_tracking_execution import plan_rf_tracking_workbench
         return plan_rf_tracking_workbench(compiled,carriers=carriers,run_directory=run_directory,
@@ -1138,9 +1138,9 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     sampled_ip_mr = meta.get('field_representation') == 'assembly_sampled_basis_with_collision_geometry'
     if sampled_ip_mr:
         if geometry_role != 'simion_ip_mr_complete_geometry':
-            raise ValueError('sampled IP鈥揗R field requires matching complete geometry')
+            raise ValueError('sampled IP–MR field requires matching complete geometry')
         if scalar_field_basis is not None or expected_scalar_basis is not None:
-            raise ValueError('sampled IP鈥揗R field already owns its scalar basis')
+            raise ValueError('sampled IP–MR field already owns its scalar basis')
         from .rf_tracking_execution import execute_ip_mr_tracking
         return execute_ip_mr_tracking(session,source=source,model=model,document=document,particles=particles,
             propagation=propagation,observations=observations,numerics=numerics,limits=limits,
@@ -1148,7 +1148,7 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
             recovery_reference=recovery_reference,dispatch_profiles=dispatch_profiles,birth_source_authority=birth_source_authority,
             hs1_request=hs1_request,expected_tracking_applicability=expected_tracking_applicability)
     if geometry_role == 'simion_ip_mr_complete_geometry':
-        raise ValueError('IP鈥揗R tracking requires its published sampled FieldBundle')
+        raise ValueError('IP–MR tracking requires its published sampled FieldBundle')
     if geometry_role in {'simion_independent_rf_geometry','simion_independent_oa_geometry','simion_rf_ip_geometry','simion_neutral_world_collision_geometry'}:
         if scalar_field_basis is not None:
             raise ValueError('scalar basis is supported only for SFI tracking')
@@ -1161,7 +1161,7 @@ def execute_tracking(session, *, fields_reference, particles, propagation, obser
     geometry = compiled.frontend_geometry
     _,downstream = require_downstream_reuse(source,meta['downstream_identity'])
     if meta.get('ground_representation') != 'analytic_zero_on_native_geometry':
-        raise ValueError('OA鈥揟OF tracking requires a derived analytic ground FieldBundle; published PA families cannot be reopened')
+        raise ValueError('OA–TOF tracking requires a derived analytic ground FieldBundle; published PA families cannot be reopened')
     design = json.loads(source.data_path('field_design').read_text(encoding='utf-8-sig'))
     stored_bank = json.loads(source.data_path('field_bank').read_text(encoding='utf-8-sig'))
     expected = {row['domain_id'] for row in design['domains']}
@@ -1362,7 +1362,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         raise ValueError('neutral sampled field admission changed after planning')
     if ip_mr_admission is not None:
         if plan['scalar_field_basis'] != ip_mr_admission['basis'] or plan['collision_priority'] != ip_mr_admission['priority']:
-            raise ValueError('sampled IP鈥揗R admission changed after planning')
+            raise ValueError('sampled IP–MR admission changed after planning')
         from .ip_mr_tracking_admission import protect_ip_mr_tracking_fields
         protect_ip_mr_tracking_fields(session,ip_mr_admission)
     if scalar_field_basis is not None:
@@ -1426,7 +1426,7 @@ def _execute_tracking_bound_source(session,*,source,model,document,compiled,geom
         from msplatform.io.manifest_records import verify_record
         if plan['flight']['tracking_kind'] == 'ip_mr':
             if ip_mr_admission is None:
-                raise ValueError('verified sampled IP鈥揗R admission required')
+                raise ValueError('verified sampled IP–MR admission required')
             selected_hs1 = prepare_ip_mr_hs1(model, hs1_request, common_world_domain=ip_mr_admission['world_domain'],
                 common_world_frame_id=ip_mr_admission['world_frame_id'])
         elif plan['flight'].get('has_hs1'):

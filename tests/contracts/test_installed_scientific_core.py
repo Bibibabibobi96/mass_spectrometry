@@ -639,7 +639,7 @@ else: importlib.import_module(name)
     rfe_export = pathlib.Path(rfe_resource('export_axis_basis.lua')).resolve()
     assert rfe_export == rfe_purelib/'msplatform/backends/simion/resources/export_axis_basis.lua'
     rfe_export_bytes = rfe_export.read_bytes()
-    assert hashlib.sha256(rfe_export_bytes).hexdigest() == '940fe56c42b6ffb066096ffc570adeb3d724b1d34826b35fb91ccec174822ec1'
+    assert hashlib.sha256(rfe_export_bytes).hexdigest() == '6c4fa7de876a847fb2bd5b9a7f3a9d30559dcd6772765fed54a9fa0c738e4df4'
     rfe_resource_child = r"""import importlib.abc,json,os,pathlib,sys
 blocked=[pathlib.Path(p).resolve() for p in json.loads(sys.argv[1])]
 def deny(event,args):
@@ -7003,8 +7003,8 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         mrp_contract_path = REPO_ROOT / 'src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json'
         mrp_oa_path = REPO_ROOT / 'src/msplatform/components/orthogonal_accelerator/component_contract.json'
         mrp_contract_bytes, mrp_oa_bytes = mrp_contract_path.read_bytes(), mrp_oa_path.read_bytes()
-        assert hashlib.sha256(mrp_contract_bytes).hexdigest() == '257e10f381b566db9eb85f63776081fbe8ada140bdc99eb44bda4e148fda066f'
-        assert hashlib.sha256(mrp_oa_bytes).hexdigest() == '71ec83fb7f44d1f5dfda1c2cb71ec33c28019f12ddcc98a322d2d37c526b77ec'
+        assert hashlib.sha256(mrp_contract_bytes).hexdigest() == '4190b275888d31c875e40295b94fb7dd0de049cd1dd68ff1d87d1040b4569e48'
+        assert hashlib.sha256(mrp_oa_bytes).hexdigest() == '13a734475a827d2d0c661e89c9ae47bba94a8b41249d57cfe1ed2bb514516df3'
         mrp_contract = load_contract(mrp_contract_path)
         mrp_authority = geometry_authority(mrp_contract)
         assert mrp_authority['geometry_profile_id'] == 'closed_two_zone_compact_mr_axial_r3_gap1_4mm'

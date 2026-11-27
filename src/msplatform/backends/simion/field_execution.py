@@ -178,6 +178,16 @@ def execute_fields(session, *, model_reference: Mapping, numerics: dict, limits:
     from contextlib import ExitStack
     from msplatform.execution.native_source_guard import guard_native_source
     from msplatform.execution.owner import current_managed_native_store
+    if not callable(materialize_geometry) or materializer_record is None:
+        raise ValueError('field execution requires the unique admitted payload materializer')
+    reserve = limits.get('reserved_run_payload_bytes')
+    if type(reserve) is not int or reserve < 0:
+        raise ValueError('field execution requires explicit reserved_run_payload_bytes')
+    if allow_asynchronous_io is not None and type(allow_asynchronous_io) is not bool:
+        raise TypeError('field asynchronous I/O control must be boolean or None')
+    verify_record('field payload materializer', dict(materializer_record))
+    if not isinstance(model_reference, Mapping) or set(model_reference) != {'manifest', 'product_id'}:
+        raise ValueError('artifact reference requires manifest record and product_id')
     scope = current_managed_native_store()
     options = dict(model_reference=model_reference, numerics=numerics, limits=limits,
         materialize_geometry=materialize_geometry, materializer_record=materializer_record,
@@ -212,14 +222,6 @@ def _execute_fields(session, *, model_reference: Mapping, numerics: dict, limits
     creates a scheduler, samples particles, installs a Program, flies, or writes
     another manifest. Cache source keys remain protected through publication.
     """
-    if not callable(materialize_geometry) or materializer_record is None:
-        raise ValueError('field execution requires the unique admitted payload materializer')
-    reserve = limits.get('reserved_run_payload_bytes')
-    if type(reserve) is not int or reserve < 0:
-        raise ValueError('field execution requires explicit reserved_run_payload_bytes')
-    if allow_asynchronous_io is not None and type(allow_asynchronous_io) is not bool:
-        raise TypeError('field asynchronous I/O control must be boolean or None')
-    verify_record('field payload materializer', dict(materializer_record))
     callback = materialize_geometry.func if isinstance(materialize_geometry, partial) else materialize_geometry
     source_file = inspect.getsourcefile(inspect.unwrap(callback))
     if source_file is None or Path(source_file).resolve() != Path(materializer_record['path']).resolve():

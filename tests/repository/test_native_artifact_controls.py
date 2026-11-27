@@ -278,10 +278,18 @@ class NativeArtifactControlsTests(unittest.TestCase):
                 return b'owner stdout', b'host acquire failed'
         context = SimpleNamespace(powershell_executable=Path(sys.executable), host_state_path=self.host,
                                   python_executable=Path(sys.executable))
-        with patch('msplatform.execution.processes.subprocess.Popen', return_value=FailedOwner()):
+        inherited = {'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN': 'parent-token',
+                     'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID': '123',
+                     'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE': 'GATE'}
+        with patch.dict(os.environ, inherited), patch('msplatform.execution.processes.subprocess.Popen',
+                return_value=FailedOwner()) as launched:
             with self.assertRaisesRegex(ValueError, 'host acquire failed') as caught:
                 _invoke_native_artifact_owner(context, {}, {'work_directory': self.root},
                                               _interpret_process_result, 'process_owner.ps1')
+        environment = launched.call_args.kwargs['env']
+        for name in inherited:
+            self.assertNotIn(name, environment)
+        self.assertEqual(environment['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH'], str(self.host))
         error = caught.exception
         self.assertIsInstance(error.__cause__, ProcessExecutionError)
         self.assertTrue(error.execution_bridge_started)

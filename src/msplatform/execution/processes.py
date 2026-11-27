@@ -258,6 +258,9 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
                "-File", str(resource_path(resource_name))]
     environment = dict(os.environ, MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(context.host_state_path),
                        SIMULATION_PYTHON_EXE=str(context.python_executable))
+    for name in ('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN', 'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID',
+                 'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE'):
+        environment.pop(name, None)
     process = subprocess.Popen(command, cwd=resource_path(resource_name).parent, env=environment,
                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     outcome = {}

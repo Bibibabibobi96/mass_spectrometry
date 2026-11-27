@@ -1,33 +1,33 @@
--- Export normalized fast-adjust basis potentials on the reflectron axis.
--- Usage: simion --nogui lua export_axis_basis.lua stem_without_suffix max_electrode output.csv max_x_mm
-local stem = assert(arg[1], 'missing PA stem')
-local maximum_electrode = assert(tonumber(arg[2]), 'invalid maximum electrode')
-local output = assert(arg[3], 'missing output CSV')
-local maximum_x_mm = assert(tonumber(arg[4]), 'invalid maximum axial position')
-assert(maximum_electrode >= 1 and maximum_electrode == math.floor(maximum_electrode),
-  'maximum electrode must be a positive integer')
-
+-- Sample an ordered set of independent, owner-authenticated response PAs.
+-- The caller supplies a frozen Lua spec and protects its input records throughout.
+local spec=assert(dofile(assert(arg[1], 'sampling spec required')))
+assert(type(spec.responses)=='table' and #spec.responses>0, 'ordered standalone responses required')
+assert(type(spec.maximum_x_mm)=='number' and spec.maximum_x_mm==spec.maximum_x_mm and
+  spec.maximum_x_mm>=0 and spec.maximum_x_mm<math.huge, 'invalid axial limit')
+local existing=io.open(spec.output,'rb')
+if existing then existing:close(); error('refusing to overwrite axis samples') end
 simion.pas:close()
-local arrays = {}
-for electrode = 1,maximum_electrode do
-  arrays[electrode] = simion.pas:open(stem .. '.pa' .. electrode)
+local arrays={}
+for index,path in ipairs(spec.responses) do
+  assert(type(path)=='string' and path:lower():match('%.pa$'), 'standalone .pa required')
+  local pa=assert(simion.pas:open(path),'cannot open standalone response')
+  assert(pa.refinable==false and pa.potential_type=='electric', 'invalid standalone response')
+  assert(pa.symmetry==spec.symmetry, 'response symmetry differs')
+  for key,value in pairs(spec.grid) do assert(pa[key]==value, 'response grid differs: '..key) end
+  arrays[index]=pa
 end
-local reference = arrays[1]
-local last_x = math.min(reference.nx-1, math.floor(maximum_x_mm/reference.dx_mm+1e-9))
-local stream = assert(io.open(output, 'w'))
+local reference=arrays[1]
+assert(spec.maximum_x_mm <= (reference.nx-1)*reference.dx_mm, 'axis limit exceeds response grid')
+local last_x=math.floor(spec.maximum_x_mm/reference.dx_mm+1e-9)
+local stream=assert(io.open(spec.output,'w'))
 stream:write('x_mm')
-for electrode = 1,maximum_electrode do
-  stream:write(',basis_' .. electrode .. '_V')
-end
+for index=1,#arrays do stream:write(',basis_'..index..'_V') end
 stream:write('\n')
-for x = 0,last_x do
-  stream:write(string.format('%.12g', x*reference.dx_mm))
-  for electrode = 1,maximum_electrode do
-    stream:write(string.format(',%.12g', arrays[electrode]:potential(x,0,0)))
-  end
+for x=0,last_x do
+  stream:write(string.format('%.17g',x*reference.dx_mm))
+  for _,pa in ipairs(arrays) do stream:write(string.format(',%.17g',pa:potential(x,0,0))) end
   stream:write('\n')
 end
 stream:close()
 simion.pas:close()
-print(string.format('AXIS_BASIS_EXPORT=PASS rows=%d electrodes=%d output=%s',
-  last_x+1, maximum_electrode, output))
+print(string.format('AXIS_BASIS_EXPORT=PASS rows=%d electrodes=%d output=%s',last_x+1,#arrays,spec.output))
