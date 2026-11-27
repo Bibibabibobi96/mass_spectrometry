@@ -399,6 +399,58 @@ try { & $entry @forwardParameters } finally { Write-AnalysisFixtureEvent 'actual
 
 class PreparedJointExecuteTests(unittest.TestCase):
 
+    def test_scientific_event_receipt_reaches_actual_centroid_analysis_cli(self):
+        import contextlib
+        import io
+        from msplatform.workflows.prepared_joint import trial as prepared_joint_trial
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "merge.json"
+            arguments = ["analyze-probe", "--preparation", str(root / "preparation.json"),
+                         "--log", str(root / "native.log"), "--output", str(root / "diagnostics"),
+                         "--scientific-event-receipt", str(receipt)]
+            with patch.object(prepared_joint_trial, "analyze_centroid_probe") as actual_analysis, \
+                    patch.object(sys, "argv", ["trial", *arguments]), contextlib.redirect_stdout(io.StringIO()):
+                prepared_joint_trial.main()
+                self.assertEqual(actual_analysis.call_args.kwargs["scientific_event_receipt"], receipt)
+                actual_analysis.side_effect = RuntimeError("ORIGINAL_CLI_ANALYSIS_FAILURE")
+                with self.assertRaisesRegex(RuntimeError, "ORIGINAL_CLI_ANALYSIS_FAILURE"):
+                    prepared_joint_trial.main()
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
+    def test_retired_flight_parameters_cannot_start_and_workpoint_selects_oa(self):
+        runner = REPO / PREPARED_ENTRY
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(runner),
+                "-PreparedJointWorkbenchRunPath", str(root / "prepared"),
+                "-PreparedSourceMode", "centroid_probe", "-ContractPath", str(root / "contract.json"),
+                "-PythonExe", sys.executable, "-RepoRoot", str(REPO)], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("PreparedJointWorkbenchRunPath", result.stdout + result.stderr)
+            self.assertFalse((root / "artifacts").exists())
+            source = runner.read_text(encoding="utf-8")
+            self.assertNotIn("Invoke-PreparedJointTrial", source)
+            self.assertNotIn("ParameterSetName='Flight'", source)
+            controller = REPO / "src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1"
+            script = root / "route.ps1"
+            script.write_text(r'''param($Controller,$PackageRoot)
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ast=[Management.Automation.Language.Parser]::ParseFile($Controller,[ref]$null,[ref]$null)
+$assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-eq'$trialRunner'},$true)
+if($null-eq$assignment){throw 'Workpoint trial owner assignment is missing'}
+Invoke-Expression $assignment.Extent.Text
+if($trialRunner-ne(Join-Path $PackageRoot 'workflows/resources/oa_mr.ps1')){throw 'Workpoint no longer selects OA owner'}
+if($ast.ParamBlock.Parameters.Name.VariablePath.UserPath-contains'PreparedJointWorkbenchRunPath'){throw 'Retired Prepared route remains bound'}
+'OA_WORKPOINT_ROUTE=PASS'
+''', encoding="utf-8")
+            route = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script),
+                str(controller), str(REPO / "src/msplatform")], cwd=root,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+            self.assertEqual(route.returncode, 0, route.stdout + route.stderr)
+            self.assertIn("OA_WORKPOINT_ROUTE=PASS", route.stdout)
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_default_entry_uses_selected_package_and_rejects_missing_or_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -440,418 +492,9 @@ class PreparedJointExecuteTests(unittest.TestCase):
             self.assertNotEqual(missing.returncode, 0)
             self.assertIn("Installed msplatform package is unavailable", missing.stdout + missing.stderr)
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
-    def test_scientific_receipt_arguments_reach_actual_probe_and_equivalence_clis(self):
-        import contextlib
-        import io
-        from msplatform.workflows.prepared_joint import trial as prepared_joint_trial
-        from msplatform.workflows.prepared_joint import flight as prepared_flight
-        runner = REPO / PREPARED_ENTRY
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            script = root / "arguments.ps1"
-            script.write_text(r'''param($Runner,$Root)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
-$commands=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-ProjectPython'-and
- ($n.Extent.Text.Contains("'analyze-probe'")-or$n.Extent.Text.Contains("'compare-joint'"))},$true))
-if($commands.Count-ne2){throw 'Actual prepared analysis commands are not unique'}
-$preparationPath=Join-Path $Root 'preparation.json';$merged=Join-Path $Root 'native.log'
-$mergeReceipt=Join-Path $Root 'merge.json';$resultDir=$Root
-$script:calls=[Collections.Generic.List[object]]::new();$script:fail=$false
-function Invoke-ProjectPython {param($Arguments)
- if($script:fail){throw 'ORIGINAL_SCIENTIFIC_FAILURE'}
- $script:calls.Add(@($Arguments))
-}
-foreach($command in $commands){
- Invoke-Expression $command.Extent.Text
- $script:fail=$true;$caught=$null
- try{Invoke-Expression $command.Extent.Text}catch{$caught=$_.Exception.Message}
- $script:fail=$false
- if($caught-cne'ORIGINAL_SCIENTIFIC_FAILURE'){throw 'Analysis failure was swallowed or replaced'}
-}
-ConvertTo-Json -InputObject @($script:calls) -Depth 10 -Compress
-''', encoding="utf-8")
-            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(runner), str(root)],
-                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            calls = json.loads(result.stdout.strip().splitlines()[-1])
-            self.assertEqual(len(calls), 2)
-            for arguments in calls:
-                self.assertEqual(arguments.count("--scientific-event-receipt"), 1)
-                self.assertEqual(Path(arguments[arguments.index("--scientific-event-receipt")+1]), root/"merge.json")
-                cli = prepared_joint_trial if arguments[1].endswith(".trial") else prepared_flight
-                function = "analyze_centroid_probe" if arguments[2] == "analyze-probe" else "compare_trajectory_representation"
-                with patch.object(prepared_joint_trial, function) as actual_analysis, \
-                        patch.object(sys, "argv", [arguments[1], *arguments[2:]]), contextlib.redirect_stdout(io.StringIO()):
-                    cli.main()
-                    self.assertEqual(actual_analysis.call_args.kwargs["scientific_event_receipt"], root/"merge.json")
-                    actual_analysis.side_effect = RuntimeError("ORIGINAL_CLI_ANALYSIS_FAILURE")
-                    with self.assertRaisesRegex(RuntimeError, "ORIGINAL_CLI_ANALYSIS_FAILURE"):
-                        cli.main()
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
-    def test_reused_csv_paths_bind_and_legacy_receipts_remain_unchanged(self):
-        runner = REPO / PREPARED_ENTRY
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            paths = dict(events_path=str(root/"events.csv"), trajectory_path=str(root/"trajectory.csv"))
-            for name in paths.values():
-                Path(name).write_text("fixture scientific data; no native flight\n", encoding="utf-8")
-            receipts = [root/f"batch_{index}.json" for index in range(1,4)]
-            for path, value in zip(receipts, [dict(scientific_event_output=paths), dict(scientific_event_output=None), {}]):
-                path.write_text(json.dumps(value), encoding="utf-8")
-            before = {path: path.read_bytes() for path in receipts}
-            script = root/"inputs.ps1"
-            script.write_text(r'''param($Runner,$Root)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
-$block=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and
- $n.Clauses[0].Item1.Extent.Text-eq'$null-ne$continuation'-and$n.Extent.Text.Contains('$batchScience=')},$true))
-if($block.Count-ne1){throw 'Actual inherited-input block is not unique'}
-$configuration=@{inputs=@{unchanged='original'}};$continuation=@{};$parentManifest='parent.json';$continuationPlanPath='plan.json'
-$initial=@{batches=@(@{index=1},@{index=2},@{index=3})};$records=@{}
-foreach($index in 1..3){$records[$index]=[pscustomobject]@{reused=$true;stdout="log$index";fly2="fly$index";
- batch_receipt=(Join-Path $Root "batch_$index.json");owner_exit=$null;owner_manifest=$null}}
-Invoke-Expression $block[0].Extent.Text
-if($configuration.inputs.unchanged-cne'original'){throw 'Existing frozen input changed'}
-foreach($index in 2..3){
- if($configuration.inputs.ContainsKey(('reused_batch_{0:D3}_scientific_events'-f$index))-or
-    $configuration.inputs.ContainsKey(('reused_batch_{0:D3}_scientific_trajectory'-f$index))){throw 'Legacy log became invented CSV'}
-}
-$records[1].batch_receipt=Join-Path $Root 'missing.json';$caught=$null
-try{Invoke-Expression $block[0].Extent.Text}catch{$caught=$_}
-if($null-eq$caught){throw 'Missing declared batch receipt was swallowed'}
-$configuration.inputs|ConvertTo-Json -Depth 10 -Compress
-''', encoding="utf-8")
-            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(runner), str(root)],
-                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            inputs = json.loads(result.stdout.strip().splitlines()[-1])
-            self.assertEqual(inputs["reused_batch_001_scientific_events"], paths["events_path"])
-            self.assertEqual(inputs["reused_batch_001_scientific_trajectory"], paths["trajectory_path"])
-            self.assertEqual(before, {path: path.read_bytes() for path in receipts})
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
-    def test_missing_observation_calibrates_first_missing_batch_only(self):
-        from msplatform.execution.simion_dispatch import plan_recovered_formal_followup, plan_simion_dispatch
-        request = {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
-                   "particle_count": 3, "independent_particles": True, "trajectory_quality": 8}
-        provisional = plan_simion_dispatch(request, [], available_memory_bytes=10*1024**3,
-                                           total_physical_memory_bytes=20*1024**3, logical_processors=8)
-        first = provisional["waves"][0]["batches"][0]
-        fallback = plan_recovered_formal_followup(provisional, {"natural_exit": True, "exit_code": 0,
-            "count": first["count"], "source_row_range": [first["particle_id_min"], first["particle_id_max"]],
-            "resource_observation": None})
-        source = (REPO / PREPARED_ENTRY).read_text()
-        start = source.index("    $dispatchValue=Get-Content -LiteralPath $dispatch -Raw|ConvertFrom-Json")
-        end = source.index("    $checkpoint={", start)
-        block = source[start:end]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            dispatch, plan = root / "dispatch.json", root / "plan.json"
-            dispatch.write_text(json.dumps(fallback))
-            plan.write_text(json.dumps({"batches": fallback["waves"][0]["batches"]}))
-            quote = lambda value: "'" + str(value).replace("'", "''") + "'"
-            script = f'''$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$dispatch={quote(dispatch)};$plan={quote(plan)};$request='unused';$profiles='unused';$continuation=@{{}}
-$initial=Get-Content $plan -Raw|ConvertFrom-Json;$records=@{{}};foreach($b in $initial.batches){{$record=[pscustomobject]@{{scheduler_batch=$b;index=[int]$b.index}};if([int]$b.index-eq1){{$record|Add-Member -NotePropertyName reused -NotePropertyValue $true}};$records[[int]$b.index]=$record}}
-$replay=@($initial.batches|Where-Object{{$_.index-ne1}});$script:calls=0
-function Invoke-ProjectPython {{param($Arguments) $script:calls++;if($Arguments-notcontains'--recovered-missing-plan'-or$Arguments-contains'--request'){{throw 'wrong calibration'}};& {quote(sys.executable)} @Arguments;if($LASTEXITCODE-ne0){{throw 'calibration failed'}}}}
-{block}
-if($firstSpecification.index-ne2){{throw 'reused prefix selected for native observation'}}
-$formal=[pscustomobject]@{{process_record=[pscustomobject]@{{completed=$true}};observed_peak_process_tree_working_set_bytes=1073741824;observed_process_cpu_percent=8;observed_background_cpu_percent=2;available_memory_bytes=10737418240;total_physical_memory_bytes=21474836480}}
-& $replan $formal
-$remaining=& $prepareRemaining $formal
-if($script:calls-ne1-or@($remaining.pending).Count-ne1-or$remaining.pending[0].index-ne3){{throw 'wrong pending batches'}}
-$calibrated=Get-Content $dispatch -Raw|ConvertFrom-Json
-if(-not$calibrated.estimation.recovered_missing_observation_completed-or$calibrated.limits.maximum_concurrency-le1){{throw 'wrong calibrated identity'}}
-if($calibrated.estimation.observed_peak_bytes-ne1073741824-or$calibrated.estimation.observed_process_cpu_percent-ne8-or$calibrated.estimation.background_cpu_percent-ne2-or$calibrated.host.available_memory_bytes-ne10737418240-or$calibrated.host.total_physical_memory_bytes-ne21474836480){{throw 'actual observation changed'}}
-if(($calibrated.waves[0].batches|ConvertTo-Json -Compress)-cne($initial.batches|ConvertTo-Json -Compress)){{throw 'fixed intervals changed'}}
-'''
-            path = root / "test.ps1"
-            path.write_text(script, encoding="utf-8")
-            completed = subprocess.run(["pwsh", "-NoProfile", "-File", str(path)], cwd=REPO,
-                                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
-    def test_existing_public_runner_replans_and_dispatches_local_batch_files(self):
-        powershell = shutil.which("pwsh")
-        if not powershell:
-            self.skipTest("PowerShell 7 is unavailable")
-        runner = REPO / PREPARED_ENTRY
-        with tempfile.TemporaryDirectory() as directory:
-            script = Path(directory) / "mock.ps1"
-            script.write_text(r'''param($Runner,$TestRoot,$PythonRuntime,$Repository,$Scenario)
-$ErrorActionPreference='Stop'
-$null = Set-StrictMode -Version Latest
-. (Join-Path $Repository 'src/msplatform/execution/resources/run_artifact_support.ps1')
-. (Join-Path $Repository 'src/msplatform/execution/resources/workspace_paths.ps1')
-$pathContext=Resolve-WorkspacePaths -SourceRoot $Repository -ArtifactRoot (Join-Path $TestRoot 'artifacts') -ExecutionRoot (Join-Path $TestRoot 'execution') -HostResourceStatePath (Join-Path $TestRoot 'host.sqlite3') -Python $PythonRuntime
-$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$null)
-$function=$ast.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-PreparedJointTrial'},$true)
-$helperAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $Repository 'src/msplatform/execution/resources/simion_dispatch_support.ps1'),[ref]$null,[ref]$null)
-$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-ObservedPreparationFailureDrain'},$true)
-Invoke-Expression $helper.Extent.Text
-$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SimionFormalObservation'},$true)
-Invoke-Expression $helper.Extent.Text
-$helper=$helperAst.Find({param($node) $node-is[Management.Automation.Language.FunctionDefinitionAst]-and$node.Name-eq'Invoke-SimionBatchPhase'},$true)
-Invoke-Expression $helper.Extent.Text
-$code=$function.Extent.Text -replace '(?m)^  \. \(Join-Path[^\r\n]+',''
-Invoke-Expression $code
-$sourceRefFunction=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Get-PreparedJointSourceReferences'},$true)
-Invoke-Expression $sourceRefFunction.Extent.Text
-$repoRoot=$TestRoot;$workspaceRoot=$TestRoot;$projectId='instrument_assembly';$projectArtifacts=Join-Path $pathContext.artifact_root 'assemblies/instrument_assembly';$packageRoot=Join-Path $Repository 'src/msplatform'
-New-Item -ItemType Directory -Path (Join-Path $repoRoot 'src/msplatform/workflows/config')|Out-Null
-@{schema_version=2;role='workflow_runtime_dependencies';owner_id='instrument_assembly';consumer_ids=@('prepared_joint');providers=@()}|ConvertTo-Json -Depth 5|Set-Content (Join-Path $repoRoot 'src/msplatform/workflows/config/runtime_dependencies.json')
-function Freeze-ConsumerDependencies {
- param($RepoRoot,$CorePackageRoot,$ContractPath,$InputDir,$OwnerId,$ConsumerId,$Python)
- if($Python-ne'mock'-or$OwnerId-ne'instrument_assembly'-or$ConsumerId-ne'prepared_joint'){throw 'Wrong freeze owner/consumer'}
- if($CorePackageRoot-ne$packageRoot-or$ContractPath-ne(Join-Path $packageRoot 'workflows/config/runtime_dependencies.json')){throw 'Frozen package authority was replaced by the workspace'}
- $inventory=Join-Path $InputDir 'code_inventory.json';'{}'|Set-Content $inventory
- return @{execution_root=$Repository;code_inventory_path=$inventory;dependency_contract_path=$ContractPath;identities=@()}
-}
-'{}'|Set-Content (Join-Path $TestRoot 'run_manifest.json')
-$env:PYTHONPATH=$Repository
-$PreparedJointWorkbenchRunPath=$TestRoot;$ContractPath=$Runner;$RunId='mockrun';$python='mock';$simion=if($Scenario-eq'zero'){Join-Path $TestRoot 'missing-simion.exe'}else{$PythonRuntime}
-$ContinuationPredecessorManifestPath=if($Scenario-in@('mixed','mixed_insufficient','zero')){Join-Path $TestRoot 'parent/run_manifest.json'}else{''}
-$PreparedSourceMode='measured_population';$FieldBindingPath='';$TrajectoryEquivalenceReferenceRunPath='';$ResultPath=''
-$script:capacityReleased=$false;$script:hostReleased=$false;$script:retained=$false;$script:sealed=$false
-if($ContinuationPredecessorManifestPath){New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor')|Out-Null;'{}'|Set-Content $ContinuationPredecessorManifestPath;'sealed'|Set-Content (Join-Path $TestRoot 'ancestor/source.log');'{}'|Set-Content (Join-Path $TestRoot 'ancestor/run_manifest.json')}
-$script:projectionCalls=0;$script:projectionCapacity=$false;$script:initialProjectionCapacity=$false;$script:fixedObservation=$false
-function mock {
- $global:LASTEXITCODE=0;$script:projectionCalls++
- $ancestor=Join-Path $TestRoot 'ancestor/source.log'
- if($script:projectionCalls-eq3){$writable=$false;try{$stream=[IO.File]::Open($ancestor,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$stream.Dispose();$writable=$true}catch{};if($writable){throw 'Borrowed ancestor was not locked'}}
- @{run_directories=@((Split-Path -Parent $ContinuationPredecessorManifestPath),(Join-Path $TestRoot 'ancestor'));files=@($ContinuationPredecessorManifestPath,$ancestor);manifests=@{($ContinuationPredecessorManifestPath)=(Get-FileHash $ContinuationPredecessorManifestPath -Algorithm SHA256).Hash; (Join-Path $TestRoot 'ancestor/run_manifest.json')=(Get-FileHash (Join-Path $TestRoot 'ancestor/run_manifest.json') -Algorithm SHA256).Hash}}|ConvertTo-Json -Depth 10 -Compress
-}
-$script:adapted=$false;$script:observed=$false;$script:dispatched=$false;$script:analyzed=$false;$script:assetChecks=0;$script:leased=$false;$script:materialized=0
-function Write-RunJson {param($Path,$Depth,$Value) $Value|ConvertTo-Json -Depth 60|Set-Content $Path}
-function New-RunPackage {
- param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled)
- if($Project-ne'instrument_assembly'-or$Mode-ne'prepared_joint'){throw 'Wrong new run owner/mode'}
- $r=Join-Path $TestRoot 'run';$results=Join-Path $r 'results';$logs=Join-Path $r 'logs'
- New-Item -ItemType Directory -Path (Join-Path $r 'inputs')|Out-Null
- New-Item -ItemType Directory -Path $results,$logs|Out-Null
- $config=Join-Path $r 'run_config.json';'{"run_id":"20261016_200000__sim__simion__fixture","project":"instrument_assembly","mode":"prepared_joint"}'|Set-Content $config
- return [pscustomobject]@{artifact_run_dir=$r;run_dir=$r;execution_alias=$null;execution_path_capacity=$null;python=$PythonRuntime;path_context=$pathContext;input_dir=(Join-Path $r 'inputs');result_dir=$results;log_dir=$logs;run_config=$config;summary=(Join-Path $r 'summary.json')}
-}
-function Enter-ArtifactWorkflowCapacitySession {
- param($SourceReferences)
- if($ContinuationPredecessorManifestPath-and(@($SourceReferences|ForEach-Object{$_.protected_paths})-contains(Join-Path $TestRoot 'ancestor'))){$script:initialProjectionCapacity=$true}
- return @{status='active'}
-}
-function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$SourceReferences,$RemainingCommittedNewBytes)
- if($ContinuationPredecessorManifestPath-and(@($SourceReferences|ForEach-Object{$_.protected_paths})-contains(Join-Path $TestRoot 'ancestor/source.log'))){$script:projectionCapacity=$true}
- return @{session=@{status='active'}}}
-function Exit-ArtifactWorkflowCapacitySession {}
-function Write-VerifiedRunManifest {
- param($Python,$RepoRoot,$RunConfig,$Status,$Software,$Outputs,[switch]$DeferCapacityFinalization)
- if($Status-in@('success','failed','interrupted')-and-not$DeferCapacityFinalization){throw 'Stopped-payload owner must defer public capacity finalization'}
- & $PythonRuntime -c 'from msplatform.execution.manifest_publication import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' --run-config $RunConfig --status $Status
- if($LASTEXITCODE-ne0){throw 'Actual public manifest writer rejected runner inputs'}
- $m=Get-Content (Join-Path (Split-Path -Parent $RunConfig) 'run_manifest.json') -Raw|ConvertFrom-Json
- if($m.inputs.PSObject.Properties.Value.exists-contains$false){throw 'Actual manifest has an unbound input'}
-}
-function Complete-FailedRun {throw 'Unexpected light-evidence finalizer used'}
-function Initialize-RunArtifactPowerShellOwner {
- param($Package,$EntrypointPath)
- $expected=Join-Path $Repository 'src/msplatform/workflows/resources/prepared_joint_execute.ps1'
- if($EntrypointPath-ne$expected){throw 'Flight frozen entrypoint owner differs'}
- return @{package=$Package;result_path='inert-result'}
-}
-# This science-routing fixture replaces only the public lifecycle boundary;
-# separate recovery tests execute the actual common owner and original CLI.
-function Complete-RunArtifactPowerShellOwner {
- param($Context,$Status,$Summary,$OutputPaths,$WritersStopped,$WriterCompletion,$OriginalFailure)
- if(-not$WritersStopped){throw 'unknown writer retained'}
- Write-RunJson -Path $Context.package.summary -Depth 60 -Value $Summary
- $null=Apply-RunArtifactRetention
- Write-VerifiedRunManifest -RunConfig $Context.package.run_config -Status $Status -DeferCapacityFinalization|Out-Host
- Invoke-ProjectPython -Arguments @('-m','msplatform.execution.run_capacity_lifecycle','--action','seal-stopped-payload')
- return @{status=$Status;terminal_published=$true;lease_released=$true}
-}
 
-function Enter-HostResourceStage {$script:leased=$true;return @{test=$true;inherited=$false;token='actual-fixture-token'}}
-function Get-HostResourceBudget {return @{test=$true}}
-function Exit-HostResourceStage {param([Parameter(Mandatory)]$Lease,[switch]$PassThru) $script:hostReleased=$true;if($PassThru){@{status='released';token=$Lease.token}}}
-function Complete-ResourceUsage {}
-function Apply-RunArtifactRetention {if($Scenario-eq'closeout_failure'){throw 'Synthetic retention failure'};$script:retained=$true;$r=Join-Path $TestRoot 'run/retention_actions.json';'{}'|Set-Content $r;return $r}
-function Invoke-ProjectPython {
- param($Arguments)
- if($Arguments[0]-eq'-c'-and$Arguments[1]-like'*manifest_record=file_record*'){
-  & $PythonRuntime -B @Arguments;if($LASTEXITCODE-ne0){throw 'actual source reference metadata failed'};return
- }
- if($Arguments[0]-eq'-c'){
-  if(-not$script:leased){throw 'Payload verification preceded the native-stage lease'}
-  $script:assetChecks+=1
-  $fieldDirectory=if($Scenario-eq'candidate'){'candidate_fields'}else{'live_fields'}
-  $writeSucceeded=$false
-  try{$probe=[IO.File]::Open((Join-Path $TestRoot ($fieldDirectory+'/parent/field.pa')),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$probe.Dispose();$writeSucceeded=$true}catch{}
-  if($writeSucceeded){throw 'Payload verification preceded its write-denial guard'}
-  & $PythonRuntime -B @Arguments
-  if($LASTEXITCODE-ne0){throw 'Actual inert asset verification rejected drift'}
-  return
- }
- $command=$Arguments[2]
- function Value($key){return $Arguments[[array]::IndexOf($Arguments,$key)+1]}
- if($Arguments-contains'--prepared-joint-current-preparation'){
-  $parent=Join-Path $TestRoot 'parent';New-Item -ItemType Directory -Force -Path (Join-Path $parent 'results'),(Join-Path $parent 'logs')|Out-Null
-  $borrowed=Join-Path $TestRoot 'ancestor_inputs';New-Item -ItemType Directory -Force -Path $borrowed|Out-Null
-  $plan=Join-Path $borrowed 'simion_execution_batch_plan.json';Write-RunJson $plan 20 @{role='simion_single_wave_particle_batch_plan';batches=@(@{index=1;particle_id_min=1;particle_id_max=1;count=1},@{index=2;particle_id_min=2;particle_id_max=2;count=1})}
-  $request=Join-Path $borrowed 'simion_dispatch_request.json';'{}'|Set-Content $request
-  $profiles=Join-Path $borrowed 'simion_resource_profiles.json';'{}'|Set-Content $profiles
-  $dispatch=Join-Path $borrowed 'simion_repository_dispatch_plan.json';Write-RunJson $dispatch 20 $(if($Scenario-eq'mixed_insufficient'){@{estimation=@{kind='observed_formal_batch'};waves=@(@{batches=@(@{count=0})})}}else{@{estimation=@{kind='observed'}}})
-  $units=@();$batches=@();foreach($index in 1..2){$d=Join-Path $parent ('results/batches/batch_{0:D3}'-f$index);New-Item -ItemType Directory -Force -Path $d|Out-Null;$log=Join-Path $parent ('logs/joint_flight_batch_{0:D3}.log'-f$index);$receipt=Join-Path $d 'batch_receipt.json';$fly=Join-Path $d 'joint.fly2';'parent'|Set-Content $log;'{}'|Set-Content $receipt;'parent fly'|Set-Content $fly;$action=if($Scenario-in@('mixed','mixed_insufficient')-and$index-eq2){'replay'}else{'reuse'};$units+=@{key=('batch-{0:D3}'-f$index);action=$action;terminal_outputs=@(@{path=$log;sha256=('A'*64)},@{path=$receipt;sha256=('B'*64)},@{path=$fly;sha256=('C'*64)})};$batches+=@{index=$index;particle_id_min=$index;particle_id_max=$index;count=1;action=$action}}
-  $o=Value '--output-dir';New-Item -ItemType Directory -Force -Path $o|Out-Null;Write-RunJson (Join-Path $o 'simion_whole_unit_replay_plan.json') 40 @{schema_version=2;role='simion_whole_unit_replay_plan';batch_plan=@{path=$plan;sha256=('D'*64)};dispatch_request=@{path=$request;sha256=('E'*64)};resource_profiles=@{path=$profiles;sha256=('F'*64)};dispatch_plan=@{path=$dispatch;sha256=('G'*64)};units=$units;batches=$batches;reusable_unit_count=$(if($Scenario-in@('mixed','mixed_insufficient')){1}else{2});replay_unit_count=$(if($Scenario-in@('mixed','mixed_insufficient')){1}else{0})};return
- }
- if($Arguments[1]-eq'msplatform.contracts.trajectory_recording'){return '{"mode":"fixed_interval","interval_us":0.1,"reason":"test","output_budget_bytes":10000}'}
- if($command-eq'protection-projection'){return @{run_directories=@($PreparedJointWorkbenchRunPath)}|ConvertTo-Json -Compress}
- if($command-eq'prepare'){
-  $r=Value '--run-directory';$results=Join-Path $r 'results'
-  $fieldDirectory=if($Scenario-eq'candidate'){'candidate_fields'}else{'live_fields'}
-  Write-RunJson (Join-Path $results 'prepared_joint_trial.json') 60 @{protected_paths=@();guard_paths=@((Join-Path $TestRoot ($fieldDirectory+'/parent/field.pa')),(Join-Path $TestRoot ($fieldDirectory+'/local/field.pa')));field_binding=@{path=(Join-Path $TestRoot ($fieldDirectory+'/binding.json'))};launched_particle_count=2;mother_particle_count=3;expected_particle_ids=@(1,7);prism_voltages_v=@(1,2);stripe_biases_v=@(0,0);trajectory_contract=@{path=$Runner};launcher=(Join-Path $TestRoot 'run/inputs/mock_launcher.lua');trajectory_equivalence_reference=@{reference_log='frozen'}}
-  '{}'|Set-Content (Join-Path $results 'simion_dispatch_request.json')
- }elseif($command-eq'discover'){'{}'|Set-Content (Value '--output')
- }elseif($Arguments[1]-eq'msplatform.execution.simion_dispatch'){
-  if($Arguments-contains'--prepare-fixed-recovery-plan'){
-   if($Arguments-notcontains'--profiles'){throw 'Existing resource profiles did not reach the public fixed selector'}
-   if($Scenario-eq'mixed_insufficient'-and@($Arguments|Where-Object{$_-eq'--replay-batch-index'}).Count-ne1){throw 'Fixed recovery omitted missing batch'}
-   $prior=Get-Content (Value '--output') -Raw|ConvertFrom-Json
-   if($Scenario-eq'mixed_insufficient'){$prior.estimation.kind='formal_first_batch_observation';$script:fixedObservation=$true}
-   if($prior.estimation.kind-eq'formal_first_batch_observation'){$prior.estimation|Add-Member -NotePropertyName recovered_missing_observation -NotePropertyValue $true -Force}
-   Write-RunJson (Value '--output') 20 $prior;return
-  }
-  if($Arguments-contains'--observed-formal-peak-bytes'){if($Scenario-in@('drain_failure','drain_budget_failure')){throw 'Synthetic replan failure'};$script:adapted=$true}
-  $kind=if($script:adapted){'observed'}else{'formal_first_batch_observation'}
-  Write-RunJson (Value '--output') 20 @{estimation=@{kind=$kind}}
- }elseif($Arguments[1]-eq'msplatform.backends.simion.particle_batching'){
-  $batches=@(@{index=1;particle_id_min=1;particle_id_max=1;count=1})
-  if($script:adapted){$batches+=@{index=2;particle_id_min=2;particle_id_max=2;count=1}}
-  Write-RunJson (Value '--output') 20 @{batches=$batches}
- }elseif($command-eq'materialize-joint'){
-  $script:materialized++
-  $d=Value '--output';New-Item -ItemType Directory -Path $d|Out-Null
-  '{}'|Set-Content (Join-Path $d 'batch_receipt.json');'local'|Set-Content (Join-Path $d 'joint.fly2')
- }elseif($command-eq'merge-joint'){
-  if(@($Arguments|Where-Object{$_-eq'--batch-log'}).Count-ne2){throw 'Replanned second batch was not merged'}
- }elseif($Arguments[1]-eq'msplatform.execution.run_capacity_lifecycle'){
-  if($Arguments-notcontains'seal-stopped-payload'){throw 'Wrong finalizer'}
-  $script:sealed=$true
-  if($Scenario-eq'seal_failure'){throw 'Synthetic stopped payload seal failure'}
- }elseif($command-eq'compare-joint'){$script:compared=$true
- }elseif($command-eq'analyze-joint'){$script:analyzed=$true;if($Scenario-eq'analysis_failure'){throw 'Synthetic diagnostics failure'}}
- else{throw ('Unexpected Python command '+($Arguments-join' '))}
-}
-function Assert-LocalSpecification($Specification){
- if($Specification.argument_list[-1]-notlike'*joint.fly2'){throw 'Missing explicit local Fly2'}
- if($Specification.argument_list[-2]-notlike'*joint.iob'){throw 'Missing batch IOB'}
- if((Split-Path -Parent $Specification.argument_list[-1])-ne$Specification.working_directory){throw 'Fly2/IOB batch mismatch'}
- 'status,Fly completed. 1 splats'|Set-Content $Specification.stdout
-}
-function Start-ObservedFormalProcess {
- param($DispatchPlanPath,$ProcessSpecification)
- if($Scenario-eq'mixed_insufficient'-and[int]$ProcessSpecification.scheduler_batch.index-ne2){throw 'Observed a reused batch'}
- Assert-LocalSpecification $ProcessSpecification;$script:observed=$true
- return @{resource_budget_exceeded=$false;completed_naturally=$true;exit_code=0;process_record=@{completed=$true;exit_code=0;root_process_id=44;root_process_started_at_utc_ticks=123;specification=$ProcessSpecification};observed_peak_process_tree_working_set_bytes=100;observed_process_cpu_percent=10;observed_background_cpu_percent=0;available_memory_bytes=10000;total_physical_memory_bytes=20000}
-}
-function Invoke-ResourceBudgetedProcesses {
- param($DispatchPlanPath,$RunDir,$UsagePath,$ProcessSpecifications,$ExistingProcessRecords,$OnProcessCompleted)
- if($Scenario-eq'drain_failure'){throw 'Synthetic drain failure'}
- if($Scenario-eq'drain_budget_failure'){return @{resource_budget_exceeded=$true;processes=@()}}
- if($Scenario-eq'wave_failure'){throw 'Synthetic batch runner failure'}
- if($Scenario-eq'closeout_failure'){try{throw 'Synthetic original flight failure'}catch{$_.Exception.Data['simion_wave_writer_completion_confirmed']=$true;throw}}
- if($Scenario-eq'wave_budget_failure'){return @{resource_budget_exceeded=$true;processes=@()}}
- if($Scenario-eq'mixed_insufficient'){
-  if(@($ProcessSpecifications).Count-ne0-or@($ExistingProcessRecords).Count-ne1){throw 'Wrong retained observation wave'}
-  if($OnProcessCompleted){foreach($record in @($ExistingProcessRecords)){& $OnProcessCompleted $record}}
- }else{
-  if(@($ProcessSpecifications).Count-ne1-or$ProcessSpecifications[0].scheduler_batch.index-ne2){throw 'Wrong adaptive wave'}
-  Assert-LocalSpecification $ProcessSpecifications[0];$script:dispatched=$true
-  if($OnProcessCompleted){foreach($record in @($ExistingProcessRecords)+@(@{completed=$true;exit_code=0;root_process_id=44;root_process_started_at_utc_ticks=123;specification=$ProcessSpecifications[0]})){& $OnProcessCompleted $record}}
- }
- return @{resource_budget_exceeded=$false;processes=@(@{exit_code=0})}
-}
-try{Invoke-PreparedJointTrial;if($Scenario-notin@('success','candidate','mixed','mixed_insufficient','zero')){throw 'Expected scenario failure did not happen'}}catch{if($Scenario-in@('success','candidate','mixed','mixed_insufficient','zero')){throw};if($Scenario-eq'closeout_failure'){if($_.Exception.Message-ne'Synthetic original flight failure'-or$_.Exception.Data['prepared_joint_closeout_error']-notlike'*Synthetic retention failure*'){throw};'PUBLIC_PREPARED_RUNNER_MOCK_PASS';exit 0}}
-if($Scenario-in@('drain_failure','drain_budget_failure','wave_failure','wave_budget_failure')){
- $summary=Get-Content (Join-Path $TestRoot 'run/summary.json') -Raw|ConvertFrom-Json
- $expectedReason=if($Scenario-in@('drain_failure','drain_budget_failure')){'Synthetic replan failure'}elseif($Scenario-eq'wave_failure'){'Synthetic batch runner failure'}else{'Measured joint flight failed or exceeded repository resource budget.'}
- if($summary.status-ne'writer_completion_unknown'-or$summary.reason-ne$expectedReason){throw 'Unknown writer evidence missing'}
- if($Scenario-eq'drain_failure'-and$summary.drain_error-ne'Synthetic drain failure'){throw 'Drain error missing'}
- if($Scenario-eq'drain_budget_failure'-and$summary.drain_error-notlike'*did not confirm writer completion*'){throw 'Unconfirmed budget drain missing'}
- if($script:capacityReleased-or$script:hostReleased-or$script:retained-or$script:sealed){throw 'Unknown writer was finalized'}
- 'PUBLIC_PREPARED_RUNNER_MOCK_PASS';exit 0
-}
-$manifest=Get-Content (Join-Path $TestRoot 'run/run_manifest.json') -Raw|ConvertFrom-Json
-$expectedStatus=if($Scenario-in@('analysis_failure','asset_failure')){'failed'}else{'success'}
-if($manifest.status-ne$expectedStatus){throw 'Scientific manifest was incorrectly rewritten'}
-if($Scenario-eq'asset_failure'){if($script:observed-or$script:dispatched-or$script:analyzed){throw 'Bad actual assets reached a vendor consumer'}}elseif($Scenario-in@('mixed','mixed_insufficient','zero')){if(-not($script:analyzed-and$script:sealed)){throw 'Recovery skipped merge or analysis'};if($Scenario-eq'zero'-and($script:observed-or$script:dispatched-or$script:materialized-ne0)){throw 'Zero-missing recovery launched SIMION'};if($Scenario-eq'mixed'-and($script:observed-or-not$script:dispatched)){throw 'Mixed recovery launched wrong batches'};if($Scenario-eq'mixed_insufficient'-and(-not$script:observed-or-not$script:adapted-or$script:dispatched)){throw 'Insufficient profile did not observe only the missing batch'}}elseif(-not($script:observed-and$script:adapted-and$script:dispatched-and$script:analyzed-and$script:sealed)){throw 'Missing public workflow stage'}
-if($ContinuationPredecessorManifestPath-and($script:projectionCalls-ne3-or-not$script:initialProjectionCapacity-or-not$script:projectionCapacity)){throw 'Ancestor projection was not initially admitted, protected and rechecked'}
-if($ContinuationPredecessorManifestPath){$stream=[IO.File]::Open((Join-Path $TestRoot 'ancestor/source.log'),[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite);$stream.Dispose()}
-if($Scenario-eq'mixed_insufficient'){$original=Get-Content (Join-Path $TestRoot 'ancestor_inputs/simion_repository_dispatch_plan.json') -Raw|ConvertFrom-Json;if($original.estimation.kind-ne'observed_formal_batch'-or-not$script:fixedObservation){throw 'Ancestor dispatch was rewritten or public fixed observation was skipped'}}
-if($Scenario-notin@('analysis_failure','asset_failure')-and-not$script:compared){throw 'Trajectory equivalence gate was skipped'}
-if($script:assetChecks-ne$(if($Scenario-eq'zero'){0}else{1})){throw 'Native payload verification count differs'}
-'PUBLIC_PREPARED_RUNNER_MOCK_PASS'
-''', encoding="utf-8")
-            for scenario in ("success", "candidate", "seal_failure", "analysis_failure", "mixed", "mixed_insufficient", "zero", "asset_failure", "drain_failure", "drain_budget_failure", "wave_failure", "wave_budget_failure", "closeout_failure"):
-                with self.subTest(scenario=scenario):
-                    case_root = Path(directory) / scenario
-                    case_root.mkdir()
-                    from tests.components.multi_reflection_tof.analysis.test_static_field_binding import NativeStaticBindingTest
-                    field_root = case_root / "live_fields"
-                    field_root.mkdir()
-                    binding = NativeStaticBindingTest().fixture(field_root)
-                    (field_root / "binding.json").write_text(json.dumps(binding))
-                    if scenario == "candidate":
-                        candidate_root = case_root / "candidate_fields"
-                        candidate_root.mkdir()
-                        candidate = NativeStaticBindingTest().fixture(candidate_root)
-                        (candidate_root / "binding.json").write_text(json.dumps(candidate))
-                        (field_root / "parent/field.pa").write_bytes(b"XX")
-                    if scenario == "asset_failure":
-                        (field_root / "parent/field.pa").write_bytes(b"XX")
-                    if scenario == "zero":
-                        # Owner branch proof only: this harness substitutes preparation.
-                        # Real preparation still requires PA metadata/existence.
-                        shutil.rmtree(field_root)
-                    result = subprocess.run([powershell,"-NoProfile","-File",str(script),str(runner),str(case_root),
-                                             sys.executable,str(REPO),scenario],
-                                            cwd=REPO,timeout=60,
-                                            capture_output=True,text=True,encoding="utf-8",errors="replace",check=False)
-                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-                    self.assertIn("PUBLIC_PREPARED_RUNNER_MOCK_PASS",result.stdout)
-
-    def test_old_entry_rejects_prepared_arguments_and_controller_selects_new_owner(self):
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell 7 is unavailable")
-        script = r"""
-param($Repository)
-$ErrorActionPreference='Stop'
-$old=Join-Path $Repository 'src/msplatform/backends/simion/resources/run_two_prism_trial.ps1'
-if(Test-Path -LiteralPath $old){throw 'Old public entry remains'}
-$controller=Join-Path $Repository 'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1'
-$ast=[Management.Automation.Language.Parser]::ParseFile($controller,[ref]$null,[ref]$null)
-$selected=$ast.FindAll({param($n) $n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left.Extent.Text-in@('$trialRunner','$trialArtifactRoot')},$true)
-$repoRoot=$Repository;$packageRoot=Join-Path $Repository 'src/msplatform';$controllerDirectory=Split-Path -Parent $controller;$artifactWorkspaceRoot='artifacts';$artifactRoot='artifacts/components/multi_reflection_tof'
-function Resolve-RunArtifactRoot {param($ArtifactRoot,$OwnerKind,$OwnerId,$Python)
- if($OwnerKind-ne'assembly'-or$OwnerId-ne'instrument_assembly'){throw 'Unexpected trial owner'}
- Join-Path $ArtifactRoot 'assemblies/instrument_assembly'
-}
-foreach($kind in @('Prepared','Legacy')){
- $selection=@{ParameterSetName=$kind}
- foreach($assignment in $selected){Invoke-Expression ($assignment.Extent.Text.Replace('$PSCmdlet','$selection').Replace('$PSScriptRoot','$controllerDirectory'))}
- if($kind-eq'Prepared'){
-  if($trialRunner-ne(Join-Path $Repository 'src/msplatform/workflows/resources/prepared_joint_execute.ps1')-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'assemblies/instrument_assembly')){throw 'Prepared route differs'}
- }elseif([IO.Path]::GetFullPath($trialRunner)-ne[IO.Path]::GetFullPath((Join-Path $Repository 'src/msplatform/workflows/resources/oa_mr.ps1'))-or$trialArtifactRoot-ne(Join-Path $artifactWorkspaceRoot 'assemblies/instrument_assembly')){throw 'Ordinary OA route changed'}
-}
-'PREPARED_ROUTE=PASS'
-"""
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "route.ps1"
-            path.write_text(script, encoding="utf-8")
-            result = subprocess.run([pwsh, "-NoProfile", "-File", str(path), str(REPO)],
-                                    cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
     def test_prepared_child_rejects_old_or_wrong_owner(self):
         from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial
@@ -864,87 +507,6 @@ foreach($kind in @('Prepared','Legacy')){
                 with self.subTest(owner=owner, mode=mode), self.assertRaisesRegex(ValueError, "published successful measured joint"):
                     load_prepared_centroid_trial(manifest, manifest, manifest)
 
-    def test_frozen_prepared_consumer_materializes_without_repository(self):
-        from tests.components.multi_reflection_tof.analysis.test_measured_component_source import MeasuredComponentSourceTests
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell 7 is unavailable")
-        fixture = MeasuredComponentSourceTests("test_irregular_ids_birth_offsets_and_exact_six_dimensions")
-        fixture.setUp()
-        self.addCleanup(fixture.doCleanups)
-        fixture._materialize()
-        inputs = fixture.root / "inputs"
-        frozen_repo = fixture.root / "frozen_repo"
-        inventory = prepared_joint_dependency_inventory()
-        from tests.workflows.single_reflection.test_support.single_reflection_execute_fixture import declared_dependency_paths
-        for relative in declared_dependency_paths(REPO, inventory, "prepared_joint") | {
-                "src/msplatform/workflows/config/assembly_registry.json"}:
-            target = frozen_repo / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(REPO / relative, target)
-        dependency = frozen_repo / "src/msplatform/workflows/config/runtime_dependencies.json"
-        dependency.parent.mkdir(parents=True, exist_ok=True)
-        dependency.write_text(json.dumps(inventory), encoding="utf-8")
-        freeze = f"""
-. '{REPO / 'src/msplatform/execution/resources/dependencies.ps1'}'
-$path='{dependency}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{frozen_repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
-"""
-        completed = subprocess.run([pwsh, "-NoProfile", "-Command", freeze], cwd=REPO,
-                                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
-        self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
-        snapshot = inputs / "runtime_snapshot"
-        self.assertEqual((snapshot / PREPARED_ENTRY).read_bytes(), (REPO / PREPARED_ENTRY).read_bytes())
-        self.assertFalse((snapshot / "integrations/workflows/prepared_joint/execute.ps1").exists())
-        relative = Path("src/msplatform/backends/simion/resources")
-        for name in ("mrtof_candidate.lua", "run_iob_flight.lua", "build_native_corridor_iob.lua"):
-            self.assertEqual((snapshot / relative / name).read_bytes(), (REPO / relative / name).read_bytes())
-        scalar_relative = Path("src/msplatform/backends/simion/resources/scalar_field_adapter.lua")
-        self.assertEqual((snapshot/scalar_relative).read_bytes(), (REPO/scalar_relative).read_bytes())
-        runtime = fixture.root / "runtime"
-        runtime.mkdir()
-        (runtime / "joint.iob").write_bytes(b"test IOB; never passed to a solver")
-        shutil.copyfile(snapshot / relative / "mrtof_candidate.lua", runtime / "joint.lua")
-        waveform = snapshot / "src/msplatform/backends/simion/resources/voltage_waveforms.lua"
-        shutil.copyfile(waveform, runtime / "joint.voltage_waveforms.lua")
-        (runtime / "joint.operating_point.lua").write_text("return {static_field=nil}")
-        preparation = fixture.root / "preparation.json"
-        from msplatform.execution.inputs import freeze_file
-        writer = freeze_file(snapshot / "src/msplatform/backends/simion/resources/scientific_event_csv.lua", runtime / "joint.scientific_event_csv.lua")
-        reconciliation = freeze_file(snapshot / "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua", runtime / "joint.scientific_event_reconciliation.lua")
-        preparation.write_text(json.dumps(dict(measured_source_directory=str(fixture.output),
-            frozen_runtime_directory=str(runtime), trajectory_recording=dict(mode="fixed_interval", interval_us=.1),
-            scientific_event_writer=writer, scientific_event_reconciliation=reconciliation)), encoding="utf-8")
-        batch = fixture.root / "batch"
-        environment = dict(os.environ)
-        environment["PYTHONPATH"] = str(snapshot / "src") + os.pathsep + str(snapshot)
-        completed = subprocess.run([sys.executable, "-B", "-s", "-m",
-            "msplatform.workflows.prepared_joint.flight", "materialize-joint",
-            "--preparation", str(preparation), "--particle-id-min", "2", "--particle-id-max", "2", "--output", str(batch)],
-            cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-        self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr)
-        receipt = json.loads((batch / "batch_receipt.json").read_text())
-        self.assertEqual(receipt["original_particle_ids"], [7])
-        self.assertEqual((batch / "joint.fly2").read_bytes(), (batch / "measured_source/source.fly2").read_bytes())
-        self.assertEqual((batch / "joint.lua").read_bytes(), (snapshot / relative / "mrtof_candidate.lua").read_bytes())
-        self.assertEqual((batch / "joint.voltage_waveforms.lua").read_bytes(), waveform.read_bytes())
-        self.assertEqual((batch / "joint.scientific_event_csv.lua").read_bytes(), (snapshot / "src/msplatform/backends/simion/resources/scientific_event_csv.lua").read_bytes())
-        self.assertEqual((batch / "joint.scientific_event_reconciliation.lua").read_bytes(), (snapshot / "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua").read_bytes())
-        self.assertEqual(receipt["scientific_event_output"]["csv_writer_path"], writer["path"])
-        self.assertEqual(receipt["scientific_event_output"]["reconciliation_path"], reconciliation["path"])
-        missing_preparation = fixture.root / "missing_writer.json"
-        incomplete = json.loads(preparation.read_text(encoding="utf-8"))
-        del incomplete["scientific_event_writer"]
-        missing_preparation.write_text(json.dumps(incomplete), encoding="utf-8")
-        rejected = fixture.root / "missing_writer_batch"
-        command = list(completed.args)
-        command[command.index("--preparation") + 1] = str(missing_preparation)
-        command[command.index("--output") + 1] = str(rejected)
-        failed = subprocess.run(command, cwd=snapshot, env=environment,
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
-        self.assertNotEqual(failed.returncode, 0)
-        self.assertIn("scientific_event_writer", failed.stderr)
-        self.assertFalse((rejected / "batch_receipt.json").exists())
 
 
     def test_equivalence_reads_exact_old_or_new_identity_without_execution_fallback(self):

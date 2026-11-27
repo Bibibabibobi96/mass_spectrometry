@@ -222,6 +222,12 @@ OA代码提交为 `3cafdf7db7b9b0267d3a3382807aa6ed1e3948cb`；精确索引快�
 
 C5 删除选择根因已修：`Get-GateChangedTests` 不再先按文件缺席跳过有效消费者映射；删除源可运行现存测试，未映射的未知/重命名保留完整 owner 回退。MR 分片断言现汇总全部实际分片，TOF 路由移除已删 mass-spectrum admission 测试并覆盖现存 Candidate/peak 消费者。相关定向2父测试／11回执PASS（27.631s），映射正反例2父测试／7回执PASS（20.670s），SFI 正常入口1父测试／5回执PASS（1.522s）。完整选择器轮实际75成功、2 failure、2 error；其中 Prepared 语法错误由其在途 owner 修复，其余已逐项复验，不把该轮写成通过。
 
+### Prepared 旧飞行与重释放链退出（WORKTREE）
+
+Agent 8 将 prepared_joint_execute 的完整 Flight 参数、两种 source mode、SIMION 参数和不可达旧 Flight 主体实际删除；仅保留 `-AnalyzeRunPath` 历史分析与 `-ResumeFinalization` 原 run 收尾。下游 workpoint 迭代移除 Prepared/centroid 获取、重锚和专用恢复，真实 trial runner 只选当前 OA–MR 入口。`prepared_joint/trial.py` 删除 prepare/materialize/protection producer 与 CLI，保留轨迹等价和历史 probe 分析；新飞行仍由公共 `msplatform run`／`native_tracing` 原出生链承担，没有恢复跨组件重释放。
+
+直接消费者同步删除已删 API 的调用，历史 component-exit 原 ID/clock/母群及篡改负例保留，Assembly prepare-only 与 finalization 保留。MR SIMION 文档移除 Prepared P/S 新运行命令。定向结果：退役首错3 PASS、legacy 同类8 PASS、trial+iteration 104 PASS、iteration runner 111 PASS（214.164s）、prepared execute 8 PASS（399.001s）、历史 component-exit 2 PASS、accelerator interface 13 PASS（51.430s），均0 skip；公共 IP–MR preflight 在补私有 host-state 后PASS（195.585s），退役 PowerShell 负例3 PASS。无商业求解或最终 Repository/双安装声明。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

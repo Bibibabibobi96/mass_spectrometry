@@ -18,32 +18,32 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import numpy as np
-from scipy.optimize import linprog
 
+from msplatform.analysis.two_coordinate_control import accepted_secant_update, bounded_coordinate_step, scaled_two_coordinate_step
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.io.file_identity import file_sha256
 
 from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
-    RESIDUAL_NAMES,
-    UNKNOWN_NAMES,
     native_bank_identity,
     assert_trial_matches_jacobian,
     _trial,
-    resolve_numerics,
-    resolve_active_stripe_axes,
     workpoint_residual_names,
+)
+from msplatform.components.multi_reflection_tof.workpoint_math import (
+    RESIDUAL_NAMES, UNKNOWN_NAMES, _finite, _joint_ps_step, _vector, merge_s_local_jacobian,
+    resolve_active_stripe_axes, resolve_numerics,
 )
 from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.workflows.prepared_joint.prism_operating_point import (
+from msplatform.components.multi_reflection_tof.prism_workpoint_math import (
     measured_prism_jacobian,
     _same_frozen_problem,
 )
 
 
-from msplatform.workflows.prepared_joint.controller_state import (
+from msplatform.components.multi_reflection_tof.workpoint_controller_state import (
     relative_voltage_step,
 )
 
@@ -78,22 +78,6 @@ def _load(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise CandidateContractError(f"{label} must be a JSON object")
     return value
-
-
-def _finite(value: object, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise CandidateContractError(f"{label} must be finite")
-    result = float(value)
-    if not math.isfinite(result):
-        raise CandidateContractError(f"{label} must be finite")
-    return result
-
-
-def _vector(values: object, length: int, label: str) -> np.ndarray:
-    result = np.asarray(values, dtype=float)
-    if result.shape != (length,) or not np.all(np.isfinite(result)):
-        raise CandidateContractError(f"{label} must contain {length} finite values")
-    return result
 
 
 def _terminal(reason: str, *, iteration: int, detail: str, record: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -690,11 +674,10 @@ def _broyden_update(
     delta_v = _vector(record["voltages_v"], 4, "accepted voltages") - _vector(
         anchor["voltages_v"], 4, "anchor voltages"
     )
-    squared = float(delta_v @ delta_v)
-    if squared <= np.finfo(float).tiny:
+    if float(delta_v @ delta_v) <= np.finfo(float).tiny:
         return jacobian
     delta_r = _record_physical_vector(record) - _record_physical_vector(anchor)
-    return jacobian + np.outer(delta_r - jacobian @ delta_v, delta_v) / squared
+    return accepted_secant_update(jacobian, delta_v, delta_r)
 
 
 def refresh_s_local_jacobian(
@@ -716,19 +699,6 @@ def refresh_s_local_jacobian(
             raise CandidateContractError("S refresh samples must independently perturb S1 then S2")
         columns.append((_record_physical_vector(sample) - anchor_r) / delta[index])
     return np.column_stack(columns)
-
-
-def merge_s_local_jacobian(base_jacobian: np.ndarray, s_columns: np.ndarray) -> np.ndarray:
-    """Replace only the two S columns of a full physical Jacobian."""
-    base = np.asarray(base_jacobian, dtype=float)
-    columns = np.asarray(s_columns, dtype=float)
-    if base.shape != (4, 4) or not np.all(np.isfinite(base)):
-        raise CandidateContractError("base physical Jacobian must be a finite 4x4 matrix")
-    if columns.shape != (4, 2) or not np.all(np.isfinite(columns)):
-        raise CandidateContractError("local S Jacobian columns must be a finite 4x2 matrix")
-    merged = base.copy()
-    merged[:, :2] = columns
-    return merged
 
 
 def validate_s_local_jacobian_against_history(
@@ -1012,48 +982,6 @@ def _local_model_refresh_required(
         "next_action": "refresh_independent_s_local_derivative_columns_from_accepted_anchor",
     }
 
-
-def scaled_two_coordinate_step(
-    subsystem: np.ndarray, residuals: np.ndarray,
-    parameter_scales: np.ndarray, tolerances: np.ndarray,
-) -> tuple[np.ndarray, str, float]:
-    """Shared scaled correction; rectangular S1 uses measured least squares."""
-    scaled = (subsystem / tolerances[:, None]) * parameter_scales[None, :]
-    condition = float(np.linalg.cond(scaled))
-    rhs = residuals / tolerances
-    if not math.isfinite(condition):
-        raise np.linalg.LinAlgError("selected scaled two-coordinate Jacobian is singular")
-    if scaled.shape[0] != scaled.shape[1]:
-        normalized, _remaining, rank, _singular = np.linalg.lstsq(scaled, -rhs, rcond=None)
-        if rank != scaled.shape[1]:
-            raise np.linalg.LinAlgError("selected rectangular Jacobian lacks an active voltage direction")
-        method = "scaled_rectangular_least_squares"
-    elif condition > 100.0:
-        normalized = np.linalg.solve(
-            scaled.T @ scaled + 1.0e-4 * np.eye(2), -scaled.T @ rhs,
-        )
-        method = "ridge_regularized_scaled_least_squares"
-    else:
-        normalized = np.linalg.solve(scaled, -rhs)
-        method = "scaled_direct_solve"
-    return normalized * parameter_scales, method, condition
-
-
-def bounded_coordinate_step(
-    voltages: np.ndarray, raw: np.ndarray, maximum: np.ndarray,
-    lower: np.ndarray, upper: np.ndarray,
-) -> tuple[np.ndarray, float]:
-    """Scale a continuous direction once, preserving its two-axis direction."""
-    alpha = 1.0
-    for offset, component in enumerate(raw):
-        if component != 0.0:
-            alpha = min(alpha, maximum[offset] / abs(component))
-        if component > 0.0:
-            alpha = min(alpha, (upper[offset] - voltages[offset]) / component)
-        elif component < 0.0:
-            alpha = min(alpha, (lower[offset] - voltages[offset]) / component)
-    alpha = max(0.0, min(1.0, float(alpha)))
-    return alpha * raw, alpha
 
 
 def _prism_stage_record(trial: Mapping[str, Any]) -> dict[str, Any]:
@@ -1470,46 +1398,6 @@ def joint_ps_refinement_enabled(profile: Mapping[str, Any], materialization: Map
             or materialization["stripe_biases_v"][1] != 0.0):
         raise CandidateContractError("joint P/S refinement requires the explicit clean-energy single-S1 grounded-S2 scheme")
     return True
-
-
-def _joint_ps_step(columns: np.ndarray, residuals: np.ndarray, tolerances: np.ndarray,
-                   voltages: np.ndarray, numerics: Mapping[str, Any], relative: float) -> tuple[np.ndarray, np.ndarray]:
-    """Minimize the worst S residual inside the original P acceptance window.
-
-    SciPy HiGHS solves this four-variable linear program: three scaled voltage
-    increments and a nonnegative maximum normalized S residual. No P equality
-    or regularization is added. Recheck its model constraints before real Fly.
-    """
-    axes = np.asarray([0, 2, 3])
-    scales = _vector(numerics["parameter_scales_v"], 4, "joint parameter scales")[axes]
-    if (columns.shape != (4, 3) or residuals.shape != (4,) or tolerances.shape != (4,)
-            or not all(np.all(np.isfinite(v)) for v in (columns, residuals, tolerances, voltages, scales))
-            or np.any(tolerances <= 0) or np.any(scales <= 0)):
-        raise CandidateContractError("joint P/S model requires finite 4x3 columns and positive scales")
-    a = columns * scales / tolerances[:, None]
-    r = residuals / tolerances
-    trust = np.minimum(_vector(numerics["maximum_abs_step_v"], 4, "joint maximum step")[axes],
-                       relative * np.maximum(np.abs(voltages[axes]), 1.0))
-    lower = np.maximum(_vector(numerics["lower_bounds_v"], 4, "joint lower bounds")[axes] - voltages[axes],
-                       -trust) / scales
-    upper = np.minimum(_vector(numerics["upper_bounds_v"], 4, "joint upper bounds")[axes] - voltages[axes],
-                       trust) / scales
-    matrix = np.vstack((np.c_[a[:2], np.zeros(2)], np.c_[-a[:2], np.zeros(2)],
-                        np.c_[a[2:], -np.ones(2)], np.c_[-a[2:], -np.ones(2)]))
-    rhs = np.r_[1-r[:2], 1+r[:2], -r[2:], r[2:]]
-    compatibility = _finite(numerics["compatibility_tolerance"], "joint model compatibility")
-    solved = linprog([0., 0., 0., 1.], A_ub=matrix, b_ub=rhs,
-                     bounds=[*zip(lower, upper, strict=True), (0., None)], method="highs",
-                     options={"primal_feasibility_tolerance": compatibility,
-                              "dual_feasibility_tolerance": compatibility})
-    if not solved.success or not np.all(np.isfinite(solved.x)):
-        raise CandidateContractError(f"joint P/S linear program failed: {solved.status}: {solved.message}")
-    if np.any(matrix @ solved.x - rhs > compatibility):
-        raise CandidateContractError("joint P/S linear program violates its model constraints")
-    delta = solved.x[:3] * scales
-    if np.any(delta/scales < lower-compatibility) or np.any(delta/scales > upper+compatibility):
-        raise CandidateContractError("joint P/S linear program violates its voltage bounds")
-    return delta, residuals + columns @ delta
 
 
 def _decide_joint_ps_refinement(baseline: Mapping[str, Any], samples: Sequence[Mapping[str, Any] | None],

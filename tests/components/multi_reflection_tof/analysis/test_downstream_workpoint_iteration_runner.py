@@ -399,7 +399,7 @@ $results|ConvertTo-Json -Depth 20 -Compress
                                              pending=dict(identity='pending-recovery'), same_identity=True if value is not None else None))
 
     def test_recovery_model_completion_preserves_provisional_policy_and_save_order(self):
-        from msplatform.workflows.prepared_joint.controller_state import (
+        from msplatform.components.multi_reflection_tof.workpoint_controller_state import (
             prepare_recovery_state, advance_recovery_round,
         )
         script = r'''
@@ -640,7 +640,7 @@ function Invoke-TestPython {
  & $RealPython @Arguments
 }
 $failure=$null
-try{Complete-StagedTrial -Context @{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$package.result_dir;prepared_staged=$false;target_authority_path=''} -State $state -History $history -Lineage $lineage -Pending $pending -Loop @{minimum_relative_improvement=.01} -Tiers @() -ControllerPolicyPath (Join-Path $Root 'policy.json')}catch{$failure=$_.Exception.Message}
+try{Complete-StagedTrial -Context @{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$package.result_dir} -State $state -History $history -Lineage $lineage -Pending $pending -Loop @{minimum_relative_improvement=.01} -Tiers @() -ControllerPolicyPath (Join-Path $Root 'policy.json')}catch{$failure=$_.Exception.Message}
 @{failure=$failure;argument_characters=$script:argumentChars;input_path=$script:inputPath;expected_bytes=$script:expectedBytes;expected_sha=$script:expectedSha;state=$state;history=$history;lineage=$lineage}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'result.json')
 '''
         for scenario in ('short','large','missing','changed'):
@@ -680,562 +680,13 @@ try{Complete-StagedTrial -Context @{repo_root=$repoRoot;python=$python;contract_
                         self.assertEqual(saved.stat().st_size,observed['expected_bytes'])
                         self.assertNotEqual(hashlib.sha256(saved.read_bytes()).hexdigest(),observed['expected_sha'].lower())
 
-    def test_explicit_target_reanchor_validates_old_authority_and_publishes_once(self):
-        script=r'''
-param($Source,$Root,$Scenario)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Restore-PreparedOriginalStages'},$true)
-Invoke-Expression $node.Extent.Text
-$repoRoot=$Root;$project='multi_reflection_tof';$python='mock-python';$RunId='new-parent'
-$PreparedFieldBuildMode='composition';$ResumeSuccessfulChildManifest='';$PreparedTargetReanchor=$true
-$parent=Join-Path $Root 'old';$inputs=Join-Path $Root 'inputs';$results=Join-Path $Root 'results'
-New-Item -ItemType Directory -Path $parent,$inputs,$results|Out-Null
-$package=@{input_dir=$inputs;result_dir=$results;run_config=(Join-Path $Root 'run_config.json')};$ResumeParentCheckpoint=$parent
-$same=Join-Path $Root 'same.json';'{}'|Set-Content $same
-$oldTarget=Join-Path $Root 'oldtarget.json';'{"L":360}'|Set-Content $oldTarget
-$newTarget=Join-Path $Root 'newtarget.json';'{"L":340}'|Set-Content $newTarget
-$anchor=Join-Path $Root 'anchor.json';'{}'|Set-Content $anchor
-$old=@{inputs=@{};parameters=@{workflow_branch='measured_source_original_P_S_P_stages';field_build_mode='composition'}}
-$cfg=@{inputs=@{};parameters=@{}}
-foreach($key in @('prepared_manifest','seed_manifest','trajectory_contract','prepared_target_authority','prepared_initial_proposal','p1_response','p2_response','prism_controller_policy')){$old.inputs[$key]=$same;$cfg.inputs[$key]=$same}
-$old.inputs.prepared_target_authority=$oldTarget;$cfg.inputs.prepared_target_authority=$newTarget;$cfg.inputs.seed_manifest=$anchor
-$seedManifest=$anchor;$frozenContract=$same;$frozenPreparedTargetAuthorityPath=$newTarget
-if($Scenario-eq'unknown_anchor'){$seedManifest=Join-Path $Root 'unknown.json'}
-if($Scenario-eq'changed_science'){$cfg.inputs.trajectory_contract=$newTarget}
-@{status='interrupted';run_id='old-parent'}|ConvertTo-Json|Set-Content (Join-Path $parent 'run_manifest.json')
-$stop=@{stopped_parent_process_id=2147483647;stopped_parent_verified_absent=$true;stopped_children_verified_absent=$true;pending_trial_executed=$false}
-if($Scenario-eq'live'){$stop.stopped_parent_process_id=$PID}
-if($Scenario-eq'unknown_stop'){$stop.stopped_parent_verified_absent=$false}
-$stop|ConvertTo-Json|Set-Content (Join-Path $parent 'summary.json')
-$old|ConvertTo-Json -Depth 20|Set-Content (Join-Path $parent 'run_config.json')
-$pending=@{child_manifest=(Join-Path $Root 'unflown/run_manifest.json');child_run_id='old-stage-051';decision=@{science='unchanged'}}
-if($Scenario-eq'existing_trial'){New-Item -ItemType Directory -Path (Split-Path $pending.child_manifest)|Out-Null}
-$prior=@{role='mrtof_downstream_workpoint_bootstrap';source_projection='measured_exit_centroid'
- stage_state=@{stage='stripe_preclosure';anchor_manifest=$anchor;candidate_count=16;flight_count=51;step_factor=.125;pending_trial=$pending
- columns=@{'0'='old-S1'};attempts=@('old');prism_model_manifest='old-model'}
- stage_history=@{decisions=@('old-decision')};stage_lineage=@{root_workpoint_manifest=@{path=$same};children=@(@{child_manifest=$anchor})}}
-if($Scenario-eq'already_reanchored'){$prior.stage_state.target_reanchor=@{abandoned_pending='sealed-evidence'}}
-$prior|ConvertTo-Json -Depth 100|Set-Content (Join-Path $parent 'workpoint_bootstrap.json')
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
-function mock-python {
- param([switch]$I,[switch]$B)
- if($args[0]-eq'-c'-and$args[1]-match'reanchor_prepared_target\(read'){
-  $state=Get-Content $args[2] -Raw|ConvertFrom-Json -AsHashtable -Depth 100
-  if($state.Contains('pending_trial')){throw 'Pending was not archived before pure reanchor'}
-  $state.columns=@{};$state.attempts=@();$state.Remove('prism_model_manifest')|Out-Null
-  $state.stage='prism_preclosure';$state.target_reanchor=@{source_unchanged=$true};$state.anchor_manifest=$args[3]
-  $global:LASTEXITCODE=0;return ($state|ConvertTo-Json -Depth 100)
- }
- if($args[0]-eq'-c'-and$args[1]-match'children=\[e'){
-  if($args[3]-ne$same-or$args[4]-ne$oldTarget){throw 'Historical evidence reinterpreted with new authority'}
-  $script:oldScienceValidated=$true
- }
- $global:LASTEXITCODE=0
-}
-function Get-ManifestOutputPath {param($ManifestPath,$FileName)Join-Path (Split-Path $ManifestPath) $FileName}
-function Copy-VerifiedRunInput {param($Source,$Destination)Copy-Item $Source $Destination;return $Destination}
-function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
-function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)$script:saves+=,($Bootstrap|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable -Depth 100)}
-function Restore-StagedWorkpointChildren {param($Bootstrap,$SourceLineage,$BootstrapPath,$PriorState,[switch]$DeferSave)
- if(-not$DeferSave-or$seedManifest-ne$same-or-not$PriorState.Contains('pending_trial')-or$PriorState.candidate_count-ne16-or$PriorState.flight_count-ne51){throw 'Original checkpoint was modified before strict restore'}
- $script:restored=$true
-}
-function Update-StagedAnchorFieldProtection {param($State)}
-$script:saves=@();$script:restored=$false;$script:oldScienceValidated=$false;$b=@{};$failure=$null
-try{Restore-PreparedOriginalStages -Bootstrap $b -BootstrapPath 'unused' -Configuration $cfg}catch{$failure=$_.Exception.Message}
-@{failure=$failure;bootstrap=$b;saves=$saves;restored=$restored;oldScienceValidated=$oldScienceValidated}|ConvertTo-Json -Depth 100
-'''
-        for scenario in ('success','unknown_anchor','changed_science','live','unknown_stop','existing_trial','already_reanchored'):
-            with self.subTest(scenario=scenario),TemporaryDirectory() as directory:
-                root=Path(directory);fixture=root/'reanchor.ps1';fixture.write_text(script)
-                result=subprocess.run(['pwsh','-NoProfile','-File',str(fixture),str(PROJECT.parents[3]/'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1'),str(root),scenario],
-                    capture_output=True,text=True,encoding='utf-8',timeout=35,cwd=PROJECT.parents[3])
-                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-                value=json.loads(result.stdout)
-                if scenario=='success':
-                    self.assertIsNone(value['failure'])
-                    self.assertTrue(value['oldScienceValidated']);self.assertTrue(value['restored'])
-                    self.assertEqual(len(value['saves']),1)
-                    state=value['saves'][0]['stage_state']
-                    self.assertEqual((state['candidate_count'],state['flight_count']),(16,51))
-                    self.assertEqual(state['columns'],{});self.assertNotIn('pending_trial',state)
-                    self.assertEqual(state['target_reanchor']['abandoned_pending']['pending_trial']['child_run_id'],'old-stage-051')
-                    self.assertEqual(value['bootstrap']['stage_history'],{'decisions':['old-decision']})
-                else:
-                    self.assertIsNotNone(value['failure']);self.assertEqual(value['saves'],[])
 
-    def test_explicit_repository_policy_adoption_preserves_debits_and_only_clears_current_model(self):
-        script=r'''
-param($Source,$Root,$Repo,$RealPython,$Scenario,$PreparedAst)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=$PreparedAst
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Restore-PreparedOriginalStages'},$true)
-Invoke-Expression $node.Extent.Text
-$repoRoot=$Repo;$projectRoot=Join-Path $Repo 'src/msplatform/components/multi_reflection_tof';$project='multi_reflection_tof';$python='mock-python';$RunId='new-parent'
-$PreparedFieldBuildMode='composition';$ResumeSuccessfulChildManifest=''
-$parent=Join-Path $Root 'old';$inputs=Join-Path $Root 'inputs';$results=Join-Path $Root 'results'
-New-Item -ItemType Directory -Path $parent,$inputs,$results|Out-Null
-$package=@{input_dir=$inputs;result_dir=$results;run_config=(Join-Path $Root 'run_config.json')}
-$ResumeParentCheckpoint=$parent
-$same=Join-Path $Root 'same.json';'{}'|Set-Content $same
-$old=@{inputs=@{};parameters=@{workflow_branch='measured_source_original_P_S_P_stages';field_build_mode='composition'}}
-$cfg=@{inputs=@{};parameters=@{}}
-foreach($key in @('prepared_manifest','seed_manifest','trajectory_contract','prepared_target_authority','prepared_initial_proposal','p1_response','p2_response')){$old.inputs[$key]=$same;$cfg.inputs[$key]=$same}
-$canonical=Join-Path $Repo 'src/msplatform/components/multi_reflection_tof/config/prism_controller_policy.json'
-$policy=Join-Path $inputs 'prism_controller_policy.json';Copy-Item $canonical $policy
-$cfg.inputs.prism_controller_policy=$policy
-if($Scenario-eq'wrong_policy'){'{}'|Set-Content $policy}
-if($Scenario-in@('replace','same_existing','remove_existing')){
- $oldPolicy=Join-Path $parent 'policy.json';Copy-Item $canonical $oldPolicy;$old.inputs.prism_controller_policy=$oldPolicy
- if($Scenario-eq'replace'){'{}'|Set-Content $oldPolicy}
- if($Scenario-eq'remove_existing'){$cfg.inputs.Remove('prism_controller_policy')|Out-Null}
-}
-if($Scenario-eq'science_changed'){$wrong=Join-Path $inputs 'wrong.json';'{"velocity":99}'|Set-Content $wrong;$cfg.inputs.prepared_manifest=$wrong}
-$seedManifest=$same;$frozenContract=$same;$frozenPreparedTargetAuthorityPath=$same
-@{status='failed';run_id='old-parent'}|ConvertTo-Json|Set-Content (Join-Path $parent 'run_manifest.json')
-$old|ConvertTo-Json -Depth 20|Set-Content (Join-Path $parent 'run_config.json')
-$prior=@{role='mrtof_downstream_workpoint_bootstrap';source_projection='measured_exit_centroid'
- stage_state=@{stage='prism_preclosure';anchor_manifest='unchanged-anchor';candidate_count=3;flight_count=13;step_factor=.5
- columns=@{'2'='old-P1';'3'='old-P2'};attempts=@(@{axis=2;signed_step_v=1});prism_model_manifest='old-model';prediction_assessment=@{status='old'}}
- stage_history=@{decisions=@('old-decision')};stage_lineage=@{children=@('old-lineage')}}
-if($Scenario-eq'pending'){$prior.stage_state.pending_trial=@{child_manifest='pending';child_run_id='pending'}}
-if($Scenario-eq'stripe'){$prior.stage_state.stage='stripe_preclosure'}
-$prior|ConvertTo-Json -Depth 30|Set-Content (Join-Path $parent 'workpoint_bootstrap.json')
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
-function mock-python {
- param([switch]$I,[switch]$B)
- if($args[0]-eq'-c'-and$args[1]-match'print\(json.dumps\(resolve_prism_controller_policy') {& $RealPython @args;return}
- $global:LASTEXITCODE=0
-}
-function Get-ManifestOutputPath {param($ManifestPath,$FileName)Join-Path (Split-Path $ManifestPath) $FileName}
-function Copy-VerifiedRunInput {param($Source,$Destination)Copy-Item $Source $Destination;return $Destination}
-function Write-RunJson {param($Path,$Depth,$Value)
- if($Scenario-eq'receipt_failed'-and[IO.Path]::GetFileName($Path)-eq'iteration_prism_policy_adoption.json'){throw 'receipt failed'}
- $Value|ConvertTo-Json -Depth 100|Set-Content $Path
-}
-function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)
- $script:saves+=,($Bootstrap|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable)
- if($Scenario-eq'save_failed'){throw 'capacity renewal failed after complete checkpoint'}
-}
-function Restore-StagedWorkpointChildren {param($Bootstrap,$SourceLineage,$BootstrapPath,$PriorState,[switch]$DeferSave)
- if($PriorState.columns.Count-ne2-or$PriorState.prism_model_manifest-ne'old-model'-or$PriorState.candidate_count-ne3-or$PriorState.flight_count-ne13){throw 'Old checkpoint modified before strict validation'}
- if($Scenario-eq'restore_failed'){throw 'old strict restore failed'}
- $script:validated=$true
- if(-not$DeferSave){Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath}
-}
-function Update-StagedAnchorFieldProtection {param($State)}
-$script:validated=$false;$script:saves=@();$b=@{};$failure=$null
-try{Restore-PreparedOriginalStages -Bootstrap $b -BootstrapPath 'not-written' -Configuration $cfg}catch{$failure=$_.Exception.Message}
-$receipt=Join-Path $results 'iteration_prism_policy_adoption.json'
-@{failure=$failure;validated=$validated;bootstrap=$b;config=$cfg;saves=$saves;receipt=$(if(Test-Path $receipt){Get-Content $receipt -Raw|ConvertFrom-Json -AsHashtable}else{$null})}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $Root 'output.json')
-'''
-        scenarios = ('adopt','same_existing','pending','stripe','wrong_policy','replace','remove_existing',
-                     'science_changed','restore_failed','receipt_failed','save_failed')
-        cases = [(scenario, [str(PROJECT.parents[3]), sys.executable, scenario], None)
-                 for scenario in scenarios]
-        results = self._isolated_fixture_cases(script, cases, timeout=35, cwd=PROJECT.parents[3])
-        for scenario in scenarios:
-            with self.subTest(scenario=scenario):
-                observed = next(results)
-                if scenario in ('adopt','save_failed'):
-                    state=observed['bootstrap']['stage_state']
-                    self.assertTrue(observed['validated'])
-                    self.assertEqual((state['stage'],state['anchor_manifest'],state['candidate_count'],state['flight_count'],state['step_factor']),
-                                     ('prism_preclosure','unchanged-anchor',3,13,.5))
-                    self.assertEqual(state['columns'],{});self.assertEqual(state['attempts'],[])
-                    self.assertNotIn('prism_model_manifest',state);self.assertNotIn('prediction_assessment',state)
-                    self.assertEqual(observed['bootstrap']['stage_history'],{'decisions':['old-decision']})
-                    self.assertEqual(observed['bootstrap']['stage_lineage'],{'children':['old-lineage']})
-                    self.assertEqual(observed['receipt']['cleared_local_evidence']['columns'],{'2':'old-P1','3':'old-P2'})
-                    self.assertEqual(observed['receipt']['cleared_local_evidence']['prism_model_manifest'],'old-model')
-                    self.assertEqual(len(observed['saves']),1)
-                    self.assertEqual(observed['saves'][0]['stage_state']['columns'],{})
-                    self.assertEqual(observed['config']['parameters']['imported_columns'],0)
-                    self.assertEqual(observed['failure'],None if scenario=='adopt' else 'capacity renewal failed after complete checkpoint')
-                elif scenario=='same_existing':
-                    self.assertIsNone(observed['failure']);self.assertIsNone(observed['receipt'])
-                    self.assertEqual(observed['bootstrap']['stage_state']['columns'],{'2':'old-P1','3':'old-P2'})
-                else:
-                    self.assertIsNotNone(observed['failure'])
-                    self.assertEqual(observed['saves'],[])
-        self.assertEqual(list(results), [])
 
-    def test_prepared_checkpoint_reuses_original_restore_and_rejects_changed_authority(self):
-        script=r'''
-param($Source,$Root,$Scenario,$RealPython,$PreparedAst)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=$PreparedAst
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Restore-PreparedOriginalStages'},$true)
-Invoke-Expression $node.Extent.Text
-$repoRoot=$Root;$project='multi_reflection_tof';$python='mock-python';$RunId='new-parent'
-$PreparedFieldBuildMode='composition';$ResumeSuccessfulChildManifest=''
-$parent=Join-Path $Root 'old';$inputs=Join-Path $Root 'new-inputs'
-New-Item -ItemType Directory -Path $parent,$inputs|Out-Null
-$package=@{input_dir=$inputs;run_config=(Join-Path $Root 'new-config.json')}
-$ResumeParentCheckpoint=$parent
-$keys=@('prepared_manifest','seed_manifest','trajectory_contract','prepared_target_authority','prepared_initial_proposal','p1_response','p2_response','prism_controller_policy')
-$old=@{inputs=@{};parameters=@{workflow_branch='measured_source_original_P_S_P_stages';field_build_mode='composition'}}
-$cfg=@{inputs=@{};parameters=@{imported_columns=0}}
-foreach($key in $keys){
- $oldPath=Join-Path $parent ($key+'.json');$newPath=Join-Path $inputs ($key+'.json')
- '{}'|Set-Content $oldPath;'{}'|Set-Content $newPath
- $old.inputs[$key]=$oldPath;$cfg.inputs[$key]=$newPath
- if($Scenario-eq$key){'{"changed":true}'|Set-Content $newPath}
-}
-$cfg.inputs.s1_response=Join-Path $inputs 'new-S1.json';'{}'|Set-Content $cfg.inputs.s1_response
-if($Scenario-like'budget_*'){
- $contract=@{physics=@{source='same';grid=.1};downstream_fixed_grid_workpoint_profile=@{automatic_iteration=@{advance_multiplier=1.;damping_factor=.5;maximum_iterations=5}}}
- $contract|ConvertTo-Json -Depth 20|Set-Content $old.inputs.trajectory_contract
- $contract.downstream_fixed_grid_workpoint_profile.automatic_iteration.maximum_iterations=if($Scenario-eq'budget_decrease'){4}else{30}
- if($Scenario-eq'budget_wrong_field'){$contract.physics.grid=.2}
- $contract|ConvertTo-Json -Depth 20|Set-Content $cfg.inputs.trajectory_contract
-}
-$seedManifest=$cfg.inputs.seed_manifest;$frozenContract=$cfg.inputs.trajectory_contract;$frozenPreparedTargetAuthorityPath=$cfg.inputs.prepared_target_authority
-$manifest=Join-Path $parent 'run_manifest.json'
-@{status='failed';run_id=$(if($Scenario-eq'same_id'){$RunId}else{'old-parent'})}|ConvertTo-Json|Set-Content $manifest
-$old|ConvertTo-Json -Depth 20|Set-Content (Join-Path $parent 'run_config.json')
-$prior=@{role='mrtof_downstream_workpoint_bootstrap';source_projection='measured_exit_centroid'
- stage_state=@{candidate_count=3;columns=@{'2'='sealed-P1-child'};pending_trial=@{child_manifest='old-failed-P2';child_run_id='old-stage-002'}}
- stage_history=@{decisions=@('sealed-P1-decision')};stage_lineage=@{children=@('sealed-P1-lineage')}}
-$prior|ConvertTo-Json -Depth 20|Set-Content (Join-Path $parent 'workpoint_bootstrap.json')
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
-function mock-python {
- param([switch]$I,[switch]$B)
- if($args[0]-eq'-c'-and$args[1]-ceq'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){
-  if($args[3]-cne'--require-status'-or$args[4]-cne$document.status-or$args[5]-cne'--require-project'-or$args[6]-cne$project-or
-     $args[7]-cne'--require-mode'-or$args[8]-cne'downstream_fixed_grid_workpoint_iteration'){throw 'Wrong public verifier identity'}
-  $script:verified=$true
- }
- elseif($args[0]-eq'-c'-and$args[1]-match'assert_bounded_controller_resume'){& $RealPython @args;return}
- elseif($args[0]-eq'-c'-and$args[1]-ceq$replayCode){
-  if($args[2]-cne$priorPath-or$args[3]-cne$seedManifest-or$args[4]-cne$frozenPreparedTargetAuthorityPath-or$args[5]-cne$frozenContract){throw 'Wrong prepared replay authority'}
-  $script:replayed=$true
- }else{throw 'Wrong public verifier entry'}
- $global:LASTEXITCODE=0
-}
-function Get-ManifestOutputPath {param($ManifestPath,$FileName)Join-Path (Split-Path $ManifestPath) $FileName}
-function Copy-VerifiedRunInput {param($Source,$Destination)Copy-Item -LiteralPath $Source -Destination $Destination;return $Destination}
-function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
-function Restore-StagedWorkpointChildren {
- param($Bootstrap,$SourceLineage,$BootstrapPath,$PriorState)
- if($PriorState.columns['2']-ne'sealed-P1-child'-or$PriorState.pending_trial.child_run_id-ne'old-stage-002'-or
-    $Bootstrap.stage_history.decisions[0]-ne'sealed-P1-decision'-or$SourceLineage.children[0]-ne'sealed-P1-lineage'){throw 'Original checkpoint state lost'}
- $script:restored=$true
-}
-function Update-StagedAnchorFieldProtection {param($State)$script:protected=$true}
-$script:verified=$false;$script:replayed=$false;$script:restored=$false;$script:protected=$false;$failure=$null
-$bootstrap=@{}
-try{Restore-PreparedOriginalStages -Bootstrap $bootstrap -BootstrapPath 'new-bootstrap' -Configuration $cfg}catch{$failure=$_.Exception.Message}
-@{failure=$failure;verified=$verified;replayed=$replayed;restored=$restored;protected=$protected;config=$cfg}|ConvertTo-Json -Depth 20|Set-Content (Join-Path $Root 'output.json')
-'''
-        scenarios = ('valid','budget_valid','budget_decrease','budget_wrong_field','same_id','prepared_manifest','seed_manifest','trajectory_contract',
-                     'prepared_target_authority','prepared_initial_proposal','p1_response','p2_response','prism_controller_policy')
-        cases = [(scenario, [scenario, sys.executable], None) for scenario in scenarios]
-        results = self._isolated_fixture_cases(script, cases, timeout=30, cwd=PROJECT.parents[3])
-        for scenario in scenarios:
-            with self.subTest(scenario=scenario):
-                observed = next(results)
-                if scenario in ('valid','budget_valid'):
-                    self.assertIsNone(observed['failure'])
-                    self.assertTrue(all(observed[k] for k in ('verified','replayed','restored','protected')))
-                    self.assertEqual(observed['config']['parameters']['imported_columns'],1)
-                    self.assertTrue(Path(observed['config']['inputs']['resume_parent_bootstrap']).exists())
-                    if scenario=='budget_valid':
-                        change=observed['config']['parameters']['controller_resume_changes']
-                        self.assertEqual(change['preserved_candidate_count'],3)
-                        self.assertEqual(change['maximum_iterations'],dict(previous=5,current=30))
-                        self.assertTrue(Path(observed['config']['inputs']['previous_controller_contract']).exists())
-                else:
-                    self.assertIsNotNone(observed['failure'])
-                    self.assertFalse(observed['restored'])
-        self.assertEqual(list(results), [])
 
-    def test_prepared_checkpoint_replay_validates_full_frozen_problem_without_pa_reads(self):
-        from msplatform.workflows.prepared_joint import downstream_workpoint as controller
-        source=(PROJECT.parents[3]/'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1').read_text(encoding='utf-8-sig')
-        code=re.search(r"\$replayCode=@'\n(.*?)\n'@",source,re.S).group(1)
-        for scenario in ('valid','source','target','operator','numerics'):
-            with self.subTest(scenario=scenario),TemporaryDirectory() as directory:
-                root=Path(directory);parent=root/'bootstrap.json';pending=root/'pending.json'
-                pending.write_text(json.dumps({'status':'success'}))
-                parent.write_text(json.dumps({'stage_lineage':{'children':[{'child_manifest':'P1'}]},
-                    'stage_state':{'pending_trial':{'child_manifest':str(pending)}}}))
-                identity=dict(source='frozen-6D',target='frozen-target',operator='frozen-grid-operator',numerics='frozen-steps')
-                changed=dict(identity)
-                if scenario!='valid':changed[scenario]='changed'
-                values=[{'frozen_problem':identity},{'frozen_problem':changed},{'frozen_problem':identity}]
-                with patch.object(sys,'argv',['resume',str(parent),'seed','target','contract']),\
-                     patch.object(controller,'load_prepared_centroid_trial',side_effect=values) as load:
-                    if scenario=='valid':
-                        exec(compile(code,'prepared-replay','exec'),{})
-                        self.assertEqual(load.call_count,3)
-                    else:
-                        with self.assertRaisesRegex(AssertionError,'differs'):
-                            exec(compile(code,'prepared-replay','exec'),{})
 
-    def test_prepared_direct_candidate_dispatch_uses_same_public_provider_and_original_source(self):
-        script=r'''
-param($Source,$Root,$FailureMode)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-foreach($name in @('New-CenterTrialArguments','Invoke-CenterTrial','New-StagedComposeProviderReference')){
- $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
- Invoke-Expression $node.Extent.Text
-}
-$script:preparedStagedMode=$true;$script:PreparedFieldBuildMode='refine'
-$repoRoot=$Root;$workspaceRoot=$Root;$artifactWorkspaceRoot=$Root;$artifactRoot=$Root;$RunId='parent';$project='multi_reflection_tof';$python='mock-python';$hostContext=@{workspace=$Root}
-$trialArtifactRoot=$artifactRoot
-$package=@{input_dir=(Join-Path $Root 'inputs')};New-Item -ItemType Directory -Path $package.input_dir|Out-Null
-$staticFieldMode=$true;$staticBinding=@{authority=@{analyzer_electrode_voltages_v=@(0,0,0,0,0,0,0,0,0,0,-27,-27,0,0,0,343,-186,0,0,0)}}
-$fieldProviderRequest=@{schema_version=1;role='mrtof_native_static_field_provider_request';source_binding_path='sealed-IP-baseline';source_field_manifest='sealed-IP-manifest'}
-$CompletedFieldProviderManifest='';$ResponseFieldBindingPath='';$capacitySession=@{id='public'}
-$PreparedJointWorkbenchRunPath='same-audited-prepared-source';$frozenContract='same-frozen-contract';$SimionExe=''
-$script:providerCalls=0;$script:flights=@();$script:request=$null
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
-function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
-function mock-python {param([switch]$I,[switch]$B);$global:LASTEXITCODE=0;if($args-contains'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){return};'false'}
-function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths)return @{session=$Session}}
-function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)}
-function public-provider {
- param($RequestPath,$RunDirectory,[switch]$Approved,$PythonExe,$HostContextJson)
- if(-not$Approved-or$PythonExe-ne'mock-python'-or-not$HostContextJson){throw 'Public provider context not authorized'}
- $script:providerCalls++;$script:request=Get-Content $RequestPath -Raw|ConvertFrom-Json -AsHashtable
- if($request.source_binding_path-ne'sealed-IP-baseline'-or$request.numerical_contract_path-ne'same-frozen-contract'){throw 'Baseline/numerical authority changed'}
- foreach($key in @('response_basis_paths','response_axis','te1_reference_path','consumer_view_source_path','reuse_source_levels')){
-   if($request.Contains($key)){throw 'Unexpected response/private path'}
- }
- New-Item -ItemType Directory -Path $RunDirectory -Force|Out-Null
- $cfg=Join-Path $RunDirectory 'run_config.json';@{parameters=@{operation='refine'}}|ConvertTo-Json|Set-Content $cfg
- $manifest=@{status=$(if($FailureMode-eq'success'){'success'}else{'failed'});project=$project;mode='native_static_field_provider';run_id=$request.run_id
-   inputs=@{request=@{path=$RequestPath;sha256=(Get-FileHash $RequestPath -Algorithm SHA256).Hash}}
-   run_config=@{sha256=(Get-FileHash $cfg -Algorithm SHA256).Hash}}
- $manifest|ConvertTo-Json -Depth 20|Set-Content (Join-Path $RunDirectory 'run_manifest.json')
- if($FailureMode-eq'success'){
-   @{status='success';field_binding='new-direct-five-layer-binding'}|ConvertTo-Json|Set-Content (Join-Path $RunDirectory 'summary.json')
- }else{
-   $message=if($FailureMode-eq'capacity'){'Artifact capacity gate blocked startup: CAPACITY_TARGET_NOT_MET'}else{'Synthetic Refine failure'}
-   @{status='failed';failure_stage=$(if($FailureMode-eq'capacity'){'capacity_startup'}else{'parent_refine'});error=$message}|ConvertTo-Json|Set-Content (Join-Path $RunDirectory 'summary.json')
-   throw $message
- }
-}
-function prepared-public-trial {
- param($PreparedJointWorkbenchRunPath,$PreparedSourceMode,$FieldBindingPath,$ContractPath,$RunId,$PythonExe,$RepoRoot)
- if($RepoRoot-ne$Root){throw 'Trial workspace differs'}
- if($PreparedJointWorkbenchRunPath-ne'same-audited-prepared-source'-or$PreparedSourceMode-ne'centroid_probe'){throw 'Resampled or wrong source'}
- $script:flights+=,@{binding=$FieldBindingPath;source=$PreparedJointWorkbenchRunPath;source_mode=$PreparedSourceMode}
-}
-$fieldProviderRunner='public-provider';$trialRunner='prepared-public-trial'
-$arguments=New-CenterTrialArguments -Voltages @(-28,0,344,-187) -ChildRunId 'parent-stage-001'
-$pending=@{}
-$bootstrap=@{stage_state=@{}}
-$failure=$null
-try{Invoke-CenterTrial -Arguments $arguments -StagedPending $pending -Bootstrap $bootstrap -BootstrapPath 'checkpoint'}catch{$failure=$_.Exception.Message}
-@{provider_calls=$providerCalls;flights=$flights;request=$request;reference=$(if($pending.Contains('provider_reference')){$pending.provider_reference}else{$null});state=$bootstrap.stage_state;failure=$failure}|ConvertTo-Json -Depth 40
-'''
-        for failure_mode in ("success","capacity","refine_failure"):
-            with self.subTest(failure_mode=failure_mode),TemporaryDirectory() as directory:
-                root=Path(directory);script_path=root/"direct.ps1";script_path.write_text(script)
-                result=subprocess.run(["pwsh","-NoProfile","-File",str(script_path),str(PROJECT.parents[3]/"src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1"),str(root),failure_mode],
-                    cwd=PROJECT.parents[3],timeout=40,capture_output=True,text=True,encoding="utf-8")
-                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-                observed=json.loads(result.stdout)
-                self.assertEqual(observed["provider_calls"],1)
-                self.assertEqual(observed["request"]["candidate_voltages_v"],dict(s1=-28,s2=0,p1=344,p2=-187))
-                if failure_mode=="success":
-                    self.assertIsNone(observed["failure"])
-                    self.assertEqual(len(observed["flights"]),1)
-                    self.assertEqual(observed["flights"][0]["binding"],"new-direct-five-layer-binding")
-                    self.assertEqual(observed["reference"]["operation"],"refine")
-                elif failure_mode=="capacity":
-                    self.assertIsNone(observed["failure"])
-                    self.assertEqual(observed["flights"],[])
-                    self.assertTrue(observed["state"]["capacity_lifecycle_blocked"]["no_private_delete"])
-                    self.assertFalse(observed["state"]["capacity_lifecycle_blocked"]["candidate_flight_executed"])
-                else:
-                    self.assertEqual(observed["failure"],"Synthetic Refine failure")
-                    self.assertNotIn("capacity_lifecycle_blocked",observed["state"])
-                    self.assertEqual(observed["flights"],[])
 
-    def test_prepared_refine_preflight_keeps_five_layer_ip_operator_identity(self):
-        from msplatform.backends.comsol import static_field_binding as fields
-        from msplatform.workflows.prepared_joint import downstream_workpoint as controller
-        source=(PROJECT.parents[3]/"src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
-        code=re.search(r"\$loadCode=@'\n(.*?)\n'@",source,re.S).group(1)
-        actual=dict(ip15=list(range(15)),fixed_analyzer20=list(range(20)),actual_grid="five sealed grids")
-        for scenario in ("valid","wrong_ip15","wrong_fixed_voltage","wrong_grid","wrong_layer_count","wrong_provider","consumer_view"):
-            with self.subTest(scenario=scenario):
-                import copy
-                binding=dict(accelerator_provider="ion_processor",refinement_windows=[{}]*4,
-                             authority=copy.deepcopy(actual),operator=copy.deepcopy(actual))
-                if scenario=="wrong_provider":
-                    binding["accelerator_provider"]="orthogonal_accelerator"
-                if scenario=="wrong_layer_count":
-                    binding["refinement_windows"].pop()
-                if scenario=="consumer_view":
-                    binding["consumer_view"]={"crop":"unfit solve source"}
-                if scenario=="wrong_ip15":
-                    binding["operator"]["ip15"][0]+=1
-                if scenario=="wrong_fixed_voltage":
-                    binding["operator"]["fixed_analyzer20"][0]+=1
-                if scenario=="wrong_grid":
-                    binding["operator"]["actual_grid"]="different"
-                with patch.object(sys,"argv",["preflight","seed","target","contract","base","__none__","refine"]),\
-                     patch.object(controller,"load_prepared_centroid_trial",return_value={"frozen_problem":{"static_field_problem":actual}}),\
-                     patch.object(fields,"load_binding",return_value=binding),\
-                     patch.object(fields,"native_response_operator",side_effect=lambda b,a:b["operator"]):
-                    if scenario=="valid":
-                        with redirect_stdout(io.StringIO()):
-                            exec(compile(code,"prepared-field-preflight","exec"),{})
-                    else:
-                        with self.assertRaises(AssertionError):
-                            exec(compile(code,"prepared-field-preflight","exec"),{})
 
-    def test_prepared_original_stages_freeze_target_and_call_existing_bootstrap(self):
-        script=r'''
-param($Source,$Root,$BuildMode)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-$handoffParameter=$ast.ParamBlock.Parameters|Where-Object{$_.Name.VariablePath.UserPath-eq'PrismHandoffReplayManifest'}
-$PrismHandoffReplayManifest=$handoffParameter.DefaultValue.SafeGetValue()
-if($PrismHandoffReplayManifest-cne''){throw 'Prepared fixture requires the actual empty public handoff default'}
-foreach($name in @('Invoke-PreparedOriginalStagedWorkflow','New-CenterTrialArguments')){
- $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
- Invoke-Expression $node.Extent.Text
-}
-$repoRoot=$Root;$workspaceRoot=$Root;$packageRoot=Join-Path $Root 'src/msplatform';$hostContext=@{};$artifactRoot=$Root;$artifactWorkspaceRoot=$Root;$project='multi_reflection_tof'
-$trialArtifactRoot=$artifactRoot
-$inputFile=Join-Path $Root 'input.json';'{}'|Set-Content $inputFile
-$PreparedJointWorkbenchRunPath=$Root;$PreparedPrism1ResponseBasisPath=$inputFile;$PreparedPrism2ResponseBasisPath=$inputFile
-$PreparedInitialProposalPath=$inputFile;$PreparedTargetAuthorityPath=$inputFile;$PreparedSeedTrialManifest=$inputFile
-$PSScriptRoot=$Root
-$PreparedStripe1ResponseBasisPath='';$ContractPath=$inputFile;$RunId='prepared-parent';$python='mock-python'
-$ResumeParentCheckpoint='';$ResumeSuccessfulChildManifest='';$PreparedTargetReanchor=$false
-$PreparedFieldBuildMode=$BuildMode
-$preparedCallerParameters=@();$PrismControllerPolicyPath='';$frozenPrismControllerPolicyPath=''
-$preparedProviderRunner='public-provider';$SimionExe='';$script:preparedStagedMode=$true
-function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
-function New-RunPackage {
- $i=Join-Path $Root 'inputs';$o=Join-Path $Root 'results';New-Item -ItemType Directory -Path $i,$o|Out-Null
- $c=Join-Path $Root 'run_config.json';'{}'|Set-Content $c
- return @{input_dir=$i;result_dir=$o;run_config=$c;artifact_run_dir=$Root;summary=(Join-Path $Root 'summary.json')}
-}
-function Enter-ArtifactWorkflowCapacitySession {return @{id='public'}}
-function Exit-ArtifactWorkflowCapacitySession {$script:exited=$true}
-function Copy-VerifiedRunInput {param($Source,$Destination)'frozen-source'|Set-Content $Destination;return $Destination}
-function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
-function mock-python {
- param([switch]$I,[switch]$B)
- if($args[1]-match 'prepare_measured_centroid_acquisition'){
-  $outputDirectory=$args[-1];'{}'|Set-Content (Join-Path $outputDirectory 'trajectory_contract.json');'{}'|Set-Content (Join-Path $outputDirectory 'initial_proposal.json')
-  $request=@{source_binding_path='baseline-binding';response_basis_paths=@{p1='P1';p2='P2'}}
-  if($BuildMode-eq'refine'){
-    foreach($key in @('response_axis','te1_reference_path','consumer_view_source_path','reuse_source_levels')){$request[$key]='must-not-survive'}
-  }
-  $request|ConvertTo-Json|Set-Content (Join-Path $outputDirectory 'acquisition_field_request.json')
- }elseif($args[1]-match 'load_prepared_centroid_trial'){
-  if($args[-2]-ne'__none__'-or$args[-1]-ne$BuildMode){throw 'Source/mode argument lost'}
-  '{"mode":"native_static_pa"}'
- }elseif($args[1]-ne'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)'){throw 'Unexpected Python entry'}
- $global:LASTEXITCODE=0
-}
-function Invoke-StagedWorkpointBootstrap {
- param($Bootstrap,$BootstrapPath)
- if($controllerContext.prism_handoff_replay_manifest-cne$PrismHandoffReplayManifest){throw 'Prepared Context lost the public parameter default'}
- if($Bootstrap.source_projection-ne'measured_exit_centroid'-or$Bootstrap.Contains('stage_state')){throw 'Not a fresh measured P anchor'}
- if((Get-Content $frozenPreparedTargetAuthorityPath -Raw).Trim()-ne'{}'){throw 'Target not frozen'}
- if($fieldProviderRequest.source_binding_path-ne'baseline-binding'){throw 'Wrong fixed rebuild authority'}
- if($BuildMode-eq'refine'){
-   foreach($key in @('response_basis_paths','response_axis','te1_reference_path','consumer_view_source_path','reuse_source_levels')){
-     if($fieldProviderRequest.Contains($key)){throw "Direct request retained $key"}
-   }
- }elseif(-not$fieldProviderRequest.response_basis_paths.Contains('p1')){throw 'Default composition changed'}
- $a=New-CenterTrialArguments -Voltages @(1,0,343,-186) -ChildRunId 'candidate'
- if($a.PreparedSourceMode-ne'centroid_probe'-or$a.Contains('AcceleratorProviderReceiptPath')){throw 'Wrong actual source branch'}
- return @{terminal_decision=@{state='checkpoint';terminal_reason='needs_s1_response';full_workpoint_qualified=$false}}
-}
-function Apply-RunArtifactRetention {return $inputFile}
-function Write-RunManifest {param($Status)if($Status-ne'success'){throw ('Unexpected publisher status: '+(Get-Content $package.summary -Raw))}}
-Invoke-PreparedOriginalStagedWorkflow
-if(-not$exited){throw 'Public session not exited'}
-$summary=Get-Content (Join-Path $Root 'summary.json') -Raw|ConvertFrom-Json
-if($summary.N100_executed-or$summary.gui_executed-or$summary.final_decision.full_workpoint_qualified){throw 'False qualification'}
-'PREPARED_ORIGINAL_STAGES_PASS'
-'''
-        for mode in ("composition","refine"):
-            with self.subTest(mode=mode),TemporaryDirectory() as directory:
-                root=Path(directory);path=root/"stages.ps1";path.write_text(script)
-                result=subprocess.run(["pwsh","-NoProfile","-File",str(path),str(PROJECT.parents[3]/"src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1"),str(root),mode],
-                    cwd=PROJECT.parents[3],capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
-                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-                self.assertIn("PREPARED_ORIGINAL_STAGES_PASS",result.stdout)
-                config=json.loads((root/"run_config.json").read_text(encoding="utf-8-sig"))
-                self.assertEqual(config["parameters"]["field_build_mode"],mode)
-                template=json.loads(Path(config["inputs"]["candidate_field_request_template"]).read_text(encoding="utf-8-sig"))
-                self.assertEqual("response_basis_paths" in template,mode=="composition")
 
-    def test_prepared_acquisition_calls_public_provider_and_n1_then_checkpoints(self):
-        script=r'''
-param($Source,$Root)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'Invoke-PreparedWorkpointAcquisition'},$true)
-Invoke-Expression $node.Extent.Text
-$repoRoot=$Root;$artifactRoot=Join-Path $Root 'artifacts';$artifactWorkspaceRoot=$artifactRoot;$project='multi_reflection_tof'
-$trialArtifactRoot=$artifactRoot
-$python='mock-python';$hostContext=@{};$RunId='test-parent';$SimionExe='';$PSScriptRoot=Join-Path $Root 'analysis'
-New-Item -ItemType Directory -Path $PSScriptRoot,(Join-Path $Root 'simion')|Out-Null
-$input=Join-Path $Root 'input.json';'{}'|Set-Content $input
-$PreparedJointWorkbenchRunPath=$Root;$PreparedPrism1ResponseBasisPath=$input;$PreparedPrism2ResponseBasisPath=$input;$PreparedInitialProposalPath=$input;$ContractPath=$input
-$preparedCallerParameters=@('PreparedJointWorkbenchRunPath','PreparedPrism1ResponseBasisPath','PreparedPrism2ResponseBasisPath','PreparedInitialProposalPath','ContractPath','RunId')
-function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth 100|Set-Content $Path}
-function New-RunPackage {
- $r=Join-Path $Root 'parent';$i=Join-Path $r 'inputs';$o=Join-Path $r 'results';New-Item -ItemType Directory -Path $i,$o|Out-Null
- $cfg=Join-Path $r 'run_config.json';'{}'|Set-Content $cfg
- return @{artifact_run_dir=$r;input_dir=$i;result_dir=$o;run_config=$cfg;summary=(Join-Path $r 'summary.json')}
-}
-function Enter-ArtifactWorkflowCapacitySession {return @{status='active'}}
-function Exit-ArtifactWorkflowCapacitySession {$script:exited=$true}
-function Apply-RunArtifactRetention {return 'mock-retention.json'}
-function Write-RunManifest {param($Status)$script:terminal=$Status}
-function mock-python {
- param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
- if(-not$I-or-not$B){throw 'Acquisition Python is not isolated'}
- '{}'|Set-Content (Join-Path $Root 'parent/inputs/acquisition_field_request.json')
- $global:LASTEXITCODE=0
-}
-$provider=Join-Path $Root 'src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1'
-$preparedProviderRunner=$provider
-New-Item -ItemType Directory -Path (Split-Path -Parent $provider) -Force|Out-Null
-@'
-param($RequestPath,$RunDirectory,[switch]$Approved,$PythonExe,$HostContextJson)
-if(-not$Approved-or$PythonExe-ne'mock-python'-or-not$HostContextJson-or-not(Test-Path $RequestPath)){throw 'Public provider request missing'}
-New-Item -ItemType Directory -Path $RunDirectory -Force|Out-Null
-@{status='success';field_binding='actual-candidate-binding.json'}|ConvertTo-Json|Set-Content (Join-Path $RunDirectory 'summary.json')
-'public-compose'|Set-Content (Join-Path (Split-Path (Split-Path $RunDirectory -Parent) -Parent) 'provider-called.txt')
-'@|Set-Content $provider
-$trialRunner=Join-Path $Root 'trial.ps1'
-@'
-param($PreparedJointWorkbenchRunPath,$PreparedSourceMode,$FieldBindingPath,$ContractPath,$RunId,$PythonExe,$RepoRoot)
-if($RepoRoot-ne$Root){throw 'Acquisition workspace differs'}
-if($PreparedSourceMode-ne'centroid_probe'-or$FieldBindingPath-ne'actual-candidate-binding.json'){throw 'Probe source or actual field was replaced'}
-$child=Join-Path $PreparedJointWorkbenchRunPath ('artifacts/runs/'+$RunId+'/results/diagnostics')
-New-Item -ItemType Directory -Path $child -Force|Out-Null
-@{observation=@{events=@(@{kind='terminal';ion=1;splat=-1})}}|ConvertTo-Json -Depth 100|Set-Content (Join-Path $child 'controller_projection.json')
-'@|Set-Content $trialRunner
-Invoke-PreparedWorkpointAcquisition
-$checkpoint=Get-Content (Join-Path $Root 'parent/results/prepared_acquisition_checkpoint.json') -Raw|ConvertFrom-Json
-if($checkpoint.state-ne'needs_clean_reference_audit_and_target_authority'-or$checkpoint.full_workpoint_qualified-or$checkpoint.target_assigned){throw 'Acquisition incorrectly claimed closure'}
-if($checkpoint.observation.events[0].splat-ne-1){throw 'Real collision evidence was discarded'}
-if($script:terminal-ne'success'-or-not$script:exited){throw 'Public lifecycle did not publish the stage'}
-'PREPARED_ACQUISITION_STAGE=PASS'
-'''
-        with TemporaryDirectory() as directory:
-            root=Path(directory);path=root/"mock.ps1";path.write_text(script)
-            result=subprocess.run(["pwsh","-NoProfile","-File",str(path),str(PROJECT.parents[3]/"src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1"),str(root)],
-                cwd=PROJECT.parents[3],capture_output=True,text=True,encoding="utf-8",timeout=30)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn("PREPARED_ACQUISITION_STAGE=PASS",result.stdout)
 
     def test_normal_and_resumed_candidate_completion_transport_quality_authority(self):
         script = r'''
@@ -1273,7 +724,7 @@ Invoke-Expression $helper.Extent.Text
 $inputs=Join-Path $Root 'inputs';New-Item -ItemType Directory $inputs|Out-Null
 $original=Join-Path $Root 'original.json';'{"marker":"frozen"}'|Set-Content $original
 $PrismHandoffReplayManifest=$original;$package=@{input_dir=$inputs}
-$controllerContext=@{repo_root=$Root;python='Invoke-MockController';contract_path='contract.json';prepared_staged=$false;prism_handoff_replay_manifest=$original}
+$controllerContext=@{repo_root=$Root;python='Invoke-MockController';contract_path='contract.json';prism_handoff_replay_manifest=$original}
 function Copy-VerifiedRunInput {param($Source,$Destination)Copy-Item -LiteralPath $Source -Destination $Destination;return $Destination}
 function Invoke-RunToolRootContext {param($RepoRoot,$Operation)&$Operation}
 function Invoke-MockController {
@@ -1319,7 +770,7 @@ function Invoke-MockPython {
  param([switch]$I,[switch]$B,[Parameter(ValueFromRemainingArguments=$true)][object[]]$Arguments)
  $global:LASTEXITCODE=0
  if($Arguments-contains'--control-stage'){
-  foreach($pair in @(@('--contract','contract.json'),@('--prepared-target-authority','target.json'),@('--prepared-initial-proposal','proposal.json'),@('--prism-handoff-replay-manifest','handoff.json'))){
+  foreach($pair in @(@('--contract','contract.json'),@('--prism-handoff-replay-manifest','handoff.json'))){
    $index=[array]::IndexOf($Arguments,$pair[0]);if($index-lt0-or$Arguments[$index+1]-ne$pair[1]){throw 'Decision read ambient authority instead of Context'}
   }
   $output=$Arguments[[array]::IndexOf($Arguments,'--output')+1]
@@ -1329,8 +780,7 @@ function Invoke-MockPython {
  @{status=$Quality}|ConvertTo-Json -Compress
 }
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content $Path}
-$context=@{repo_root=$Root;python='Invoke-MockPython';contract_path='contract.json';result_directory=$Root;prepared_staged=$true;target_authority_path='target.json';initial_proposal_path='proposal.json';prism_handoff_replay_manifest='handoff.json';run_id='parent';artifact_root=$Root;prepared_field_build_mode='composition'}
-$script:preparedStagedMode=$false;$script:frozenPreparedTargetAuthorityPath='wrong-target';$script:frozenPreparedInitialProposalPath='wrong-proposal'
+$context=@{repo_root=$Root;python='Invoke-MockPython';contract_path='contract.json';result_directory=$Root;prism_handoff_replay_manifest='handoff.json';run_id='parent';artifact_root=$Root}
 $script:PrismHandoffReplayManifest='wrong-handoff';$script:RunId='wrong-parent';$script:artifactRoot='wrong-artifact-root'
 $provider=Join-Path $Root 'runs/parent-stage-003-field';New-Item -ItemType Directory -Path $provider -Force|Out-Null
 $providerManifest=Join-Path $provider 'run_manifest.json';'{}'|Set-Content $providerManifest
@@ -1480,7 +930,7 @@ $artifactRoot=$Root;$repoRoot=$Root;$RunId='new';$python='Invoke-IdentityFixture
 $trialArtifactRoot=$artifactRoot
 $PrismHandoffReplayManifest='';$PriorPrismDecisionManifest='';$stripeSeedColumns=@{}
 $package=@{result_dir=$Root};$frozenContract=Join-Path $Root 'contract.json'
-$controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$Root;prepared_staged=$false;target_authority_path=''}
+$controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$Root}
 @{downstream_fixed_grid_workpoint_profile=@{active_stripe_axes=@('stripe_1_voltage_v','stripe_2_voltage_v');automatic_iteration=@{maximum_iterations=8;minimum_relative_improvement=.1;maximum_consecutive_non_improving_iterations=3};jacobian_relative_step_tiers=@{coarse=.01;medium=.0025;fine=.0005}}}|ConvertTo-Json -Depth 10|Set-Content $frozenContract
 $childDir=New-Item -ItemType Directory (Join-Path $Root 'child')
 $child=Join-Path $childDir 'run_manifest.json';@{run_id='child';status='success'}|ConvertTo-Json|Set-Content $child
@@ -1909,10 +1359,8 @@ foreach($name in @('New-StagedComposeProviderReference','Assert-StagedComposePro
  Invoke-Expression $node.Extent.Text
 }
 $fixture=Get-Content (Join-Path $Root 'fixture.json') -Raw|ConvertFrom-Json -AsHashtable
-$script:preparedStagedMode=[bool]$fixture.measured
-$script:PreparedFieldBuildMode=if($fixture.explicit_refine){$fixture.operation}else{'composition'}
 $RunId='parent';$project='multi_reflection_tof';$artifactRoot=$Root;$artifactWorkspaceRoot=$Root;$repoRoot=$Root;$python='mock'
-$controllerContext=@{run_id=$RunId;artifact_root=$artifactRoot;prepared_staged=$script:preparedStagedMode;prepared_field_build_mode=$script:PreparedFieldBuildMode}
+$controllerContext=@{run_id=$RunId;artifact_root=$artifactRoot}
 $trialArtifactRoot=$artifactRoot
 $staticFieldMode=$true;$staticBindingMode='native_static_pa'
 $package=@{input_dir=(Join-Path $Root 'inputs');result_dir=(Join-Path $Root 'results');artifact_run_dir=(Join-Path $Root 'runs/parent')}
@@ -1971,7 +1419,6 @@ foreach($i in 1..$(if($fixture.accepted){9}else{5})){
  $reference=New-StagedComposeProviderReference -ChildRunId $childId -ProviderRun $provider -RequestPath $request -ParentRunId $producer
  $references[[string]$i]=$reference
  $parameters=@{gui_workbench_retained=($i-eq4-or($i-eq9-and$fixture.restored-eq'gui'))}
- if($fixture.measured){$parameters['source_mode']='centroid_probe';$parameters['gui_executed']=$false}
  @{parameters=$parameters}|ConvertTo-Json -Depth 10|Set-Content (Join-Path $child 'run_config.json')
  @{run_config=@{sha256=(Get-FileHash (Join-Path $child 'run_config.json') -Algorithm SHA256).Hash}}|ConvertTo-Json -Depth 10|Set-Content (Join-Path $child 'run_manifest.json')
  $use=if($i-eq2){'rejected_candidate'}elseif($i-eq3-or$i-ge6){'keep'}else{'stencil'}
@@ -2014,48 +1461,14 @@ try{
 '''
         defaults = dict(failure='', foreign=False, tampered=False, resume=False,
                         accepted=False, unknown_best=False, restored='', imported=False,
-                        retired=False, cross_project=False, measured=False,
-                        operation='compose', explicit_refine=True)
+                        retired=False, cross_project=False, operation='compose')
         cases = [(str(index), [], dict(defaults, **case)) for index, case in enumerate(options)]
         yield from self._isolated_fixture_cases(script, cases, timeout=40)
 
     def _run_compose_reclamation_fixture(self, **options):
         return list(self._run_compose_reclamation_cases([options]))[0]
 
-    def test_measured_retirement_requires_light_projection_keeps_gui_and_honors_public_refusal(self):
-        results = self._run_compose_reclamation_cases([{'measured': True}, {'measured': True, 'failure': 'dependency'}, {'measured': True, 'failure': 'new_lease'}])
-        result=next(results)
-        self.assertIsNone(result['error'])
-        self.assertEqual(len(result['retired']),3)
-        self.assertTrue(result['retired'][-1].endswith('parent-stage-003-field'))
-        self.assertLess(result['events'].index('freeze_light'),result['events'].index('enter_new'))
-        for i in (4,5):
-            self.assertTrue(any(p.endswith(f'parent-stage-00{i}-field') for p in result['session']['protected_paths']))
-        blocked=next(results)
-        self.assertIsNone(blocked['error'])
-        self.assertEqual(blocked['retired'],[])
-        self.assertTrue(blocked['state']['capacity_lifecycle_blocked']['no_private_delete'])
-        self.assertFalse(any(e.startswith('apply_') for e in blocked['events']))
-        refused=next(results)
-        self.assertIsNone(refused['error'])
-        self.assertEqual(refused['old_status'],'active')
-        self.assertTrue(refused['state']['capacity_lifecycle_blocked']['old_protection_preserved'])
-        self.assertFalse(any(e.startswith(('apply_','exit_')) for e in refused['events']))
-        self.assertEqual(list(results), [])
 
-    def test_explicit_prepared_refine_lifecycle_is_not_labelled_compose_and_keeps_public_gates(self):
-        results = self._run_compose_reclamation_cases([{'measured': True, 'operation': 'refine'}, {'measured': True, 'operation': 'refine', 'explicit_refine': False}, {'measured': True, 'operation': 'refine', 'failure': 'dependency'}])
-        direct=next(results)
-        self.assertIsNone(direct['error'])
-        self.assertEqual(len(direct['retired']),3)
-        self.assertIn('freeze_light',direct['events'])
-        unselected=next(results)
-        self.assertEqual(unselected['retired'],[])
-        self.assertNotIn('enter_new',unselected['events'])
-        refused=next(results)
-        self.assertTrue(refused['state']['capacity_lifecycle_blocked']['no_private_delete'])
-        self.assertFalse(any(e.startswith('apply_') for e in refused['events']))
-        self.assertEqual(list(results), [])
 
     def test_staged_compose_reclaims_only_consumed_owned_fields_after_new_protection(self):
         results = self._run_compose_reclamation_cases([{'resume': False}, {'resume': True}])
@@ -2793,7 +2206,7 @@ $dir=(Get-ChildItem -LiteralPath $Root -Directory|Select-Object -First 1).FullNa
                            replay_manifest="measured-P-replay.json",
                            initial_model="", imported_columns=None, compose_owned=False,
                            stencil_gate=None, controller_policy=None, active_stripe_axes=None, expected_failure=False,
-                           single_stripe_refinement_mode=None,prepared_build_mode=None,provider_capacity_block=False):
+                           single_stripe_refinement_mode=None,provider_capacity_block=False):
         """Execute the production AST functions; mock only flights and CLI I/O."""
         script = r"""
 param($Source,$Root,$RealPython,$RealRepo)
@@ -2804,11 +2217,7 @@ foreach($name in @('Get-ActiveStripeAxisIndices','Get-StagedColumnAxisIndices','
   Invoke-Expression $node.Extent.Text
 }
 $fixture=Get-Content (Join-Path $Root 'fixture.json') -Raw|ConvertFrom-Json -AsHashtable
-$script:preparedStagedMode=$null-ne$fixture.prepared_build_mode
-$script:PreparedFieldBuildMode=$fixture.prepared_build_mode
-$frozenPreparedTargetAuthorityPath='frozen-target';$frozenPreparedInitialProposalPath='frozen-proposal'
 $fieldProviderRequest=@{}
-if($fixture.prepared_build_mode-eq'composition'){$fieldProviderRequest['response_basis_paths']=@{p1='p1';p2='p2'}}
 $script:queue=@($fixture.decisions);$script:requests=@();$script:flights=@();$script:saves=@();$script:models=@();$script:controllerActions=@()
 $repoRoot=$Root;$artifactRoot=$Root;$RunId='stage';$python='Invoke-MockController'
 $trialArtifactRoot=$artifactRoot
@@ -2816,7 +2225,7 @@ $package=@{result_dir=$Root};$seedManifest=Join-Path $Root 'seed.json';'{}'|Set-
 $PrismHandoffReplayManifest=[string]$fixture.replay_manifest
 $PriorPrismDecisionManifest=[string]$fixture.initial_model
 $frozenContract=Join-Path $Root 'contract.json'
-$controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$Root;prepared_staged=$script:preparedStagedMode;target_authority_path=$frozenPreparedTargetAuthorityPath;initial_proposal_path=$frozenPreparedInitialProposalPath;prism_handoff_replay_manifest=$PrismHandoffReplayManifest;run_id=$RunId;artifact_root=$artifactRoot;prepared_field_build_mode=$PreparedFieldBuildMode}
+$controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$Root;prism_handoff_replay_manifest=$PrismHandoffReplayManifest;run_id=$RunId;artifact_root=$artifactRoot}
 $policyPath=''
 if($fixture.controller_policy){
  $policyPath=Join-Path $Root 'policy.json'
@@ -2937,7 +2346,6 @@ if(-not$failure-and$script:queue.Count-ne0){throw 'Unconsumed controller decisio
                                 ["stripe_1_voltage_v", "stripe_2_voltage_v"],
                             "expected_failure": expected_failure,
                             "single_stripe_refinement_mode": single_stripe_refinement_mode,
-                            "prepared_build_mode":prepared_build_mode,
                             "provider_capacity_block":provider_capacity_block,
                             "corrupt_voltage": corrupt_voltage}), encoding="utf-8"
             )
@@ -2987,24 +2395,6 @@ if(-not$failure-and$script:queue.Count-ne0){throw 'Unconsumed controller decisio
         decision.update(changes)
         return decision
 
-    def test_only_composition_requires_s1_bank_after_actual_p_anchor(self):
-        def decision(status,**changes):
-            return self._stage_decision(status,voltages_v=[-27.,0.,189.,-190.],
-                next_voltages_v=[-27.,0.,189.,-190.],**changes)
-        first=[decision('stage_passed',next_action='stripe_preclosure'),decision('needs_stencil',required_axes=[0])]
-        common=dict(active_stripe_axes=['stripe_1_voltage_v'],single_stripe_refinement_mode='joint_ps_constrained',replay_manifest='')
-        composed=self._run_stage_fixture(first,prepared_build_mode='composition',**common)
-        self.assertEqual(composed['result']['terminal_decision']['terminal_reason'],'needs_s1_response')
-        self.assertEqual(composed['flights'],[])
-        refined=self._run_stage_fixture([*first,decision('terminal',terminal_reason='fixture_stop')],prepared_build_mode='refine',**common)
-        self.assertEqual(refined['result']['terminal_decision']['terminal_reason'],'fixture_stop')
-        self.assertEqual(len(refined['flights']),1)
-        self.assertEqual(refined['flights'][0]['Voltages'][1],0)
-        self.assertNotEqual(refined['flights'][0]['Voltages'][0],-27.)
-        capacity=self._run_stage_fixture(first,prepared_build_mode='refine',provider_capacity_block=True,**common)
-        self.assertEqual(capacity['result']['terminal_decision']['terminal_reason'],'capacity_lifecycle_blocked')
-        self.assertEqual(capacity['flights'],[])
-        self.assertIn('pending_trial',capacity['bootstrap']['stage_state'])
 
     def test_cleared_policy_model_requires_both_fresh_prism_columns_without_resetting_counts(self):
         def decision(status,**changes):
@@ -3017,8 +2407,7 @@ if(-not$failure-and$script:queue.Count-ne0){throw 'Unconsumed controller decisio
             decision('needs_stencil',required_axes=[2,3]),
             decision('needs_stencil',required_axes=[3]),
             decision('terminal',terminal_reason='fixture_stop'),
-        ],state,controller_policy=policy,active_stripe_axes=['stripe_1_voltage_v'],
-            prepared_build_mode='composition',replay_manifest='')
+        ],state,controller_policy=policy,active_stripe_axes=['stripe_1_voltage_v'],replay_manifest='')
         self.assertIsNone(result['failure'])
         self.assertEqual(len(result['flights']),2)
         self.assertEqual(set(result['bootstrap']['stage_state']['columns']),{'2','3'})

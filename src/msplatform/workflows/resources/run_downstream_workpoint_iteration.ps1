@@ -2,15 +2,6 @@
 param(
   [Parameter(Mandatory,ParameterSetName='Legacy')][string]$AcceleratorComponentContractPath,
   [Parameter(Mandatory,ParameterSetName='Legacy')][string]$AcceleratorGeometryProfileId,
-  [Parameter(Mandatory,ParameterSetName='Prepared')][string]$PreparedJointWorkbenchRunPath,
-  [Parameter(Mandatory,ParameterSetName='Prepared')][string]$PreparedPrism1ResponseBasisPath,
-  [Parameter(Mandatory,ParameterSetName='Prepared')][string]$PreparedPrism2ResponseBasisPath,
-  [Parameter(Mandatory,ParameterSetName='Prepared')][string]$PreparedInitialProposalPath,
-  [Parameter(ParameterSetName='Prepared')][string]$PreparedTargetAuthorityPath='',
-  [Parameter(ParameterSetName='Prepared')][string]$PreparedSeedTrialManifest='',
-  [Parameter(ParameterSetName='Prepared')][switch]$PreparedTargetReanchor,
-  [Parameter(ParameterSetName='Prepared')][string]$PreparedStripe1ResponseBasisPath='',
-  [Parameter(ParameterSetName='Prepared')][ValidateSet('composition','refine')][string]$PreparedFieldBuildMode='composition',
   [string]$InitialWorkpointManifest = '',
   [string]$SeedTrialManifest = '',
   [string]$Stripe1PerturbationManifest = '',
@@ -81,93 +72,14 @@ $hostContext = @{workspace=$workspaceRoot;python_executable=$python;host_state_p
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $projectRoot 'simion_candidate_two_zone.json' }
 $frozenPrismControllerPolicyPath=''
-$frozenPreparedTargetAuthorityPath=''
-$frozenPreparedInitialProposalPath=''
 $recoveryPolicySource=if($LocalModelRecoveryPolicyPath){(Resolve-Path -LiteralPath $LocalModelRecoveryPolicyPath).Path}else{Join-Path $projectRoot 'config/local_model_recovery_policy.json'}
 if($PrismControllerPolicyPath){$PrismControllerPolicyPath=(Resolve-Path -LiteralPath $PrismControllerPolicyPath).Path}
-$trialRunner = if($PSCmdlet.ParameterSetName-eq'Prepared'){
-  Join-Path $packageRoot 'workflows/resources/prepared_joint_execute.ps1'
-}else{Join-Path $packageRoot 'workflows/resources/oa_mr.ps1'}
+$trialRunner = Join-Path $packageRoot 'workflows/resources/oa_mr.ps1'
 $auditRunner = Join-Path $packageRoot 'workflows/resources/run_downstream_fixed_grid_workpoint.ps1'
 $bunchScreeningRunner = Join-Path $packageRoot 'workflows/resources/run_native_corridor_bunch_screening.ps1'
 $artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind component -OwnerId $project -Python $python
 $trialArtifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind assembly -OwnerId instrument_assembly -Python $python
-$preparedCallerParameters=@($PSBoundParameters.Keys)
-$preparedProviderRunner=Join-Path $packageRoot 'backends/simion/resources/run_native_static_field_provider.ps1'
-$preparedStagedMode=$PSCmdlet.ParameterSetName-eq'Prepared'-and-not[string]::IsNullOrWhiteSpace($PreparedTargetAuthorityPath)
 
-function Invoke-PreparedWorkpointAcquisition {
-  # Acquisition is one explicit stage of this controller, before a physically
-  # identified target exists. It never assigns a penalty to missing events.
-  if(-not$ContractPath){throw 'Prepared acquisition requires the explicit original trajectory contract.'}
-  foreach($name in $preparedCallerParameters){
-    if($name-notin@('PreparedJointWorkbenchRunPath','PreparedPrism1ResponseBasisPath','PreparedPrism2ResponseBasisPath','PreparedInitialProposalPath','ContractPath','RunId','WorkspaceRoot','ArtifactRoot','PythonExe','SimionExe')){throw "Prepared acquisition cannot consume legacy parameter $name"}
-  }
-  $prepared=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
-  $p1=(Resolve-Path -LiteralPath $PreparedPrism1ResponseBasisPath).Path
-  $p2=(Resolve-Path -LiteralPath $PreparedPrism2ResponseBasisPath).Path
-  $proposal=(Resolve-Path -LiteralPath $PreparedInitialProposalPath).Path
-  $physics=(Resolve-Path -LiteralPath $ContractPath).Path
-  $parentId=if($RunId){$RunId}else{(Get-Date -Format 'yyyyMMdd_HHmmss')+'__analysis__python__ip-prism-acquisition'}
-  $childId=$parentId+'-probe';$providerId=$childId+'-field'
-  $pkg=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $parentId -Project $project `
-    -Mode downstream_fixed_grid_workpoint_iteration -Software @('SIMION 2020','Python 3.11') `
-    -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
-  $status='failed';$session=$null;$failure=$null
-  try{
-    $session=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactWorkspaceRoot `
-      -RunDirectory $pkg.artifact_run_dir -CommittedNewBytes 0 -ProtectedPaths @($prepared,(Split-Path -Parent $p1),(Split-Path -Parent $p2)) `
-      -Owner "mrtof-prepared-acquisition:$parentId"
-    $code="import sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import prepare_measured_centroid_acquisition;prepare_measured_centroid_acquisition(prepared_run=Path(sys.argv[1]),contract_path=Path(sys.argv[2]),proposal_path=Path(sys.argv[3]),p1_response=Path(sys.argv[4]),p2_response=Path(sys.argv[5]),field_run_id=sys.argv[6],output_directory=Path(sys.argv[7]))"
-    & {
-      & $python -I -B -c $code $prepared $physics $proposal $p1 $p2 $providerId $pkg.input_dir
-      if($LASTEXITCODE-ne0){throw 'Prepared acquisition source/response/proposal preflight failed.'}
-    }
-    $request=Join-Path $pkg.input_dir 'acquisition_field_request.json'
-    $providerRun=Join-Path $artifactRoot "runs/$providerId"
-    & $preparedProviderRunner -RequestPath $request -RunDirectory $providerRun -Approved -PythonExe $python -HostContextJson ($hostContext|ConvertTo-Json -Compress) | Out-Host
-    $field=Get-Content -LiteralPath (Join-Path $providerRun 'summary.json') -Raw|ConvertFrom-Json
-    if($field.status-ne'success'-or-not$field.field_binding){throw 'Acquisition field provider did not publish a validated ordinary binding.'}
-    $arguments=@{PreparedJointWorkbenchRunPath=$prepared;PreparedSourceMode='centroid_probe';FieldBindingPath=[string]$field.field_binding
-      ContractPath=$physics;RunId=$childId;PythonExe=$python;RepoRoot=$repoRoot}
-    if($SimionExe){$arguments.SimionExe=$SimionExe}
-    & $trialRunner @arguments | Out-Host
-    $child=Join-Path $trialArtifactRoot "runs/$childId"
-    $projection=Join-Path $child 'results/diagnostics/controller_projection.json'
-    if(-not(Test-Path -LiteralPath $projection)){throw 'Acquisition child did not publish its real N1 observation projection.'}
-    $observed=Get-Content -LiteralPath $projection -Raw|ConvertFrom-Json -Depth 100
-    Write-RunJson -Path (Join-Path $pkg.result_dir 'prepared_acquisition_checkpoint.json') -Depth 100 -Value ([ordered]@{
-      schema_version=1;role='mrtof_measured_centroid_acquisition_checkpoint';state='needs_clean_reference_audit_and_target_authority'
-      stage='topology_acquisition';full_workpoint_qualified=$false;source_state_unchanged=$true;target_assigned=$false
-      child_manifest=(Join-Path $child 'run_manifest.json');controller_projection=$projection;field_provider_manifest=(Join-Path $providerRun 'run_manifest.json')
-      observation=$observed.observation;qualification='real_N1_topology_acquisition_only'
-      next_action='audit_actual_clean_reference_phi_Ex_Ey_Ez_and_freeze_action_policy_before_preclosure'
-      existing_core_reentry='downstream_workpoint_iteration --control-stage prism_preclosure --child-manifest CHILD --prepared-target-authority TARGET --prepared-initial-proposal PROPOSAL --contract ORIGINAL --output DECISION'
-    })
-    $status='success'
-  }catch{$failure=$_.Exception.Message;throw}
-  finally{
-    $cfg=Get-Content -LiteralPath $pkg.run_config -Raw|ConvertFrom-Json -AsHashtable
-    $cfg.inputs=[ordered]@{prepared_manifest=(Join-Path $prepared 'run_manifest.json');original_trajectory_contract=$physics;initial_proposal=$proposal;p1_response=$p1;p2_response=$p2}
-    $cfg.parameters=[ordered]@{workflow_branch='measured_centroid_topology_acquisition';source_mode='centroid_probe';full_workpoint_qualified=$false;gui_executed=$false}
-    Write-RunJson -Path $pkg.run_config -Depth 100 -Value $cfg
-    Write-RunJson -Path $pkg.summary -Depth 30 -Value ([ordered]@{schema_version=1;role='mrtof_measured_centroid_acquisition_summary';status=$status;error=$failure
-      workflow_state='needs_clean_reference_audit_and_target_authority';full_workpoint_qualified=$false;gui_executed=$false;parent_stage_only=$true})
-    $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $pkg.run_config
-    $outputs=@(Get-ChildItem -LiteralPath $pkg.result_dir -Recurse -File|ForEach-Object{$_.FullName})+@($pkg.summary,$retention)
-    Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $pkg.run_config -Status $status -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
-    & {
-      & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $pkg.artifact_run_dir 'run_manifest.json') --require-status $status
-      if($LASTEXITCODE-ne0){throw 'Prepared acquisition terminal manifest verification failed.'}
-    }
-    if($null-ne$session){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $session}
-  }
-}
-if($PSCmdlet.ParameterSetName-eq'Prepared'-and-not$preparedStagedMode){
-  Invoke-PreparedWorkpointAcquisition
-  return
-}
-if(-not$preparedStagedMode){
 $mirrorVoltageVariation=if([string]::IsNullOrWhiteSpace($MirrorVoltageVariationPath)){$null}else{(Resolve-Path -LiteralPath $MirrorVoltageVariationPath).Path}
 if (-not $RunId) { $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__simion__mrtof-downstream-auto-workpoint' }
 $staticFieldMode=-not[string]::IsNullOrWhiteSpace($FieldProviderRequestPath)
@@ -230,23 +142,9 @@ if ($ResumeParentCheckpoint -and -not $ResumeSuccessfulChildManifest -and -not $
   throw 'ResumeParentCheckpoint requires ResumeSuccessfulChildManifest as the retained replay tip.'
 }
 
-}
 
 function Get-ManifestOutputPath {
   param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$FileName)
-  $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-  if($measured-and$measured.Value-and$FileName-in@('two_prism_trial_materialization.json','two_prism_trial_observation.json')){
-    # Adapt only the original common function's output slots. The emitted files
-    # retain their measured role and derive from the published N1 projection.
-    $code="import json,sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import materialize_prepared_staged_adapter;r=materialize_prepared_staged_adapter(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),Path(sys.argv[4]));print(json.dumps(r))"
-    $adapter=& {
-      $raw=@(& $python -I -B -c $code $ManifestPath $frozenPreparedTargetAuthorityPath $frozenContract $package.result_dir)
-      if($LASTEXITCODE-ne0){throw 'Measured original-stage observation adapter failed.'}
-      return (($raw-join"`n")|ConvertFrom-Json -AsHashtable)
-    }
-    $slot=if($FileName-eq'two_prism_trial_materialization.json'){'materialization'}else{'observation'}
-    return [string]$adapter.outputs[$slot].path
-  }
   $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json -Depth 50
   $matches = @($manifest.outputs | Where-Object { [IO.Path]::GetFileName([string]$_.path) -eq $FileName })
   if ($matches.Count -ne 1) { throw "Manifest must bind exactly one $FileName output: $ManifestPath" }
@@ -444,14 +342,6 @@ function New-CenterTrialArguments {
   if($Voltages-and$Voltages.Count-ne4){throw 'Full centre-trial voltage vector must contain S1/S2/P1/P2.'}
   if($PrismVoltages-and$PrismVoltages.Count-ne2){throw 'Prism-only centre-trial voltage vector must contain P1/P2.'}
   $prisms=if($PrismVoltages){$PrismVoltages}else{@($Voltages[2],$Voltages[3])}
-  $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-  if($measured-and$measured.Value){
-    $arguments=@{PreparedJointWorkbenchRunPath=$PreparedJointWorkbenchRunPath;PreparedSourceMode='centroid_probe'
-      Prism1VoltageV=$prisms[0];Prism2VoltageV=$prisms[1];ContractPath=$frozenContract;RunId=$ChildRunId;PythonExe=$python;RepoRoot=$repoRoot}
-    if($Voltages){$arguments.Stripe1VoltageV=$Voltages[0];$arguments.Stripe2VoltageV=$Voltages[1]}
-    if($SimionExe){$arguments.SimionExe=$SimionExe}
-    return $arguments
-  }
   $arguments = @{
     GeometryReviewRunPath=$GeometryReviewRunPath;MirrorRunPath=$MirrorRunPath
     StripeRunPath=$StripeRunPath
@@ -543,13 +433,6 @@ function Invoke-CenterTrial {
        $request.role-eq'mrtof_native_static_field_provider_request'){
       # A provider may finish before the trial's source preflight fails. Reuse
       # that sealed field, not a failed flight, under the new child identity.
-      if($StagedPending.provider_reference.operation-eq'refine'){
-        $method=Get-Variable -Name PreparedFieldBuildMode -Scope Script -ErrorAction SilentlyContinue
-        $preparedMode=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-        if(-not$preparedMode-or-not$preparedMode.Value-or-not$method-or$method.Value-ne'refine'){
-          throw 'Retained direct Refine requires explicit Prepared refine construction.'
-        }
-      }
       $retainedCode=@'
 import hashlib,json,sys
 from pathlib import Path
@@ -579,8 +462,7 @@ assert b['authority']==a and native_numerics_match(b,r['numerical_contract_path'
 print(json.dumps(str(p)))
 '@
       $retainedBinding=& {
-        $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-        $consumer=if($measured-and$measured.Value){'prepared'}else{'legacy'}
+        $consumer='legacy'
         $value=((& $python -I -B -c $retainedCode ($request|ConvertTo-Json -Depth 100 -Compress) ($StagedPending.provider_reference|ConvertTo-Json -Depth 100 -Compress) $consumer)-join"`n")
         if($LASTEXITCODE-ne0){throw 'Retained pending provider validation failed.'}
         return ($value|ConvertFrom-Json)
@@ -634,48 +516,10 @@ print(json.dumps(str(p)))
       Write-Host ('MRTOF_FIELD_REPRESENTATION=exploratory_affine_ps_responses G='+$resolved.response_weight_l1_norm)
     }else{
       $providerRun=Join-Path $artifactRoot "runs/$providerId"
-      try{
-        if($request.role-eq'mrtof_native_static_field_provider_request'){
-          & $fieldProviderRunner -RequestPath $requestPath -RunDirectory $providerRun -Approved -PythonExe $python -HostContextJson ($hostContext|ConvertTo-Json -Compress) | Out-Host
-        }else{
-          & $fieldProviderRunner -RequestPath $requestPath -RunDirectory $providerRun -Approved -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot -PythonExe $python | Out-Host
-        }
-      }catch{
-        $providerError=$_
-        $preparedMode=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-        $method=Get-Variable -Name PreparedFieldBuildMode -Scope Script -ErrorAction SilentlyContinue
-        $failedSummaryPath=Join-Path $providerRun 'summary.json'
-        $failedSummary=if(Test-Path -LiteralPath $failedSummaryPath){Get-Content -LiteralPath $failedSummaryPath -Raw|ConvertFrom-Json -AsHashtable}else{$null}
-        if(-not$preparedMode-or-not$preparedMode.Value-or-not$method-or$method.Value-ne'refine'-or
-           $null-eq$StagedPending-or$null-eq$Bootstrap-or-not$Bootstrap.Contains('stage_state')-or
-           $null-eq$failedSummary-or$failedSummary.status-ne'failed'-or$failedSummary.failure_stage-ne'capacity_startup'-or
-           $failedSummary.error-notlike'Artifact capacity gate blocked startup:*'){throw $providerError}
-        # Only a public, published startup-capacity refusal becomes a checkpoint.
-        # Refine/GEM/field errors continue to fail; no candidate flight is made.
-        $failedManifest=Join-Path $providerRun 'run_manifest.json'
-        & {
-          & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $failedManifest --require-status failed | Out-Host
-          if($LASTEXITCODE-ne0){throw 'Refused provider capacity evidence is not a verified terminal run.'}
-        }
-        $failedDoc=Get-Content -LiteralPath $failedManifest -Raw|ConvertFrom-Json -AsHashtable
-        if($failedDoc.run_id-ne$providerId-or$failedDoc.project-ne$project-or$failedDoc.mode-ne'native_static_field_provider'){
-          throw 'Refused provider capacity identity differs.'
-        }
-        $Bootstrap.stage_state['capacity_lifecycle_blocked']=[ordered]@{reason=$failedSummary.error;provider_run=$providerRun
-          provider_manifest=[ordered]@{path=$failedManifest;bytes=(Get-Item $failedManifest).Length;sha256=(Get-FileHash $failedManifest -Algorithm SHA256).Hash.ToLowerInvariant()}
-          next_action='coordinate_public_capacity_then_start_new_parent_from_completed_anchor';no_private_delete=$true;candidate_flight_executed=$false}
-        Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
-        return
-      }
-      $fieldSummary=Get-Content -LiteralPath (Join-Path $providerRun 'summary.json') -Raw|ConvertFrom-Json
-      if($fieldSummary.status-ne'success'-or-not$fieldSummary.field_binding){throw 'Candidate field provider did not publish a usable field.'}
-      $Arguments.FieldBindingPath=[string]$fieldSummary.field_binding
-      if($null-ne$StagedPending){
-        $reference=New-StagedComposeProviderReference -ChildRunId ([string]$Arguments.RunId) -ProviderRun $providerRun -RequestPath $requestPath
-        if($reference){
-          $StagedPending['provider_reference']=$reference
-          Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
-        }
+      if($request.role-eq'mrtof_native_static_field_provider_request'){
+        & $fieldProviderRunner -RequestPath $requestPath -RunDirectory $providerRun -Approved -PythonExe $python -HostContextJson ($hostContext|ConvertTo-Json -Compress) | Out-Host
+      }else{
+        & $fieldProviderRunner -RequestPath $requestPath -RunDirectory $providerRun -Approved -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot -PythonExe $python | Out-Host
       }
     }
     if($providerRun){
@@ -683,12 +527,6 @@ print(json.dumps(str(p)))
       $script:capacitySession=$renewal.session
     }
     $Arguments.CapacityWorkflowSession=$script:capacitySession
-    }
-  }
-  $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-  if($measured-and$measured.Value){
-    foreach($name in @('Prism1VoltageV','Prism2VoltageV','Stripe1VoltageV','Stripe2VoltageV','CapacityWorkflowSession')){
-      if($Arguments.Contains($name)){$Arguments.Remove($name)|Out-Null}
     }
   }
   & $trialRunner @Arguments
@@ -850,7 +688,6 @@ function Invoke-PreclosureDecision {
     [Parameter(Mandatory)][System.Collections.IDictionary]$Context)
   $repoRoot=[string]$Context.repo_root;$python=[string]$Context.python;$frozenContract=[string]$Context.contract_path
   $arguments=@('--control-stage',$Stage,'--child-manifest',$Anchor,'--contract',$frozenContract,'--output',$OutputPath)
-  if($Context.prepared_staged){$arguments+=@('--prepared-target-authority',$Context.target_authority_path,'--prepared-initial-proposal',$Context.initial_proposal_path)}
   if($Context.prism_handoff_replay_manifest){$arguments+=@('--prism-handoff-replay-manifest',$Context.prism_handoff_replay_manifest)}
   if($PriorPrismDecisionManifest){$arguments+=@('--prior-prism-decision-manifest',$PriorPrismDecisionManifest)}
   if($Stage-eq'prism_preclosure'-and$ControllerPolicyPath){$arguments+=@('--prism-controller-policy',$ControllerPolicyPath)}
@@ -917,14 +754,7 @@ function New-StagedComposeProviderReference {
   # only by the existing pending/lineage checkpoint, not a second owner.
   $cfg=Get-Content -LiteralPath (Join-Path $ProviderRun 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
   $operation=[string]$cfg.parameters.operation
-  if($operation-ne'compose'){
-    $preparedMode=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-    $method=Get-Variable -Name PreparedFieldBuildMode -Scope Script -ErrorAction SilentlyContinue
-    if($operation-ne'refine'-or-not$preparedMode-or-not$preparedMode.Value-or-not$method-or$method.Value-ne'refine'){return}
-    $directRequest=Get-Content -LiteralPath $RequestPath -Raw|ConvertFrom-Json -AsHashtable
-    if(@('response_basis_paths','response_axis','te1_reference_path','consumer_view_source_path','reuse_source_levels')|
-       Where-Object{$directRequest.Contains($_)}){throw 'Staged direct Refine request retains response/reuse/view instructions.'}
-  }
+  if($operation-ne'compose'){return}
   if(-not$ChildRunId.StartsWith($ParentRunId+'-stage-',[StringComparison]::Ordinal)){return}
   $expected=Join-Path $artifactRoot ('runs/'+$ChildRunId+'-field')
   $parentInputs=if($ParentRunId-eq$RunId){$package.input_dir}else{Join-Path $artifactRoot ('runs/'+$ParentRunId+'/inputs')}
@@ -954,14 +784,6 @@ function Assert-StagedComposeProviderReference {
   if($null-eq$Reference-or$Reference.parent_run_id-ne$RunId){return $null}
   $owner=$Reference
   $allowed=$owner.operation-eq'compose'
-  if($owner.operation-eq'refine'){
-    $allowed=$Context.prepared_staged-and$Context.prepared_field_build_mode-eq'refine'
-    $cfgPath=Join-Path $owner.provider_run 'run_config.json'
-    $cfg=Get-Content -LiteralPath $cfgPath -Raw|ConvertFrom-Json -AsHashtable
-    $doc=Get-Content -LiteralPath $owner.provider_manifest -Raw|ConvertFrom-Json -AsHashtable
-    $allowed=$allowed-and$cfg.parameters.operation-eq'refine'-and
-      (Get-FileHash -LiteralPath $cfgPath -Algorithm SHA256).Hash.ToLowerInvariant()-eq([string]$doc.run_config.sha256).ToLowerInvariant()
-  }
   if($owner.child_run_id-ne$ChildRunId-or-not$allowed-or
      -not$ChildRunId.StartsWith($RunId+'-stage-',[StringComparison]::Ordinal)-or
      [IO.Path]::GetFullPath($owner.provider_run)-ne[IO.Path]::GetFullPath((Join-Path $artifactRoot ('runs/'+$ChildRunId+'-field')))-or
@@ -1016,8 +838,6 @@ function Invoke-StagedComposeRetirement {
 function Reclaim-StagedComposeProviders {
   param($State,$Lineage)
   if(-not$staticFieldMode-or$staticBindingMode-ne'native_static_pa'){return}
-  $measuredVariable=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-  $measured=[bool]($measuredVariable-and$measuredVariable.Value)
   $targets=@()
   foreach($entry in $Lineage.children){
     if(-not$entry.Contains('compose_payload_use')-or$entry.compose_payload_use-notin@('stencil','rejected_candidate','keep')){continue}
@@ -1037,7 +857,7 @@ function Reclaim-StagedComposeProviders {
     $pendingUse=$State.Contains('pending_trial')-and(
       $State.pending_trial.child_manifest-eq$entry.child_manifest-or
       ($State.pending_trial.Contains('anchor_manifest')-and$State.pending_trial.anchor_manifest-eq$entry.child_manifest))
-    if(($anchorUse-and-not$measured)-or$pendingUse){continue}
+    if($anchorUse-or$pendingUse){continue}
     $childCfgPath=Join-Path (Split-Path $entry.child_manifest) 'run_config.json'
     $childDocument=Get-Content -LiteralPath $entry.child_manifest -Raw|ConvertFrom-Json -AsHashtable
     if((Get-FileHash -LiteralPath $entry.child_manifest -Algorithm SHA256).Hash.ToLowerInvariant()-ne$entry.child_manifest_sha256-or
@@ -1045,17 +865,8 @@ function Reclaim-StagedComposeProviders {
     $childCfg=Get-Content -LiteralPath $childCfgPath -Raw|ConvertFrom-Json -AsHashtable
     if($childCfg.parameters-isnot[Collections.IDictionary]){continue}
     if($childCfg.parameters.Contains('gui_workbench_retained')-and$childCfg.parameters.gui_workbench_retained-is[bool]-and$childCfg.parameters.gui_workbench_retained){continue}
-    $measuredPrivate=$measured-and$childCfg.parameters.Contains('source_mode')-and$childCfg.parameters.source_mode-eq'centroid_probe'-and
-      $childCfg.parameters.Contains('gui_executed')-and$childCfg.parameters.gui_executed-is[bool]-and-not$childCfg.parameters.gui_executed
     $declaredPrivate=$childCfg.parameters.Contains('gui_workbench_retained')-and$childCfg.parameters.gui_workbench_retained-is[bool]-and-not$childCfg.parameters.gui_workbench_retained
-    if(-not$declaredPrivate-and-not$measuredPrivate){continue}
-    if($measuredPrivate){
-      # This verifies the sealed normalized/operator snapshot before the only
-      # consumer becomes historical. Future fields compose from the fixed
-      # baseline and response banks, never this candidate PA.
-      $null=Get-ManifestOutputPath -ManifestPath $entry.child_manifest -FileName 'two_prism_trial_materialization.json'
-      $entry['measured_payload_consumer_scope']='completed_manifest_bound_centroid_projection_only__future_field_rebuild_from_fixed_baseline_and_responses'
-    }
+    if(-not$declaredPrivate){continue}
     $disposition=$entry.compose_payload_use
     if($disposition-eq'keep'){
       # Preserve every physically qualified point eligible for the existing best
@@ -1101,15 +912,7 @@ function Reclaim-StagedComposeProviders {
   })
   $old=$capacitySession
   $script:failureStage='staged_compose_payload_retirement'
-  try{
-    $new=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactWorkspaceRoot -RunDirectory $package.artifact_run_dir -Owner $old.owner -LeaseTtlSeconds $old.lease_ttl_seconds -CommittedNewBytes $old.committed_new_bytes -ProtectedPaths $keep -ProtectedCacheKeys @($old.protected_cache_keys)
-  }catch{
-    if(-not$measured){throw}
-    $State['capacity_lifecycle_blocked']=[ordered]@{reason=$_.Exception.Message;old_protection_preserved=$true
-      next_action='coordinate_public_capacity_admission_then_resume';no_private_delete=$true}
-    Save-NativeWorkflowCheckpoint -Reason 'Public capacity rotation refused; original protection remains active.' -WorkflowOutcome capacity_lifecycle_blocked
-    return
-  }
+  $new=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactWorkspaceRoot -RunDirectory $package.artifact_run_dir -Owner $old.owner -LeaseTtlSeconds $old.lease_ttl_seconds -CommittedNewBytes $old.committed_new_bytes -ProtectedPaths $keep -ProtectedCacheKeys @($old.protected_cache_keys)
   $script:capacitySession=$new
   $rotation=Join-Path $package.result_dir 'iteration_compose_capacity_rotation.json'
   Write-RunJson -Path $rotation -Depth 30 -Value @{previous_session=$old;current_session=$new;retirement_targets=@($targets|ForEach-Object{$_.owner.provider_run})}
@@ -1117,14 +920,7 @@ function Reclaim-StagedComposeProviders {
   $null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $old
   if($releaseGroups.Count){$script:restoredAnchorFieldProtection.groups=@($script:restoredAnchorFieldProtection.groups|Where-Object{$_.anchor_manifest-notin$releaseIds})}
   foreach($target in $targets){
-    try{$target.entry['compose_payload_retirement']=Invoke-StagedComposeRetirement -Owner $target.owner -Disposition $target.disposition}
-    catch{
-      if(-not$measured){throw}
-      $State['capacity_lifecycle_blocked']=[ordered]@{reason=$_.Exception.Message;provider_run=$target.owner.provider_run
-        next_action='coordinate_public_owner_eligibility_or_active_TTL_then_resume';no_private_delete=$true}
-      Save-NativeWorkflowCheckpoint -Reason 'Public candidate retirement is blocked; no bypass or new candidate launched.' -WorkflowOutcome capacity_lifecycle_blocked
-      return
-    }
+    $target.entry['compose_payload_retirement']=Invoke-StagedComposeRetirement -Owner $target.owner -Disposition $target.disposition
     Write-RunJson -Path (Join-Path $package.result_dir 'iteration_lineage.json') -Depth 100 -Value $Lineage
     Save-NativeWorkflowCheckpoint -Reason 'Consumed compose payload retired through public owner; lineage binds its public receipts.' -WorkflowOutcome bootstrap_in_progress
   }
@@ -1144,11 +940,6 @@ function Complete-StagedTrial {
   $actual=@($materialization.stripe_biases_v)+@($materialization.prism_voltages_v)
   if($actual.Count-ne4-or@((0..3)|Where-Object{-not[double]::IsFinite([double]$actual[$_])-or[double]$actual[$_]-ne[double]$Pending.voltages_v[$_]}).Count){throw 'Pending stage child voltages differ from the persisted trial.'}
   $identityCode="import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import _load_stage_trial; a=_load_stage_trial(Path(sys.argv[1])); c=_load_stage_trial(Path(sys.argv[2])); assert a['frozen_problem']==c['frozen_problem'], 'Pending stage child frozen problem differs'"
-  if([bool]$Context.prepared_staged){
-    $targetLiteral=ConvertTo-Json -InputObject ([string]$Context.target_authority_path) -Compress
-    $contractLiteral=ConvertTo-Json -InputObject ([string]$frozenContract) -Compress
-    $identityCode="import sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial;load=lambda p:load_prepared_centroid_trial(Path(p),Path($targetLiteral),Path($contractLiteral));a=load(sys.argv[1]);c=load(sys.argv[2]);assert a['frozen_problem']==c['frozen_problem'],'Pending measured stage child frozen problem differs'"
-  }
   $predictionAssessment=@{status='unmeasured';reason='no_quality_authority_or_prediction'}
   if($ControllerPolicyPath){
     # Full measured geometry in a decision can exceed Windows argv limits.
@@ -1194,8 +985,6 @@ function Complete-StagedTrial {
 function Update-StagedAnchorFieldProtection {
   param($State)
   if(-not$staticFieldMode-or$staticBindingMode-ne'native_static_pa'){return}
-  $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-  if($measured-and$measured.Value){return} # Measured historical anchors consume only frozen light projections.
   if(-not$script:restoredAnchorFieldProtection){$script:restoredAnchorFieldProtection=@{initial_paths=@($capacitySession.protected_paths);groups=@()}}
   $consumers=@($State.anchor_manifest)
   if($State.Contains('pending_trial')-and(Test-Path -LiteralPath $State.pending_trial.child_manifest -PathType Leaf)){
@@ -1470,14 +1259,6 @@ function Invoke-StagedWorkpointBootstrap {
     Write-RunJson -Path (Join-Path $package.result_dir 'iteration_lineage.json') -Depth 100 -Value $lineage
     Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
     if($decision.status-eq'terminal'){$terminal=$decision;break}
-    $measured=Get-Variable -Name preparedStagedMode -Scope Script -ErrorAction SilentlyContinue
-    if($measured-and$measured.Value-and$state.stage-eq'stripe_preclosure'-and
-       $decision.status -eq 'needs_stencil' -and 0 -in @($decision.required_axes) -and
-       $fieldProviderRequest.Contains('response_basis_paths') -and
-       -not$fieldProviderRequest.response_basis_paths.ContainsKey('s1')){
-      $terminal=[ordered]@{state='checkpoint';status='checkpoint';terminal_reason='needs_s1_response';next_action='produce_same_operator_S1_response_then_resume_original_stages'
-        full_workpoint_qualified=$false;anchor_manifest=$state.anchor_manifest;source_unchanged=$true};break
-    }
     if($stripeSeedColumns.Count-and-not$Bootstrap.Contains('imported_stripe_columns')-and
        ($state.stage-ne'prism_preclosure'-or$decision.next_action-ne'stripe_preclosure')){
       throw 'Explicit Stripe columns cannot be used before the seed P stage passes.'
@@ -1684,293 +1465,6 @@ function New-RecoveredSFirstCandidate {
   return $proposal
 }
 
-function Restore-PreparedOriginalStages {
-  param($Bootstrap,[string]$BootstrapPath,$Configuration)
-  # Reuse the original checkpoint validator and pending-child replay. Only
-  # execution identity and an additional same-operator S1 bank may change.
-  $path=(Resolve-Path -LiteralPath $ResumeParentCheckpoint).Path
-  $parent=if(Test-Path -LiteralPath $path -PathType Leaf){Split-Path -Parent $path}else{$path}
-  $manifest=Join-Path $parent 'run_manifest.json'
-  $document=Get-Content -LiteralPath $manifest -Raw|ConvertFrom-Json
-  if($document.status-notin@('checkpoint','failed','interrupted','success')-or$document.run_id-eq$RunId){throw 'Prepared resume requires a sealed prior parent and a new RunId.'}
-  & {
-    & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' $manifest --require-status $document.status --require-project $project --require-mode downstream_fixed_grid_workpoint_iteration | Out-Host
-    if($LASTEXITCODE-ne0){throw 'Prepared resume parent manifest is invalid.'}
-  }
-  $old=Get-Content -LiteralPath (Join-Path $parent 'run_config.json') -Raw|ConvertFrom-Json -AsHashtable
-  if($old.parameters.workflow_branch-ne'measured_source_original_P_S_P_stages'-or$old.parameters.field_build_mode-ne$PreparedFieldBuildMode){throw 'Prepared resume workflow or field construction differs.'}
-  $reanchorVariable=Get-Variable -Name PreparedTargetReanchor -ErrorAction SilentlyContinue
-  $reanchor=[bool]($reanchorVariable-and$reanchorVariable.Value)
-  if($reanchor-and$ResumeSuccessfulChildManifest){throw 'Target re-anchor cannot consume a pending successful child.'}
-  $adoptPolicy=$false;$adoptedPolicy=$null
-  $priorPath=Get-ManifestOutputPath -ManifestPath $manifest -FileName 'workpoint_bootstrap.json'
-  $prior=Get-Content -LiteralPath $priorPath -Raw|ConvertFrom-Json -AsHashtable -Depth 100
-  if($reanchor-and$prior.stage_state.Contains('target_reanchor')){throw 'Repeated target re-anchor would overwrite existing debit evidence.'}
-  foreach($key in @('prepared_manifest','seed_manifest','trajectory_contract','prepared_target_authority','prepared_initial_proposal','p1_response','p2_response','prism_controller_policy','s1_response')){
-    $previous=if($old.inputs.Contains($key)){[string]$old.inputs[$key]}else{''}
-    $current=if($Configuration.inputs.Contains($key)){[string]$Configuration.inputs[$key]}else{''}
-    if($reanchor-and$key-in@('seed_manifest','prepared_target_authority')){continue}
-    if($key-eq's1_response'-and-not$previous-and-not$reanchor){continue}
-    if(-not$previous-and-not$current){continue}
-    if($key-eq'prism_controller_policy'-and-not$previous-and$current){
-      if($reanchor){throw 'Target re-anchor cannot also adopt a controller policy.'}
-      $canonicalPolicy=Join-Path $projectRoot 'config/prism_controller_policy.json'
-      if((Get-Item -LiteralPath $current).Length-ne(Get-Item -LiteralPath $canonicalPolicy).Length-or
-         (Get-FileHash -LiteralPath $current -Algorithm SHA256).Hash-ne(Get-FileHash -LiteralPath $canonicalPolicy -Algorithm SHA256).Hash){throw 'Policy adoption requires the unchanged repository OA policy.'}
-      $policyCode='import json,sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import resolve_prism_controller_policy;print(json.dumps(resolve_prism_controller_policy(Path(sys.argv[1]))))'
-      $adoptedPolicy=& {
-        $raw=@(& $python -I -B -c $policyCode $current)
-        if($LASTEXITCODE-ne0){throw 'Repository policy adoption failed the original resolver.'}
-        return (($raw-join"`n")|ConvertFrom-Json -AsHashtable)
-      }
-      $adoptedPolicy.bytes=(Get-Item -LiteralPath $current).Length
-      $adoptPolicy=$true
-      continue
-    }
-    if(-not$previous-or-not$current){throw "Prepared resume $key differs; changed authority requires fresh columns."}
-    if((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash-ne(Get-FileHash -LiteralPath $current -Algorithm SHA256).Hash){
-      if($reanchor){throw 'Target re-anchor requires unchanged execution and scientific inputs.'}
-      if($key-ne'trajectory_contract'){throw "Prepared resume $key differs; changed authority requires fresh columns."}
-      $budgetCode='import json,sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import assert_bounded_controller_resume;read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"));print(json.dumps(assert_bounded_controller_resume(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])["stage_state"],budget_only=True)))'
-      $change=& {
-        $raw=@(& $python -I -B -c $budgetCode $previous $current $priorPath)
-        if($LASTEXITCODE-ne0){throw 'Prepared resume differs beyond an explicit total candidate budget increase.'}
-        return (($raw-join"`n")|ConvertFrom-Json -AsHashtable)
-      }
-      $Configuration.inputs.previous_controller_contract=Copy-VerifiedRunInput -Source $previous -Destination (Join-Path $package.input_dir 'previous_controller_contract.json')
-      $Configuration.parameters.controller_resume_changes=$change
-    }
-  }
-  if($prior.role-ne'mrtof_downstream_workpoint_bootstrap'-or$prior.source_projection-ne'measured_exit_centroid'){throw 'Prepared resume bootstrap identity differs.'}
-  if($ResumeSuccessfulChildManifest){
-    if(-not$prior.stage_state.Contains('pending_trial')-or
-       [IO.Path]::GetFullPath($ResumeSuccessfulChildManifest)-ne[IO.Path]::GetFullPath([string]$prior.stage_state.pending_trial.child_manifest)-or
-       (Get-Content -LiteralPath $ResumeSuccessfulChildManifest -Raw|ConvertFrom-Json).status-ne'success'){throw 'Prepared successful-child override must identify the exact successful pending child.'}
-  }
-  foreach($name in @('stage_state','stage_history','stage_lineage')){
-    if(-not$prior.Contains($name)){throw "Prepared resume lacks $name."}
-    $Bootstrap[$name]=$prior[$name]
-  }
-  # Validate sealed lightweight projections, including retired stencil fields;
-  # never reopen their native PA files to reconstruct scientific observations.
-  $replayCode=@'
-import json,sys
-from pathlib import Path
-from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial
-b=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
-seed=load_prepared_centroid_trial(Path(sys.argv[2]),Path(sys.argv[3]),Path(sys.argv[4]))
-children=[e['child_manifest'] for e in b['stage_lineage']['children']]
-pending=b['stage_state'].get('pending_trial')
-if pending and Path(pending['child_manifest']).exists() and json.loads(Path(pending['child_manifest']).read_text(encoding='utf-8-sig'))['status']=='success':
-    children.append(pending['child_manifest'])
-for path in children:
-    trial=load_prepared_centroid_trial(Path(path),Path(sys.argv[3]),Path(sys.argv[4]))
-    assert trial['frozen_problem']==seed['frozen_problem'], 'Saved prepared trial source, target, operator or numerics differs'
-'@
-  & {
-    $replaySeed=if($reanchor){[string]$old.inputs.seed_manifest}else{$seedManifest}
-    $replayTarget=if($reanchor){[string]$old.inputs.prepared_target_authority}else{$frozenPreparedTargetAuthorityPath}
-    & $python -I -B -c $replayCode $priorPath $replaySeed $replayTarget $frozenContract
-    if($LASTEXITCODE-ne0){throw 'Prepared resume measured evidence identity differs.'}
-  }
-  $sourceLineage=$prior.stage_lineage|ConvertTo-Json -Depth 100|ConvertFrom-Json -Depth 100
-  # Validate historical state first. Adoption publishes only after fresh-column
-  # state and its provenance are complete; no intermediate old-model checkpoint.
-  $selectedSeed=$seedManifest
-  try{
-    if($reanchor-or$prior.stage_state.Contains('target_reanchor')){$script:seedManifest=[string]$sourceLineage.root_workpoint_manifest.path}
-    Restore-StagedWorkpointChildren -Bootstrap $Bootstrap -SourceLineage $sourceLineage -BootstrapPath $BootstrapPath -PriorState $prior.stage_state -DeferSave:($adoptPolicy-or$reanchor)
-  }finally{$script:seedManifest=$selectedSeed}
-  if($reanchor){
-    $knownAnchors=@([string]$sourceLineage.root_workpoint_manifest.path)+@($sourceLineage.children|ForEach-Object{[string]$_.child_manifest})
-    if($selectedSeed-notin$knownAnchors){throw 'Target re-anchor must select a successful trial from the original lineage.'}
-    $abandoned=$null
-    if($Bootstrap.stage_state.Contains('pending_trial')){
-      $summaryPath=Get-ManifestOutputPath -ManifestPath $manifest -FileName 'summary.json'
-      $stop=Get-Content -LiteralPath $summaryPath -Raw|ConvertFrom-Json -AsHashtable
-      if($document.status-ne'interrupted'-or-not$stop.stopped_parent_verified_absent-or-not$stop.stopped_children_verified_absent-or
-         $stop.pending_trial_executed-ne$false-or[int]$stop.stopped_parent_process_id-le0-or
-         (Get-Process -Id ([int]$stop.stopped_parent_process_id) -ErrorAction SilentlyContinue)){
-        throw 'Target re-anchor pending abandonment requires manifest-bound stopped-parent evidence.'
-      }
-      $pending=$Bootstrap.stage_state.pending_trial
-      if(Test-Path -LiteralPath (Split-Path -Parent ([string]$pending.child_manifest))){throw 'Target re-anchor cannot abandon an existing or unknown trial directory.'}
-      $abandoned=[ordered]@{flight_count=[int]$Bootstrap.stage_state.flight_count;pending_trial=$pending
-        source_checkpoint=[ordered]@{path=$priorPath;bytes=(Get-Item $priorPath).Length;sha256=(Get-FileHash $priorPath -Algorithm SHA256).Hash}
-        stopped_parent_summary=[ordered]@{path=$summaryPath;bytes=(Get-Item $summaryPath).Length;sha256=(Get-FileHash $summaryPath -Algorithm SHA256).Hash}}
-    }
-    $inputPath=Join-Path $package.result_dir 'iteration_target_reanchor_input.json'
-    $stateCopy=$Bootstrap.stage_state|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable -Depth 100
-    if($stateCopy.Contains('pending_trial')){$stateCopy.Remove('pending_trial')|Out-Null}
-    Write-RunJson -Path $inputPath -Depth 100 -Value $stateCopy
-    $reanchorCode=@'
-import json,sys
-from pathlib import Path
-from msplatform.workflows.prepared_joint.downstream_workpoint import reanchor_prepared_target
-read=lambda p:json.loads(Path(p).read_text(encoding='utf-8-sig'))
-print(json.dumps(reanchor_prepared_target(read(sys.argv[1]),anchor_manifest=Path(sys.argv[2]),target_path=Path(sys.argv[3]),contract_path=Path(sys.argv[4]),previous_target_path=Path(sys.argv[5]))))
-'@
-    $state=& {
-      $raw=@(& $python -I -B -c $reanchorCode $inputPath $selectedSeed $frozenPreparedTargetAuthorityPath $frozenContract $old.inputs.prepared_target_authority)
-      if($LASTEXITCODE-ne0){throw 'Explicit target re-anchor changed source, science or another target field.'}
-      return (($raw-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100)
-    }
-    if($abandoned){$state.target_reanchor['abandoned_pending']=$abandoned}
-    $receiptPath=Join-Path $package.result_dir 'iteration_target_reanchor.json'
-    Write-RunJson -Path $receiptPath -Depth 100 -Value ([ordered]@{schema_version=1;role='mrtof_prepared_target_reanchor'
-      previous_parent_manifest=$manifest;previous_target_authority=$old.inputs.prepared_target_authority
-      selected_anchor=$selectedSeed;reanchor=$state.target_reanchor;cleared_local_evidence=$Bootstrap.stage_state
-      candidate_count=$state.candidate_count;flight_count=$state.flight_count;old_decisions_reinterpreted=$false})
-    $Bootstrap.stage_state=$state
-    $Bootstrap.target_authority=$frozenPreparedTargetAuthorityPath;$Bootstrap.target_reanchor=$state.target_reanchor
-    $Configuration.parameters.target_reanchor_receipt=$receiptPath
-  }
-  if($adoptPolicy){
-    $state=$Bootstrap.stage_state
-    if($state.stage-ne'prism_preclosure'-or$state.Contains('pending_trial')){throw 'Policy adoption requires P stage without any pending trial; old decisions cannot be reinterpreted.'}
-    $cleared=[ordered]@{columns=$state.columns;attempts=$state.attempts}
-    foreach($key in @('prism_model_manifest','prediction_assessment')){
-      if($state.Contains($key)){$cleared[$key]=$state[$key];$state.Remove($key)|Out-Null}
-    }
-    $adoptionPath=Join-Path $package.result_dir 'iteration_prism_policy_adoption.json'
-    Write-RunJson -Path $adoptionPath -Depth 100 -Value ([ordered]@{
-      schema_version=1;role='mrtof_prism_policy_adoption';status='applied';scope='future_prism_proposals'
-      reason='Explicit adoption of unchanged repository OA policy; fresh measured P columns required.'
-      previous_parent_manifest=$manifest;policy=$adoptedPolicy;cleared_local_evidence=$cleared
-      preserved=[ordered]@{stage=$state.stage;anchor_manifest=$state.anchor_manifest;candidate_count=$state.candidate_count;flight_count=$state.flight_count;step_factor=$state.step_factor}
-      old_decisions_reinterpreted=$false;scientific_frozen_problem_changed=$false
-    })
-    $state.columns=[ordered]@{};$state.attempts=@()
-    $Configuration.parameters.prism_policy_adoption_receipt=$adoptionPath
-  }
-  $Configuration.inputs.resume_parent_checkpoint=Copy-VerifiedRunInput -Source $manifest -Destination (Join-Path $package.input_dir 'resume_parent_checkpoint_manifest.json')
-  $Configuration.inputs.resume_parent_bootstrap=Copy-VerifiedRunInput -Source $priorPath -Destination (Join-Path $package.input_dir 'resume_parent_bootstrap.json')
-  $Configuration.parameters.imported_columns=@($Bootstrap.stage_state.columns.Keys).Count
-  Write-RunJson -Path $package.run_config -Depth 100 -Value $Configuration
-  if($adoptPolicy-or$reanchor){Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath}
-  Update-StagedAnchorFieldProtection -State $Bootstrap.stage_state
-}
-
-function Invoke-PreparedOriginalStagedWorkflow {
-  # Same Invoke-StagedWorkpointBootstrap and numerical decisions as legacy OA.
-  # A new explicit target version starts a fresh P anchor and carries no columns.
-  if(-not$PreparedSeedTrialManifest-or-not$ContractPath){throw 'Prepared stages require an actual acquisition SeedTrialManifest and original ContractPath.'}
-  foreach($name in $preparedCallerParameters){
-    if($name-notin@('PreparedJointWorkbenchRunPath','PreparedPrism1ResponseBasisPath','PreparedPrism2ResponseBasisPath',
-      'PreparedInitialProposalPath','PreparedTargetAuthorityPath','PreparedSeedTrialManifest','PreparedStripe1ResponseBasisPath','PreparedTargetReanchor',
-      'PreparedFieldBuildMode','ContractPath','PrismControllerPolicyPath','ResumeParentCheckpoint','ResumeSuccessfulChildManifest','RunId','PythonExe','SimionExe')){throw "Prepared original stages cannot consume legacy parameter $name"}
-  }
-  if($PreparedTargetReanchor-and-not$ResumeParentCheckpoint){throw 'Explicit target re-anchor requires ResumeParentCheckpoint.'}
-  if($ResumeSuccessfulChildManifest-and-not$ResumeParentCheckpoint){throw 'Prepared successful-child replay requires ResumeParentCheckpoint.'}
-  if($PreparedFieldBuildMode-eq'refine'-and$PreparedStripe1ResponseBasisPath){throw 'Prepared refine constructs complete fields and must not declare an S1 response bank.'}
-  $script:seedManifest=(Resolve-Path -LiteralPath $PreparedSeedTrialManifest).Path
-  $prepared=(Resolve-Path -LiteralPath $PreparedJointWorkbenchRunPath).Path
-  $p1=(Resolve-Path -LiteralPath $PreparedPrism1ResponseBasisPath).Path
-  $p2=(Resolve-Path -LiteralPath $PreparedPrism2ResponseBasisPath).Path
-  $proposal=(Resolve-Path -LiteralPath $PreparedInitialProposalPath).Path
-  $target=(Resolve-Path -LiteralPath $PreparedTargetAuthorityPath).Path
-  if(-not$RunId){$script:RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__ip-original-staged-workpoint'}
-  $script:package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId -Project $project `
-    -Mode downstream_fixed_grid_workpoint_iteration -Software @('SIMION 2020','Python 3.11','NumPy') `
-    -RetentionContractEnabled -RetentionClass compact -CapacityLedgerLifecycleEnabled
-  $script:capacitySession=$null;$script:nativeRuntimeSession=$null;$script:resourceLease=$null
-  $script:restoredAnchorFieldProtection=$null;$script:protectionReceipts=@();$script:stripeSeedColumns=[ordered]@{}
-  $script:staticFieldMode=$true;$script:staticBindingMode='native_static_pa';$script:mirrorVoltageVariation=$null
-  $script:fieldProviderRunner=$preparedProviderRunner;$script:responseBinding=$null;$script:responseDeclaration=$null
-  $script:failureStage='prepared_staged_authority_preflight';$status='failed';$failure=$null;$staged=$null
-  try{
-    $script:capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactWorkspaceRoot `
-      -RunDirectory $package.artifact_run_dir -CommittedNewBytes 0 -ProtectedPaths @($prepared,(Split-Path -Parent $p1),(Split-Path -Parent $p2)) `
-      -Owner "mrtof-prepared-original-stages:$RunId"
-    $prepareCode="import sys;from pathlib import Path;from msplatform.workflows.prepared_joint.downstream_workpoint import prepare_measured_centroid_acquisition;prepare_measured_centroid_acquisition(prepared_run=Path(sys.argv[1]),contract_path=Path(sys.argv[2]),proposal_path=Path(sys.argv[3]),p1_response=Path(sys.argv[4]),p2_response=Path(sys.argv[5]),field_run_id=sys.argv[6],output_directory=Path(sys.argv[7]))"
-    & {
-      & $python -I -B -c $prepareCode $prepared $ContractPath $proposal $p1 $p2 ($RunId+'-initial-field') $package.input_dir
-      if($LASTEXITCODE-ne0){throw 'Prepared original-stage source/response authority preflight failed.'}
-    }
-    $script:frozenContract=Join-Path $package.input_dir 'trajectory_contract.json'
-    $script:frozenPreparedInitialProposalPath=Join-Path $package.input_dir 'initial_proposal.json'
-    $script:frozenPreparedTargetAuthorityPath=Join-Path $package.input_dir 'initial_target_authority.json'
-    Copy-Item -LiteralPath $target -Destination $frozenPreparedTargetAuthorityPath
-    $script:controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$package.result_dir;prepared_staged=$preparedStagedMode;target_authority_path=$frozenPreparedTargetAuthorityPath;initial_proposal_path=$frozenPreparedInitialProposalPath;prism_handoff_replay_manifest=$PrismHandoffReplayManifest;run_id=$RunId;artifact_root=$artifactRoot;prepared_field_build_mode=$PreparedFieldBuildMode}
-    $sourceDirectory=Join-Path $packageRoot 'workflows/mr_design'
-    $script:controllerStateSource=Copy-VerifiedRunInput -Source (Join-Path $sourceDirectory 'workpoint_controller_state.py') -Destination (Join-Path $package.input_dir 'workpoint_controller_state.py')
-    $script:controllerSource=Copy-VerifiedRunInput -Source (Join-Path $sourceDirectory 'downstream_workpoint_iteration.py') -Destination (Join-Path $package.input_dir 'downstream_workpoint_iteration.py')
-    $workflowSource=Copy-VerifiedRunInput -Source (Join-Path $sourceDirectory 'run_downstream_workpoint_iteration.ps1') -Destination (Join-Path $package.input_dir 'run_downstream_workpoint_iteration.ps1')
-    if($PrismControllerPolicyPath){
-      $script:frozenPrismControllerPolicyPath=Copy-VerifiedRunInput -Source $PrismControllerPolicyPath -Destination (Join-Path $package.input_dir 'prism_controller_policy.json')
-      & {
-        & $python -I -B -c 'import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))' $frozenPrismControllerPolicyPath
-        if($LASTEXITCODE-ne0){throw 'Prepared original-stage P controller policy is invalid.'}
-      }
-    }
-    $script:fieldProviderRequest=Get-Content -LiteralPath (Join-Path $package.input_dir 'acquisition_field_request.json') -Raw|ConvertFrom-Json -AsHashtable
-    if($PreparedFieldBuildMode-eq'refine'){
-      # The existing public compiler selects operation=refine when the response
-      # instructions are absent. All geometry/voltage/numerical authority stays.
-      foreach($key in @('response_basis_paths','response_axis','te1_reference_path','consumer_view_source_path','reuse_source_levels')){
-        if($fieldProviderRequest.Contains($key)){$fieldProviderRequest.Remove($key)|Out-Null}
-      }
-    }
-    $loadCode=@'
-import json,sys
-from pathlib import Path
-from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial
-from msplatform.backends.comsol.static_field_binding import load_binding,load_native_response_basis,native_response_operator
-a=load_prepared_centroid_trial(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]))
-b=load_binding(Path(sys.argv[4]))
-assert b['accelerator_provider']=='ion_processor' and len(b['refinement_windows'])==4,'Prepared field must retain the five-layer IP operator'
-assert native_response_operator(b,b['authority'])==a['frozen_problem']['static_field_problem'],'Prepared source/field operator differs'
-if sys.argv[6]=='refine':
-    assert not b.get('consumer_view'),'Direct Refine requires the full sealed solve source'
-if sys.argv[5]!='__none__':
-    p=Path(sys.argv[5]);r=load_native_response_basis(p,b)
-    assert r.get('response_basis',{}).get('axis',json.loads(p.read_text(encoding='utf-8-sig')).get('axis'))=='s1','Stripe response coordinate differs'
-print(json.dumps(b))
-'@
-    $s1=if($PreparedStripe1ResponseBasisPath){(Resolve-Path -LiteralPath $PreparedStripe1ResponseBasisPath).Path}else{'__none__'}
-    $script:staticBinding=& {
-      $raw=@(& $python -I -B -c $loadCode $seedManifest $frozenPreparedTargetAuthorityPath $frozenContract $fieldProviderRequest.source_binding_path $s1 $PreparedFieldBuildMode)
-      if($LASTEXITCODE-ne0){throw 'Prepared seed, explicit target, or same-operator field identity failed.'}
-      return (($raw-join"`n")|ConvertFrom-Json -AsHashtable)
-    }
-    if($s1-ne'__none__'){$fieldProviderRequest.response_basis_paths.s1=$s1}
-    $template=Join-Path $package.input_dir 'candidate_field_request_template.json'
-    Write-RunJson -Path $template -Depth 100 -Value $fieldProviderRequest
-    $cfg=Get-Content -LiteralPath $package.run_config -Raw|ConvertFrom-Json -AsHashtable
-    $cfg.inputs=[ordered]@{prepared_manifest=(Join-Path $prepared 'run_manifest.json');seed_manifest=$seedManifest
-      trajectory_contract=$frozenContract;prepared_target_authority=$frozenPreparedTargetAuthorityPath
-      prepared_initial_proposal=$frozenPreparedInitialProposalPath;p1_response=$p1;p2_response=$p2;candidate_field_request_template=$template
-      controller_source=$controllerSource;controller_state_source=$controllerStateSource;workflow_source=$workflowSource}
-    if($s1-ne'__none__'){$cfg.inputs['s1_response']=$s1}
-    if($frozenPrismControllerPolicyPath){$cfg.inputs['prism_controller_policy']=$frozenPrismControllerPolicyPath}
-    $cfg.parameters=[ordered]@{workflow_branch='measured_source_original_P_S_P_stages';source_mode='centroid_probe'
-      field_build_mode=$PreparedFieldBuildMode;target_update_requires_new_run_id=$true;imported_columns=0;gui_executed=$false}
-    Write-RunJson -Path $package.run_config -Depth 100 -Value $cfg
-    $script:failureStage='prepared_original_P_S_P_stages'
-    $bootstrap=[ordered]@{schema_version=1;role='mrtof_downstream_workpoint_bootstrap';source_projection='measured_exit_centroid'
-      target_authority=$frozenPreparedTargetAuthorityPath;target_reanchor='new_explicit_authority__fresh_P_columns';children=@()}
-    $bootstrapPath=Join-Path $package.result_dir 'workpoint_bootstrap.json'
-    if($ResumeParentCheckpoint){Restore-PreparedOriginalStages -Bootstrap $bootstrap -BootstrapPath $bootstrapPath -Configuration $cfg}
-    $staged=Invoke-StagedWorkpointBootstrap -Bootstrap $bootstrap -BootstrapPath $bootstrapPath -ControllerPolicyPath $frozenPrismControllerPolicyPath
-    Write-RunJson -Path (Join-Path $package.result_dir 'prepared_original_stages_result.json') -Depth 100 -Value $staged
-    $status='success'
-  }catch{$failure=$_.Exception.Message;throw}
-  finally{
-    Write-RunJson -Path $package.summary -Depth 100 -Value ([ordered]@{schema_version=1;role='mrtof_measured_original_stages_summary'
-      status=$status;error=$failure;failure_stage=$failureStage;workflow='existing_P_then_S_phase_then_P_reclosure'
-      field_build_mode=$PreparedFieldBuildMode;final_decision=$(if($staged){$staged.terminal_decision}else{$null});gui_executed=$false;N100_executed=$false})
-    $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-    $outputs=@(Get-ChildItem -LiteralPath $package.result_dir -Recurse -File|ForEach-Object{$_.FullName})+@($package.summary,$retention)
-    Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status $status -Software @('SIMION 2020','Python 3.11','NumPy') -Outputs $outputs
-    & {
-      & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $package.artifact_run_dir 'run_manifest.json') --require-status $status
-      if($LASTEXITCODE-ne0){throw 'Prepared original-stage terminal manifest verification failed.'}
-    }
-    if($null-ne$capacitySession){$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession}
-  }
-}
-if($preparedStagedMode){Invoke-PreparedOriginalStagedWorkflow;return}
-
 $resumeNativeCheckpoint=$null;$resumeBootstrapPath=$null;$resumeParentRun=$null;$runtimeOwnerRun=$null;$bestPhysicalHandoffPath=$null
 $frozenResumeParentManifest=$null
 $resumeIterationCheckpoint=[bool]($ResumeParentCheckpoint-and-not$freshBootstrap)
@@ -2134,7 +1628,7 @@ try {
       -Destination (Join-Path $package.input_dir 'completed_field_provider_manifest.json')
   }
   $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $package.input_dir 'contract.json')
-  $controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$package.result_dir;prepared_staged=$preparedStagedMode;target_authority_path=$frozenPreparedTargetAuthorityPath;initial_proposal_path=$frozenPreparedInitialProposalPath;prism_handoff_replay_manifest=$PrismHandoffReplayManifest;run_id=$RunId;artifact_root=$artifactRoot;prepared_field_build_mode=$PreparedFieldBuildMode}
+  $controllerContext=@{repo_root=$repoRoot;python=$python;contract_path=$frozenContract;result_directory=$package.result_dir;prism_handoff_replay_manifest=$PrismHandoffReplayManifest;run_id=$RunId;artifact_root=$artifactRoot}
   $frozenRecoveryPolicy=Copy-VerifiedRunInput -Source $recoveryPolicySource -Destination (Join-Path $package.input_dir 'local_model_recovery_policy.json')
   $recoveryPolicy=Invoke-WorkpointControllerRequest -Python $python -RepoRoot $repoRoot -Request @{action='validate_recovery_policy';policy=(Get-Content -LiteralPath $frozenRecoveryPolicy -Raw|ConvertFrom-Json -AsHashtable)}
   if($PrismControllerPolicyPath){

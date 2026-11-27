@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import numpy as np
 
+from msplatform.components.multi_reflection_tof import workpoint_math
 from msplatform.workflows.prepared_joint.downstream_workpoint import (
     _print_iteration_summary,
     _observation_record,
@@ -37,60 +38,6 @@ from msplatform.workflows.prepared_joint.downstream_workpoint import (
 
 
 class DownstreamWorkpointIterationTests(unittest.TestCase):
-    def test_measured_acquisition_uses_public_request_and_never_changes_source_energy(self):
-        from msplatform.execution.retention import file_record
-        from msplatform.workflows.prepared_joint.downstream_workpoint import (
-            load_measured_centroid_initial_proposal,prepare_measured_centroid_acquisition,
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            evidence=root/"evidence.json";evidence.write_text('{}')
-            proposal=dict(schema_version=1,role="mrtof_measured_centroid_prism_initial_proposal",
-                initial_prism_voltages_v=[342.96882193031615,-186.47253641442782],
-                prism_bounds_v=dict(p1=[100,500],p2=[-500,-50]),
-                inputs={key:file_record(evidence) for key in ("interface_energy_field_audit","old_oa_flight_log","ip_baseline_flight_log","seed_derivation")},
-                derivation="synthetic unit fixture",qualification="initial_topology_seed_only",full_workpoint_qualified=False,
-                source_state_unchanged=True,target_authority_status="not_assigned_until_actual_clean_reference_is_observed")
-            path=root/"proposal.json";path.write_text(json.dumps(proposal))
-            self.assertEqual(load_measured_centroid_initial_proposal(path)["initial_prism_voltages_v"],proposal["initial_prism_voltages_v"])
-            p1=root/"p1.json";p2=root/"p2.json"
-            p1.write_text(json.dumps(dict(axis="p1")));p2.write_text(json.dumps(dict(axis="p2")))
-            values=[0]*20;values[10]=-27.0
-            binding=dict(accelerator_provider="ion_processor",manifest="source_manifest.json",
-                         authority=dict(analyzer_electrode_voltages_v=values))
-            binding_path=root/"results/joint_workbench/static_field_binding.json"
-            binding_path.parent.mkdir(parents=True)
-            binding_path.write_text(json.dumps(binding))
-            (root/"run_manifest.json").write_text(json.dumps(dict(
-                project="instrument_assembly", mode="accelerator_interface_preparation", status="success",
-                inputs={"binding":file_record(binding_path)}, outputs=[])))
-            source=evidence.read_bytes()
-            with patch("msplatform.backends.comsol.static_field_binding.load_binding",return_value=binding),\
-                 patch("msplatform.backends.comsol.static_field_binding.load_native_response_basis",side_effect=lambda p,b:dict(response_basis=dict(axis=json.loads(p.read_text())["axis"]))):
-                result=prepare_measured_centroid_acquisition(prepared_run=root,contract_path=evidence,proposal_path=path,
-                    p1_response=p1,p2_response=p2,field_run_id="test-field",output_directory=root/"frozen")
-                binding["descriptor_owner"]="extended_fine_manifest.json"
-                split=prepare_measured_centroid_acquisition(prepared_run=root,contract_path=evidence,proposal_path=path,
-                    p1_response=p1,p2_response=p2,field_run_id="split-owner-field",output_directory=root/"split-owner")
-            request=json.loads(Path(result["field_request"]["path"]).read_text())
-            split_request=json.loads(Path(split["field_request"]["path"]).read_text())
-            self.assertEqual(request["source_field_manifest"],binding["manifest"])
-            self.assertEqual(split_request["source_field_manifest"],binding["descriptor_owner"])
-            for name in ("source_binding_path","candidate_voltages_v","response_basis_paths"):
-                self.assertEqual(split_request[name],request[name])
-            self.assertEqual(request["candidate_voltages_v"],dict(s1=-27.0,s2=0,p1=342.96882193031615,p2=-186.47253641442782))
-            self.assertEqual(set(request["response_basis_paths"]),{"p1","p2"})
-            self.assertNotIn("source_energy",request)
-            self.assertFalse(result["physical_target_assigned"])
-            self.assertEqual(evidence.read_bytes(),source)
-            proposal["initial_prism_voltages_v"][0]=501
-            path.write_text(json.dumps(proposal))
-            with self.assertRaisesRegex(ValueError,"bounds"):
-                load_measured_centroid_initial_proposal(path)
-            proposal["initial_prism_voltages_v"][0]=342
-            path.write_text(json.dumps(proposal));evidence.write_text('{"changed":true}')
-            with self.assertRaises((ValueError,AssertionError)):
-                load_measured_centroid_initial_proposal(path)
 
     def test_staged_quality_uses_original_tolerances_and_missing_evidence_is_unmeasured(self):
         from msplatform.workflows.prepared_joint.downstream_workpoint import _stripe_stage_record
@@ -436,7 +383,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
                     patch(module+".resolve_numerics", return_value=numerics):
                 self.assertEqual(main(), 0)
             self.assertEqual(json.loads(output.read_text())["joint_active_axes"], [0, 2, 3])
-        with patch(module+".linprog", return_value=SimpleNamespace(success=False, status=2, message="infeasible")):
+        with patch.object(workpoint_math, "linprog", return_value=SimpleNamespace(success=False, status=2, message="infeasible")):
             failed = decide_stripe_preclosure(baseline, samples[0], None, contract, numerics,
                                               prism_1_trial=samples[1], prism_2_trial=samples[2])
         self.assertEqual(failed["terminal_reason"], "solver_failure")

@@ -1,14 +1,10 @@
-"""MR physical preparation consumed by the root prepared-joint workflow."""
+"""Recorded prepared-joint equivalence and centroid analysis."""
 from __future__ import annotations
 
 import json
-from functools import partial
 import re
-from msplatform.execution.run_paths import project_native_run_path
 
 from pathlib import Path
-from msplatform.execution.resources import resource_path
-import shutil
 from itertools import zip_longest
 from typing import Any
 
@@ -16,33 +12,11 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.contracts.particle_state import load_component_particle_state_csv
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from msplatform.io.manifest_records import verified_successful_run_reference
 from msplatform.execution.retention import file_record
-from msplatform.assembly.resolve_assembly import derive_assembly_scope
-import msplatform.workflows.prepared_joint.source as measured_source
-from msplatform.workflows.prepared_joint.source import materialize_measured_source_slice, materialize_centroid_probe
-from msplatform.backends.simion.resources import native_resource_path
-from msplatform.workflows.prepared_joint.preparation import (
-    ION_PROCESSOR, validate_execution_contract,
-)
 from msplatform.backends.comsol.static_field_binding import load_binding, native_response_operator
-from msplatform.backends.simion.mr_prepared_field import (
-    collision_workbench_layout, compile_memory_consumer_crops,
-    validate_candidate_binding, native_projection,
-)
-from msplatform.workflows.prepared_joint.ip_mr_connection import resolve_ip_mr_connection
-from msplatform.workflows.prepared_joint.ip_mr_handoff import resolve_ip_mr_transform
-from msplatform.workflows.prepared_joint.native_preparation import _lua, render_measured_operating_point
-from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
 from msplatform.backends.simion.native_completion import parse_fly_completed_line
 from msplatform.io.scientific_csv import iter_csv_rows
 from msplatform.backends.simion.mrtof_observations import read_scientific_events
-
-
-verified_preparation_reference = partial(
-    verified_successful_run_reference,
-    project="instrument_assembly", mode="accelerator_interface_preparation",
-)
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -51,319 +25,6 @@ def _read(path: Path) -> dict[str, Any]:
 
 def _write(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False)+"\n", encoding="utf-8", newline="\n")
-
-
-def _prepared_assembly(prepared_run: Path, parent: dict, manifest: dict) -> tuple[dict, dict, dict]:
-    """Inherit only the current parent and range already frozen by preparation."""
-    sources = {}
-    for name in ("composition_plan", "accelerator_request"):
-        record = parent["inputs"].get(name)
-        if record is None:
-            raise ValueError("Prepared joint execution requires the current frozen parent plan and matching request")
-        path = verified_preparation_reference(prepared_run, "inputs/" + name + ".json", manifest=manifest)
-        if record_path(record, base_dir=prepared_run) != path.resolve():
-            raise ValueError("Prepared assembly input differs from its canonical frozen path: " + name)
-        sources[name] = (path, record)
-    request = _read(sources["accelerator_request"][0])
-    if request.get("schema_version") != 3 or request.get("role") != "mrtof_ion_processor_matching_request":
-        raise ValueError("Prepared joint execution requires the current schema-3 matching request")
-    plan = derive_assembly_scope(_read(sources["composition_plan"][0]), local_scope=request.get("local_scope"))
-    connection = resolve_ip_mr_connection(plan)
-    return plan, connection, sources
-
-
-def _continuation_waveforms(predecessor_manifest: Path) -> tuple[Path, dict[str, Any]]:
-    """Resolve the predecessor's manifest-bound small helper for the new run."""
-    from msplatform.workflows.prepared_joint.continuation import _bound_parent_input
-    manifest_path = predecessor_manifest.resolve()
-    manifest = _read(manifest_path)
-    config_record = manifest["run_config"]
-    verify_record("continuation run configuration", config_record)
-    config_path = Path(config_record["path"]).resolve()
-    if config_path != manifest_path.parent / "run_config.json":
-        raise ValueError("Continuation manifest run configuration is not its own")
-    config = _read(config_path)
-    if config.get("project") != "instrument_assembly" or config.get("mode") != "prepared_joint":
-        raise ValueError("Continuation predecessor is not a prepared-joint run")
-    trial_record = _bound_parent_input(parent_inputs=config.get("inputs") or {}, manifest=manifest,
-                                       role="prepared_joint_trial")
-    trial = _read(Path(trial_record["path"]))
-    waveform = trial["voltage_waveforms"]
-    verify_record("continuation flight waveform", waveform)
-    return Path(waveform["path"]).resolve(), {"manifest": str(manifest_path),
-                                              "prepared_joint_trial": trial_record,
-                                              "voltage_waveforms": waveform}
-
-
-def _protected_run_directories(prepared_run: Path, joint: dict[str, Any],
-                               binding: dict[str, Any]) -> list[str]:
-    paths = [str(prepared_run.resolve()), joint["field_run"], joint["source_run"]]
-    paths += sorted({str(Path(item["manifest"]).parent)
-                     for item in [binding, *binding["refinement_windows"], *binding["instances"]]})
-    return paths
-
-
-def prepare_protection_projection(prepared_run: Path, *,
-                                  field_binding_path: Path | None = None) -> dict[str, Any]:
-    """Project the exact source-run authorities without creating run outputs."""
-    prepared_run = prepared_run.resolve()
-    prepared_manifest = _read(prepared_run / "run_manifest.json")
-    receipt_path = verified_preparation_reference(
-        prepared_run, "results/accelerator_interface_preparation.json", manifest=prepared_manifest,
-    )
-    parent = _read(receipt_path)
-    if (parent.get("selected_provider") != ION_PROCESSOR
-            or parent.get("status") != "workbench_ready_no_joint_flight"):
-        raise ValueError("A completed measured joint workbench preparation is required")
-    joint = parent["joint_workbench_binding"]
-    if not joint["field_assembly_verified"] or not joint["measured_source_matches_workpoint"]:
-        raise ValueError("Joint source/field identity is unverified")
-    binding_path = verified_preparation_reference(
-        prepared_run, "results/joint_workbench/static_field_binding.json", manifest=prepared_manifest,
-    )
-    binding = load_binding(binding_path)
-    if binding.get("accelerator_provider") != ION_PROCESSOR:
-        raise ValueError("IP replacement field identity required")
-    if field_binding_path is not None:
-        candidate = load_binding(field_binding_path)
-        validate_candidate_binding(candidate, binding)
-        binding = candidate
-    return dict(
-        schema_version=1,
-        role="prepared_joint_protection_projection",
-        run_directories=_protected_run_directories(prepared_run, joint, binding),
-    )
-
-
-def prepare_trial(prepared_run: Path, contract_path: Path, run_directory: Path,
-                  reference_flight_run: Path | None = None, *,
-                  field_binding_path: Path | None = None, source_mode: str = "measured_population",
-                  continuation_predecessor_manifest: Path | None = None) -> dict[str, Any]:
-    """Verify sealed small inputs and field metadata; never rehash or copy PA payloads."""
-    if source_mode not in {"measured_population", "centroid_probe"}:
-        raise ValueError("Unsupported prepared source mode")
-    if source_mode == "centroid_probe" and reference_flight_run is not None:
-        raise ValueError("Constructed probe is not the original population equivalence cohort")
-    prepared_manifest = _read(prepared_run / "run_manifest.json")
-    receipt_path = verified_preparation_reference(prepared_run, "results/accelerator_interface_preparation.json", manifest=prepared_manifest)
-    parent = _read(receipt_path)
-    if (parent.get("selected_provider") != ION_PROCESSOR
-            or parent.get("status") != "workbench_ready_no_joint_flight"):
-        raise ValueError("A completed measured joint workbench preparation is required")
-    joint = parent["joint_workbench_binding"]
-    if not joint["field_assembly_verified"] or not joint["measured_source_matches_workpoint"]:
-        raise ValueError("Joint source/field identity is unverified")
-    plan, connection, assembly_sources = _prepared_assembly(prepared_run, parent, prepared_manifest)
-    expected_contract_record = parent["inputs"]["reference_trajectory"]
-    verify_record("prepared trajectory contract", expected_contract_record)
-    expected_contract = _read(Path(expected_contract_record["path"]))
-    contract = _read(contract_path)
-    recording = resolve_trajectory_recording(contract)
-    if recording is None:
-        raise ValueError("Joint flight requires explicit solver_review trajectory recording")
-    execution = validate_execution_contract(expected_contract, contract, allow_controller_budget=True)
-    reference_profile = execution["reference_profile"]
-    trajectory_profile = execution["selected_profile"]
-    step_change = execution["numerical_change"]
-    budget_change = execution["execution_budget_change"]
-    results, inputs = run_directory / "results", run_directory / "inputs"
-    results.mkdir(parents=True, exist_ok=True)
-    inputs.mkdir(parents=True, exist_ok=True)
-    assembly_records = {}
-    for name, (path, record) in assembly_sources.items():
-        target = inputs / ("parent_composition_plan.json" if name == "composition_plan" else "accelerator_request.json")
-        if target.exists():
-            raise FileExistsError(target)
-        shutil.copyfile(path, target)
-        verify_record("frozen prepared assembly " + name, {**record, "path": str(target)})
-        assembly_records[name] = dict(record, path=str(target.resolve()), source_path=str(path.resolve()))
-    contract_copy = inputs / "trajectory_contract.json"
-    freeze_file(contract_path, contract_copy)
-    reference_materialization = joint["reference_materialization"]
-    verified_preparation_reference(prepared_run, Path(reference_materialization["path"]).relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
-    reference_materialization_copy = inputs / "reference_materialization.json"
-    freeze_file(Path(reference_materialization["path"]), reference_materialization_copy)
-    source = prepared_run / "results/joint_workbench/measured_source"
-    source_receipt_path = verified_preparation_reference(prepared_run, "results/joint_workbench/measured_source/source_receipt.json", manifest=prepared_manifest)
-    source_receipt = _read(source_receipt_path)
-    historical_source_receipt = inputs / "prepared_source_receipt.json"
-    freeze_file(source_receipt_path, historical_source_receipt)
-    source_copy = results / "measured_source"
-    source_copy.mkdir()
-    for path in sorted(source.iterdir()):
-        if path.is_file():
-            verified_preparation_reference(prepared_run, path.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
-            if path.name not in {"source_runtime.lua", "source_receipt.json"}:
-                freeze_file(path, source_copy / path.name)
-    # Canonical CSV/clock/ordinal projection remain byte-identical; executable
-    # adapters are frozen from current code, never the obsolete sealed helper.
-    freeze_file(native_resource_path("mrtof_measured_source_runtime.lua"), source_copy / "source_runtime.lua")
-    runtime_implementation = inputs / "measured_source_implementation.py"
-    freeze_file(Path(measured_source.__file__), runtime_implementation)
-    current_source_receipt = dict(source_receipt)
-    current_source_receipt["inputs"] = dict(source_receipt["inputs"],
-        prepared_source_receipt=file_record(historical_source_receipt),
-        runtime_implementation=file_record(runtime_implementation),
-        runtime_resource=file_record(native_resource_path("mrtof_measured_source_runtime.lua")))
-    current_source_receipt["outputs"] = {path.stem: file_record(path)
-        for path in sorted(source_copy.iterdir())}
-    _write(source_copy / "source_receipt.json", current_source_receipt)
-    mother_source_copy = source_copy
-    if source_mode == "centroid_probe":
-        source_copy = results / "centroid_probe"
-        source_receipt = materialize_centroid_probe(mother_source_copy, source_copy)
-    rows = load_component_particle_state_csv(source_copy / "component_particle_state.csv").rows
-    source_id, target_id = connection["upstream"]["instance_id"], connection["downstream"]["instance_id"]
-    registration = resolve_ip_mr_transform(plan, connection).to_contract()
-    if any(row["source_component_id"] != source_id or row["target_component_id"] != target_id
-           or row["frame_id"] != registration["to_frame_id"] for row in rows):
-        raise ValueError("Prepared measured source differs from the inherited assembly connection or frame")
-    peak = contract.get("peak_analysis")
-    if peak is not None:
-        from msplatform.workflows.prepared_joint.measured_population import validate_measured_peak_source_reference
-        validate_measured_peak_source_reference(peak, contract_path.parent, source_receipt,
-                                                {int(row["particle_id"]): row for row in rows})
-    binding_path = verified_preparation_reference(prepared_run, "results/joint_workbench/static_field_binding.json", manifest=prepared_manifest)
-    binding = load_binding(binding_path)
-    if binding.get("accelerator_provider") != ION_PROCESSOR:
-        raise ValueError("IP replacement field identity required")
-    assembly = binding["authority"].get("assembly", {})
-    if (binding["geometry"]["frame_id"] != registration["to_frame_id"]
-            or assembly.get("ion_processor_registration") != registration):
-        raise ValueError("Prepared field geometry or registration differs from the inherited assembly poses")
-    if field_binding_path is not None:
-        candidate = load_binding(field_binding_path)
-        validate_candidate_binding(candidate, binding)
-        binding_path = Path(freeze_file(field_binding_path, inputs / "candidate_field_binding.json")["path"])
-        binding = candidate
-    layout = collision_workbench_layout(binding)
-    memory_crops = compile_memory_consumer_crops(contract, _read(reference_materialization_copy), binding)
-    guard_paths = [item["pa_path"] for item in binding["instances"]]
-    for level in [binding, *binding["refinement_windows"]]:
-        guard_paths.append(level["sources"]["scalar_pa"])
-        if level["sources"].get("surface"):
-            guard_paths.append(level["sources"]["surface"])
-    runtime = prepared_run / "results/joint_workbench/runtime"
-    # Capture every executable companion as a small frozen input before dispatch.
-    frozen_runtime = inputs / "prepared_runtime"
-    frozen_runtime.mkdir()
-    for path in sorted(runtime.glob("joint.*")):
-        if path.name in {"joint.operating_point.lua", "joint.lua", "joint.source_runtime.lua",
-                         "joint.scalar_field_adapter.lua", "joint.priority.lua", "joint.voltage_waveforms.lua"}:
-            continue
-        verified_preparation_reference(prepared_run, path.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
-        freeze_file(path, frozen_runtime / path.name)
-    current_program = native_resource_path("mrtof_candidate.lua")
-    program_record = freeze_file(current_program, frozen_runtime / "joint.lua")
-    waveform_source, waveform_provenance = (native_resource_path("voltage_waveforms.lua"), None)
-    if continuation_predecessor_manifest is not None:
-        waveform_source, waveform_provenance = _continuation_waveforms(continuation_predecessor_manifest)
-    waveforms_record = freeze_file(waveform_source,
-                                  frozen_runtime / "joint.voltage_waveforms.lua")
-    if waveform_provenance is not None:
-        waveforms_record["continuation_source"] = waveform_provenance
-    source_runtime_record = freeze_file(source_copy / "source_runtime.lua", frozen_runtime / "joint.source_runtime.lua")
-    science_writer_record = freeze_file(native_resource_path("scientific_event_csv.lua"), frozen_runtime / "joint.scientific_event_csv.lua")
-    science_reconciliation_record = freeze_file(native_resource_path("scientific_event_reconciliation.lua"),
-        frozen_runtime / "joint.scientific_event_reconciliation.lua")
-    freeze_file(native_resource_path("scalar_field_adapter.lua"),
-                frozen_runtime / "joint.scalar_field_adapter.lua")
-    reference = runtime / "mr_reference.operating_point.lua"
-    verified_preparation_reference(prepared_run, reference.relative_to(prepared_run).as_posix(), manifest=prepared_manifest)
-    freeze_file(reference, frozen_runtime / reference.name)
-    (frozen_runtime / "joint.priority.lua").write_text("return " + _lua(layout["priority"]) + "\n",
-                                                      encoding="utf-8", newline="\n")
-    reference_numerics = joint["numerics"]
-    if any(reference_numerics[name] != reference_profile[name]
-           for name in ("trajectory_quality", "maximum_step_us")):
-        raise ValueError("Prepared JSON numerics differ from its default trajectory profile")
-    numerics = dict(reference_numerics, trajectory_quality=trajectory_profile["trajectory_quality"],
-                    maximum_step_us=trajectory_profile["maximum_step_us"])
-    freeze_file(resource_path("native_run_path.lua"), frozen_runtime / "native_run_path.lua")
-    sidecar = render_measured_operating_point(frozen_runtime / reference.name, source_copy,
-        native_projection(binding), numerics=numerics, field_assets_verified=True, source_identity_verified=True,
-        native_path_projection=True)
-    sidecar = sidecar.replace("\nreturn t\n", "\nlocal crops="+_lua(memory_crops)+"\n"
-        "t.scientific_event_output=t.scientific_event_output or {}\n"
-        "t.scientific_event_output.csv_writer_path=native_path("+_lua(str(frozen_runtime / "joint.scientific_event_csv.lua"))+")\n"
-        "t.scientific_event_output.reconciliation_path=native_path("+_lua(str(frozen_runtime / "joint.scientific_event_reconciliation.lua"))+")\n"
-        "for _,window in ipairs(t.static_field.refinement_windows) do\n"
-        "  window.memory_consumer_crop=crops[window.name]\nend\nreturn t\n")
-    (frozen_runtime / "joint.operating_point.lua").write_text(sidecar, encoding="utf-8", newline="\n")
-    launcher = native_resource_path("run_iob_flight.lua")
-    freeze_file(launcher, inputs / launcher.name)
-    effective_launcher = inputs / launcher.name
-    projection = freeze_file(resource_path("native_run_path.lua"), inputs / "native_run_path.lua")
-    if field_binding_path is not None:
-        builder = native_resource_path("build_native_corridor_iob.lua")
-        freeze_file(builder, inputs / builder.name)
-        effective_launcher = inputs / "build_and_run_prepared_iob.lua"
-        effective_launcher.write_text("local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\\\])'))\n"
-            "local native_path=assert(loadfile(directory..'native_run_path.lua'))()\nlocal saved_arg=arg\nlocal iob=assert(arg[1])\n"
-            "arg={'--measured-source',iob:gsub('%.iob$','.workbench_build.lua'),directory..'native_run_path.lua'}\n"
-            "dofile(native_path("+_lua(str(inputs / builder.name))+ "))\narg=saved_arg\n"
-            "dofile(native_path("+_lua(str(inputs / launcher.name))+ "))\n", encoding="utf-8", newline="\n")
-    identifiers = [int(row["particle_id"]) for row in rows]
-    topology = "five" if len(layout["roles"]) == 5 else "four"
-    result = dict(schema_version=1, role="mrtof_prepared_joint_trial", parent_prepared_run=str(prepared_run.resolve()),
-                  measured_source_directory=str(source_copy.resolve()), expected_particle_ids=identifiers,
-                  mother_particle_count=source_receipt["counts"]["source"], launched_particle_count=len(rows),
-                  solver_epoch_instrument_time_us=source_receipt["solver_epoch_instrument_time_us"],
-                  trajectory_contract=file_record(contract_copy), trajectory_recording=recording,
-                  controller_contract_provenance=dict(
-                      prepared_reference_trajectory_contract=dict(expected_contract_record),
-                      consumed_execution_contract=file_record(contract_copy), execution_budget_change=budget_change,
-                      analysis_change=execution["analysis_change"],
-                      numerical_change=step_change, prepared_reference_numerics=reference_numerics,
-                      selected_trajectory_profile=dict(trajectory_profile)),
-                  trajectory_profile=dict(trajectory_profile),
-                  reference_materialization=file_record(reference_materialization_copy),
-                  source_receipt=file_record(source_copy / "source_receipt.json"),
-                  flight_program=program_record,
-                  source_runtime=source_runtime_record,
-                  scientific_event_writer=science_writer_record,
-                  scientific_event_reconciliation=science_reconciliation_record,
-                  voltage_waveforms=waveforms_record,
-                  field_consumer_adapter=file_record(frozen_runtime / "joint.scalar_field_adapter.lua"),
-                  memory_consumer_crops=memory_crops,
-                  operating_point=file_record(frozen_runtime / "joint.operating_point.lua"),
-                  parent_preparation=file_record(receipt_path), field_binding=file_record(binding_path),
-                  parent_composition_plan=assembly_records["composition_plan"],
-                  assembly_request=assembly_records["accelerator_request"], assembly_scope=plan["scope"],
-                  guard_paths=sorted(set(guard_paths)),
-                  protected_paths=_protected_run_directories(prepared_run, joint, binding),
-                  numerics=numerics, frozen_runtime_directory=str(frozen_runtime.resolve()), launcher=str(effective_launcher.resolve()),
-                  native_path_projection=projection, source_mode=source_mode, mother_source_directory=str(mother_source_copy.resolve()),
-                  candidate_iob_rebuild=field_binding_path is not None,
-                  prism_voltages_v=[binding["authority"]["analyzer_electrode_voltages_v"][i] for i in (15,16)],
-                  stripe_biases_v=[binding["authority"]["analyzer_electrode_voltages_v"][i] for i in (10,12)],
-                  energy_target_acceptance="not_declared", six_dimensional_match_qualified=False,
-                  time_focus_qualified=False)
-    result["dispatch_request"] = dict(
-        solver="SIMION", field_kind="electrostatic", particle_count=len(rows), independent_particles=True,
-        frontend_grid_profile_id=f"mrtof_ip_replacement_static_{topology}_instances",
-        oatof_numerical_profile_id=None, trajectory_quality_profile_id=trajectory_profile["profile_id"],
-        time_integration_profile_id="mrtof_candidate_adaptive_time_step",
-        frontend_cell_mm_xyz=binding["grid"]["pitch_mm"], accelerator_overlay_cell_mm_xyz=None,
-        reflectron_cell_mm=None, trajectory_quality=numerics["trajectory_quality"],
-        rf_steps_per_period=None, accelerator_field_profile_id="measured_ip_handoff_static_replacement",
-        frontend_pa0_sha256=binding["records"]["scalar_pa"]["sha256"],
-        accelerator_overlay_pa0_sha256=None, reflectron_pa0_sha256=None,
-        case_input_sha256=result["operating_point"]["sha256"],
-        workload_topology_id=f"mrtof_ip_measured_{topology}_instances_full_flight",
-        field_loading_policy_id=(f"native_static_pa__{topology}_read_only_collision_instances"
-                                 + ("__memory_mirror_x_crop" if memory_crops else "")))
-    result["trajectory_equivalence_reference"] = None
-    if reference_flight_run is not None:
-        result["trajectory_equivalence_reference"] = freeze_equivalence_reference(
-            reference_flight_run, result, inputs)
-    reference=result.get("trajectory_equivalence_reference")
-    if reference is not None and reference.get("scientific_event_output") is not None:
-        result["protected_paths"].append(reference["source_run"])
-        result["guard_paths"].extend(reference["scientific_event_output"][key] for key in ("events_path","trajectory_path") if reference["scientific_event_output"].get(key))
-    _write(results / "simion_dispatch_request.json", result["dispatch_request"])
-    _write(results / "prepared_joint_trial.json", result)
-    return result
 
 
 def freeze_equivalence_reference(reference_run: Path, preparation: dict[str, Any],
@@ -500,67 +161,6 @@ def compare_trajectory_representation(preparation_path: Path, log_path: Path,
     return result
 
 
-def materialize_batch(preparation_path: Path, ordinal_min: int, ordinal_max: int,
-                      output_directory: Path) -> dict[str, Any]:
-    preparation = _read(preparation_path)
-    source = output_directory / "measured_source"
-    source_batch = materialize_measured_source_slice(Path(preparation["measured_source_directory"]),
-                                                    source, ordinal_min, ordinal_max)
-    runtime = Path(preparation["frozen_runtime_directory"])
-    for path in runtime.glob("joint.*"):
-        if preparation.get("candidate_iob_rebuild") and path.name == "joint.iob":
-            continue
-        shutil.copyfile(path, output_directory / path.name)
-    runtime_projection = bool(preparation.get("native_path_projection"))
-    if runtime_projection:
-        shutil.copyfile(runtime / "native_run_path.lua", output_directory / "native_run_path.lua")
-    original = runtime / "joint.operating_point.lua"
-    # Only the observation switch and scheduler-local source projection change.
-    interval = preparation["trajectory_recording"].get("interval_us")
-    interval_lua = "nil" if interval is None else repr(interval)
-    scientific_event_output = dict(events_path=str((output_directory / "events.csv").resolve()),
-        trajectory_path=str((output_directory / "trajectory.csv").resolve()),
-        csv_writer_path=preparation["scientific_event_writer"]["path"],
-        reconciliation_path=preparation["scientific_event_reconciliation"]["path"], environment_required=False,
-        events_environment_variable="MRTOF_SCIENTIFIC_EVENTS_PATH",trajectory_environment_variable="MRTOF_SCIENTIFIC_TRAJECTORY_PATH")
-    sidecar_prefix = (
-        "local directory=assert(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\\\])'))\n"
-        "local native_path=assert(loadfile(directory..'native_run_path.lua'))()\n"
-        if runtime_projection else "")
-    original_lua = ("native_path("+_lua(str(original.resolve()))+")" if runtime_projection else
-                    json.dumps(project_native_run_path(str(original.resolve())).replace("\\", "/")))
-    scientific_projection = (
-        "for _,key in ipairs({'events_path','trajectory_path','csv_writer_path','reconciliation_path'}) do "
-        "t.scientific_event_output[key]=native_path(t.scientific_event_output[key]) end\n"
-        if runtime_projection else "")
-    sidecar = (sidecar_prefix+"local t=assert(loadfile("+original_lua+"))()\n"
-               "t.scientific_event_output="+_lua({key: project_native_run_path(value) if not runtime_projection and key in {"events_path", "trajectory_path", "csv_writer_path", "reconciliation_path"} else value for key, value in scientific_event_output.items()})+"\n"
-               "t.measured_source_directory="+("native_path("+_lua(str(source.resolve()))+")" if runtime_projection else json.dumps(project_native_run_path(str(source.resolve())).replace("\\", "/")))+"\n"
-               "t.trajectory_recording_enabled=true\n"
-               "t.trajectory_recording_mode="+json.dumps(preparation["trajectory_recording"]["mode"])+"\n"
-               "t.trajectory_recording_interval_us="+interval_lua+"\n"+scientific_projection+"return t\n")
-    (output_directory / "joint.operating_point.lua").write_text(sidecar, encoding="utf-8", newline="\n")
-    shutil.copyfile(source / "source.fly2", output_directory / "joint.fly2")
-    if preparation.get("candidate_iob_rebuild"):
-        verify_record("candidate field binding", preparation["field_binding"])
-        binding = load_binding(Path(preparation["field_binding"]["path"]))
-        layout = collision_workbench_layout(binding)
-        build = dict(schema_version=1, role="mrtof_measured_source_workbench_build",
-            seed=layout["seed"],
-            paths=[item["pa_path"] for item in binding["instances"]],
-            origins=[item["origin_mm"] for item in binding["instances"]],
-            output=str((output_directory / "joint.iob").resolve()), program=str((output_directory / "joint.lua").resolve()),
-            # wb:save writes its seed's same-stem FLY2; the builder must copy
-            # this independent measured source back after saving the IOB.
-            fly2=str((source / "source.fly2").resolve()),
-            operating=str((output_directory / "joint.operating_point.lua").resolve()),
-            priority=str((output_directory / "joint.priority.lua").resolve()))
-        (output_directory / "joint.workbench_build.lua").write_text("return "+_lua(build)+"\n", encoding="utf-8", newline="\n")
-    result = dict(source_batch, iob=str((output_directory / "joint.iob").resolve()), scientific_event_output=scientific_event_output)
-    _write(output_directory / "batch_receipt.json", result)
-    return result
-
-
 def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_directory: Path, *, scientific_event_receipt: Path | None = None) -> dict[str, Any]:
     """Project genuine N1 events for the existing controller's measured-source branch.
 
@@ -675,37 +275,13 @@ def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    prepare = sub.add_parser("prepare")
-    prepare.add_argument("--prepared-run", type=Path, required=True)
-    prepare.add_argument("--contract", type=Path, required=True)
-    prepare.add_argument("--run-directory", type=Path, required=True)
-    prepare.add_argument("--equivalence-reference-run", type=Path)
-    prepare.add_argument("--field-binding", type=Path)
-    prepare.add_argument("--source-mode", choices=("measured_population", "centroid_probe"), default="measured_population")
-    prepare.add_argument("--continuation-predecessor-manifest", type=Path)
-    projection = sub.add_parser("protection-projection")
-    projection.add_argument("--prepared-run", type=Path, required=True)
-    projection.add_argument("--field-binding", type=Path)
     analyze = sub.add_parser("analyze-probe")
     analyze.add_argument("--preparation", type=Path, required=True)
     analyze.add_argument("--log", type=Path, required=True)
     analyze.add_argument("--output", type=Path, required=True)
     analyze.add_argument("--scientific-event-receipt", type=Path)
     args = parser.parse_args()
-    if args.command == "prepare":
-        destination = _read(args.run_directory / "run_config.json")
-        if (destination.get("project") != "instrument_assembly"
-                or destination.get("mode") != "prepared_joint"
-                or destination.get("run_id") != args.run_directory.resolve().name):
-            raise ValueError("destination requires instrument_assembly prepared_joint identity matching its directory")
-        prepare_trial(args.prepared_run,args.contract,args.run_directory,args.equivalence_reference_run,
-                      field_binding_path=args.field_binding,source_mode=args.source_mode,
-                      continuation_predecessor_manifest=args.continuation_predecessor_manifest)
-    elif args.command == "protection-projection":
-        print(json.dumps(prepare_protection_projection(
-            args.prepared_run, field_binding_path=args.field_binding,
-        )))
-    else:
+    if args.command == "analyze-probe":
         analyze_centroid_probe(args.preparation,args.log,args.output,scientific_event_receipt=args.scientific_event_receipt)
 
 

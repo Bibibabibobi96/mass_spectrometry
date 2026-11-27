@@ -15,8 +15,9 @@
 | 跨项目OA／IP准备和联合执行 | [统一集成入口](../../../../../docs/ASSEMBLY.md)；本页保留MR提供者及局部科学操作 |
 | 选择 native 或 COMSOL 场消费 | [场输入与碰撞](#场输入与碰撞) |
 | 构建 native bank、重载 IOB 或保留 GUI | [构建与独立验收](#构建与独立验收) |
-| 发布源、完整飞行和 P/S 调节 | [源与运行入口](#源与运行入口)；[实测源分阶段控制](#实测源的分阶段ps控制) |
-| 断点续接或 N>1 批次恢复 | [恢复与资源](#恢复与资源) |
+| 发布源、完整飞行和 P/S 调节 | [源与运行入口](#源与运行入口) |
+| 历史实测源分析或 finalization | [历史分析边界](#历史实测源分析与-finalization)；[恢复与资源](#恢复与资源) |
+| 当前工作流断点续接或 N>1 批次恢复 | [恢复与资源](#恢复与资源) |
 | 解释返回、碰撞及峰宽结果 | [事件与分析](#事件与分析) |
 | 追溯旧工作台、结果和迁移过程 | [历史与来源](#历史与来源) |
 
@@ -25,13 +26,13 @@
 ### 加速器选择与接口准备
 
 MR拥有分析器设计、匹配目标、场消费合同和P/S控制；跨项目装配、接口准备与联合飞行由
-[integrations](../../../../../docs/ASSEMBLY.md)拥有。初始设计不启动求场或Fly；Finalize绑定实际新源、场并保存／重载IOB，仍不Fly。
-源表、运行FLY2和工作台必须在实际绑定阶段一致生成；设计收据不替代执行资格。当前支持范围与实际资格只查下表状态入口。
+[统一集成入口](../../../../../docs/ASSEMBLY.md)拥有。接口准备只发布需求提案，不生成新源、场或IOB，也不启动Fly；
+下一步是显式编写原出生 SimulationRecipe。设计收据不替代执行资格，当前支持范围与实际资格只查下表状态入口。
 
 | 任务 | 权威入口 | MR侧须提供或核对 |
 |---|---|---|
-| OA／IP接口设计及实际场／IOB绑定 | [接口准备与绑定](../../../../../docs/INTEGRATION.md#oaip接口准备与绑定)、[accelerator_interface.ps1](../../../../../src/msplatform/workflows/resources/accelerator_interface.ps1) | 显式provider、原始封存MR参考run；IP使用当前schema 3 matching request。Finalize消费设计阶段冻结输入，准备不等于Fly |
-| 已准备IP→MR飞行、整批恢复或重新分析 | [联合飞行与分析](../../../../../docs/INTEGRATION.md#已准备ipmr联合飞行)、[prepared_joint入口](../../../../../src/msplatform/workflows/resources/prepared_joint_execute.ps1) | 已完成准备包、冻结轨迹合同；结果保留源ID、仪器clock和完整母群 |
+| OA／IP接口需求准备或既有飞行 finalization | [接口准备与绑定](../../../../../docs/INTEGRATION.md#oaip接口准备与绑定)、[accelerator_interface.ps1](../../../../../src/msplatform/workflows/resources/accelerator_interface.ps1) | 显式provider与原始封存MR参考run；准备只生成需求提案。`-ResumeFinalization`只恢复既有owner，不接收新科学或原生输入 |
+| 已封存 prepared-joint 的重新分析或 finalization | [历史联合记录](../../../../../docs/INTEGRATION.md#已准备ipmr联合飞行)、[prepared_joint入口](../../../../../src/msplatform/workflows/resources/prepared_joint_execute.ps1) | `-AnalyzeRunPath`只读重分析；`-ResumeFinalization`只恢复原收尾。不再启动出口重释放、新飞行或旧整批续跑；历史结果保留原ID、仪器clock和完整母群 |
 | OA→MR完整飞行 | [OA→MR入口](../../../../../src/msplatform/workflows/resources/oa_mr.ps1)及上述集成状态 | 冻结CompositionPlan及显式局部范围，OA receipt、源与MR科学合同 |
 
 [accelerator_interfaces.json](../config/accelerator_interfaces.json)只声明MR支持的provider选择与依赖，
@@ -42,8 +43,8 @@ MR拥有分析器设计、匹配目标、场消费合同和P/S控制；跨项目
 `preserve_measured_workpoint`保留来源抬升电压，`provider_voltage_and_geometry`派生候选；
 两者均须核验实际源、候选配置、时序和场身份，设计收据不授予物理匹配或时间聚焦资格。
 替换OA后的场必须来自新装配，不能混用旧OA父场、中央层或镜边界。
-IP采用`state_handoff`，继承实测状态与到达时刻，后段为RF为零、提取脉冲保持的静态场；
-它不代表同一Fly内连续积分捕获／冷却到MR。完整母群包含上游未交接ID，不能以交接数替代分母。
+历史IP `state_handoff` 只用于读取既有分段结果；新跨组件运行通过公共 `msplatform run` 从原出生连续传播，
+不在出口重新释放。历史完整母群包含上游未交接ID，不能以交接数替代分母。
 
 ### MR几何与OA提供者合同
 
@@ -368,10 +369,9 @@ The adapter queries only within verified support.
 两种组合表示均明确标为探索性；实际对照、速度、内存及资格见
 [电场表示与数值资格](PROJECT.md#电场表示与数值资格)，不由文件存在推定。
 
-已准备联合包的数值对照沿直属入口的`-ContractPath`声明，准备收据分别绑定原准备合同与执行合同。
-只允许已实现的轨迹观测、累计候选预算或当前默认profile的`maximum_step_us`变化；
-源、场、电压、profile选择、trajectory quality、超时及其余科学字段保持，不能借诊断改动重定义原问题。
-编译结果写入实际master／batch sidecar并由SHA绑定，记录前后数值，不另加CLI数值权威。
+历史已准备联合包的准备收据继续绑定原准备合同、执行合同及实际记录身份，供封存分析和等价性复核。
+旧 `-ContractPath` 不再提供新飞行准备或数值变更入口；不得通过改写历史合同恢复出口重释放。
+新运行只接受公共 SimulationRecipe 当前合同，科学输入和数值设置由该链显式冻结。
 
 以下命令只验证／解析 binding，或生成物化计划；不会运行 COMSOL、SIMION 或写 PA。
 物化计划必须由受管运行执行和封存，再消费其 manifest；不得覆盖输入 PA。
@@ -482,68 +482,23 @@ run与artifact路径取自本次上下文，handoff复制后重绑冻结副本�
 普通S局部模型恢复使用[local_model_recovery_policy.json](../config/local_model_recovery_policy.json)，
 默认3轮、12探针预算；可由`-LocalModelRecoveryPolicyPath`显式选择经校验的策略，并冻结到本次run inputs。
 步长与coarse／medium／fine的缩减比例仍由科学合同的`jacobian_relative_step_tiers`派生，
-探针、预算和已接受锚点按检查点延续。该策略不用于下述prepared P/S分阶段控制；后者的候选预算和停止边界来自其冻结合同。
+探针、预算和已接受锚点按检查点延续。该策略只服务当前Legacy P/S工作流，不恢复已退役的实测出口Prepared分支。
 恢复版本与显式导入规则见[恢复与资源](#恢复与资源)。
 
-### 实测源的分阶段P/S控制
+### 历史实测源分析与 finalization
 
-更换实测源或数值场后，源专属工程目标可由`measured_component_source.author_measured_centroid_prism_target`
-消费已核验的同场birth／clean电势审计及控制投影，保留MR设计Ws并用原L0模型自洽反解fast／slow参考。
-它显式扣除实际clean电势和x动能，沿原resolver重算角容差映射；只生成一个新目标版本及作者账本，
-不改源、移动候选目标或另建闭合器。调用方须冻结输入与输出，清除旧目标列，并沿原入口导入新版本。
+旧 `measured_population`／`centroid_probe` 出口重释放、Prepared acquisition 和 Prepared P/S 分阶段执行入口已退役，
+包括旧 `PreparedJointWorkbenchRunPath`、响应／目标／重锚及整批续跑参数。新飞行只通过公共 `msplatform run`
+和 `workflows.tracing` 消费显式原出生 Recipe；不得将旧实测出口状态重建为新源。
 
-已发布的独立质心N1可作为原P→Stripe/phase→P复核→完整返回流程的实际锚点，入口仍为
-`src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1`。`-PreparedFieldBuildMode composition`为默认方式，
-使用同算子的P1/P2响应；需要S1列而未提供S1响应时保存`needs_s1_response`检查点。
-明确选择`refine`时，每个新候选沿同一公共`run_native_static_field_provider.ps1`完整求场，
-不依赖额外S1响应；五层IP网格、15路IP工作点、固定MR电压和原数值身份仍须匹配。
-它保留原实测质心的六维状态与时钟，不重飞输入锚点、不重采样原97粒子，不改变P/S残差或S2接地约束。
+`trial.py` 仅保留有明确封存输入的等价性参考冻结、轨迹表示比较和 `analyze-probe` 历史分析。
+这些操作不创建新的原生飞行owner，不授予旧场或轨迹新的资格。`prepared_joint_execute.ps1` 的
+`-AnalyzeRunPath <原run> -ContractPath <分析合同>` 从封存记录建立分析run，不复制PA、不重飞、不改写原run；
+`-ResumeFinalization -RunId <原run> [-ResultPath <原Result>]` 只重放既有公共owner的收尾，
+不重做准备、分析或Fly，也不接受新科学或原生输入。
 
-```powershell
-& ./src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1 `
-  -PreparedJointWorkbenchRunPath '<audited-prepared-IP-run>' `
-  -PreparedPrism1ResponseBasisPath '<sealed-P1-response-descriptor>' `
-  -PreparedPrism2ResponseBasisPath '<sealed-P2-response-descriptor>' `
-  -PreparedInitialProposalPath '<frozen-initial-proposal.json>' `
-  -PreparedTargetAuthorityPath '<explicit-design-target-authority.json>' `
-  -PreparedSeedTrialManifest '<actual-N1-anchor-run_manifest.json>' `
-  -PreparedFieldBuildMode refine -ContractPath '<same-frozen-trajectory-contract>' -RunId '<new-parent-run-id>'
-```
-
-续接同一目标时，在上述原入口增加`-ResumeParentCheckpoint '<sealed-parent-run>'`并使用新`RunId`；
-它复用原分阶段检查点恢复，严格保持源、目标、数值合同、P响应及控制policy身份，保留已测列与预算。
-若只增加执行候选总预算，可给`ContractPath`提供新封存合同，仅增加
-`downstream_fixed_grid_workpoint_profile.automatic_iteration.maximum_iterations`；其他字段逐项必须相同，
-advance、可信步长上限及物理容差不变。原目标作者及其轨迹合同SHA继续作为科学身份，
-实际消费的执行合同与历史子运行原合同分别记录真实SHA；新parent冻结前后合同与变更收据，
-继承累计candidate_count、history、pending与lineage，预算不会因新RunId清零。
-新值是全链累计候选上限，不是额外候选数，也不授予收敛或N100资格。
-修正慢转折目标时，显式增加`-PreparedTargetReanchor`，并提供新封存的
-`PreparedTargetAuthorityPath`及旧lineage中成功子运行的`PreparedSeedTrialManifest`。
-仅允许目标的`target_slow_turn_y_mm`改变；源、能量参考、数值、响应及policy身份保持。
-入口先以旧目标核验完整旧历史，再沿原重锚函数清除响应列和预测，从所选锚点重新检查P阶段；
-累计候选／飞行计划及旧历史保留。未执行的pending仅在原parent已封存中断、写入进程结束且
-trial目录不存在时可显式放弃，并保存原计划和计数证据；已经创建的trial不能据此放弃。
-同一lineage仅允许一次显式重锚，后续仍使用普通resume，以免覆盖已封存的弃飞计数证据。
-原parent未声明Prism policy时，可在新parent显式传入`-PrismControllerPolicyPath`
-指向未改动的`config/prism_controller_policy.json`；仅允许P阶段且没有pending trial时采用，
-已声明policy须保持原SHA，不允许替换或撤销。先严格验证旧检查点，再将旧列、局部模型和预测缓存
-记入`iteration_prism_policy_adoption.json`并清当前缓存；anchor、stage、step_factor及全部历史、lineage和累计预算保留。
-恢复入口完成该转换后只发布一次完整检查点，后续重新测量两P列；原coarse上限、实测模型边界和预测质量门保持。
-未显式传入policy时继续原行为；该采用过程不重解释旧决策，也不改科学输入或目标身份。
-实际子运行完成后的身份／预测校验通过`iteration_prediction_input_<flight>.json`传递完整决策，
-Python先核对冻结字节数与SHA再执行原校验，避免完整几何使Windows命令行超长；该文件随原检查点封存。
-允许补入同算子的`PreparedStripe1ResponseBasisPath`；源／目标改变必须重新建立列。
-已封存成功的pending子运行直接消费，不重飞；failed／interrupted子运行沿新身份重新飞行，
-若其独立provider已成功且原电压／算子／数值仍严格匹配，则复用该完整场，未完成场不得消费。
-历史列只读取封存的normalized投影，不因其PA已经合法退役而重建重型场。
-
-场构建选择及完整候选请求模板进入本次冻结输入；`refine`请求移除响应组合、纯响应、复用层和消费视图指令，
-仍由公共provider编译完整四电压候选并执行原GEM／Refine流程，不创建其他求场器。
-不得同时声明`PreparedStripe1ResponseBasisPath`。公共容量准入和所有保留条件继续生效，
-不能因少存一套响应而推定完整求场峰值一定可容纳。已消费且无未来场／GUI用途的中间候选，
-按真实`compose`或`refine`身份沿原公共owner退役；准入、依赖或活动TTL拒绝时保存容量／生命周期检查点，
-保留原保护与原始轨迹证据，不私自删除PA。最终完整闭合与N100验证仍为后续独立资格步骤。
+历史目标作者、工作点数学和原始科学记录继续按原身份只读使用。若后续迁移仍有科学价值的分析，
+必须由明确owner接到当前记录合同；不得借此恢复旧飞行CLI。历史成功、失败、中断及已有运行证据均保持原终态。
 
 ### 源身份与诊断源
 
@@ -586,7 +541,8 @@ Workbench实际API沿现有装配入口复用，实际新包的重载证据按�
 
 ## 恢复与资源
 
-跨项目完整束团执行和整批恢复的入口／资格见[集成状态](../../../../../docs/INTEGRATION.md#已准备ipmr联合飞行)。
+当前跨项目完整束团执行和受支持整批恢复的入口／资格见[统一集成状态](../../../../../docs/INTEGRATION.md)。
+已退役 prepared-joint 出口重释放不再接受整批续跑；其旧run只允许上述只读分析或 finalization。
 receipt、状态表和Fly2必须是同一成功源run的唯一输出。
 公共调度器选择资源和 batch，项目不设独立并发门槛；详见
 [公共调度与恢复](../../../../../docs/SIMION_BACKEND.md#调度与恢复)。
@@ -613,7 +569,7 @@ receipt、状态表和Fly2必须是同一成功源run的唯一输出。
 `-ResumeParentCheckpoint`路径导入：先将原文件冻结到新run的`inputs/imported_recovery_checkpoint.json`，
 再核对同一anchor／trigger并按当前谱系纠正证据，随后规范化为v8；原run及原探针记录保持不变。
 v1–4和未知版本明确拒绝，不在日常prepare中猜测升级。新run同时冻结控制器源码与恢复策略；
-改变策略不能静默重解释已有恢复状态。prepared P/S仍使用自身stage检查点，不能把此v8规则套到它的bootstrap。
+改变策略不能静默重解释已有恢复状态。已退役 prepared P/S stage检查点只作历史证据，不能导入当前v8 bootstrap或启动新飞行。
 
 native bank 的 `-TransactionCacheKey` 只恢复／复用指定事务；已发布 family 只读。
 `-RecoverMembers` 指定失败成员；`-RecoverRetainedInventoryMembers` 和
