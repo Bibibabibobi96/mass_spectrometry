@@ -146,6 +146,16 @@ Agent3真实短子进程活writer拒绝→强制结束→恢复→再恢复，�
 
 已完成规范CLOC 2.10：`78144e45→6a597017` total code618524→623147(+4623)、production303823→304319(+496)、tests314701→318828(+4127)；`→cfd6b848` total621542(+3018)、production303647(-176)、tests317895(+3194)，两者unclassified0。完整各语言files/blank/comment/code、用途分表及固定过滤分别在外部`oa-geometry-owner-cloc.log`、`historical-mass-owner-cloc.log`，不代表后续未提交代码；最终全口径与调用/唯一检查/重复/skip/wall仍待归并。恢复后从本检查点继续：0先完成质量谱边界修正提交、CLI/cost-catalog与完成主题整合；1冷提取、2旧MR/controller及安装probe、3停止单位恢复/源guard、4/5 RF-IP恢复/原field与standalone OA、6 focus实际迁移。C7前全体共同冻结，再一次必要发行与Repository，不因微小局部变化重复全库或大模拟。
 
+### 57e36e7b 后接续：停止证据与仍未闭合链（WORKTREE）
+
+`57e36e7b0adde952ff34ca76e77a380035084710` 已普通push任务tracking分支；其质量谱单元仅规范表分析/reader/worker边界，未宣称全部C完成。新版包全部26文件的既有重读/manifest收据与C-r2唯一Goal继续适用，退出表CA01–CA19，C0按用户决定只报残差。原审计后增量与所有科研资产保留。
+
+Agent3 将group attempt/member/host验证从Store提交方法抽为同一只读 `execution.native_artifact_controls.validate_native_group_completion`，提交和失败证据读取共用；停止guard逐组验证完整attempt集，选每operation最终attempt，再严格比对原manifest writer completion和唯一host release。保留真实失败RF-IP资产 `rf-ip-recovery-16uzeopm` 的原index仍为 `[true,true,false]`，新guard只读通过；缺/重attempt负例及原真实quick/mixed组合同PASS38.366s。Agent0独立暂存树 `4c93108fd4202762c7df7ae17fe389dba1d01995` 验证16项PASS52.440s，包含因fixture TestCase顶层导入而额外发现的13项原Owner重复测试；已将测试import改成module限定以免后续隐含扩大范围，此次额外调用如实保留。该事实不等于partial恢复通过。worker仍有旧ledger来源保护调用，3/4正迁同一个中立持权helper，未跳过检查；5前轮实际replay失败记录保留，不覆盖旧probe为修复PASS。
+
+Agent0 的工程tracking CLI明确读取一次严格JSON并交公共dispatch，重复键/非object/NaN在启动前拒绝；单CLI→中立io方向允许、io→CLI仍拒绝。定向5项PASS1.611s，Ruff PASS，仅软件派发边界；公开算法仍判定适用组合，不把engineering controls塞科学作者。catalog新增实际反射补偿选择方法已核父预检加完整owner分片，1 PASS17.192s；先前误把合法分片当空检查的失败保留，未改中央verifier或缩空范围。
+
+Agent1 冷COMSOL成功历史/Store提取/报告17项PASS15.900s（启动器completion替身及真实Python进程，不是商业COMSOL）；发现历史detector不足仍有完整100-ID CSV的合法失败分析，正在保留failure outputs及可信停写验证，旧caller未贸然删除。Agent2/6 核实focus旧场为mirror-X半域/surface=none，与当前full-domain/fractional不同；将明确原数值设置、编译mode和缓存身份，不把旧controller包装成等值FieldBundle。原负向首次穿越、焦点主动终止和正电荷理想对照各按真实范围迁移；此时公共focus链与商业验证仍未完成。最终安装/Repository/全口径成本和CLOC仍待真正完成集成后一次必要验证。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

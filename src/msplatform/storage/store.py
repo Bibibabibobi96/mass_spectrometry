@@ -609,7 +609,7 @@ class ArtifactStore:
 
     def complete_native_group_controls(self, binding_id: str, *, completion: dict) -> bool:
         """Release only after every declared started worker and host release is proven."""
-        from msplatform.execution.native_artifact_controls import validate_native_completion
+        from msplatform.execution.native_artifact_controls import validate_native_group_completion
         with self._db() as db:
             row = db.execute("""SELECT host_token,state,host_state_path,host_file_id FROM native_bindings
                 WHERE id=? AND operation_id='group'""", (binding_id,)).fetchone()
@@ -619,30 +619,11 @@ class ArtifactStore:
             raise KeyError(binding_id)
         if row[1] == "complete":
             return False
-        operations, not_started, releases = (completion.get(name) for name in
-                                              ("operations", "not_started", "resource_releases"))
-        if not isinstance(operations, list) or not operations or not isinstance(not_started, list) or not isinstance(releases, list):
-            raise ValueError("group completion requires actual started operations and release")
         with self._db() as db:
             attempts = db.execute("SELECT operation_id,attempt,worker_pid,worker_started FROM native_group_attempts WHERE binding_id=?",
                                   (binding_id,)).fetchall()
-        by_attempt = {(name, attempt): (pid, birth) for name, attempt, pid, birth in attempts}
-        expected = {item[0] for item in members}
-        keys = [(item.get("operation_id"), item.get("attempt")) for item in operations]
-        started = {item[0] for item in keys}
-        if (len(keys) != len(set(keys)) or set(keys) != set(by_attempt)
-                or len(not_started) != len(set(not_started)) or started & set(not_started)
-                or started | set(not_started) != expected):
-            raise ValueError("group completion does not cover its exact declared attempts")
-        for operation in operations:
-            worker = by_attempt[(operation["operation_id"], operation["attempt"])]
-            binding = {"host_token": row[0], "operation_id": operation["operation_id"],
-                       "worker_pid": worker[0], "worker_started": worker[1],
-                       "host_state_path": row[2], "host_file_id": json.loads(row[3])}
-            validate_native_completion(binding, {"writers_stopped": completion.get("writers_stopped"),
-                "operations": [operation], "resource_releases": releases})
-        if any(item[0] in not_started and item[1:] != (None, None) for item in members):
-            raise ValueError("registered group worker cannot be declared not started")
+        validate_native_group_completion(host_token=row[0], host_state_path=row[2], host_file_id=json.loads(row[3]),
+                                         members=members, attempts=attempts, completion=completion)
         with self._transaction() as db:
             changed = db.execute("UPDATE native_bindings SET state='complete',completion=? WHERE id=? AND state='active'",
                                  (json.dumps(completion, sort_keys=True), binding_id)).rowcount

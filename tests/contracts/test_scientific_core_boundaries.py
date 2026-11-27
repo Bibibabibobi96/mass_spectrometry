@@ -109,6 +109,7 @@ def _target_error(target: str, dependencies: set[str], source_domain: str, sourc
                 "msplatform.execution.native_artifact_controls.validate_host_binding",
                 "msplatform.execution.native_artifact_controls.validate_host_worker",
                 "msplatform.execution.native_artifact_controls.validate_native_completion",
+                "msplatform.execution.native_artifact_controls.validate_native_group_completion",
                 "msplatform.execution.native_artifact_controls.reconcile_native_receipt"}:
             return None
         allowed = DOMAIN_IMPORTS.get(source_domain, set())

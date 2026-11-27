@@ -107,6 +107,31 @@ def validate_native_completion(binding: Mapping[str, Any], completion: Mapping[s
     _validate_released_host(binding)
 
 
+def validate_native_group_completion(*, host_token, host_state_path, host_file_id, members, attempts, completion):
+    """Validate the complete recorded group attempt set and its released host."""
+    operations, not_started, releases = (completion.get(name) for name in
+                                          ("operations", "not_started", "resource_releases"))
+    if not isinstance(operations, list) or not operations or not isinstance(not_started, list) or not isinstance(releases, list):
+        raise ValueError("group completion requires actual started operations and release")
+    by_attempt = {(name, attempt): (pid, birth) for name, attempt, pid, birth in attempts}
+    expected = {item[0] for item in members}
+    keys = [(item.get("operation_id"), item.get("attempt")) for item in operations]
+    started = {item[0] for item in keys}
+    if (len(keys) != len(set(keys)) or set(keys) != set(by_attempt)
+            or len(not_started) != len(set(not_started)) or started & set(not_started)
+            or started | set(not_started) != expected):
+        raise ValueError("group completion does not cover its exact declared attempts")
+    for operation in operations:
+        worker = by_attempt[(operation["operation_id"], operation["attempt"])]
+        binding = {"host_token": host_token, "operation_id": operation["operation_id"],
+                   "worker_pid": worker[0], "worker_started": worker[1],
+                   "host_state_path": host_state_path, "host_file_id": host_file_id}
+        validate_native_completion(binding, {"writers_stopped": completion.get("writers_stopped"),
+            "operations": [operation], "resource_releases": releases})
+    if any(item[0] in not_started and item[1:] != (None, None) for item in members):
+        raise ValueError("registered group worker cannot be declared not started")
+
+
 def _validate_released_host(binding: Mapping[str, Any]) -> None:
     path = Path(binding["host_state_path"])
     if not path.is_file():

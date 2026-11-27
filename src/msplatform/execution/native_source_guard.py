@@ -151,17 +151,16 @@ def guard_formal_v1(manifest_record: Mapping[str, Any], *, project_id: str,
 
 
 @contextmanager
-def guard_failed_store_evidence(store, manifest_record: Mapping[str, Any], selected_output: Mapping[str, Any]):
-    """Hold one sealed failed stage and its exact stopped-worker evidence.
+def guard_stopped_store_evidence(store, manifest_record: Mapping[str, Any]):
+    """Hold stopped failed/interrupted evidence and dynamically selected manifest records.
 
     Failed assets are not eligible for Store GC. This guard never promotes them
-    to ready or treats the selected output as a successful result.
+    to ready or treats its output as a successful result. The yielded selector
+    accepts only exact manifest-bound inputs/outputs and holds them until exit.
     """
     from msplatform.execution.owner import validate_writer_completion
-    from msplatform.execution.host_resource_scheduler import _same_creation_time
-    from msplatform.execution.native_artifact_controls import validate_native_completion
+    from msplatform.execution.native_artifact_controls import validate_native_completion, validate_native_group_completion
     manifest_record = validate_file_record(manifest_record, 'failed stage manifest')
-    selected_output = validate_file_record(selected_output, 'failed stage output')
     path = record_path(manifest_record).resolve(strict=True)
     if not path.is_relative_to(store.root / 'assets' / 'native_stage') or path.name != 'run_manifest.json':
         raise ValueError('failed evidence is not a Store native stage')
@@ -192,11 +191,21 @@ def guard_failed_store_evidence(store, manifest_record: Mapping[str, Any], selec
                 held.add(item)
             return item
         hold(manifest_record)
-        hold(selected_output)
         manifest = json.loads(path.read_text(encoding='utf-8-sig'))
-        if manifest.get('status') != 'failed' or manifest.get('outputs', []).count(selected_output) != 1:
-            raise ValueError('selected output is not bound by the failed manifest')
+        status = manifest.get('status')
+        if status not in {'failed', 'interrupted'}:
+            raise ValueError('Store stage is not a stopped failed or interrupted terminal')
         outputs = manifest['outputs']
+        inputs = manifest.get('inputs', {})
+        if not isinstance(outputs, list) or not isinstance(inputs, dict):
+            raise ValueError('stopped stage manifest records differ')
+        def hold_records(records):
+            if not isinstance(records, (list, tuple)) or not records:
+                raise ValueError('explicit stopped-stage records are required')
+            for record in records:
+                if outputs.count(record) + list(inputs.values()).count(record) != 1:
+                    raise ValueError('selected record is not uniquely bound by the stopped manifest')
+                hold(record)
         for record in manifest.get('inputs', {}).values():
             if isinstance(record, dict) and isinstance(record.get('path'), str):
                 item = record_path(record)
@@ -209,9 +218,9 @@ def guard_failed_store_evidence(store, manifest_record: Mapping[str, Any], selec
             return json.loads(hold(matches[0]).read_text(encoding='utf-8-sig'))
         completion = output('execution_completion.json')
         summary = output('summary.json')
-        if (completion.get('status') != 'failed' or completion.get('run_id') != manifest.get('run_id')
+        if (completion.get('status') != status or completion.get('run_id') != manifest.get('run_id')
                 or summary.get('run_id') != manifest.get('run_id') or summary.get('writers_stopped') is not True
-                or row[4] != str(completion.get('exception') or 'failed')):
+                or row[4] != str(completion.get('exception') or status)):
             raise ValueError('failed stage writer completion differs')
         writer = completion['writer_completion']
         operations = writer['operations']
@@ -222,31 +231,56 @@ def guard_failed_store_evidence(store, manifest_record: Mapping[str, Any], selec
             operations=operations, resource_releases=writer['resource_releases'])
         with store._db() as db:
             bindings = db.execute('''SELECT b.operation_id,b.state,b.worker_pid,b.worker_started,b.completion,
-                b.host_token,b.host_state_path,b.host_file_id FROM native_bindings b
+                b.host_token,b.host_state_path,b.host_file_id,b.id FROM native_bindings b
                 JOIN native_binding_controls c ON c.binding_id=b.id WHERE c.control_id=?''', (row[3][8:],)).fetchall()
-        if any(item[1] != 'complete' for item in bindings) or {item['operation_id'] for item in operations} != {item[0] for item in bindings}:
+        if any(item[1] != 'complete' or not item[4] for item in bindings):
+            raise ValueError('failed stage native binding proof differs')
+        proven = {}
+        for bound in bindings:
+            proof = json.loads(bound[4])
+            if bound[0] == 'group':
+                with store._db() as db:
+                    members = db.execute('SELECT operation_id,worker_pid,worker_started FROM native_group_workers WHERE binding_id=?', (bound[8],)).fetchall()
+                    attempts = db.execute('SELECT operation_id,attempt,worker_pid,worker_started FROM native_group_attempts WHERE binding_id=?', (bound[8],)).fetchall()
+                validate_native_group_completion(host_token=bound[5],host_state_path=bound[6],
+                    host_file_id=json.loads(bound[7]),members=members,attempts=attempts,completion=proof)
+                by_name = {}
+                for item in proof['operations']:
+                    if item['operation_id'] not in by_name or item['attempt'] > by_name[item['operation_id']]['attempt']:
+                        by_name[item['operation_id']] = item
+                selected = list(by_name.values())
+            else:
+                validate_native_completion({'operation_id': bound[0], 'worker_pid': bound[2], 'worker_started': bound[3],
+                    'host_token': bound[5], 'host_state_path': bound[6], 'host_file_id': json.loads(bound[7])}, proof)
+                selected = proof['operations']
+            for item in selected:
+                name = item['operation_id']
+                if name in proven:
+                    raise ValueError('failed stage native operation has multiple bindings')
+                proven[name] = (item, proof)
+        if {item['operation_id'] for item in operations} != set(proven):
             raise ValueError('failed stage native binding proof differs')
         for operation in operations:
-            matching = [item for item in bindings if item[0] == operation['operation_id']]
-            if len(matching) != 1 or not matching[0][4]:
-                raise ValueError('failed stage native completion is unavailable')
-            bound = matching[0]
+            proof_operation, proof = proven[operation['operation_id']]
             observation = operation['observation']
-            if (observation['process_id'] != bound[2] or not _same_creation_time(
-                    str(observation['process_started_at_utc_ticks']), str(bound[3]))):
-                raise ValueError('failed stage native worker identity differs')
-            proof = json.loads(bound[4])
-            validate_native_completion({'operation_id': bound[0], 'worker_pid': bound[2], 'worker_started': bound[3],
-                'host_token': bound[5], 'host_state_path': bound[6], 'host_file_id': json.loads(bound[7])}, proof)
-            proof_operations = [item for item in proof.get('operations', []) if item.get('operation_id') == operation['operation_id']]
-            if len(proof_operations) != 1 or proof_operations[0].get('observation') != observation:
+            if proof_operation.get('observation') != observation:
                 raise ValueError('failed stage native worker proof differs')
             release = next(item for item in writer['resource_releases'] if item['release_id'] == operation['resource_release_id'])
             proof_releases = [item for item in proof.get('resource_releases', [])
-                              if item.get('release_id') == proof_operations[0].get('resource_release_id')]
+                              if item.get('release_id') == proof_operation.get('resource_release_id')]
             if (len(proof_releases) != 1 or proof_releases[0].get('completion_receipt', {}).get('host_release')
                     != release.get('completion_receipt', {}).get('host_release')):
                 raise ValueError('failed stage host release proof differs')
+        yield manifest, hold_records
+
+
+@contextmanager
+def guard_failed_store_evidence(store, manifest_record: Mapping[str, Any], selected_output: Mapping[str, Any]):
+    """Hold one sealed failed stage and its selected manifest-bound output."""
+    with guard_stopped_store_evidence(store, manifest_record) as (manifest, hold_records):
+        if manifest['status'] != 'failed' or manifest['outputs'].count(selected_output) != 1:
+            raise ValueError('selected output is not bound by the failed manifest')
+        hold_records([selected_output])
         yield manifest
 
 
