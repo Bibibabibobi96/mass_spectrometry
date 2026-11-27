@@ -342,7 +342,7 @@ baselines share the existing stages and execution owner; they are not eight new 
 First establish each physical geometry family's canonical authority, then deliver a usable
 complete-component continuous SFI replacement. Generic static-field comparison, MR fixed-design
 numerics and lower-cost installation feedback can proceed independently. The named MP-to-IP,
-complete MP-to-OA, OA/IP-to-MR and FullJoint/prepared-joint tasks require continuous propagation
+complete MP-to-OA and OA/IP-to-MR tasks require continuous propagation
 from an explicit original source; cross-model survivor relaunch is not their replacement.
 Local frontend and cooled exclusive features are withdrawn, including their dedicated recipes,
 policies and tests. Their dedicated local product is retired in `1ec0f843`; this is a scope change, not scientific implementation acceptance.
@@ -694,7 +694,7 @@ integrator. Detailed domain evidence remains in the linked project and integrati
 | B05 | Complete MR combinations and fixed-design numerics; after B00/B03 | Inherit the delivered catalog provider; avoid duplicate internal OA, separate physical gap2 from representation and close renderer/field/continuous tracking |
 | B06 | RF/OA/TOF capabilities and scientific strategies; after B01 | Real native and ideal paths remain separately identified; unique methods and consumers retained |
 | B07 | Dual-cone/EI/Wehnelt; after B00 | Existing staged and build-only operations, resources, cold reopen and applicable native checks |
-| B08 | Complete continuous composition; after B01/B03/B04/B05 | MP-to-OA, MP-to-IP, OA/IP-to-MR and FullJoint/prepared-joint reuse the same complete model/field stages and execution owner; no survivor relaunch or local product |
+| B08 | Complete continuous composition; after B01/B03/B04/B05 | MP-to-OA, MP-to-IP and OA/IP-to-MR reuse the same complete model/field stages and execution owner; no survivor relaunch or local product |
 | B09 | Research campaign strategies; after B01/B02 | Retained radial, compensation, spectrum and finite-length tasks share execution and recovery |
 | B10 | Retained gas chains; after B00 | IP/HS1 and dual-cone/SDS preserve G01–G18 and their distinct models/vendor evidence |
 | B11 | Installation and feedback cost; after B00 | Selectable real probes and immutable builds; full wheel/sdist coverage and original budgets retained |

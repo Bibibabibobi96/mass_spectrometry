@@ -12,16 +12,10 @@ param(
   [string]$ReferenceMrRunPath='',
   [ValidateSet('orthogonal_accelerator','ion_processor')]
   [string]$AcceleratorProvider='orthogonal_accelerator',
-  [switch]$FullJoint,
-  [switch]$ResumeFinalization,
-  [string]$ResultPath='',
   [string]$RunId='',
   [string]$PythonExe='',
   [string]$RepoRoot=''
 )
-if($FullJoint-and-not$ResumeFinalization){
-  throw 'Legacy cross-component handoff and re-release are retired; use the public SimulationRecipe entrypoint.'
-}
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 function New-AcceleratorInterfaceRunId {
@@ -59,23 +53,6 @@ $pathEnvironment=@{MASS_SPECTROMETRY_ARTIFACT_ROOT=$artifactRoot;
 $hostContextJson=@{workspace=$workspaceRoot;python_executable=$python;
   host_state_path=[string]$pathContext.host_resource_state_path;
   policy_path=(Join-Path $executionResources 'host_resource_policy.json')}|ConvertTo-Json -Compress
-function Invoke-JointOwnerStage {
-  param([string]$Script,[hashtable]$Arguments)
-  $watch=[Diagnostics.Stopwatch]::StartNew()
-  try{Invoke-RunToolRootContext -RepoRoot $sourceRoot -Environment $pathEnvironment -Operation {& $Script @Arguments}}
-  finally{Write-Output ("JOINT_STAGE OWNER={0} ELAPSED_SECONDS={1:F3}" -f $Script,$watch.Elapsed.TotalSeconds)}
-}
-if($ResumeFinalization){
-  if(-not$FullJoint-or-not$RunId){throw 'ResumeFinalization requires FullJoint and the existing flight RunId.'}
-  $allowed=@('ResumeFinalization','FullJoint','RunId','ResultPath','PythonExe','RepoRoot')
-  if(@($PSBoundParameters.Keys|Where-Object{$_-notin$allowed}).Count){throw 'Finalization recovery consumes the frozen run; omit scientific and native execution options.'}
-  $recovery=@{ResumeFinalization=$true;RunId=$RunId;RepoRoot=$repoRoot}
-  if($ResultPath){$recovery.ResultPath=$ResultPath}
-  if($PythonExe){$recovery.PythonExe=$PythonExe}
-  Invoke-JointOwnerStage -Script (Join-Path $sourceRoot 'msplatform/workflows/resources/prepared_joint_execute.ps1') -Arguments $recovery
-  return
-}
-if($ResultPath-and-not$FullJoint){throw 'ResultPath requires FullJoint.'}
 if(-not$ReferenceMrRunPath){throw 'ReferenceMrRunPath is required for interface preparation.'}
 $reference=(Resolve-Path -LiteralPath $ReferenceMrRunPath).Path
 if(-not$RunId){$RunId=New-AcceleratorInterfaceRunId -Provider $AcceleratorProvider}

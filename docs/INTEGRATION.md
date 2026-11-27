@@ -2526,15 +2526,14 @@ evidence. No OA is synthesized to resolve this scope distinction.
 
 ## 已准备IP→MR联合飞行
 
-[prepared_joint入口](../src/msplatform/workflows/resources/prepared_joint_execute.ps1)消费`-PreparedJointWorkbenchRunPath`与`-ContractPath`。
-同入口`-AnalyzeRunPath`从封存原生日志建立新分析run，不重飞、不复制PA或改写原run。
-两条原CLI的`-ResumeFinalization -RunId <原run_id> [-ResultPath <小Result>]`沿公共PowerShell owner收尾；
-默认Result位于`artifacts/projects/instrument_assembly/scratch/workflow_results/<run_id>/result.json`。
+[记录型联合分析入口](../src/msplatform/workflows/resources/prepared_joint_execute.ps1)消费`-AnalyzeRunPath`与`-ContractPath`，
+从封存原生日志建立新分析run，不重飞、不复制PA或改写原run。
+同入口`-ResumeFinalization -RunId <原run_id> [-ResultPath <小Result>]`沿公共PowerShell owner收尾；
+默认Result位于`artifacts/assemblies/instrument_assembly/scratch/workflow_results/<run_id>/result.json`。
 该模式直接读取原run冻结的execution request与实际停写／host释放事实，不重做准备、Fly或分析，也不要求重传科学输入。
 正常流程在retention／发布前持久保存小完成记录；收尾失败可原命令重试，未知writer先确认完成。
 继承容量会话不由child减承诺或释放；heavy child只发布自己的终态，Result明确提示`parent_capacity_owner_finalize`，
-不把父owner尚未封存的载荷报告为收尾完成。外层`accelerator_interface/execute.ps1 -FullJoint -ResumeFinalization -RunId <原flight_run_id>`
-透传同一恢复命令，跳过设计、场和源阶段。
+不把父owner尚未封存的载荷报告为收尾完成。旧 FullJoint 外层恢复转发已删除；恢复直接由原分析 owner 执行。
 
 显式前驱恢复以固定完整批为单位，仅执行缺失批，来源和借用控制文件继续绑定原owner。
 全批复用不申请或释放不存在的SIMION重型租约；批次执行器异常且写入者未确认停止时保留保护，
@@ -3199,11 +3198,11 @@ research, historical evidence readers and the existing Verify/Publish/Recover
 evidence requirements remain. New OA/TOF trajectories use the public Study chain;
 the new chain does not inherit the former Candidate/Formal grade.
 
-The registry `ip_mr_chain`, `accelerator_interface -FullJoint` and prepared joint
-execution are authenticated IP–MR consumers retained for C. OA–MR interface
-preparation is not particle propagation. Shared handoff population/frame/clock
-validation remains needed by those consumers. This scoped retirement does not
-claim that all repository segmented execution is removed.
+The former `ip_mr_chain` registry and `accelerator_interface -FullJoint` route
+are removed. Recorded-joint analysis and Store publication belong to
+`historical_joint_analysis`; the remaining prepared-joint analysis adapter is a
+C migration remnant, not a new-flight entry. OA–MR interface preparation is not
+particle propagation. Historical population/frame/clock readers remain read-only.
 
 ## 当前 paired 静态场 Store 入口
 

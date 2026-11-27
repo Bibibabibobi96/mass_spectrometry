@@ -297,7 +297,6 @@ print('FROZEN_SRC_CORE=PASS')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             snapshot = inputs / "runtime_snapshot"
             required_companions = {
-                "src/msplatform/workflows/resources/prepared_joint_execute.ps1",
                 "src/msplatform/workflows/resources/ip_functional.ps1",
                 "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
                 "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1",

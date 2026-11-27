@@ -300,6 +300,14 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元提交并普通 push `cf3e398e`；CLOC 2.10 `14f34b06→cf3e398e` PASS：total code -3、production +0、tests -3，unclassified=0。逐语言和过滤口径在外部 `execution-compiler-cf3e398e-cloc.log`。
 
+### C2/C4 FullJoint 特殊总控退出（WORKTREE）
+
+`accelerator_interface.ps1` 删除 `FullJoint`、`ResumeFinalization`、`ResultPath` 及其 Prepared 恢复转发、`Invoke-JointOwnerStage` 和旧拒绝分支；保留现有 OA/IP 接口准备、显式 Python、冻结依赖、容量与发布链。`runtime_dependencies.json` 中 Prepared 执行脚本不再登记为 accelerator_interface 的依赖。历史 FullJoint 运行、原始记录与只读身份不改写；当前文档不再把该模式列为运行方式。
+
+旧 finalization 转发测试和只服务于该转发的 context 测试随实现删除；新增统一 PowerShell 参数边界的真实负例，传 `-FullJoint` 时在创建 owner/artifacts 前失败。接口与旧跨组件重释放套件13父测试全PASS（49.975s），新增 FullJoint 负例另1父测试PASS，均无 skip；日志 `fulljoint-retirement-interface.log` 与 `fulljoint-option-absent.log`。
+
+完整依赖套件20父测试首轮18通过／2 FAIL（169.141s）：accelerator closure 仍要求已脱钩的 Prepared 脚本，删除该过时断言后定向1父测试PASS；另一个失败是 SFI 仍用 `single_reflection_flight` consumer 冻结当前准备，不能靠删测试消除，列入下一条 SFI 实修。文档 StructureOnly、Ruff 与 diff-check PASS。本项不表示 Prepared 分析 owner、SFI 或 CA19 已全部退出。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
@@ -309,7 +317,7 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 | ip_functional → ion_processor.functional | 现IP provider、source/numerics、HS1/HP-LP输入 | SIMION batch/GUI-replay owner、IP results | ion_processor与唯一N2/模型数据；未闭合 |
 | dual_cone阶段 → dual_cone_stages/COMSOL gas-flow/SIMION transport | 独立双锥provider、气流/SDS/碰撞来源 | 原气流/PA/transport owner与轨迹诊断 | dual_cone_tandem_quadrupole，保留真实能力范围；未闭合 |
 | multipole_ip_continuous → multipole_ip.continuous | RF variants/IP/MR完整场、原birth/clock/HS1 | 既有whole-unit track owner、REC/分析 | 复用连续实现接公共入口/结果/owner；未闭合 |
-| accelerator_interface -FullJoint / prepared_joint_execute | assembly_registry的ip_mr_chain及下游准备源 | 原准备与joint-field owner、handoff/analysis | 关闭跨组件重新释放，区分合法局部/prepare-only；未闭合 |
+| 旧 FullJoint 总控、Prepared 分析与接口准备 | Assembly 接口准备；`historical_joint_analysis`/Store 承接记录分析 | 已删除 FullJoint 参数、恢复转发、私有 stage 及 accelerator 对 Prepared 执行脚本的依赖 | 原历史运行只读；Prepared admission/PS owner 与其余准备模块仍在退役，未闭合 |
 | single_reflection_flight RF recorded-birth | schema12/plan6、RF→OA→TOF真实母群 | split track owner、规范终态/事件 | 补有声明的新连续native小例；未闭合 |
 | oa_candidate/oa_formal/compensation及历史mass reanalysis | 本地whole-Fly/response basis、历史分析/认证 | 原local run/验证发布owner、历史reader | 合法研究保留、总等级退出、不可达producer删除；C0-04先修observer |
 | EI/Wehnelt现有组件入口/execution_profiles | 当前真实geometry/model能力与源/常量 | 既有COMSOL/运行owner、各产品合同 | 公共输入/能力/owner按实际范围接入；未闭合 |

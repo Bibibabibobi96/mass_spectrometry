@@ -59,8 +59,7 @@
           "id": "msplatform_workflows_prepared_joint_execute_ps1",
           "source_repo_path": "src/msplatform/workflows/resources/prepared_joint_execute.ps1",
           "consumers": [
-            "prepared_joint",
-            "accelerator_interface"
+            "prepared_joint"
           ]
         },
         {

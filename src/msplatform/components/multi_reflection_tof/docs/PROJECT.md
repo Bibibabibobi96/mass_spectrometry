@@ -69,16 +69,15 @@ trajectory or scientific qualification. Its PowerShell execution owner now loads
 host admission, budgeted processes and lifecycle support directly from the installed
 execution resources and requires an explicit Python selection instead of defaulting
 to the checkout `.venv`. The execution helper root is resolved beneath that installed
-package; SIMION Lua companions remain under its backend resource directory. FullJoint's
-frozen consumer closure now includes its prepared-joint, multipole-IP, IP-functional and
-native-provider children plus their required PowerShell/Lua companions. The full provider
-preparation/recovery suite and frozen dependency suite pass; no native solver was started.
+package; SIMION Lua companions remain under its backend resource directory. The former
+FullJoint consumer closure and its forwarding route have been retired; current interface
+preparation does not start particle propagation or claim native solver execution.
 Existing host-state overrides, native input guards,
 failure closure and frozen scientific inputs remain unchanged. The 14 runner
 methods passed with 24 successful records; this software check did not launch
 SIMION or complete ordinary-install field production. The PowerShell execution
 owner, crop adapter and Dirichlet builder now also live in the installed SIMION
-backend. FullJoint, downstream-workpoint and candidate-chain callers select that
+backend. Downstream-workpoint and candidate-chain callers select that
 same owner; the candidate chain requires explicit Python. Their former project
 entry and common Lua dependencies are removed without a forwarding duplicate.
 The Changed-selection regression now names the installed runner too; its original

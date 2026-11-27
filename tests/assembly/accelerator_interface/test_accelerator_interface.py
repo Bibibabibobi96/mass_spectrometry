@@ -98,57 +98,6 @@ class AcceleratorInterfaceTests(unittest.TestCase):
 
 
 
-    def test_joint_workflow_finalization_routes_only_to_existing_flight_owner(self):
-        powershell = shutil.which("pwsh")
-        if not powershell:
-            self.skipTest("PowerShell 7 required")
-        with tempfile.TemporaryDirectory() as directory:
-            script = Path(directory) / "finalization.ps1"
-            script.write_text(r'''param($Entry)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
-$branch=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$ResumeFinalization'},$true)
-if($null-eq$branch){throw 'Missing original CLI recovery branch'}
-$body=(@($branch.Clauses[0].Item2.Statements|Where-Object{$_-isnot[Management.Automation.Language.ReturnStatementAst]}|ForEach-Object{$_.Extent.Text})-join"`n")
-$ResumeFinalization=$true;$FullJoint=$true;$RunId='existing-flight';$ResultPath='external-result';$PythonExe='python-runtime';$repoRoot='repository';$sourceRoot=Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Entry))
-$PSBoundParameters.Clear()
-foreach($key in @('ResumeFinalization','FullJoint','RunId','ResultPath')){$PSBoundParameters[$key]=(Get-Variable -Name $key -ValueOnly)}
-$script:calls=0;$script:inject=$false
-function Invoke-JointOwnerStage {
- param($Script,$Arguments)
- $script:calls++
- if($Script-ne(Join-Path $sourceRoot 'msplatform/workflows/resources/prepared_joint_execute.ps1')-or
-    -not$Arguments.ResumeFinalization-or$Arguments.RunId-ne$RunId-or$Arguments.ResultPath-ne$ResultPath-or
-    $Arguments.PythonExe-ne$PythonExe-or$Arguments.Count-ne5){throw 'Recovery forwarded new scientific or native inputs'}
- if($script:inject){throw 'original owner finalization error'}
-}
-Invoke-Expression $body
-if($script:calls-ne1){throw 'Recovery did not reach the original owner exactly once'}
-$script:inject=$true;$caught=$false
-try{Invoke-Expression $body}catch{$caught=$_.Exception.Message-eq'original owner finalization error'}
-if(-not$caught){throw 'Recovery failure was swallowed'}
-$PSBoundParameters.SimionExe='must-not-start';$caught=$false
-try{Invoke-Expression $body}catch{$caught=$_.Exception.Message-like'*omit scientific*'}
-if(-not$caught-or$script:calls-ne2){throw 'Recovery accepted a new solver option'}
-$PSBoundParameters.Remove('SimionExe');$PSBoundParameters.IonProcessorContinuationPredecessorManifestPath='unrelated-ip';$caught=$false
-try{Invoke-Expression $body}catch{$caught=$_.Exception.Message-like'*omit scientific*'}
-if(-not$caught-or$script:calls-ne2){throw 'Finalization accepted an IP predecessor'}
-'JOINT_WORKFLOW_FINALIZATION=PASS'
-''', encoding="utf-8")
-            result = subprocess.run([powershell, "-NoProfile", "-File", str(script),
-                str(REPO / "src/msplatform/workflows/resources/accelerator_interface.ps1")],
-                cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("JOINT_WORKFLOW_FINALIZATION=PASS", result.stdout)
-
-
-
-
-
-
-
-
-
     def test_runner_publishes_consumed_paths_through_public_manifest_writer(self):
         pwsh = shutil.which("pwsh")
         if pwsh is None:
