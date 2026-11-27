@@ -6,14 +6,14 @@
 
 ## 当前批次 B 检查点
 
-批次B同一Goal仍active，不启动C/M06–M08。主任务分支已普通push至ee0bb140；当前完成原blocked消费者补检后的最小修复，待本主题提交及最终发行/当前安装CLI再验。
+批次B按本页声明的BA01–BA15范围交付；最终代码为`90d6d5e8b67e5b0bfe3e823b0130c30c266eea2b`，本次随后提交仅更新交付记录。最终结果见[最终交付记录](#b-最终交付记录2026-11-27)。不启动C/M06–M08，不授全仓门禁或仪器物理资格。
 
 - 三格新链实际native成功：SSA e95/ee0、CC e95、CS08；同版本复用、N3/N2多电荷、缺件局部重算、合格GC、原pulse N1独立解析基准均已有证据。0 hit/unknown归属和仪器ON/场精度未验证范围不改写。
 - ee0正式聚焦Changed已PASS（7阶段/28 tests/0 skip，1820.198s），含完整普通双发行父方法1794.208s；原08广Changed仍保留9 PASS/2 FAIL/15 BLOCKED，不拼成全绿。
 - 原15 blocked消费者已逐项执行完：11 PASS、4 FAIL、0 BLOCKED，前后40输入SHA一致。实际故障、过时旧执行正例和历史inert fixture逐项修复；根87项定向回归285.105s PASS，Ruff/文本字节PASS。
 - 深路径旧ReanalyzeOnly原90秒测试仍FAIL，旧observer在a9之前即失配；后代自然analysis success/complete，0native、source认证/不变、错误context拒绝/正确context恢复与资源释放均已实证。具体cwd/alias断言仍未验证，作为明确C/P4遗留，不改变timeout、不推断无性能回归、不称整catalog PASS。
 - 两个本轮临时worktree已备份全部11个改动字节/patch并验证属于现有任务提交，普通移除，无force/reset主工作树。可重建解包源码清理及原日志/归档保留；研究PA/MPH、原始数据和此前被自动审批拒绝的三个Temp保持不动。
-- 下一步：提交本修复单元；冻结后用既有verify_reference_delivery执行最终普通wheel/sdist两臂（含真实参考链、B预检/mass_scan与新增installed continuation probe），而非再重复已通过的完整RF/IP安装probe；b6独立环境依赖就绪，随后装最终wheel并通过公共CLI/reader对账；最终CLOC/文档/远端同步后止于B。
+- 最终代码普通wheel、sdist重建wheel两臂离仓参考验收PASS（360.732s），含B预检、mass_scan及installed continuation正反例；b6独立安装同一最终wheel，公共CLI运行`6394fada38644e33b63a84a940f652ae` ready/succeeded，科学结果与b5相同、3374项原生清单不变。最终CLOC已完成；下一步仅按用户后续授权进入C，深路径旧测试仍按具体条件留C/P4。
 
 ## 开工事实与边界
 
@@ -1532,7 +1532,7 @@ CS有效域与掩码：每工作点world675783点/原FEM有效639620、birth1147
 
 主要逐字节/运行证据位于 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/`：`scalar-installed-study/result-evidence-08eab366.json`、`evidence/cc-installed-acceptance.json`、`native-reuse-acceptance/acceptance-summary.json`，作者/resolved、环境、源码身份与原owner引用均保留；旧失败原run不改写为成功缓存。
 
-### B 最终验收对账（最终软件门禁尚待结果）
+### B 最终验收对账（随最终交付记录更新）
 
 | 验收 | 当前事实与限制 |
 |---|---|
@@ -1546,7 +1546,7 @@ CS有效域与掩码：每工作点world675783点/原FEM有效639620、birth1147
 | BA11 | SSA真实repeat/API重放无新增native、K2只增N2、缺443B受控缓存只重算N3trace、GC保留历史SCI；CS同版本重放8448b694e34f486aba0a783744a32d2f ready/succeeded、27/27 stage复用；原生根前后3266项path/size清单完全一致、无新增owner/receipt；无native-control记录的worker计数为null而非伪称实测0。两个run公开读取的数据/分析逐项一致。 |
 | BA12 | K1及K2 N3/N2、100Da的+1/+2、权重总和4、完整0hit/分析不适用、母群归并与失败负例通过。 |
 | BA13–14 | B链跨组件重释入口拒绝；合法分批/观测及历史reader保留；新链无Candidate/Formal总等级。旧Candidate/compensation的本地初态实验及历史owner、IP/MR等列C；MATLAB guard原生正反例未执行。 |
-| BA15 | 08eab366最终非空增量Changed与双发行进行中；完整CLOC已按a9d76aa4→08eab366规范工具测得，表见下节；最终delivery/push仍待记录。 |
+| BA15 | 声明范围内PASS：ee0聚焦Changed、90d6d5e8定向87项/meta10项及最终双发行离仓验收、最终b6公共CLI、规范CLOC均有实际证据。原08广Changed仍FAIL；原15消费者11 PASS/4 FAIL，修复后按影响定向复验，未重称全catalog绿灯；深路径旧90秒测试仍FAIL并有明确C/P4条件。最终代码与后续docs-only交付身份分开。 |
 
 ### B 可复制的已安装命令
 
@@ -1892,3 +1892,132 @@ CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_filename FILES=
 CLASSIFICATION_DETAIL SNAPSHOT=result CATEGORY=tests REASON=test_support_path FILES=77
 ```
 规范工具分别统计total/production/tests，unclassified=0；完整功能分类保留在原日志。
+
+### B 最终交付记录（2026-11-27）
+
+Agent 0完成整合/Git/交付；Agent 1完成独立物理与退出范围审查；Agent 2完成软件/两发行安装；Agent 3完成实际native与复用验收；Agent 4完成旧消费者补检/历史失败诊断；Agent 5完成fixture审查。各流已结束，本轮止于B。B0四缺口、B1公共配置、B2拆分消费、B3/B4原生矩阵、B5通用mass_scan、B6退役/安装的实际结果见上文；BA01–BA15以对账表的声明范围和限制为准。原评阅状态与本轮技术选择保持分离。
+
+最终生产/测试代码`90d6d5e8b67e5b0bfe3e823b0130c30c266eea2b`已普通push至`origin/task/architecture-migration-20261126`；此后交付提交仅改本页，其确切身份由包含本节的Git提交确定。未合并或推送master、未改写历史。原状态缓存M无实际diff、原未跟踪artifacts保持。下列证据根统一为`C:/Users/Liao/msplatform-artifacts/architecture-b-20261127`。
+
+#### 最终安装与实际公共运行
+
+最终代码调用既有`tests.contracts.test_installed_scientific_core.InstalledScientificCoreTests.verify_reference_delivery`，1 test PASS，360.732s；不是重跑完整RF/IP安装probe。直接wheel和sdist重建wheel两臂均使用普通安装、离仓工作目录、`-I`，证实purelib来源/源树不可访问；真实DOP853参考链、完整读回/复用/作者快照、B拆分预检/旧执行拒绝、mass_scan 3+2母群与+1/+2及严格continuation正反例全部通过。B部分`native_run=0`，不冒称新的商业求解。两臂参考事件时间9.185857056658535e-7 s，独立解析时间误差1.1540919197546408e-16 s、最大位置误差8.673617379884035e-18 m。前后3273 tracked文件SHA、HEAD和工作区状态相同；日志与源树前后证据在`evidence/final-reference-90d6d5e8*`，保留发行在`final-reference-90d6d5e8/`。
+
+| 发行 | SHA256 |
+|---|---|
+| distribution/mass_spectrometry_analysis-0.4.0-py3-none-any.whl | 92376530440EDD7872824F03F54EFC3C8B75CF9CDBFF6D031932FEDF1F881588 |
+| distribution/mass-spectrometry-analysis-0.4.0.tar.gz | 172C30B2E7C9F18A54F3141F9B1E711F1B92CAF331007E4CBD4F50EF65EC9DB4 |
+| rebuilt/mass_spectrometry_analysis-0.4.0-py3-none-any.whl | 58FF85C188B39ABC5076BA8DE630291C1BBAFE38220CE2CD77F8C68902471A7A |
+
+最终wheel与ee0真实native b5 wheel的1345个msplatform成员逐字节比较：无新增/删除，唯一差异是历史strict continuation定位器，其余1344相同；证据`evidence/final-reference-90d6d5e8-native-payload-comparison.json`。这不是自动补做所有组合的冷求解资格。
+
+b6隔离环境普通安装最终wheel并实际执行以下公共CLI，成功得到run `6394fada38644e33b63a84a940f652ae`、ready/succeeded。公开read_particle_data/summarize/analyze的初态/终态/事件/轨迹/summary/analysis与b5一致；stage_productions=[]，原生3374项path/size及小receipt/manifest哈希清单无增删改，claims/reservations=0。无新增native-control记录时worker_count为null，不能写成观测到0个worker。此命令是合格缓存复用；不是新的冷Fly/Refine/Compute。
+
+```powershell
+$taskRoot = 'C:/Users/Liao/msplatform-artifacts/architecture-b-20261127'
+$pythonB = "$taskRoot/installed-standalone-b6/Scripts/python.exe"
+& $pythonB -I -m msplatform run "$taskRoot/explicit-simion-source-study/oa_split_tof_native_small_v1.toml" --artifact-root "$taskRoot/final-simion-ee0bb140/store" --reserve-bytes 1073741824 --execution-environment "$taskRoot/final-simion-ee0bb140/environment-b6.json" --profile small_native --workspace 'C:/Users/Liao/mass_spectrometry/artifacts/batch_b_comsol_split_small_20261127' --source-revision 90d6d5e8b67e5b0bfe3e823b0130c30c266eea2b
+& $pythonB -I -m msplatform results inspect 6394fada38644e33b63a84a940f652ae --artifact-root "$taskRoot/final-simion-ee0bb140/store"
+```
+
+实际命令/安装/公共API对账见`final-simion-ee0bb140/b6-run.log`、`b6-install.log`、`b6-evidence.json`及b6-before/after.json。CC/CS原命令、环境、输入和冻结来源保留于上文及逐格证据；不把不同源码身份混称同一次运行。
+
+| field_source → tracer | 实际installed native证据 | 物理/数据边界 |
+|---|---|---|
+| SIMION → SIMION | ee0 b5：8fa83f03944b4516ac5c3fb13f41cfc6，真实新ground/track、1 Fly；同版重复5d76749d7f4048b4876fa14e1be937c7；最终90代码b6复用见上 | N3初终态齐全，0 hit、unknown3，轨迹只有birth样本 |
+| COMSOL → COMSOL | e95 b1：28234aa32d4e45bdb3da93a4883a0167，实际CPT；cc-installed-acceptance.json | N3初终态齐全，12轨迹点，Freeze后行不解释为继续运动；0 hit、unknown3 |
+| COMSOL → SIMION | 08 b4：b3bac2eedb3340318a6d8531f8e5e8f5，真实1 Fly；同版重复8448b694e34f486aba0a783744a32d2f | N3初终态齐全，3 birth样本，0 hit、unknown3；OFF/ON场域mask保留 |
+
+三格仪器粒子均在原80.051373 us脉冲前停止，未验证仪器ON效果/命中性能/网格收敛/跨后端等价或Formal。ON机制另有真实synthetic N1 Fly与独立分段解析解（最大dx=1.6791164e-8 mm、dv=3.130741e-6 m/s，事先容差内），及SDK线性场与COMSOL零力独立基准。仪器COMSOL→SIMION点值/梯度holdout残差未测。不能把unknown填成丢失、命中或物理通过；完整0-hit的分析明确不适用。
+
+#### 必要验证与保留失败
+
+| 对象/实际代码 | 实际结果 | 解释 |
+|---|---|---|
+| 08广Changed | FAIL；9 PASS/2 FAIL/15 BLOCKED/27 N_A；2400 tests、1 skip，3337.056s | 原科学边界逆向依赖与guard消息断言错误已修，保留原失败记录 |
+| ee0聚焦Changed | PASS；7 PASS/37 N_A、28 tests/0 skip，1820.198s | 含完整双发行父方法1794.208s；不是最终90的完整重跑 |
+| ee0原15 blocked消费者逐项补检 | 11 PASS/4 FAIL/0 BLOCKED | 40个输入前后SHA相同；原阶段失败不改写，逐阶段完整表在evidence/final-consumer-table.md |
+| 90最小修复定向回归 | 87 tests PASS/0 skip，285.105s | 严格converter、旧执行拒绝、compensation历史basis、真实provider/host保护等；evidence/final-consumer-fixes-targeted.log与tests.txt |
+| 90安装meta | 10 tests PASS，3.507s | evidence/final-installation-meta-90d6d5e8.log |
+| 90最终双发行reference_delivery | PASS，1 test/360.732s | 真实参考+安装B软件合同，见上；不代替三格native证据 |
+| Lua可移植资源定向 | 1 test PASS，0.408s | 实际Lua5.1.5 PATH；原suite skip记录仍保留，其他11个opt-in/native97等skip未外推验证 |
+| 历史深路径ReanalyzeOnly测试 | 原90秒测试仍FAIL；cwd/stream alias断言仍未验证 | 见下，不能报告全catalog绿灯或无性能回归 |
+
+深路径旧observer在baseline a9已零匹配，本轮未改原测试或延长timeout。诊断后代自然结束、实际analysis success/complete且0 native、source认证/哈希不变、错误context拒绝/正确context恢复和资源释放均有证据；这些事实不证明原observer的cwd/alias断言或每一时刻保护，也不能证明90秒问题是B引入或早于B。`evidence/deep-reanalysis-diagnostic/evidence.json`、evidence.md及独立`evidence/b-exit-scope-independent-audit.md`记录原失败、进程身份和completion不变。若C/P4需声明该历史深路径合同或旧Owner全绿，必须先修正有效observer，再在明确预算下验证；本轮不扩成P4性能整改。B生命周期判据由独立合同和真实native保护证据支持。
+
+Ruff、本轮文本字节与diff检查已通过；最终交付文档StructureOnly PASS（322文件、0链接错误）、文本字节PASS（2497文件）及git diff --check PASS。追加文档时的CRLF/EOF检查失败已规范化为LF并复验通过。不无理由重复完整回归、大型模拟或已通过的完整RF/IP安装。最终代码之后仅docs-only记录不触发科学重跑。
+
+#### 旧消费者与C的明确入口
+
+| 旧路径/owner | B实际处理或替代 | C/剩余条件 |
+|---|---|---|
+| composite SIMION / HandoffResult / segmented_upstream / state_relaunch | 新公共连续native链拒绝跨组件重新释放；中性母群/clock/历史读取保留 | assembly/handoff.py历史reader与其他链依赖继续逐链迁移 |
+| 旧固定5物种mass run/resume | 执行拒绝，改公共mass_scan；历史analyze/resume_finalization保留 | 深路径observer/cwd验证按上节C/P4条件 |
+| COMSOL composite/retrace/Formal Validate及MATLAB粒子builders | 旧粒子执行guard；合法geometry/field-only和历史Verify/Publish/Recover保留 | MATLAB guard原生正反例未执行，不宣称旧Owner全绿 |
+| Candidate本地初态→单次whole Fly | 没有全量退役；未发现跨组件export/relaunch；默认COMSOL模式guard | 本地N100能力/旧等级不可继承为新链资格，C另审 |
+| compensation source.ion三臂 | 只保留历史/独立response basis软件消费者 | C的旧生产消费者，不接回新split链、不做native调优 |
+| IP–MR / accelerator_interface -FullJoint / prepared_joint | 仍为C试验入口；普通OA→MR prepare只是接口 | 尚未迁移真实粒子链 |
+| RF schema12/plan6 recorded-birth | 编译/source/clock/母群软件消费者已迁 | 真实RF recorded Fly未验证，不扩本轮独立RF研究 |
+
+合格缓存自动GC实际删登记215153 B的可回收资产，缺443 B引用只重算N3批、N2/场保留；非研究二进制破坏。任务内可重建解包源码及两个任务worktree在字节备份、归属/依赖/无活进程检查后普通移除，逻辑文件字节合计5,703,472,285 B，不冒称实测物理磁盘释放。归档、wheel、日志、环境、真实PA/MPH/Store及被自动审批拒绝的三个Temp保留；审计见evidence/extracted-build-source-cleanup.json与evidence/final-worktree-cleanup.json。下一批不自动启动，全仓迁移仍未完成。
+### B 累计 CLOC（最终代码90d6d5e8）
+
+规范工具实际PASS；原日志 `C:/Users/Liao/msplatform-artifacts/architecture-b-20261127/code-90d6d5e8-cloc.log`。下表直接转录规范输出，每格为 baseline → result（delta）；以指定Git提交为输入，未跟踪研究产物、状态缓存M和随后docs-only提交不混入。
+
+
+**total**
+
+| language | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| JSON | 282 → 291 (+9) | 0 → 0 (+0) | 0 → 0 (+0) | 126022 → 130154 (+4132) |
+| Lua | 119 → 120 (+1) | 413 → 416 (+3) | 828 → 830 (+2) | 13219 → 13273 (+54) |
+| MATLAB | 186 → 188 (+2) | 1066 → 1068 (+2) | 2053 → 2067 (+14) | 19701 → 20023 (+322) |
+| PowerShell | 150 → 150 (+0) | 1100 → 1101 (+1) | 1195 → 1195 (+0) | 46113 → 46242 (+129) |
+| Python | 1435 → 1499 (+64) | 32921 → 33773 (+852) | 42493 → 43096 (+603) | 396258 → 407829 (+11571) |
+| SIMION GEM | 10 → 10 (+0) | 26 → 26 (+0) | 51 → 51 (+0) | 214 → 214 (+0) |
+| TOML | 5 → 9 (+4) | 43 → 46 (+3) | 2 → 2 (+0) | 219 → 283 (+64) |
+| YAML | 2 → 2 (+0) | 8 → 8 (+0) | 20 → 20 (+0) | 506 → 506 (+0) |
+| SUM | 2189 → 2269 (+80) | 35577 → 36438 (+861) | 46642 → 47261 (+619) | 602252 → 618524 (+16272) |
+
+**production**
+
+| language | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| JSON | 259 → 267 (+8) | 0 → 0 (+0) | 0 → 0 (+0) | 42340 → 45539 (+3199) |
+| Lua | 99 → 100 (+1) | 333 → 336 (+3) | 703 → 705 (+2) | 11141 → 11195 (+54) |
+| MATLAB | 118 → 120 (+2) | 526 → 528 (+2) | 1462 → 1476 (+14) | 12164 → 12486 (+322) |
+| PowerShell | 138 → 138 (+0) | 1037 → 1038 (+1) | 1149 → 1149 (+0) | 44012 → 44131 (+119) |
+| Python | 685 → 714 (+29) | 16804 → 17261 (+457) | 11609 → 11935 (+326) | 182981 → 189469 (+6488) |
+| SIMION GEM | 10 → 10 (+0) | 26 → 26 (+0) | 51 → 51 (+0) | 214 → 214 (+0) |
+| TOML | 5 → 9 (+4) | 43 → 46 (+3) | 2 → 2 (+0) | 219 → 283 (+64) |
+| YAML | 2 → 2 (+0) | 8 → 8 (+0) | 20 → 20 (+0) | 506 → 506 (+0) |
+| SUM | 1316 → 1360 (+44) | 18777 → 19243 (+466) | 14996 → 15338 (+342) | 293577 → 303823 (+10246) |
+
+**tests**
+
+| language | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| JSON | 23 → 24 (+1) | 0 → 0 (+0) | 0 → 0 (+0) | 83682 → 84615 (+933) |
+| Lua | 20 → 20 (+0) | 80 → 80 (+0) | 125 → 125 (+0) | 2078 → 2078 (+0) |
+| MATLAB | 68 → 68 (+0) | 540 → 540 (+0) | 591 → 591 (+0) | 7537 → 7537 (+0) |
+| PowerShell | 12 → 12 (+0) | 63 → 63 (+0) | 46 → 46 (+0) | 2101 → 2111 (+10) |
+| Python | 750 → 785 (+35) | 16117 → 16512 (+395) | 30884 → 31161 (+277) | 213277 → 218360 (+5083) |
+| SUM | 873 → 909 (+36) | 16800 → 17195 (+395) | 31646 → 31923 (+277) | 308675 → 314701 (+6026) |
+
+**unclassified**
+
+| language | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| SUM | 0 → 0 (+0) | 0 → 0 (+0) | 0 → 0 (+0) | 0 → 0 (+0) |
+
+```text
+CLOC_DELTA=PASS
+BASELINE=a9d76aa4dcdbaf8099c9ce5aa0585d6fce18c3be
+RESULT=90d6d5e8b67e5b0bfe3e823b0130c30c266eea2b
+CLOC_VERSION=2.10
+CLASSIFIER_SHA256=d3abfc94e920066445561b696c76131b43eab9713a0cbcb9e2c1270ba7136952
+LANGUAGE_DEFINITION_SHA256=985e60f06bd8981c36966a0895cccfccd182fd625c79eb6ae94b65a12c5508a6
+INPUT_IDENTITY SNAPSHOT=baseline FILES=2234 SHA256=2e9c89b9e7a4ddd9d2d2e95a292cfbe15ca5b439965fa762bd82c4277fa07818
+INPUT_IDENTITY SNAPSHOT=result FILES=2314 SHA256=e24f7bc6d5c442be4609c186ff615342a618950c2cf4325852b9e011c90164f6
+FILTER=extensions=.py,.m,.ps1,.lua,.gem,.fly2,.json,.toml,.yml,.yaml,.c,.h,.cc,.cpp,.cxx,.hpp,.cs,.java,.js,.jsx,.ts,.tsx,.go,.rs,.rb,.php,.swift,.kt,.kts,.sh,.bash,.zsh,.bat,.cmd;excluded_components=.git,.venv,.tmp,artifacts,generated,vendor,vendors,third_party,third-party,thirdparty,run,runs;excluded_lifecycle_paths=any/docs/history/**|root/scratch/**|artifacts/projects/<project>/(archive|scratch)/**;language_overrides=.m:MATLAB|.fly2:Lua|.gem:SIMION_GEM;production=execution_profile_entrypoint|run_*.ps1|verify_*.ps1|tests/support(non-test-named);tests=fixture|test_support|testing_support_path|test_*.(py|ps1|m|lua)|*_test.py|tests_boundary/*_fixtures.py|tests/**/__init__.py|*Test.m|*.Tests.*;unclassified=other_code_below_test_or_tests_path;worktree_source=git_tracked_plus_nonignored_untracked
+```
