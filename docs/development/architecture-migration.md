@@ -202,6 +202,8 @@ Agent 7 将几何和场两个原 Store 错误修到定向 PASS；组合用例随
 
 候选索引快照 `C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/rf-ip-index-check-20261128T012347` 完成同一72个父测试：160条记录为158 success／2个既有Lua环境skip，discovery 72/72、无漏回执，runner 318.029s／命令323.716s。此前多轮索引失败均保留为定位证据；本轮通过依赖闭包补齐，不删除失败断言。这是候选定向软件验收，不是最终Repository、双安装或真实native签收。
 
+RF–IP 候选代码提交为 `0ff4a4b1b200f616f6c06c2b8fea9198d6ec2c0a`。规范 CLOC 2.10 `1ca24c23→0ff4a4b1` PASS：total code 622096→626537（+4441），production 303852→307111（+3259），tests 318244→319426（+1182），unclassified=0；各语言 files/blank/comment/code 与完整过滤口径在外部 `rf-ip-0ff4a4b1-cloc.log`，其 WORKTREE_DIRTY=true 仅描述运行报告时仍有其他在途文件，不污染以两个提交快照计算的差值。
+
 ### OA Formal 空包最终退出（WORKTREE）
 
 `oa_formal` 的科学派生核验、历史跨 solver reader、运行时物化和历史发布证据已分别归组件、results、SIMION runtime_materialization 与 execution owner；本单元只删除最后剩下的 `workflows/oa_formal/__init__.py` 空包说明及生成 `__pycache__`，不删除仍有真实消费者的 oa_candidate 或 focus 链。退休测试现直接断言父包不可导入，不再让缺失父包在子模块 `find_spec` 中变成异常；安装探针同时检查父包及两个旧子模块，并纠正先前误写成 backends.simion 的两条旧命名空间。
