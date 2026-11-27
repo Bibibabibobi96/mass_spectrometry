@@ -95,7 +95,8 @@ $formalResultsDir = Join-Path $artifactRoot $formalAssets.results.artifact_relat
 $formalResultsManifest = Join-Path $artifactRoot $formalAssets.results.sha256_manifest_relative_path.Replace('/','\')
 $simionStablePath = Join-Path $componentDir "config\$($formalAssets.simion_manifest)"
 $formalDir = Join-Path $artifactRoot 'formal\simion'
-$derivationOutput = & $python -m msplatform.workflows.oa_formal.verify_geometry_derivation $baselinePath
+$derivationCode = 'import json,sys;from pathlib import Path;from msplatform.components.single_reflection_oa_tof.geometry_derivation import verify_geometry_derivation;result=verify_geometry_derivation(json.loads(Path(sys.argv[1]).read_bytes()));print("GEOMETRY_DERIVATION_STATUS="+result["status"])'
+$derivationOutput = & $python -I -B -c $derivationCode $baselinePath
 if ($LASTEXITCODE -ne 0 -or $derivationOutput -notcontains 'GEOMETRY_DERIVATION_STATUS=PASS') {
   throw 'Physics-input to engineering-geometry derivation gate failed.'
 }

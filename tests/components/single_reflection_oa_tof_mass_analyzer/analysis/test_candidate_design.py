@@ -12,7 +12,6 @@ from pathlib import Path
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.workflows.oa_candidate.compile_candidate_design import EnvelopeReviewRequired, write_candidate as _write_candidate
 from msplatform.workflows.oa_candidate.prepare_candidate_consumers import prepare as _prepare, verify_routing_coverage
-from msplatform.workflows.oa_formal.prepare_formal_promotion import prepare as prepare_promotion
 
 from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.candidate_fixtures import (
     CandidateFixtures,
@@ -352,59 +351,6 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
         del consumer_contract["consumers"]["cad"]
         with self.assertRaisesRegex(ValueError, "candidate consumer routing is incomplete"):
             verify_routing_coverage(consumer_contract, variable_catalog)
-
-
-    def test_formal_promotion_requires_passing_candidate_acceptance(self):
-        with tempfile.TemporaryDirectory() as root:
-            root_path = Path(root)
-            candidate = root_path / "candidate.mph"
-            candidate.write_bytes(b"candidate")
-            acceptance = root_path / "acceptance.json"
-            acceptance.write_text(json.dumps({
-                "role": "oa_tof_candidate_acceptance",
-                "status": "failed",
-                "formal_modified": False,
-                "promotion_authorized": False,
-            }), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "pre-promotion"):
-                prepare_promotion(
-                    candidate, acceptance, root_path / "transaction.json",
-                    root_path / "formal",
-                )
-
-
-    def test_formal_promotion_authorizes_only_exact_destinations(self):
-        with tempfile.TemporaryDirectory() as root:
-            root_path = Path(root)
-            candidate = root_path / "candidate.mph"
-            candidate.write_bytes(b"candidate")
-            acceptance = root_path / "acceptance.json"
-            acceptance.write_text(json.dumps({
-                "role": "oa_tof_candidate_acceptance",
-                "status": "success",
-                "formal_modified": False,
-                "promotion_authorized": False,
-            }), encoding="utf-8")
-            output = root_path / "transaction.json"
-            transaction = prepare_promotion(
-                candidate, acceptance, output, root_path / "formal",
-            )
-            self.assertEqual(transaction["status"], "authorized")
-            self.assertEqual(
-                transaction["destinations"]["comsol_model"],
-                str(
-                    (
-                        root_path
-                        / "formal"
-                        / "comsol"
-                        / "single_reflection_oa_tof_mass_analyzer__model.mph"
-                    ).resolve()
-                ),
-            )
-            self.assertEqual(
-                transaction["destinations"]["cad_root"],
-                str((root_path / "formal" / "cad").resolve()),
-            )
 
 
     def test_legacy_placeholder_layout_source_is_nonphysical_and_has_fixed_slot_order(self):

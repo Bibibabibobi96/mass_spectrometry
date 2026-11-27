@@ -1,23 +1,19 @@
-"""Verify that oa-TOF engineering geometry is derived from baseline physics inputs."""
-
+"""Verify OA-TOF engineering geometry against its coupled physical derivation."""
 from __future__ import annotations
 
-import json
 import math
-import sys
-from pathlib import Path
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2] / "components/single_reflection_oa_tof"
+from typing import Any, Mapping
 
 from msplatform.components.orthogonal_accelerator.accelerator_time_focus import accelerator_state
 from msplatform.components.single_reflection_oa_tof.oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: verify_geometry_derivation.py baseline.json")
-    contract = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+def verify_geometry_derivation(contract: Mapping[str, Any]) -> dict[str, float | int | str]:
+    """Check the published engineering rounding without changing physical inputs.
+
+    Tolerances follow the existing decimal publication contract; these are
+    internal derivation checks, not COMSOL/SIMION field-error qualifications.
+    """
     source = contract["geometry_derivation"]["reflectron"]
     geometry = contract["geometry_mm"]
 
@@ -142,16 +138,13 @@ def main() -> int:
         if not math.isclose(actual, target, rel_tol=0.0, abs_tol=1e-12):
             raise AssertionError(f"{name}={actual} but coupled derivation requires {target}")
 
-    print("GEOMETRY_DERIVATION_STATUS=PASS")
-    print(f"DERIVED_NOMINAL_D2_PENETRATION_MM={d2_min_mm:.15g}")
-    print(f"DERIVED_D2_RAW_MM={d2_raw_mm:.15g}")
-    print(f"DERIVED_L_REFLECTRON_RAW_MM={l_reflectron_raw_mm:.15g}")
-    print(f"DERIVED_V_MIRROR_RAW_V={v_mirror_raw:.15g}")
-    print(f"ENGINEERING_LENGTH_DECIMALS_MM={digits}")
-    print(f"ENGINEERING_L_REFLECTRON_MM={l_reflectron_engineering_mm:.{digits}f}")
-    print(f"ENGINEERING_V_MIRROR_V={round(v_mirror_raw, voltage_digits):.{voltage_digits}f}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    return {
+        "status": "PASS",
+        "nominal_d2_penetration_mm": d2_min_mm,
+        "d2_raw_mm": d2_raw_mm,
+        "reflectron_length_raw_mm": l_reflectron_raw_mm,
+        "mirror_voltage_raw_v": v_mirror_raw,
+        "engineering_length_decimals_mm": digits,
+        "engineering_reflectron_length_mm": l_reflectron_engineering_mm,
+        "engineering_mirror_voltage_v": round(v_mirror_raw, voltage_digits),
+    }

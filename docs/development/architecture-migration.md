@@ -97,6 +97,16 @@ Agent0从暂存树`cbd0bb74ee48e11beb9af0939bc1863efa7ce432`导出离仓源码�
 
 尚未退休的默认旧capacity/retention/cache分支及其调用仍为C3/CA19欠项；Agent6正迁operating/paired/OA缓存，Agent3继续合法COMSOL源消费者，Agent1/4闭合新补偿公开链。新补偿field是可回收缓存，GC后只要求原required源与最终自含SI/summary仍可读；不能以测试要求永久pin所有中间场。最终同码双发行、Repository、native和CLOC总对账仍待收敛。
 
+本单元最终代码`71e7ae1f8e778ea8dbc1fba5a83c45f4f2e9f56f`已普通push，local/tracking HEAD相同。首次commit hook指出新身份测试的短子进程缺显式cwd，未创建提交；补cwd后该4项复验PASS（0.966s）、development standard PASS再提交。文档工作区首轮5个断锚失败由当前ASSEMBLY职责导航修复后StructureOnly PASS（322 current files、0 error）；独立源码文档检查两次启动分别缺参数文件/缺Git库存，不能计通过。`78144e45→71e7ae1f`规范CLOC 2.10 PASS：total code 618524→623232（+4708）、production 303823→304390（+567）、tests 314701→318842（+4141）、unclassified=0；完整语言files/blank/comment/code、功能表和固定过滤在外部`store-owner-core-cloc.log`，未混入在途工作树。
+
+Agent0已补现有catalog中的Store owner/identity/accounting/release与公共CLI/Recipe实际依赖，并修正几何职责拆分后的路径；定向选测正反例与既有reference选测2 PASS（3.616s），无重复module、无关peak_metrics不触发新增覆盖，Ruff PASS。该catalog仍随旧链退役继续更新，未将Changed空范围或过期计划当最终Repository。
+
+### OA 工程派生核验与旧等级授权退出（WORKTREE）
+
+Agent0核对剩余`oa_formal`两叶职责：`verify_geometry_derivation`的实际耦合公式/工程舍入校验迁入`components.single_reflection_oa_tof.geometry_derivation.verify_geometry_derivation(contract)`，返回核验数值，不再以Formal workflow或另CLI拥有科学算法。既有`verify_geometry_contract.ps1`直接调用该纯API，原几何、电压、能量与工程位数一致性条件原样保留，不是新增仪器误差预算。旧`prepare_formal_promotion`仅由两项旧测试调用，生成Candidate/Formal自授权事务、没有实际原生生产消费者，按C-r2退出总等级决定实际删除，未把它包装成新权限入口；这两项旧等级专属测试同步删除，其他科学设计/路由断言保留。
+
+新组件3项正反例PASS（0.025s）：当前baseline通过且输入不变、几何/电压/能量metadata冲突拒绝、两旧叶模块缺席；既有candidate_design剩余22项PASS（5.984s），Ruff与PS parser PASS，无求解器。`oa_formal`其余staging/publisher删除与当前reader/materialization仍在其它待整合单元，暂未将整个包标已退役；最终发行还需断言两旧模块缺席及新科学入口确实来自安装包。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
