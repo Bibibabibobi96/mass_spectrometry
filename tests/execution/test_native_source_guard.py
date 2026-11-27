@@ -14,6 +14,75 @@ from msplatform.io.manifest_records import file_record
 
 @unittest.skipUnless(os.name == "nt", "Windows immutable file sharing required")
 class NativeSourceGuardTests(unittest.TestCase):
+    def test_store_derived_scalar_holds_exact_original_and_fails_on_missing_or_mismatch(self):
+        from msplatform.execution.terminal_publication import TERMINAL_LOCK_NAME
+        from msplatform.storage.store import ArtifactStore
+        with tempfile.TemporaryDirectory(prefix='scalar-lineage-') as directory:
+            root = Path(directory)
+            raw = root / 'historical' / '20261127_190000__test__python__raw'
+            raw.mkdir(parents=True)
+            names = ('field_v', 'field_valid', 'grid', 'projection', 'request', 'geometry_validation',
+                     'reopen_geometry', 'reopen_solution', 'report', 'field_solution_manifest')
+            paths = {}
+            for name in names:
+                paths[name] = raw / (name + '.dat')
+                paths[name].write_bytes(('raw-' + name).encode())
+            config = raw / 'run_config.json'
+            config.write_text(json.dumps({'schema_version': 1, 'run_id': raw.name, 'project': 'fixture',
+                'mode': 'software', 'inputs': {}, 'capacity_ledger_lifecycle': {'schema_version': 1,
+                'enabled': True, 'artifact_root': str(root / 'historical'), 'light_evidence_budget_bytes': 1024}}), encoding='utf-8')
+            document = build_run_manifest(config, 'success', output_paths=list(paths.values()))
+            records = {name: next(row for row in document['outputs'] if Path(row['path']) == path) for name, path in paths.items()}
+            document['products'] = {'samples': {'schema_version': 1, 'kind': 'scalar_field_samples', 'status': 'complete',
+                'metadata': {'backend': 'comsol', 'scope': 'assembly_world_scalar_samples'}, 'data': records}}
+            raw_manifest = raw / 'run_manifest.json'
+            raw_manifest.write_text(json.dumps(document), encoding='utf-8')
+            raw_ref = {'manifest': file_record(raw_manifest), 'product_id': 'samples'}
+            store = ArtifactStore(root / 'store')
+            with store.inplace_asset('native_stage', 'derived') as (asset_id, asset, _claim, seal):
+                run = asset / 'runs/20261127_190001__test__python__derived'
+                run.mkdir(parents=True)
+                (run / TERMINAL_LOCK_NAME).touch()
+                config = run / 'run_config.json'
+                config.write_text(json.dumps({'schema_version': 1, 'run_id': run.name, 'project': 'fixture',
+                    'mode': 'software', 'inputs': {}, 'capacity_ledger_lifecycle': {'schema_version': 1,
+                    'enabled': False, 'artifact_root': str(store.root), 'light_evidence_budget_bytes': 1024}}), encoding='utf-8')
+                own = run / 'filled.pa'; own.write_bytes(b'filled')
+                manifest = build_run_manifest(config, 'success', output_paths=[own])
+                local = manifest['outputs'][0]
+                borrowed = {name: records[name] for name in names if name not in {'field_v', 'field_valid'}}
+                borrowed.update(sampled_field_v=records['field_v'], sampled_field_valid=records['field_valid'])
+                manifest['inputs'].update(borrowed)
+                derived_data = dict(borrowed, field_v=local, field_valid=local)
+                manifest['products'] = {'samples': {'schema_version': 1, 'kind': 'scalar_field_samples', 'status': 'complete',
+                    'metadata': {'backend': 'comsol', 'scope': 'assembly_world_scalar_samples',
+                        'derivation': 'offline_from_published_raw_samples', 'original_samples_reference': raw_ref},
+                    'data': derived_data}}
+                derived_manifest = run / 'run_manifest.json'
+                derived_manifest.write_text(json.dumps(manifest), encoding='utf-8')
+                derived_ref = {'manifest': file_record(derived_manifest), 'product_id': 'samples'}
+                seal()
+            collected = set()
+            with guard_native_source(derived_ref, expected_kind='scalar_field_samples',
+                    expected_artifact_root=root / 'historical', artifact_store=store, asset_ids=collected):
+                self.assertEqual(collected, {asset_id})
+                with self.assertRaises(PermissionError):
+                    paths['field_v'].unlink()
+            original = paths['field_v'].read_bytes()
+            paths['field_v'].write_bytes(b'tampered')
+            with self.assertRaises((OSError, ValueError, AssertionError)):
+                with guard_native_source(derived_ref, expected_kind='scalar_field_samples',
+                        expected_artifact_root=root / 'historical', artifact_store=store):
+                    self.fail('modified original sample was accepted')
+            paths['field_v'].write_bytes(original)
+            paths['field_v'].unlink()
+            rejected = set()
+            with self.assertRaises((OSError, ValueError)):
+                with guard_native_source(derived_ref, expected_kind='scalar_field_samples',
+                        expected_artifact_root=root / 'historical', artifact_store=store, asset_ids=rejected):
+                    self.fail('missing original sample was accepted')
+            self.assertEqual(rejected, set())
+
     def test_historical_comsol_model_guards_linked_geometry(self):
         with tempfile.TemporaryDirectory() as directory:
             root, geometry_data, geometry_ref = self.fixture(Path(directory))
@@ -116,10 +185,30 @@ class NativeSourceGuardTests(unittest.TestCase):
                 field_manifest.write_text(json.dumps(document), encoding='utf-8')
                 field_reference = {'manifest': file_record(field_manifest), 'product_id': 'solution'}
                 seal()
+            with store.inplace_asset('native_stage', 'raw-scalar-fixture') as (raw_id, asset, _claim, seal):
+                raw_run = asset / 'runs' / '20261127_010104__test__python__scalar'
+                raw_run.mkdir(parents=True)
+                (raw_run / TERMINAL_LOCK_NAME).touch()
+                payload = raw_run / 'scalar.pa'
+                payload.write_bytes(b'synthetic scalar')
+                config = raw_run / 'run_config.json'
+                config.write_text(json.dumps({'schema_version': 1, 'run_id': raw_run.name, 'project': 'fixture',
+                    'mode': 'software', 'inputs': {}, 'capacity_ledger_lifecycle': {'schema_version': 1,
+                    'enabled': False, 'artifact_root': str(store.root), 'light_evidence_budget_bytes': 1024}}), encoding='utf-8')
+                document = build_run_manifest(config, 'success', output_paths=[payload])
+                document['inputs']['field_solution_manifest'] = field_reference['manifest']
+                document['products'] = {'samples': {'schema_version': 1, 'kind': 'scalar_field_samples',
+                    'status': 'complete', 'metadata': {'backend': 'comsol', 'scope': 'assembly_world_scalar_samples',
+                        'field_solution_product_id': 'solution'},
+                    'data': {'field_solution_manifest': field_reference['manifest'], 'field_v': document['outputs'][0]}}}
+                raw_manifest = raw_run / 'run_manifest.json'
+                raw_manifest.write_text(json.dumps(document), encoding='utf-8')
+                raw_reference = {'manifest': file_record(raw_manifest), 'product_id': 'samples'}
+                seal()
             collected = set()
-            with guard_native_source(field_reference, expected_kind='field_solution',
+            with guard_native_source(raw_reference, expected_kind='scalar_field_samples',
                                      expected_artifact_root=legacy_root, artifact_store=store, asset_ids=collected):
-                self.assertEqual(collected, {model_id, field_id})
+                self.assertEqual(collected, {model_id, field_id, raw_id})
                 with self.assertRaises(PermissionError):
                     geometry_data.unlink()
                 store.collect(10**6)
@@ -127,7 +216,7 @@ class NativeSourceGuardTests(unittest.TestCase):
             geometry_data.unlink()
             rejected = {'unrelated'}
             with self.assertRaises((OSError, ValueError)):
-                with guard_native_source(field_reference, expected_kind='field_solution',
+                with guard_native_source(raw_reference, expected_kind='scalar_field_samples',
                                          expected_artifact_root=legacy_root, artifact_store=store, asset_ids=rejected):
                     self.fail('missing geometry was accepted')
             self.assertEqual(rejected, {'unrelated'})

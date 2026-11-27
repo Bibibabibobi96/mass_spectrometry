@@ -289,6 +289,11 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
             geometry_reference = product.get("metadata", {}).get("geometry_source_reference")
             stationary_source = product.get('metadata', {}).get('stationary_source')
             failed_source = product.get('metadata', {}).get('failed_source')
+            scalar_original = product.get('metadata', {}).get('original_samples_reference')
+            if (expected_kind == 'scalar_field_samples'
+                    and product.get('metadata', {}).get('derivation') == 'offline_from_published_raw_samples'
+                    and scalar_original is None):
+                raise ValueError('derived scalar samples lack original source reference')
             if (expected_kind == 'prepared_model' and product.get('metadata', {}).get('backend') == 'comsol'
                     and product.get('metadata', {}).get('scope') == 'assembly_electrostatic_unsolved'
                     and geometry_reference is None):
@@ -308,6 +313,23 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                     raise ValueError('geometry source is only valid for a prepared model')
                 stack.enter_context(guard_native_source(geometry_reference, expected_kind='geometry_artifact',
                     expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected))
+            if scalar_original is not None:
+                if (expected_kind != 'scalar_field_samples'
+                        or product.get('metadata', {}).get('derivation') != 'offline_from_published_raw_samples'):
+                    raise ValueError('original scalar samples identity differs')
+                original = stack.enter_context(guard_native_source(scalar_original, expected_kind='scalar_field_samples',
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected))
+                borrowed.update({Path(original.data_locations[name]).resolve(): (record['bytes'], str(record['sha256']).upper())
+                                 for name, record in original.data_records.items()})
+            elif (expected_kind == 'scalar_field_samples' and product.get('metadata', {}).get('backend') == 'comsol'
+                    and product.get('metadata', {}).get('scope') == 'assembly_world_scalar_samples'):
+                field_record = product.get('data', {}).get('field_solution_manifest')
+                product_id = product.get('metadata', {}).get('field_solution_product_id')
+                field = stack.enter_context(guard_native_source({'manifest': field_record, 'product_id': product_id},
+                    expected_kind='field_solution', expected_artifact_root=expected_artifact_root,
+                    artifact_store=store, asset_ids=collected))
+                field_manifest_record = field.reference['manifest']
+                borrowed[field.manifest_location.resolve()] = (field_manifest_record['bytes'], str(field_manifest_record['sha256']).upper())
             stationary_origin = None
             if stationary_source is not None:
                 if (expected_kind != 'field_solution' or not isinstance(stationary_source, dict)
@@ -325,6 +347,9 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                 selected = validate_file_record(failed_source['selected_output'], 'failed source output')
                 borrowed[record_path(selected).resolve(strict=True)] = (selected['bytes'], str(selected['sha256']).upper())
             artifact = open_artifact(reference, expected_kind=expected_kind)
+            if scalar_original is not None:
+                from msplatform.results.scalar_sample_lineage import validate_original_sample_source
+                validate_original_sample_source(artifact, original)
             if geometry_reference is not None:
                 original = validate_file_record(geometry_reference['manifest'], 'geometry source manifest')
                 local = validate_file_record(artifact.data_records.get('geometry_manifest'), 'frozen geometry manifest')
@@ -406,6 +431,17 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
         # Validate publication and manifest/product membership only after every
         # actual file is held; this opens no legacy owner or mutable ledger.
         artifact = open_artifact(reference, expected_kind=expected_kind)
+        if (expected_kind == 'scalar_field_samples'
+                and artifact.metadata.get('derivation') == 'offline_from_published_raw_samples'
+                and artifact.metadata.get('original_samples_reference') is None):
+            raise ValueError('derived scalar samples lack original source reference')
+        if expected_kind == 'scalar_field_samples' and artifact.metadata.get('original_samples_reference') is not None:
+            from msplatform.results.scalar_sample_lineage import validate_original_sample_source
+            if artifact.metadata.get('derivation') != 'offline_from_published_raw_samples':
+                raise ValueError('original scalar samples identity differs')
+            original = stack.enter_context(guard_native_source(artifact.metadata['original_samples_reference'],
+                expected_kind='scalar_field_samples', expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected))
+            validate_original_sample_source(artifact, original)
         if artifact.metadata.get('backend') == 'comsol':
             scope_name = artifact.metadata.get('scope')
             if expected_kind == 'prepared_model' and scope_name == 'assembly_electrostatic_unsolved':

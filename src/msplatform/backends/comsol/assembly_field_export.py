@@ -563,7 +563,7 @@ def _published_solution_readback(reopen: Mapping[str, Any], grid: Mapping[str, A
 
 def derive_world_scalar_support(samples: Any, *, context: Any,
                                 publish_prepared_support: bool = False,
-                                prepared_support: Any = None) -> Any:
+                                prepared_support: Any = None, artifact_store=None) -> Any:
     """Derive strict-interior fill from an existing published raw samples product.
 
     No solver is started and no physical field or trajectory is qualified.
@@ -573,7 +573,36 @@ def derive_world_scalar_support(samples: Any, *, context: Any,
         raise ValueError('publish_prepared_support must be boolean')
     if publish_prepared_support and prepared_support is not None:
         raise ValueError('cannot publish and consume prepared support together')
-    source = open_artifact(samples, expected_kind='scalar_field_samples')
+    from contextlib import ExitStack, nullcontext
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.results.artifacts import OpenedArtifact
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ContractError('scalar derivation requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent['store']
+    if parent is not None and parent['store'] is not store:
+        raise ContractError('scalar derivation must use the parent Store')
+    assets = set()
+    def guarded(stack, value):
+        reference = value.reference if isinstance(value, OpenedArtifact) else value
+        item = stack.enter_context(guard_native_source(reference, expected_kind='scalar_field_samples',
+            expected_artifact_root=context.workspace / 'artifacts', artifact_store=store, asset_ids=assets))
+        return item
+    with ExitStack() as guards:
+        source = guarded(guards, samples)
+        support = guarded(guards, prepared_support) if prepared_support is not None else None
+        stage, authority = read_stage_policy(context, 'export_assembly_world_scalar', required_roles=('solver_native_binary',))
+        if stage.get('runtime'): raise ContractError('scalar derivation has no implicit runtime overrides')
+        scope = (standalone_native_store(store, task_key='standalone-scalar-derive:' + uuid4().hex,
+                    budget=stage['limits']['transient_run_directory_bytes'], required_assets=tuple(sorted(assets)))
+                 if parent is None else nullcontext())
+        with scope:
+            return _derive_world_scalar_guarded(source, context=context, stage=stage, authority=authority,
+                publish_prepared_support=publish_prepared_support, prepared_support=support)
+
+
+def _derive_world_scalar_guarded(source, *, context, stage, authority, publish_prepared_support, prepared_support):
     if source.producer.get('status') != 'success':
         raise ValueError('source samples producer must be successful')
     from msplatform.backends.simion.scalar_sample_binding import original_sample_source
@@ -631,8 +660,6 @@ def derive_world_scalar_support(samples: Any, *, context: Any,
             raise ValueError('prepared support producer must be successful')
         for name in ('prepared_support_labels', 'conductor_support', 'sampled_field_valid', 'projection', 'grid'):
             support_source.data_path(name)
-    stage, authority = read_stage_policy(context, 'export_assembly_world_scalar', required_roles=('solver_native_binary',))
-    if stage.get('runtime'): raise ContractError('scalar derivation has no implicit runtime overrides')
     refs = [{'manifest_record': source.reference['manifest']}]
     if original.reference != source.reference: refs.append({'manifest_record': original.reference['manifest']})
     support_original = original_sample_source(support_source) if support_source is not None else None

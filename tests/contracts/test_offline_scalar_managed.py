@@ -13,6 +13,7 @@ from msplatform.execution.completion import no_particle_batch_completion_api
 from msplatform.execution.inputs import freeze_file
 from msplatform.io.manifest_records import file_record
 from msplatform.results.artifacts import open_artifact
+from msplatform.storage.store import ArtifactStore
 from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
 
 class SupportOwner(unittest.TestCase):
@@ -60,26 +61,26 @@ class SupportOwner(unittest.TestCase):
     control(source2);raw2=subject.export_world_scalar(source2,grid=grid,context=context,fill_conductor_interiors=False)
     control(source2,True);raw3=subject.export_world_scalar(source2,grid=grid,context=context,fill_conductor_interiors=False)
    offline=replace(context,tools={})
+   store=ArtifactStore(root/'offline-store')
    original={k:raw1.data_path(k).read_bytes() for k in ('field_v','field_valid','report')}
    actual_postprocess=subject._postprocess_scalar
    def traced_postprocess(session,**kwargs):
-    view=load_capacity_protection_leases(context.workspace/'artifacts')
     for path in kwargs['outputs']:
-     self.assertTrue(path_is_protected(path,view['protected_paths']))
+     with self.assertRaises(PermissionError):Path(path).unlink()
     if kwargs['support_source'] is not None:
-     self.assertTrue(path_is_protected(first.manifest_location,view['protected_paths']))
-    live_leases.append(view['audit'])
+     with self.assertRaises(PermissionError):first.manifest_location.unlink()
+    live_leases.append(True)
     return actual_postprocess(session,**kwargs)
    with patch.object(RunSession,'run_process',side_effect=AssertionError('native forbidden')),patch.object(subject,'_postprocess_scalar',side_effect=traced_postprocess):
-    first=subject.derive_world_scalar_support(raw1,context=offline,publish_prepared_support=True)
-    chain=subject.derive_world_scalar_support(first,context=offline)
+    first=subject.derive_world_scalar_support(raw1,context=offline,publish_prepared_support=True,artifact_store=store)
+    chain=subject.derive_world_scalar_support(first,context=offline,artifact_store=store)
     self.assertEqual(chain.metadata['original_samples_reference'],raw1.reference)
-    second=subject.derive_world_scalar_support(raw2,context=offline,prepared_support=first.reference)
+    second=subject.derive_world_scalar_support(raw2,context=offline,prepared_support=first.reference,artifact_store=store)
     self.assertEqual(struct.unpack_from('<d',second.data_path('field_v').read_bytes(),56+8*21)[0],-77)
     with self.assertRaisesRegex(ValueError,'identity differs'):
-     subject.derive_world_scalar_support(raw3,context=offline,prepared_support=first.reference)
+     subject.derive_world_scalar_support(raw3,context=offline,prepared_support=first.reference,artifact_store=store)
    for k,v in original.items():self.assertEqual(raw1.data_path(k).read_bytes(),v)
-   manifests=list((context.workspace/'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-scalar*/run_manifest.json'));statuses=[json.loads(x.read_text(encoding='utf-8-sig'))['status'] for x in manifests];self.assertCountEqual(statuses,['success','success','success','success','success','success','failed'])
+   manifests=list((context.workspace/'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-scalar*/run_manifest.json'))+list(store.root.glob('assets/native_stage/*/*/runs/*assembly-scalar*/run_manifest.json'));statuses=[json.loads(x.read_text(encoding='utf-8-sig'))['status'] for x in manifests];self.assertCountEqual(statuses,['success','success','success','success','success','success','failed'])
    for m in manifests:
     d=json.loads(m.read_text(encoding='utf-8-sig'))
     if d['status']=='failed':self.assertNotIn('samples',d.get('products',{}))

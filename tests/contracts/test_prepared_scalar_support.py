@@ -193,11 +193,11 @@ class OfflineScalarDerivationTests(unittest.TestCase):
                 for missing in ('writer','writer_manifest'):
                     saved=source.data_records.pop(missing)
                     with self.subTest(missing=missing),self.assertRaisesRegex(ValueError,'incomplete published writer provenance'):
-                        owner.derive_world_scalar_support({},context=None)
+                        owner._derive_world_scalar_guarded(source,context=None,stage={},authority={},publish_prepared_support=False,prepared_support=None)
                     source.data_records[missing]=saved
                 Path(records['writer']['path']).write_bytes(b'change')
                 with self.assertRaisesRegex(AssertionError,'SHA-256 changed'):
-                    owner.derive_world_scalar_support({},context=None)
+                    owner._derive_world_scalar_guarded(source,context=None,stage={},authority={},publish_prepared_support=False,prepared_support=None)
 
     def test_nested_solution_readback_required(self):
         from msplatform.backends.comsol.assembly_field_export import _published_solution_readback
@@ -215,6 +215,11 @@ class OfflineScalarDerivationTests(unittest.TestCase):
         self.assertTrue(any(str(p).endswith('export_world_scalar.json') for p in caught.exception.failure_output_paths))
 
 class OriginalSourceStatusTests(unittest.TestCase):
+    def test_public_derivation_requires_store_or_protected_scope(self):
+        from msplatform.backends.comsol import assembly_field_export as owner
+        with self.assertRaisesRegex(ValueError, 'explicit ArtifactStore'):
+            owner.derive_world_scalar_support({}, context=None)
+
     def test_failed_original_producer_refused(self):
         from types import SimpleNamespace
         from unittest.mock import patch
@@ -231,6 +236,6 @@ class OriginalSourceStatusTests(unittest.TestCase):
         failed=SimpleNamespace(producer={'status':'failed'})
         with patch.object(owner,'open_artifact',return_value=failed):
             with self.assertRaisesRegex(ValueError,'source samples producer must be successful'):
-                owner.derive_world_scalar_support({},context=None)
+                owner._derive_world_scalar_guarded(failed,context=None,stage={},authority={},publish_prepared_support=False,prepared_support=None)
             with self.assertRaisesRegex(ValueError,'prepared support producer must be successful'):
                 owner.export_world_scalar({},grid={},context=None,fill_conductor_interiors=True,prepared_support={})

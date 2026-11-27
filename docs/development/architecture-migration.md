@@ -115,6 +115,14 @@ Agent0核对剩余`oa_formal`两叶职责：`verify_geometry_derivation`的实�
 
 Agent0发现reader仍有分析/绘图主体后按上述实际职责再次拆分；未改公式/容差。定向11项PASS（7.105s），覆盖独立解析校准、原polyfit结果、退化/非法输入、完整分析输出、显式geometry、超母群/未知物种、源缺件/篡改/失败/非终态、冻结源码/geometry身份和failed parent不发布成功；Ruff PASS。原112.742s深路径结果早于worker relocation等后续变化，只作历史定位；最终两发行节点须实际重验当前深路径，不能沿用旧结果标最终PASS。
 
+本单元提交`cfd6b848`已普通push。独立暂存树`210f2a8e7aafe512c099349d90363d1557a1198c`离仓源码15项PASS（8.781s），是上述11项与原执行退役定向补集，存在重复覆盖，不另作15项全新能力。旧owner专属13方法与旧study模拟夹具退出，其源篡改/母群/实际geometry/原始ID/冻结实现/失败收尾断言分别在当前历史reader/worker、peak metrics、Store owner与安装probe继续；没有恢复旧PS凑测试。
+
+### C3 已发布 scalar 样本的原位派生（WORKTREE）
+
+`backends.comsol.assembly_field_export.derive_world_scalar_support`现在要求显式Store或现有父scope，持续持原场与可选prepared support保护直到派生stage结束；合法派生不再落旧容量owner。精确原始sample lineage校验实移`results.scalar_sample_lineage`，SIMION边界复用实际校验，execution guard不反向导入backend。只允许已知`original_samples_reference`和COMSOL raw→field→model→geometry闭包；原始bytes/SHA/role及实际路径逐字段相同，缺件/篡改拒绝。借用大payload原地保留，通过required refs保护，不全量复制或新增GC。
+
+Agent3实际惰性原样本→派生→再派生→prepared support复用与错身份拒绝1项PASS（48.982s），真实OS句柄阻删4次、原源不变，无商业COMSOL；随后修raw guard局部变量遮蔽，source guard全9项PASS（2.791s）、prepared scalar全11项PASS（5.059s）、Ruff PASS，未无理由重跑49秒链。两个原始COMSOL采样公开入口仍待显式Store接管，这里只完成原样本派生，不能写全部scalar生产已迁。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
