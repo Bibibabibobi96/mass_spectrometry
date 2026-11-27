@@ -45,6 +45,24 @@ C 已按用户 2026-11-27 指令实际启动；用户随后更新整个执行包
 
 实际软件验证：Store+历史sourceguard完整29 PASS/7.885s；必要成功/失败terminal到seal崩溃与活/未知writer4 PASS/2.546s（有重复方法，不另当全新覆盖）；真实Windows短child+OS输入不可写保护PASS/10.272s，真实invalid-image未启动→failed证据PASS/6.483s；四项stage/source组合PASS/17.583s；显式旧源借用保护PASS/1.159s。命令结果来自本轮工具记录，没有虚构独立stdout日志。Ruff/diff PASS；未新增商业原生运行。默认旧owner、旧retention执行及全部生产caller仍待接管/删除，C3/CA19未完成；此基础提交不是最终退役结论。
 
+### C-r2 OA 跨求解器历史验证器实际退出
+
+原`workflows/oa_formal/verify_formal_validation.py`已删除，不保留CLI/转发。精确v1–v5历史格式由`results.cross_solver_history.read_cross_solver_record(config_path, artifact_root)`校验原输入/来源身份；逐字段metric一致性比较真实拆入`analysis.cross_solver_validation.validate_cross_solver_metrics`。既有`verify_reference_analysis.ps1`直接调用新reader，结果仅证明历史记录一致，不重新授Candidate/Formal总等级或仪器误差资格。未知schema失败关闭，原1e-10/1e-12只用于记录内metric表示一致，未改变C0不设阈值决定。
+
+Agent1定向新旧消费者16 PASS（11.302s），最后未知版本拒绝补验3 PASS；新模块无producer/owner调度。安装副本检查不等于最终普通wheel/sdist；旧OA其他publisher、recovery、补偿与大型资产暂未因此被宣称退役。新增依赖绑定复用现有machine-contract职责，不增另一阶段。
+
+`78144e45→00c6d23c`规范CLOC 2.10已完成：total code 618524→618732（+208），production 303823→303458（-365），tests 314701→315274（+573），unclassified 0；完整各语言files/blank/comment/code、功能表和过滤口径在外部`c3-store-cloc-C-locale.log`。首轮Perl因继承的C.UTF-8 locale产生warning而失败，未算PASS；第二次仅对子进程设C locale重跑相同口径PASS，未改过滤或实现。
+
+### C-r2 组件规范身份与公共运行职责拆分（WORKTREE）
+
+三组件与对应测试目录已实际迁到`multi_reflection_tof`、`ion_processor`、`dual_cone_tandem_quadrupole`；当前源码、跨语言资源、配置、机器registry/profile、打包和文档的完整旧ID按精确映射切换。原生模型的实际双压力区、平行镜双条带等结构未删除或捏造为新variant。3份原`00c6d23c`之前的版本化project描述符以原字节冻结到`docs/history/projects/<规范名>/retired_projects/<原ID>/config/project.json`，当前描述符严格绑定原commit/bytes/SHA；原旧history与研究资产不搬动。旧身份仅可历史读取，不注册能力、不作为新run别名。历史README仅修可变导航链接，冻结报告/manifest/old_witness/原LP60请求字节未改。外部精确改动备份与映射为`component-names/mapping.json`。
+
+公共`recipes.__init__`现在独占`SimulationRecipe/load_recipe/validate_recipe/assembly_name`与一次外部TOML读取；`recipes.reference`只负责编译/核验参考科学输入，不再兼任native总路由。公共`workflows.tracing.run_recipe/inspect_results`接同一已捕获author bytes，按实际schema选择native或reference实现；`reference_tracing.run_loaded_recipe`只保参考缓存/数值工作，跨backend批结果合并体实际移到已有`results.model.merge_trace_batches`。CLI及当前调用方同步，不留旧通用函数转发壳。
+
+真实验证：project registry生成成功，8个当前项目；registry/历史身份/科学边界联合47 PASS（17.183s），新增3组件当前发现/旧包不可import/旧身份新run拒绝同一方法PASS（3.623s）；公共入口拆分后的参考作者/参考运行/三类Species/科学边界32 PASS（22.104s），含单次author读取后外部改变、独立解析数值与冷读既有反例。文档StructureOnly首次发现9个导航断链，修可变索引后PASS（322 current files，0 errors）；失败不改写为首次通过。Ruff/diff-check PASS。普通wheel/sdist和新组合native尚未执行；这些WORKTREE结果不是CA19完成。共同冻结后再进行必要发行和Repository，避免每阶段重跑。
+
+C3基础已提交并普通push`00c6d23c`；其最终复验Store/历史guard29 PASS（8.454s）、终态seal成功/失败恢复2 PASS（1.745s），与之前方法有重复。其后新增formal v1精确OS只读保护覆盖材料化复制，软件fixture通过；仍未把真实大PA重新hash或启动商业native。Agent1继续OA数值/历史reader和response编译实际拆分，Agent2补粒子自有名/发行probe，Agent3迁旧发布恢复能力到Store，Agent4整合recorded/IPMR/diagnostic公共链，Agent5双锥唯一环境消费者，Agent6历史mass分析与旧执行退役；以上各单元未完成不得等同全C完成。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

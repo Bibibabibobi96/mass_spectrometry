@@ -26,8 +26,8 @@ if ($LASTEXITCODE -ne 0 -or $version.Trim() -ne '3.11') {
 }
 & $python -c "import numpy, scipy, pandas, matplotlib, openpyxl"
 if ($LASTEXITCODE -ne 0) { throw 'Formal Python dependencies are incomplete.' }
-& $python -I -B (Join-Path $packageRoot 'workflows/oa_formal/verify_formal_validation.py') `
-  --science-root $projectRoot --artifact-root $artifactRoot
+& $python -I -B -c "import sys; from pathlib import Path; from msplatform.results.cross_solver_history import read_cross_solver_record; read_cross_solver_record(Path(sys.argv[1]), Path(sys.argv[2])); print('CROSS_SOLVER_RECORD_VALID=PASS')" `
+  (Join-Path $projectRoot 'config/formal_validation.json') $artifactRoot
 if ($LASTEXITCODE -ne 0) {
     throw "Formal cross-solver validation gate failed with exit code $LASTEXITCODE."
 }

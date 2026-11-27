@@ -14,9 +14,7 @@ from unittest import mock
 from msplatform.workflows.oa_formal import (
     publish_formal_release as promotion,
 )
-from msplatform.workflows.oa_formal import (
-    verify_formal_validation as validation_gate,
-)
+from msplatform.results import cross_solver_history as validation_gate
 
 
 CANDIDATE_ID = "20260729_100000__build__cross__formal-vnext-candidate__n100"
@@ -362,12 +360,12 @@ class FormalReleasePublisherTests(unittest.TestCase):
         self.assertTrue((formal / "simion/source_SHA256SUMS.csv").is_file())
         self.assertEqual(manifest["validation_contract"]["sha256"],
                          promotion.sha256(self.config_paths["formal_validation"]))
-        validation_gate.verify(self.project, self.artifact)
+        validation_gate.read_cross_solver_record(self.project / "config/formal_validation.json", self.artifact)
 
     def test_installed_public_verify_uses_explicit_roots(self) -> None:
         promotion.promote(self.request, self.artifact)
         original_configs = self._config_snapshot()
-        source_package = Path(validation_gate.__file__).resolve().parents[2]
+        source_package = Path(validation_gate.__file__).resolve().parents[1]
         installed_environment = self.root / "installed"
         venv.EnvBuilder(with_pip=False, system_site_packages=True).create(
             installed_environment
@@ -421,7 +419,7 @@ class FormalReleasePublisherTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("FORMAL_VALIDATION_STATUS=PASS", result.stdout)
+        self.assertIn("CROSS_SOLVER_RECORD_VALID=PASS", result.stdout)
         self.assertIn("REFERENCE_ANALYSIS_STATUS=PASS", result.stdout)
         self.assertIn("FORMAL_RELEASE_VERIFY=PASS", result.stdout)
         self.assertEqual(original_configs, self._config_snapshot())

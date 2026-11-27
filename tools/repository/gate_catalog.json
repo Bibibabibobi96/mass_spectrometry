@@ -1017,6 +1017,14 @@
         "dependencies": [
           {
             "matches": [
+              {"exact": "src/msplatform/results/cross_solver_history.py", "reason": "cross_solver_record_reader_changed"},
+              {"exact": "src/msplatform/analysis/cross_solver_validation.py", "reason": "cross_solver_metrics_changed"}
+            ],
+            "modules": ["tests/contracts/test_cross_solver_validation.py"],
+            "dependency_profile": "locked"
+          },
+          {
+            "matches": [
               {"prefix": "recipes/reference/", "reason": "reference_recipe_changed"},
               {"regex": "^src/msplatform/(?:physics|recipes|fields|tracing|storage)/.*\\.py$", "reason": "reference_chain_changed"},
               {"exact": "src/msplatform/results/particle_data.py", "reason": "reference_chain_changed"},
