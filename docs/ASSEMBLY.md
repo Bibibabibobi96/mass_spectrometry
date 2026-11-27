@@ -149,7 +149,7 @@ IP → MR 及 RF → IP → MR 的公共路径要求实际匹配的
 OA→MR 的现有独立研究入口仍为 [oa_mr.ps1](../src/msplatform/workflows/resources/oa_mr.ps1)，
 其实际源、范围和场须按该次配置及证据核验；这不代表已完成公共链迁移。
 
-共同静态场比较使用 [Store 公共 API](../src/msplatform/workflows/paired_accelerator_static_field/store_workflow.py)：
+共同静态场比较使用 [Store 公共 API](INTEGRATION.md#当前-paired-静态场-store-入口)：
 `run_paired_static_comparison(context, artifact_store=..., request_path=..., run_id=..., committed_new_bytes=...)`。
 它支持新求解、受保护的已保存解原位采样、同边值问题同采样点的已完成样本复用，及有完整 writer/host
 证据的 Store failed prepared 模型原位重开。`recover_paired_static_publication` 只恢复已有终态发布。

@@ -216,7 +216,7 @@ OA代码提交为 `3cafdf7db7b9b0267d3a3382807aa6ed1e3948cb`；精确索引快�
 
 ### 当前 Assembly 导航与远端首错
 
-公开 Changed `7878647c`（run 46044367921）在文档阶段报告两条旧 `multipole_ip*.ps1` 坏链，22.477s，后续功能测试未执行。现行 `docs/ASSEMBLY.md` 已收敛到 `msplatform run`/公共 Recipe，删除旧 FullJoint、SFI、paired-static 和 multipole_ip 的活动命令；历史语义只读保留。这里不把文档通过当作真实 native 或完整 Repository 通过。
+公开 Changed `7878647c`（run 46044367921）在文档阶段报告两条旧 `multipole_ip*.ps1` 坏链，22.477s，后续功能测试未执行。现行 `docs/ASSEMBLY.md` 已收敛到 `msplatform run`/公共 Recipe，删除旧 FullJoint、SFI、paired-static 和 multipole_ip 的活动命令；历史语义只读保留。这里不把文档通过当作真实 native 或完整 Repository 通过。后续 `8f9559a8`（run 46045620021）仍有一处指向尚未入库 Store 模块的链接，现改为 INTEGRATION 的现有锚点；不把该模块提前提交或把文档修复当作其功能验收。
 
 完整 Changed 合同复验实际得到108个成功父测试、1个路由失败，无 error。`build_and_export_paired_accelerator_field.m`、`oatof_build_accelerator_geometry.m`、`oatof_build_grid_geometry.m` 在 paired-static 退役后只选择实际 TOF owner，不再错误要求 Assembly；其余七个登记路径仍必须选择 Assembly。定向1父测试／12条回执PASS（25.085s）。该结果不替代后续同一SHA完整门禁。
 
