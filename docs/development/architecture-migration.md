@@ -210,6 +210,8 @@ RF–IP 候选代码提交为 `0ff4a4b1b200f616f6c06c2b8fea9198d6ec2c0a`。规�
 
 `test_cross_solver_validation`、`test_geometry_derivation`、`test_stage_formal_simion_runtime` 共16个父测试／22条回执PASS（0.892s），保留几何冲突、未知历史版本、运行时缺件/篡改和仓外物化检查。首次删除仅移除 `__init__.py` 后两例因目录残留形成 namespace package 而FAIL，清除生成缓存并移除空目录后复验通过；没有商业求解或Candidate/Formal资格授予。
 
+OA代码提交为 `3cafdf7db7b9b0267d3a3382807aa6ed1e3948cb`；精确索引快照 `oa-formal-index-check-20261128T013658` 复验同一16父测试／22回执PASS（1.092s）。CLOC 2.10 `a5d10669→3cafdf7d` PASS：total code -1155、production -1208、tests +53、unclassified=0；完整各语言基线/结果/差值和过滤口径在外部 `oa-formal-3cafdf7d-cloc.log`。这些提交仍不构成C最终验收。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
