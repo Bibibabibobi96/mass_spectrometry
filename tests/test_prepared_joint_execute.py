@@ -25,9 +25,9 @@ def prepared_joint_dependency_inventory():
     return inventory
 
 
-def analysis_source_fixture(workspace, *, status="failed", owner="instrument_assembly", complete=True):
-    """Public manifest/ledger with synthetic native-completion evidence, no solver."""
-    from msplatform.execution.capacity_ledger import initialize_capacity_ledger
+def analysis_source_fixture(workspace, *, status="failed", owner="instrument_assembly", complete=True,
+                            writers_stopped=True):
+    """Public manifest with synthetic stopped-writer evidence, no solver or ledger."""
     from msplatform.execution.manifest_publication import build_run_manifest
     from msplatform.execution.retention import file_record
     root = workspace / "artifacts"
@@ -36,6 +36,8 @@ def analysis_source_fixture(workspace, *, status="failed", owner="instrument_ass
     results.mkdir(parents=True)
     logs = run / "logs"
     logs.mkdir()
+    inputs = run / "inputs"
+    inputs.mkdir()
     recording = dict(schema_version=1, mode="every_step", retention_class="solver_review",
                      reason="Synthetic analysis lifecycle regression", output_budget_bytes=1048576)
     contract = workspace / "new_analysis_contract.json"
@@ -58,15 +60,26 @@ def analysis_source_fixture(workspace, *, status="failed", owner="instrument_ass
         all_batch_losses_retained=True, id_rebasing_applied=False, solver_epoch_instrument_time_us=7500.63364160348,
         batches=[dict(log=file_record(log), batch_receipt=file_record(batch_receipt), fly2=file_record(fly))])))
     summary = run / "summary.json"
-    summary.write_text(json.dumps(dict(status=status, failure_stage="automatic_joint_diagnostics")))
+    summary.write_text(json.dumps(dict(status=status, failure_stage="automatic_joint_diagnostics",
+                                       writers_stopped=writers_stopped)))
+    request = inputs / "execution_request.json"
+    request.write_text(json.dumps(dict(schema_version=1, role="run_artifact_workflow_request",
+        package=dict(project=owner, mode="prepared_joint", run_id=run.name))))
     config = run / "run_config.json"
-    config.write_text(json.dumps(dict(schema_version=2, run_id=run.name, project=owner, mode="prepared_joint", inputs={},
-        capacity_ledger_lifecycle=dict(schema_version=1, enabled=True, artifact_root=str(root)),
+    config.write_text(json.dumps(dict(schema_version=2, run_id=run.name, project=owner, mode="prepared_joint",
+        inputs=dict(execution_request=str(request)),
         artifact_retention=dict(policy_version=1, **{"class": "solver_review"}, reason=recording["reason"]))))
-    manifest = build_run_manifest(config, status, output_paths=[prep, log, batch_receipt, fly, merge, summary], retention_api=_manifest_retention_api)
+    completion = results / "execution_completion.json"
+    completion.write_text(json.dumps(dict(schema_version=1, role="run_artifact_workflow_completion",
+        run_id=run.name, project=owner, status=status, run_config=file_record(config), execution_request=file_record(request),
+        writer_completion=dict(
+            operations=[dict(operation_id="native_flight", resource_release_id="native_flight",
+                observation=dict(exit_confirmed=True, returncode=0, process_id=1234, process_started_at_utc_ticks=1))],
+            resource_releases=[dict(release_id="native_flight", completion_receipt=dict(host_release=dict(
+                inherited=True, token="fixture-host-token", result=None, error=None)))]))))
+    manifest = build_run_manifest(config, status, output_paths=[prep, log, batch_receipt, fly, merge, summary, completion],
+                                  retention_api=_manifest_retention_api)
     (run / "run_manifest.json").write_text(json.dumps(manifest))
-    initialize_capacity_ledger(root, objects=[dict(path=run.relative_to(root).as_posix(), owner="instrument_assembly",
-        **{"class": "rebuildable_payload"}, bytes=sum(p.stat().st_size for p in run.rglob("*") if p.is_file()), status="ready")])
     return run, contract
 
 
@@ -77,6 +90,7 @@ class PreparedJointAnalysisTests(unittest.TestCase):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 workspace = Path(directory)
                 source, contract = analysis_source_fixture(workspace, status=status)
+                self.assertFalse((workspace / "artifacts/platform/capacity_ledger.json").exists())
                 before = {p: p.read_bytes() for p in source.rglob("*") if p.is_file()}
                 with patch("msplatform.workflows.prepared_joint.analysis_inputs.verify_record", wraps=__import__(
                     "msplatform.execution.retention", fromlist=["verify_record"]).verify_record) as verifier:
@@ -104,6 +118,27 @@ class PreparedJointAnalysisTests(unittest.TestCase):
                 workspace = Path(directory)
                 source, contract = analysis_source_fixture(workspace, owner=owner, complete=complete)
                 with self.assertRaisesRegex(ValueError, message):
+                    prepare_analysis_inputs(source, contract, workspace / "inputs")
+                self.assertFalse((workspace / "inputs").exists())
+
+    def test_source_admission_rejects_unstopped_missing_and_tampered_sources(self):
+        from msplatform.workflows.prepared_joint.analysis_inputs import prepare_analysis_inputs
+        cases = (
+            ("unstopped", ValueError, "writer stop is not confirmed"),
+            ("missing", AssertionError, "manifest .* is missing"),
+            ("tampered", AssertionError, "SHA-256 changed"),
+        )
+        for scenario, exception, message in cases:
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                workspace = Path(directory)
+                source, contract = analysis_source_fixture(workspace, writers_stopped=scenario != "unstopped")
+                preparation = source / "results/prepared_joint_trial.json"
+                if scenario == "missing":
+                    preparation.unlink()
+                elif scenario == "tampered":
+                    preparation.write_text(preparation.read_text().replace(
+                        "measured_population", "measured_populatioX"))
+                with self.assertRaisesRegex(exception, message):
                     prepare_analysis_inputs(source, contract, workspace / "inputs")
                 self.assertFalse((workspace / "inputs").exists())
 
@@ -195,11 +230,15 @@ output.mkdir()
 '''
         seal_fixture = '''import json, os, sys
 from pathlib import Path
-args=sys.argv
-assert args[args.index('--action')+1]=='seal-stopped-payload'
-run=Path(args[args.index('--run-config')+1]).parent
-assert json.loads((run/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'] in ('success','failed')
-if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit inert seal failure')
+def resolve_consumed_run_capacity_owner(*args, **kwargs):
+    raise AssertionError('Historical admission called the retired capacity owner')
+def main():
+    args=sys.argv
+    assert args[args.index('--action')+1]=='seal-stopped-payload'
+    run=Path(args[args.index('--run-config')+1]).parent
+    assert json.loads((run/'run_manifest.json').read_text(encoding='utf-8-sig'))['status'] in ('success','failed')
+    if os.environ['ANALYSIS_TEST_SEAL_FAIL']=='1': raise RuntimeError('Explicit inert seal failure')
+if __name__=='__main__': main()
 '''
         successful_scenarios = {"success", "mutated_author_contract", "removed_author_contract"}
         admitted_scenarios = successful_scenarios | {"analysis_failure", "capacity_failure", "seal_failure", "missing_frozen_diagnostics"}

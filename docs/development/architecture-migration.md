@@ -250,6 +250,20 @@ Agent 8 将 prepared_joint_execute 的完整 Flight 参数、两种 source mode�
 
 离仓历史质量谱曾因父级 token 泄漏而无法取得非继承 owner。公共进程适配现在仅清除 token、owner PID 和 role，保留显式状态库与 Python，原保护握手仍严格要求独立 owner；回归同时核原宿主错误/退出码保留。相关 Store/IPMR 正反例、原生资产与完整响应绑定模块均PASS；独立索引4父测试／9回执全PASS。公共离仓运行中历史质量谱/场读取、参考三类物种和记录出生已PASS；最终仍在历史 IP 旧 source schema 处失败，需只读事件解码，不能重新采样冒充历史，故未标最终通过。该单元提交/普通 push 为 `c43a0220`；CLOC 2.10 `c734366a→c43a0220` PASS：total code +409、production +6、tests +403，unclassified=0，完整口径在外部 `store-preflight-c43a0220-cloc.log`。
 
+### 历史 IP 与 paired-static Store 接管（候选）
+
+`particle_release._history.read_legacy_event_release_states` 只对历史 analyzer 的精确 schema1/旧 role 读取冻结 source 事件，恢复原ID、出生/质量/电荷、位置与速度单位；当前运行仍走正常 generator。10个冻结IP旧见证的返回/异常及全部输出SHA均保持，40个particle测试与18个上游准入测试通过，无 sampler 回调或历史字节改写。
+
+paired-static 的实际 workflow、模型/样本来源、PA身份、投影与Store实现连同测试/夹具纳入包；独立索引首轮暴露的支持模块/字段缺失逐个补齐，19父测试最终只余一处 saved-model 夹具缺 `source_stage`，按真实 guard 补 `solved_saved` 后原用例通过。没有商业求解或新的科学资格。
+
+本主题提交/普通 push 为 `065d4863`；CLOC 2.10 `c43a0220→065d4863` PASS：total code +1741、production +888、tests +853，unclassified=0，完整口径在外部 `history-paired-065d4863-cloc.log`。公共门禁中文档/卫生/文本已PASS，但一次后续运行因另一线正在迁移 event_analysis 导致源文件消失而失效并主动停止；这不是科学失败或有效完成证据，后续必须用冻结快照重跑。
+
+### Prepared 历史分析准入退出旧容量台账（候选）
+
+`prepared_joint.analysis_inputs` 不再读取 `execution.capacity_ledger` 或 `capacity_ledger_lifecycle`；现有 `guard_historical_measured_flight` 在准入、校验和冻结期间持原 manifest/config 的只读 OS 保护，并核 execution request、completion、终态和停止 writer。原科学ID、路径、完整 original-ID merge、母群数量和失败阶段检查保留，不读取/哈希大型原始 log/FLY2，也不创建第二 owner。
+
+直接准入3父测试在精确索引全部通过，覆盖成功/失败、错误 owner、不完整 merge、未停止 writer、缺件与同长度篡改；安装探针直接段/CLI4场景和真实 PowerShell 公共消费者十场景均通过。原迁移页之外，MR PROJECT 的旧 canonical ledger 描述已改为当前历史 guard。最终普通发行、完整 Repository 和真实大载荷/native仍待同 SHA 验收。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
