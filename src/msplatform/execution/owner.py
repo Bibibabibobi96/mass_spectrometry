@@ -45,7 +45,8 @@ def managed_native_store(store, *, task_key: str, lifetime, account):
     """
     if not isinstance(task_key, str) or not task_key or not callable(account):
         raise ValueError("native Store stage requires its actual task key and accounting callback")
-    token = _STORE_STAGE.set(dict(store=store, task_key=task_key, lifetime=lifetime, account=account, produced=[]))
+    token = _STORE_STAGE.set(dict(store=store, task_key=task_key, lifetime=lifetime, account=account,
+                                  produced=[], retain_source_assets=False, required_source_assets=set()))
     try:
         yield
     finally:
@@ -108,13 +109,15 @@ def standalone_native_store(store, *, task_key: str, budget: int, required_asset
                         reservation_ids=(reservation,), work_directory=work):
                     with managed_native_store(store, task_key=task_key, lifetime=stack, account=account):
                         scope = _STORE_STAGE.get()
-                        scope.update(parent_run_id=parent_id, published_path=None, reported_status='success')
+                        scope.update(parent_run_id=parent_id, published_path=None, reported_status='success',
+                                     retain_source_assets=True)
                         yield scope
                         account(work)
                         status = scope['reported_status']
                         if status == 'success':
                             _, published = store.publish_run(work,
-                                required_assets=tuple(dict.fromkeys((*required_assets, *scope['produced']))), run_id=parent_id)
+                                required_assets=tuple(dict.fromkeys((*required_assets, *scope['produced'],
+                                    *sorted(scope['required_source_assets'])))), run_id=parent_id)
                             scope['published_path'] = published
                         elif status in {'failed', 'cancelled', 'interrupted'}:
                             store.finish_run(parent_id, 'failed' if status == 'interrupted' else status,

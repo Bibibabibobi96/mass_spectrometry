@@ -140,7 +140,7 @@ class NativeSourceGuardTests(unittest.TestCase):
         from msplatform.storage.store import ArtifactStore
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
-            legacy_root, geometry_data, geometry_ref = self.fixture(base)
+            legacy_root, geometry_data, geometry_ref = self.fixture(base, root_name='artifacts')
             store = ArtifactStore(base / 'model-store')
             with store.inplace_asset('native_stage', 'model-fixture') as (model_id, asset, _claim, seal):
                 run = asset / 'runs' / '20261127_010102__test__python__model'
@@ -205,6 +205,29 @@ class NativeSourceGuardTests(unittest.TestCase):
                 raw_manifest.write_text(json.dumps(document), encoding='utf-8')
                 raw_reference = {'manifest': file_record(raw_manifest), 'product_id': 'samples'}
                 seal()
+            from types import SimpleNamespace
+            from unittest.mock import patch
+            from msplatform.backends.comsol import assembly_field_export
+            from msplatform.execution.owner import standalone_native_store
+            with standalone_native_store(store, task_key='source-retention', budget=100000) as scope:
+                work = store.root / store.run_status(scope['parent_run_id'])['work_path']
+                (work / 'result.json').write_text('{}', encoding='utf-8')
+                with self.assertRaises((KeyError, ValueError)):
+                    with guard_native_source({'manifest': field_reference['manifest'], 'product_id': 'missing'},
+                            expected_kind='field_solution', expected_artifact_root=legacy_root, artifact_store=store):
+                        self.fail('missing product was accepted')
+                self.assertEqual(scope['required_source_assets'], set())
+                with patch.object(assembly_field_export, 'read_stage_policy', return_value=(
+                        {'limits': {'transient_run_directory_bytes': 1000}}, {})), \
+                     patch.object(assembly_field_export, '_export_world_scalar_guarded', return_value='inert'):
+                    self.assertEqual(assembly_field_export.export_world_scalar(field_reference, grid={},
+                        context=SimpleNamespace(workspace=base), artifact_store=store), 'inert')
+                self.assertEqual(scope['required_source_assets'], {model_id, field_id})
+            with store.claim_token(raw_id):
+                store.collect(10**6)
+                with guard_native_source(field_reference, expected_kind='field_solution',
+                                         expected_artifact_root=legacy_root, artifact_store=store):
+                    self.assertTrue(field_manifest.is_file())
             collected = set()
             with guard_native_source(raw_reference, expected_kind='scalar_field_samples',
                                      expected_artifact_root=legacy_root, artifact_store=store, asset_ids=collected):
@@ -221,8 +244,8 @@ class NativeSourceGuardTests(unittest.TestCase):
                     self.fail('missing geometry was accepted')
             self.assertEqual(rejected, {'unrelated'})
 
-    def fixture(self, base):
-        root = base / "owner"
+    def fixture(self, base, root_name="owner"):
+        root = base / root_name
         run = root / "projects" / "fixture" / "runs" / "20261127_010101__test__python__source"
         run.mkdir(parents=True)
         config = run / "run_config.json"

@@ -236,15 +236,15 @@ def _validate_field_solution_source(source: Any) -> Mapping[str, Any]:
 
 def export_world_scalar(solution: Any, *, grid: Mapping[str, Any], context: Any,
                         fill_conductor_interiors: bool = False, publish_prepared_support: bool = False,
-                        prepared_support: Any = None) -> Any:
+                        prepared_support: Any = None, artifact_store=None) -> Any:
     """Export a single verified saved workpoint on one explicit grid."""
     return _export_world_scalar(solution, grid=grid, context=context,
         fill_conductor_interiors=fill_conductor_interiors, publish_prepared_support=publish_prepared_support,
-        prepared_support=prepared_support)
+        prepared_support=prepared_support, artifact_store=artifact_store)
 
 
 def export_world_scalar_grids(solution: Any, *, grids: Mapping[str, Mapping[str, Any]],
-                              context: Any) -> dict[str, Any]:
+                              context: Any, artifact_store=None) -> dict[str, Any]:
     """Export named raw scalar grids with one saved-model load and no Compute."""
     import re
     if not isinstance(grids, Mapping) or not grids:
@@ -255,10 +255,42 @@ def export_world_scalar_grids(solution: Any, *, grids: Mapping[str, Mapping[str,
     if len(names) != len(grids) or len(set(names)) != len(names):
         raise ValueError('grid names must be unique')
     return _export_world_scalar(solution, grid=next(iter(grids.values())), grids=grids,
-                                context=context)
+                                context=context, artifact_store=artifact_store)
 
 
 def _export_world_scalar(solution: Any, *, grid: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False,
+                        publish_prepared_support: bool = False, prepared_support: Any = None,
+                        grids: Mapping[str, Any] | None = None, artifact_store=None) -> Any:
+    """Protect the complete source closure for the managed export lifetime."""
+    from contextlib import ExitStack, nullcontext
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.results.artifacts import OpenedArtifact
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ContractError('scalar export requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent['store']
+    if parent is not None and parent['store'] is not store:
+        raise ContractError('scalar export must use the parent Store')
+    assets = set()
+    def guarded(stack, value, kind):
+        reference = value.reference if isinstance(value, OpenedArtifact) else value
+        return stack.enter_context(guard_native_source(reference, expected_kind=kind,
+            expected_artifact_root=context.workspace / 'artifacts', artifact_store=store, asset_ids=assets))
+    with ExitStack() as guards:
+        source = guarded(guards, solution, 'field_solution')
+        support = guarded(guards, prepared_support, 'scalar_field_samples') if prepared_support is not None else None
+        stage, _ = read_stage_policy(context, 'export_assembly_world_scalar', required_roles=('solver_native_binary',))
+        scope = (standalone_native_store(store, task_key='standalone-scalar-export:' + uuid4().hex,
+                    budget=stage['limits']['transient_run_directory_bytes'], required_assets=tuple(sorted(assets)))
+                 if parent is None else nullcontext())
+        with scope:
+            return _export_world_scalar_guarded(source, grid=grid, context=context,
+                fill_conductor_interiors=fill_conductor_interiors,
+                publish_prepared_support=publish_prepared_support, prepared_support=support, grids=grids)
+
+
+def _export_world_scalar_guarded(solution: Any, *, grid: Mapping[str, Any], context: Any, fill_conductor_interiors: bool = False,
                         publish_prepared_support: bool = False, prepared_support: Any = None, grids: Mapping[str, Any] | None = None) -> Any:
     """Export one verified workpoint, optionally filling strict conductor interiors.
 

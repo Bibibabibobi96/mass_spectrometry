@@ -154,7 +154,15 @@ Agent3 将group attempt/member/host验证从Store提交方法抽为同一只读 
 
 Agent0 的工程tracking CLI明确读取一次严格JSON并交公共dispatch，重复键/非object/NaN在启动前拒绝；单CLI→中立io方向允许、io→CLI仍拒绝。定向5项PASS1.611s，Ruff PASS，仅软件派发边界；公开算法仍判定适用组合，不把engineering controls塞科学作者。catalog新增实际反射补偿选择方法已核父预检加完整owner分片，1 PASS17.192s；先前误把合法分片当空检查的失败保留，未改中央verifier或缩空范围。
 
-Agent1 冷COMSOL成功历史/Store提取/报告17项PASS15.900s（启动器completion替身及真实Python进程，不是商业COMSOL）；发现历史detector不足仍有完整100-ID CSV的合法失败分析，正在保留failure outputs及可信停写验证，旧caller未贸然删除。Agent2/6 核实focus旧场为mirror-X半域/surface=none，与当前full-domain/fractional不同；将明确原数值设置、编译mode和缓存身份，不把旧controller包装成等值FieldBundle。原负向首次穿越、焦点主动终止和正电荷理想对照各按真实范围迁移；此时公共focus链与商业验证仍未完成。最终安装/Repository/全口径成本和CLOC仍待真正完成集成后一次必要验证。
+Agent1 冷COMSOL成功历史/Store提取/报告17项PASS15.900s（启动器completion替身及真实Python进程，不是商业COMSOL）；发现历史detector不足仍有完整100-ID CSV的合法失败分析，正在保留failure outputs及可信停写验证，旧caller未贸然删除。Agent2/6 核实focus旧场为mirror-X半域/surface=none，与当前full-domain/fractional不同；将明确原数值设置、编译mode和缓存身份，不把旧controller包装成等值FieldBundle。原负向首次穿越、焦点主动终止和正电荷理想对照各按真实范围迁移；此时公共focus链与商业验证仍未完成。最终安装/Repository/全口径成本和CLOC仍待真正完成集成后一次必要验证。 新停止证据主题已提交并普通push `9fe3caef`；规范CLOC2.10按审计 `78144e45→9fe3caef` PASS：total618524→621973(+3449)、production303823→303802(-21)、tests314701→318171(+3470)、unclassified0，完整各语言/用途/files/blank/comment/code及过滤在外部 `stopped-core-cloc.log`。当前科学域全16项PASS10.182s，含CLI→IO允许及反向禁止；不是安装或商业native验收。
+
+### C3 原始标量导出与必要来源保留（独立暂存验收）
+
+`backends/comsol/assembly_field_export.export_world_scalar` / `export_world_scalar_grids` 公开入口要求显式ArtifactStore或同Store父scope，先真实claim/OS guard持field_solution及prepared support完整来源，再进入既有导出执行体；没有新owner或商业采样体。standalone发布将已成功guard的真实必要source闭包登记required refs；普通native cache scope默认不强pin全部PA，失败guard不污染保留集。大MPH/PA原位读取，未知源/错Store/缺原件明确拒绝，既有source lineage与有资格cache的GC/缺件局部重算维持。
+
+Agent0隔离暂存树 `8353030928dbf7966c16f14d52dba921a0e10b93`（`scalar-retention-index-check-04328a88`）9项source guard正反例PASS3.986s、Ruff PASS；同树真实managed owner单方法四种惰性导出情形PASS61.191s。原Agent3同软件范围59.779s属重复验证，次数/时间分别保留，不以不同范围计算加速。供应商MATLAB/COMSOL导出叶由惰性Python替代，非商业场采样资格；multi-grid只有公开参数与guard入口接线，不冒充多grid原生验证。独立提交只包含该导出/retention闭包，不混未完成focus/cold/MR或RF worker。
+
+RF-IP public partial replay另已PASS194.901s：实际失败index `[true,true,false]`、第三unit exit7，后续新run只启动1个Fly group member，前2单位实际复用，最终succeeded与完整N3冷读。证据外部 `rf-ip-recovery-bjcr1mj3`；原失败资产、前轮160.094s ERROR及旧probe原状态保持。真实IOB/Fly为Python惰性子进程，非SIMION数值或RNG逐位资格；原field复用/partial恢复软件合同已闭合，可据此退旧consumer，当前未把C2/C3/CA19整阶段写PASS。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 

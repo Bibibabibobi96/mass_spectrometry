@@ -287,7 +287,7 @@ def guard_failed_store_evidence(store, manifest_record: Mapping[str, Any], selec
 @contextmanager
 def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                         expected_artifact_root: Path, artifact_store=None,
-                        asset_ids: set[str] | None = None) -> Iterator[OpenedArtifact]:
+                        asset_ids: set[str] | None = None, _retain: bool = True) -> Iterator[OpenedArtifact]:
     """Verify and hold precisely the declared product files until consumption ends.
 
     Store products retain a verified claim. Historical sources are opened
@@ -299,10 +299,13 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
         raise ValueError("native source requires an explicit manifest reference and product_id")
     if asset_ids is not None and not isinstance(asset_ids, set):
         raise ValueError('native source asset collector must be a set')
-    collected = set() if asset_ids is not None else None
     from msplatform.execution.owner import current_managed_native_store
     scope = current_managed_native_store()
+    retain = bool(_retain and scope and scope["retain_source_assets"])
+    collected = set() if asset_ids is not None or retain else None
     store = artifact_store if artifact_store is not None else (scope["store"] if scope else None)
+    if retain and store is not scope['store']:
+        raise ValueError('native source must use the retaining parent Store')
     candidate = record_path(validate_file_record(reference["manifest"], "native source manifest"))
     if store is not None and candidate.is_absolute() and candidate.resolve().is_relative_to(store.root / "assets"):
         resolved = candidate.resolve(strict=True)
@@ -339,20 +342,20 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
             borrowed = {}
             if origin_reference is not None:
                 origin = stack.enter_context(guard_native_source(origin_reference, expected_kind="field_bundle",
-                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected))
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
                 borrowed = {Path(origin.data_locations[name]).resolve(): (record["bytes"], str(record["sha256"]).upper())
                             for name, record in origin.data_records.items()}
             if geometry_reference is not None:
                 if expected_kind != 'prepared_model':
                     raise ValueError('geometry source is only valid for a prepared model')
                 stack.enter_context(guard_native_source(geometry_reference, expected_kind='geometry_artifact',
-                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected))
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
             if scalar_original is not None:
                 if (expected_kind != 'scalar_field_samples'
                         or product.get('metadata', {}).get('derivation') != 'offline_from_published_raw_samples'):
                     raise ValueError('original scalar samples identity differs')
                 original = stack.enter_context(guard_native_source(scalar_original, expected_kind='scalar_field_samples',
-                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected))
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
                 borrowed.update({Path(original.data_locations[name]).resolve(): (record['bytes'], str(record['sha256']).upper())
                                  for name, record in original.data_records.items()})
             elif (expected_kind == 'scalar_field_samples' and product.get('metadata', {}).get('backend') == 'comsol'
@@ -361,7 +364,7 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                 product_id = product.get('metadata', {}).get('field_solution_product_id')
                 field = stack.enter_context(guard_native_source({'manifest': field_record, 'product_id': product_id},
                     expected_kind='field_solution', expected_artifact_root=expected_artifact_root,
-                    artifact_store=store, asset_ids=collected))
+                    artifact_store=store, asset_ids=collected, _retain=False))
                 field_manifest_record = field.reference['manifest']
                 borrowed[field.manifest_location.resolve()] = (field_manifest_record['bytes'], str(field_manifest_record['sha256']).upper())
             stationary_origin = None
@@ -372,7 +375,7 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                     raise ValueError('stationary source identity differs')
                 stationary_origin = stack.enter_context(guard_native_source(stationary_source['reference'],
                     expected_kind=stationary_source['kind'], expected_artifact_root=expected_artifact_root,
-                    artifact_store=store, asset_ids=collected))
+                    artifact_store=store, asset_ids=collected, _retain=False))
             if failed_source is not None:
                 if (expected_kind != 'field_solution' or not isinstance(failed_source, dict)
                         or set(failed_source) != {'manifest', 'selected_output'}):
@@ -423,6 +426,8 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                 guarded[actual] = identity_record
             if asset_ids is not None:
                 asset_ids.update(collected)
+            if retain:
+                scope["required_source_assets"].update(collected)
             yield artifact
         return
     raw_root = Path(expected_artifact_root)
@@ -474,7 +479,7 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
             if artifact.metadata.get('derivation') != 'offline_from_published_raw_samples':
                 raise ValueError('original scalar samples identity differs')
             original = stack.enter_context(guard_native_source(artifact.metadata['original_samples_reference'],
-                expected_kind='scalar_field_samples', expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected))
+                expected_kind='scalar_field_samples', expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected, _retain=False))
             validate_original_sample_source(artifact, original)
         if artifact.metadata.get('backend') == 'comsol':
             scope_name = artifact.metadata.get('scope')
@@ -482,11 +487,13 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                 linked = artifact.metadata.get('geometry_source_reference') or {
                     'manifest': artifact.data_records.get('geometry_manifest'), 'product_id': 'geometry'}
                 stack.enter_context(guard_native_source(linked, expected_kind='geometry_artifact',
-                    expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected))
+                    expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected, _retain=False))
             elif expected_kind == 'field_solution' and scope_name == 'single_stationary_workpoint':
                 linked = {'manifest': artifact.data_records.get('prepared_manifest'), 'product_id': 'model'}
                 stack.enter_context(guard_native_source(linked, expected_kind='prepared_model',
-                    expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected))
+                    expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected, _retain=False))
         if asset_ids is not None:
             asset_ids.update(collected)
+        if retain:
+            scope["required_source_assets"].update(collected)
         yield artifact

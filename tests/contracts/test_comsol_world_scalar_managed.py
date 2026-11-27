@@ -2,6 +2,7 @@
 import json
 import os
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 import struct
 import sys
@@ -18,10 +19,16 @@ from msplatform.execution.owner import run_managed_stage
 from msplatform.execution.run_session import RunSession
 from msplatform.io.manifest_records import file_record
 from msplatform.results.artifacts import open_artifact
+from msplatform.storage.store import ArtifactStore
 
 SOLUTION={'study_tag':'std1','solution_tag':'sol1','dataset_tag':'dset1','dataset_solution':'sol1','solution_empty':False,'solution_count':1,'stored_main_solutions':1,'solution_dofs':7}
 
-def source_action(session):
+def prepared_action(session):
+    path=session.declare_file(session.result_dir/'prepared.mph','solver_native_binary')
+    path.write_text('synthetic prepared model',encoding='utf-8')
+    return dict(status='success',summary={'synthetic':True},output_paths=[str(path)],required_output_paths=[str(path)],retention_preserve_paths=[],manifest_extra_fields={'products':{'prepared':{'schema_version':1,'kind':'prepared_model','status':'complete','metadata':{},'data':{'model':file_record(path,'solver_native_binary')}}}})
+
+def source_action(session, *, prepared):
     projection,request,_=fixture();projection['outer_box_mm']={'min':[-2,-2,-2],'max':[3,3,3]}
     values={'projection':projection,'request':request,'geometry_validation':{'position_mm':1e-6},'reopen_geometry':{'vacuum_domains':[1]},'reopen_solution':SOLUTION,'model':'synthetic model; no COMSOL'}
     records={};paths=[]
@@ -29,7 +36,10 @@ def source_action(session):
         target=session.declare_file(session.result_dir/(name+('.mph' if name=='model' else '.json')),'solver_native_binary' if name=='model' else 'required_evidence')
         target.write_text(value if name=='model' else json.dumps(value),encoding='utf-8')
         records[name]=file_record(target,'solver_native_binary' if name=='model' else 'required_evidence');paths.append(str(target))
-    return dict(status='success',summary={'synthetic':True},output_paths=paths,required_output_paths=paths,retention_preserve_paths=[],manifest_extra_fields={'products':{'solution':{'schema_version':1,'kind':'field_solution','status':'complete','metadata':{'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True,'solution':SOLUTION},'data':records}}})
+    frozen=session.declare_file(session.result_dir/'prepared_manifest.json','required_evidence')
+    freeze_file(Path(prepared['manifest']['path']),frozen)
+    records['prepared_manifest']=file_record(frozen,'required_evidence');paths.append(str(frozen))
+    return dict(status='success',summary={'synthetic':True},output_paths=paths,required_output_paths=paths,retention_preserve_paths=[],manifest_extra_fields={'products':{'solution':{'schema_version':1,'kind':'field_solution','status':'complete','metadata':{'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True,'solution':SOLUTION,'stationary_source':{'reference':prepared,'kind':'prepared_model'}},'data':records}}})
 
 class ManagedScalarOwnerTests(unittest.TestCase):
     @patch.dict(os.environ,{'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN':''})
@@ -42,10 +52,25 @@ class ManagedScalarOwnerTests(unittest.TestCase):
                 limits={'wall_clock_seconds':120,'transient_run_directory_bytes':64*1024**2,'process_tree_working_set_bytes':1024**3,'minimum_system_available_memory_bytes':1,'compact_final_retained_bytes':64*1024**2,'automatic_retry_count':0}
                 retention={'policy_version':1,'class':'solver_review','reason':'inert scalar managed owner test'}
                 policy=root/'stages.json';policy.write_text(json.dumps({'schema_version':1,'role':'execution_stage_policy','stages':{'export_assembly_world_scalar':{'limits':limits,'artifact_retention':retention}}}),encoding='utf-8');context=replace(context,stage_policy_path=policy)
-                args=helper._arguments(root,source_action);args.update(retention=retention,run_id='20261114_120000__build__python__synthetic-field',action_record=file_record(Path(__file__),'required_evidence'),completion_api=no_particle_batch_completion_api)
-                source_result=run_managed_stage(context,**args);source=open_artifact({'manifest':source_result['manifest'],'product_id':'solution'},expected_kind='field_solution')
+                store=ArtifactStore(root/'store')
+                args=helper._arguments(root,prepared_action);args.update(retention=retention,run_id='20261114_120000__build__python__synthetic-prepared',action_record=file_record(Path(__file__),'required_evidence'),completion_api=no_particle_batch_completion_api)
+                prepared=run_managed_stage(context,artifact_store=store,**args)
+                prepared_ref={'manifest':prepared['manifest'],'product_id':'prepared'}
+                args=helper._arguments(root,partial(source_action,prepared=prepared_ref));args.update(retention=retention,run_id='20261114_120000__build__python__synthetic-field',action_record=file_record(Path(__file__),'required_evidence'),completion_api=no_particle_batch_completion_api)
+                source_result=run_managed_stage(context,artifact_store=store,**args);source=open_artifact({'manifest':source_result['manifest'],'product_id':'solution'},expected_kind='field_solution')
                 original={n:source.data_path(n).read_bytes() for n in ('model','request','projection')}
                 _,_,grid=fixture();grid.update(block_points=7,study_tag='std1',solution_tag='sol1',dataset_tag='dset1');grid.pop('point_count')
+                if case=='true':
+                    with self.assertRaisesRegex(Exception,'explicit ArtifactStore'):
+                        subject.export_world_scalar(source,grid=grid,context=context)
+                    sentinel=object()
+                    def grid_probe(*args,**kwargs):
+                        from msplatform.execution.native_artifact_controls import current_native_artifact_scope
+                        (current_native_artifact_scope()['work_directory']/'probe.txt').write_text('grid probe',encoding='utf-8')
+                        return sentinel
+                    with patch.object(subject,'_export_world_scalar_guarded',side_effect=grid_probe) as invoke:
+                        self.assertIs(subject.export_world_scalar_grids(source,grids={'one':grid,'two':grid},context=context,artifact_store=store),sentinel)
+                        self.assertEqual(set(invoke.call_args.kwargs['grids']),{'one','two'})
                 values=[0.]*45;values[0]=-0.;mask=[0.]*45;mask[0]=1.
                 if case=='late_failure':mask[-1]=.5
                 sample=root/'potential.pa';valid=root/'valid.pa';sample.write_bytes(bytes(HEADER.size)+b''.join(struct.pack('<d',x) for x in values));valid.write_bytes(bytes(HEADER.size)+b''.join(struct.pack('<d',x) for x in mask))
@@ -67,30 +92,33 @@ class ManagedScalarOwnerTests(unittest.TestCase):
                     keys=[str(Path(record['path']).resolve()).casefold() for record in records]
                     self.assertEqual(len(keys),len(set(keys)))
                     if case=='true':
+                        with self.assertRaises(PermissionError): source.data_path('model').unlink()
                         self.assertTrue(any('scalar_pa_encoder' in path for path in keys))
                         self.assertTrue(any('scalar_support' in path for path in keys))
                     kwargs.update(role='GATE',stage='assembly_scalar_inert_transport')
                     return original_run(session,operation_id,**kwargs)
                 with patch.object(subject,'freeze_native_sources',side_effect=sources),patch.object(RunSession,'run_process',new=transport):
                     if case in ('true','false'):
-                        product=subject.export_world_scalar(source,grid=grid,context=context,fill_conductor_interiors=case=='true')
+                        product=subject.export_world_scalar(source,grid=grid,context=context,fill_conductor_interiors=case=='true',artifact_store=store)
                         run_dir=product.manifest_location.parent;manifest=json.loads(product.manifest_location.read_text(encoding='utf-8-sig'));self.assertEqual(manifest['status'],'success')
                         self.assertEqual('conductor_support' in product.data_records,case=='true')
                         if case=='true':
                             self.assertEqual(struct.unpack_from('<d',product.data_path('field_v').read_bytes(),56+8*21)[0],-100.)
                             self.assertEqual(product.data_path('sampled_field_v').read_bytes()[HEADER.size:],sample.read_bytes()[HEADER.size:])
                     else:
-                        with self.assertRaises(Exception) as caught:subject.export_world_scalar(source,grid=grid,context=context,fill_conductor_interiors=True)
+                        with self.assertRaises(Exception) as caught:subject.export_world_scalar(source,grid=grid,context=context,fill_conductor_interiors=True,artifact_store=store)
                         self.assertRegex(str(caught.exception),'(?i)(binary|immutable|denied|access|exit|changed|zero or one)')
-                        manifests=list((context.workspace/'artifacts/assemblies/instrument_assembly/runs').glob('*assembly-scalar*/run_manifest.json'));self.assertEqual(len(manifests),1)
+                        manifests=list(store.root.glob('assets/native_stage/*/*/runs/*assembly-scalar*/run_manifest.json'));self.assertEqual(len(manifests),1)
                         run_dir=manifests[0].parent;manifest=json.loads(manifests[0].read_text(encoding='utf-8-sig'));self.assertEqual(manifest['status'],'failed');self.assertNotIn('samples',manifest.get('products',{}))
                         if case=='late_failure':
-                            partial=run_dir/'scalar/field_v_filled.pa'
-                            self.assertFalse(partial.exists())
+                            partial_output=run_dir/'scalar/field_v_filled.pa'
+                            self.assertFalse(partial_output.exists())
                             self.assertEqual((run_dir/'scalar/field_v.pa').read_bytes(),sample.read_bytes())
                             self.assertEqual((run_dir/'scalar/field_valid.pa').read_bytes(),valid.read_bytes())
                             self.assertTrue((run_dir/'results/export_world_scalar.json').is_file())
-                            result_path=context.workspace/'artifacts/assemblies/instrument_assembly/scratch/workflow_results'/run_dir.name/'result.json'
+                            result_paths=list(store.root.glob('work/*/native-result-'+run_dir.name+'.json'))
+                            self.assertEqual(len(result_paths),1)
+                            result_path=result_paths[0]
                             owner_result=json.loads(result_path.read_text(encoding='utf-8-sig'))
                             self.assertEqual(owner_result['status'],'failed')
                             self.assertIn('scalar validity payload must contain only zero or one',owner_result['exception']['message'])
@@ -101,7 +129,5 @@ class ManagedScalarOwnerTests(unittest.TestCase):
                 self.assertEqual(release['result'],{'status':'released','token':release['token']})
                 self.assertTrue(completion['writer_completion']['operations'][0]['observation']['exit_confirmed'])
                 for n,data in original.items():self.assertEqual(source.data_path(n).read_bytes(),data)
-                from msplatform.execution.capacity_protection import load_capacity_protection_leases
-                self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'],[])
 
 if __name__=='__main__':unittest.main()
