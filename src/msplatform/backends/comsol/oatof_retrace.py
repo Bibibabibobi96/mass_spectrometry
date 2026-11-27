@@ -63,43 +63,6 @@ def run_species_retrace(
 ) -> dict[str, Any]:
     """Run the documented R2025b launcher once for one single-species table."""
     raise ValueError("Legacy OA–TOF composite retrace execution is retired; use msplatform run with a public Study recipe")
-    host_context = session.environment["MASS_SPECTROMETRY_HOST_CONTEXT_JSON"]
-    arguments = [
-        "-NoProfile", "-NonInteractive", "-File", str(launcher),
-        "-HostContextJson", host_context,
-        "-WorkingDirectory", str(session.run_dir),
-        "-TaskScript", str(task_script),
-        "-ReportPath", str(report_path),
-        "-RunId", run_id,
-        "-RunDir", str(session.run_dir),
-        "-CompletionPath", str(completion_path),
-    ]
-    environment = {
-        "OATOF_SOURCE_MODEL_PATH": str(source_model),
-        "OATOF_ION_TABLE": str(ion_table),
-        "OATOF_COMSOL_OUTPUT_CSV": str(output_csv),
-        "OATOF_RUNTIME_DIR": str(runtime_dir),
-        "OATOF_RESULTS_DIR": str(results_dir),
-        **scientific_environment,
-    }
-    try:
-        session.run_process(
-            operation_id, executable=session.context.powershell_executable,
-            arguments=arguments, role="COMSOL", stage="solver", limits=limits,
-            environment=environment, immutable_input_records=immutable_input_records,
-        )
-    except Exception as primary:
-        if completion_path.is_file():
-            try:
-                load_launcher_completion(completion_path, run_id=run_id)
-            except Exception as receipt_error:
-                primary.add_note(f"COMSOL completion receipt error: {receipt_error}")
-        raise
-    completion = load_launcher_completion(completion_path, run_id=run_id)
-    return {
-        "completion": file_record(completion_path, "required_evidence"),
-        "receipt": completion,
-    }
 
 
 def verify_completed_species(

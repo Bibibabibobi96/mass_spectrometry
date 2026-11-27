@@ -1,8 +1,38 @@
 # 架构迁移执行记录
 
-本页是架构迁移的唯一进度入口；最新接续见[当前批次 B 检查点](#当前批次-b-检查点)。批次 A 完成不等于全仓迁移。输入为用户提供的
+本页是架构迁移的唯一进度入口；最新接续见[当前批次 C 检查点](#当前批次-c-检查点)。批次 A/B 完成不等于全仓迁移。输入为用户提供的
 `ms_agent_execution_20261126` 执行包（start_agent、review_resolutions、implementation_plan、review_decisions）。
 原评阅 145 同意、20 修改、2 不同意、29 处具体意见保持原意；技术实施选择不回写为原表批准。
+
+## 当前批次 C 检查点
+
+C 已按用户 2026-11-27 指令实际启动，同一 Goal 使用外部包 `ms_phase_c_execution_20261127/goal_prompt_C.md` 原文并绑定完整 `implementation_plan_C.md`，C0–C7/CA01–CA18全范围适用。追加决定 `user_decisions_C.md` 优先于冻结附件旧建议。A/B正文保留为当时执行记录；本包独立验收对B的结论是带整改项接收，不能沿用下文旧交付的无条件BA闭合措辞。
+
+- 开工 HEAD 与包审计相同：`78144e456f6141374853233e958b2b91723ea54f`；B代码`90d6d5e8`。分支`task/architecture-migration-20261126`跟踪同名origin任务分支，远端为Bibibabibobi96/mass_spectrometry。无审计后代码增量，不reset；21个已有tracked M实际diff为空，原未跟踪artifacts保留。
+- Agent 0集成/共享合同/命名/迁移页/Git；Agent 1 C0-01真实仪器V/E；Agent 2 particle_release与三类Species/参考冷读；Agent 3 C0-02/03；Agent 4 C0-04；Agent 5气体冲突/唯一数据导出；Agent 6不可达旧生产体退役。共享文件单owner，Git串行。C0-02/03闭合前不扩大native并发。
+- C0正在实施；两个原存储probe只作旧缺陷证据，新复现另存外部C证据根，不覆盖recorded结果。B0四项不重做。真实点验只复用已求OFF/ON资产，不重算整场、不改pulse/birth追命中。
+- 气体统一允许有依据的科学输入修正，独立版本/缓存影响与纯改名分开；IP proxy不能证明独立物种，HS1示例截面不冒充N2标定。正/负离子与电子身份独立，不靠电荷符号或小质量猜类型。
+- 当前不授任何CA PASS；下一步完成C0定向反例/修复、维护逐消费者表，再按依赖推进C1–C7。未启动M06–M08或大型研究，不合并主线。
+
+### C 活跃消费者对账（开工定位，未闭合）
+
+| 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
+|---|---|---|---|
+| msplatform run → native_tracing/scalar_tracing | B split OA+TOF、schema2 Study、冻结clock/birth/OFF/ON | ArtifactStore规范结果；既有native owner保护原始PA/MPH | 保留B，C0补真实V/E、not_started与remaining；未闭合 |
+| mr_verify及mr_design/oa_mr/prepared_joint | 现MR provider、候选几何/驱动与数学分区 | 原run/field owner及MR分析reader | multi_reflection_tof；准备与追踪分开迁移，未闭合 |
+| ip_functional → ion_processor.functional | 现IP provider、source/numerics、HS1/HP-LP输入 | SIMION batch/GUI-replay owner、IP results | ion_processor与唯一N2/模型数据；未闭合 |
+| dual_cone阶段 → dual_cone_stages/COMSOL gas-flow/SIMION transport | 独立双锥provider、气流/SDS/碰撞来源 | 原气流/PA/transport owner与轨迹诊断 | dual_cone_tandem_quadrupole，保留真实能力范围；未闭合 |
+| multipole_ip_continuous → multipole_ip.continuous | RF variants/IP/MR完整场、原birth/clock/HS1 | 既有whole-unit track owner、REC/分析 | 复用连续实现接公共入口/结果/owner；未闭合 |
+| accelerator_interface -FullJoint / prepared_joint_execute | assembly_registry的ip_mr_chain及下游准备源 | 原准备与joint-field owner、handoff/analysis | 关闭跨组件重新释放，区分合法局部/prepare-only；未闭合 |
+| single_reflection_flight RF recorded-birth | schema12/plan6、RF→OA→TOF真实母群 | split track owner、规范终态/事件 | 补有声明的新连续native小例；未闭合 |
+| oa_candidate/oa_formal/compensation及历史mass reanalysis | 本地whole-Fly/response basis、历史分析/认证 | 原local run/验证发布owner、历史reader | 合法研究保留、总等级退出、不可达producer删除；C0-04先修observer |
+| EI/Wehnelt现有组件入口/execution_profiles | 当前真实geometry/model能力与源/常量 | 既有COMSOL/运行owner、各产品合同 | 公共输入/能力/owner按实际范围接入；未闭合 |
+
+### C4 首个实修单元：删除旧 COMSOL retrace 不可达体
+
+Agent 6沿真实调用确认`backends/comsol/oatof_retrace.py`的completion读取/物种认证仍供历史分析使用，保留其唯一实现及原执行拒绝；删除拒绝后的37行Python死体。`backends/comsol/matlab/run_fixed_particle_retrace.m`保留既有冻结资源身份和明确错误边界，删除其后329行不可达旧producer。不是恢复composite；后续对应活跃caller退出后再核资源去留。最近PROJECT已区分历史说明和当前可用范围。
+
+`python -m unittest tests.contracts.test_retired_comsol_execution -v`：3 PASS/0 skip，0.767 s；包括执行前拒绝、历史认证成功和错误检测数/run ID/host release未知反例。Ruff、diff与文档StructureOnly PASS。另一组合命令内历史旧测试因缺`MASS_SPECTROMETRY_HOST_CONTEXT_JSON`而ERROR（42.688 s），未计为PASS，保留原日志/临时失败目录；未执行MATLAB或新增native资格。此单元不授C0/C4整阶段PASS。10个PA种子仍有native_plans/rf_tracking/安装的实际消费者及独立实例需求，暂保留；三个tests生产PS的去留正在逐项处理。
 
 ## 当前批次 B 检查点
 

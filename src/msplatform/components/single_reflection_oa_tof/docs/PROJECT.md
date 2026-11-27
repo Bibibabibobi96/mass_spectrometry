@@ -250,7 +250,13 @@ Paper 1 专用研究准备API的归属与退出条件见[分析说明](ANALYSIS.
 已闭合的提供者迁移、回归及失败链冻结在[文档收口记录](../../../../../docs/history/projects/single_reflection_oa_tof_mass_analyzer/20261026__assembly-documentation-consolidation.md)，
 不把实现迁移、局部验证或旧运行自动提升为新整机资格。
 
-## OA mass-spectrum installed full-study owner
+## 退役的 COMSOL composite retrace
+
+`oatof_retrace.run_species_retrace` 和 `run_fixed_particle_retrace.m` 均在启动资源之前明确拒绝旧 composite 执行；首个拒绝后的不可达执行体已移除。前者仍保留 completion receipt 的验证与历史 species 单元认证，供已封存的 mass-spectrum 分析读取；MATLAB 文件作为既有冻结资源和拒绝边界保留。公共新运行使用 Study recipe；历史输入与结果不改写，此项软件清理不增加原生或科学资格。
+
+## OA mass-spectrum 旧 owner 的历史说明
+
+以下保留迁移前实现的历史说明；其中 normal/partial composite 执行与 per-species retrace 现已退役，当前只支持历史分析及 finalization，不能作为新运行入口。
 
 `msplatform.workflows.single_reflection_mass_spectrum_study` now owns five-species study ordering,
 deterministic parent/prefix/mixed-source construction, explicit Formal and resolved-geometry admission,
