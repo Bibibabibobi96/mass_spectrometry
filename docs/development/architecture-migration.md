@@ -46,6 +46,14 @@ Agent 6沿真实调用确认`backends/comsol/oatof_retrace.py`的completion读�
 
 Agent 3的实际定向命令均为仓库`.venv` Python、显式src环境：`tests.repository.test_native_artifact_controls`的两个not_started方法分别1 PASS/6.169s和1 PASS/6.092s；同模块四项父死子活/精确身份/quickexit/活登记失败4 PASS/27.353s；`tests.contracts.test_native_workflow tests.contracts.test_artifact_store -q`26 PASS/10.385s（含remaining），预算细例另重复1 PASS/0.209s。上述加deep测试共34个调用/33个唯一方法、0 skip；wall分项不相加成端到端历时。Ruff/diff PASS。C04的前后observer与日志在`C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/c0-deep-reanalysis/`；C02/03命令结果来自本轮工具执行记录，未伪造单独stdout日志。外部Linux存储probe直接复制到新C目录在Windows无法按shebang启动，exit1不是重现成功或修复PASS，原recorded JSON未改。C0-01实际点验仍在运行，C0整体验收未完成。
 
+上述C0软件单元已普通push为`6ba108fd53a06fe27997190800ab15183984deec`；暂未混入particle_release包移动，跨包命名另主题提交。
+
+### C4 两条失效生产脚本退出
+
+旧`tests/.../comsol/run_n100_candidate_functional.ps1`在StrictMode下先用未赋值Python且调用已退役composite；`run_extreme_particle_count_case.ps1`同样依赖退休retrace和失效旧project路径。反向调用核查只剩活动导航/镜像脚本形状测试，无合法独立生产调用，已删除这两入口，导航改到公共Study及历史只读；删无适用对象的镜像测试和失效清单项，不恢复旧运行凑绿。历史owner迁移映射原字节保留。
+
+`tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_governed_run_entrypoints`与`tests.contracts.test_retired_comsol_execution`组合6 PASS/0 skip，0.869s，包含重复的3个退休合同（非6个全新检查）。场理想化sweep仍有真实消费者，正在迁现有workflow并修其明确路径/owner缺口，不因位于tests就一并删除；该生产链尚未授予安装/native/C3闭合。
+
 ## 当前批次 B 检查点
 
 批次B按本页声明的BA01–BA15范围交付；最终代码为`90d6d5e8b67e5b0bfe3e823b0130c30c266eea2b`，本次随后提交仅更新交付记录。最终结果见[最终交付记录](#b-最终交付记录2026-11-27)。不启动C/M06–M08，不授全仓门禁或仪器物理资格。
