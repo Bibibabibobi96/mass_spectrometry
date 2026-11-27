@@ -104,6 +104,10 @@ def validate_native_completion(binding: Mapping[str, Any], completion: Mapping[s
         raise ValueError(f"native completion does not match the bound operation, token and worker: "
                          f"operation={operation_id} expected=({binding['worker_pid']},{binding['worker_started']}) "
                          f"observed=({observation['process_id']},{observation['process_started_at_utc_ticks']})")
+    _validate_released_host(binding)
+
+
+def _validate_released_host(binding: Mapping[str, Any]) -> None:
     path = Path(binding["host_state_path"])
     if not path.is_file():
         raise ValueError("host state is unavailable; completion cannot be reconciled")
@@ -127,12 +131,11 @@ def reconcile_native_receipt(store, receipt_path: Path) -> bool:
         raise ValueError("native receipt role differs")
     prefix = str(path)[:-len(".receipt.json")]
     receipt = json.loads(path.read_text(encoding="utf-8"))
-    worker = json.loads(Path(prefix + ".worker.json").read_text(encoding="utf-8"))
     host = json.loads(Path(prefix + ".host.json").read_text(encoding="utf-8"))
     ack = json.loads(Path(prefix + ".ack.json").read_text(encoding="utf-8"))
     nonce, binding_id = receipt.get("nonce"), receipt.get("binding_id")
-    if (not isinstance(nonce, str) or not nonce or ack.get("nonce") != nonce or worker.get("nonce") != nonce
-            or host.get("nonce") != nonce or ack.get("binding_id") != binding_id or worker.get("binding_id") != binding_id):
+    if (not isinstance(nonce, str) or not nonce or ack.get("nonce") != nonce
+            or host.get("nonce") != nonce or ack.get("binding_id") != binding_id):
         raise ValueError("native registration and release receipts differ")
     with store._db() as db:
         row = db.execute("""SELECT b.run_id,b.host_token,b.operation_id,b.worker_pid,b.worker_started,
@@ -143,6 +146,23 @@ def reconcile_native_receipt(store, receipt_path: Path) -> bool:
     native = receipt.get("receipt")
     if not isinstance(native, dict):
         raise ValueError("native owner completion is unavailable")
+    if "not_started" in receipt:
+        proof = receipt["not_started"]
+        release = native.get("host_release")
+        error = native.get("error")
+        if (proof != {"operation_id": row[2], "reason": "os_start_failed"}
+                or row[2] == "group" or row[3:5] != (None, None)
+                or native.get("observation") is not None or not isinstance(error, dict)
+                or not isinstance(error.get("message"), str) or not error["message"]
+                or not isinstance(release, dict) or release.get("inherited") is not False
+                or release.get("token") != row[1] or release.get("error") is not None
+                or release.get("result") != {"status": "released", "token": row[1]}
+                or Path(prefix + ".worker.json").exists()):
+            raise ValueError("native not-started proof differs")
+        return store._complete_native_not_started(binding_id, receipt=receipt)
+    worker = json.loads(Path(prefix + ".worker.json").read_text(encoding="utf-8"))
+    if worker.get("nonce") != nonce or worker.get("binding_id") != binding_id:
+        raise ValueError("native registration identity differs")
     with store._db() as db:
         is_group = db.execute("SELECT 1 FROM native_group_workers WHERE binding_id=? LIMIT 1",
                               (binding_id,)).fetchone() is not None

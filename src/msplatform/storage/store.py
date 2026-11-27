@@ -412,6 +412,37 @@ class ArtifactStore:
         self._recover_controls(bound_ids)
         return True
 
+    def _complete_native_not_started(self, binding_id: str, *, receipt: dict) -> bool:
+        """Close a proved pre-launch failure without releasing live outer controls."""
+        from msplatform.execution.native_artifact_controls import _validate_released_host
+        with self._db() as db:
+            row = db.execute("""SELECT host_token,operation_id,worker_pid,worker_started,state,host_state_path,host_file_id
+                FROM native_bindings WHERE id=?""", (binding_id,)).fetchone()
+        if row is None:
+            raise KeyError(binding_id)
+        proof, native = receipt.get("not_started"), receipt.get("receipt", {})
+        release = native.get("host_release", {})
+        if (proof != {"operation_id": row[1], "reason": "os_start_failed"} or row[1] == "group"
+                or row[2:4] != (None, None) or native.get("observation") is not None
+                or not isinstance(native.get("error"), dict) or not native["error"].get("message")
+                or release.get("inherited") is not False or release.get("token") != row[0]
+                or release.get("error") is not None
+                or release.get("result") != {"status": "released", "token": row[0]}):
+            raise ValueError("native not-started completion differs")
+        _validate_released_host(dict(host_token=row[0], host_state_path=row[5], host_file_id=json.loads(row[6])))
+        with self._transaction() as db:
+            current = db.execute("SELECT state,worker_pid,worker_started FROM native_bindings WHERE id=?", (binding_id,)).fetchone()
+            if current[0] == "complete":
+                return False
+            if current[1:] != (None, None):
+                raise ValueError("native worker exists")
+            bound_ids = tuple(item[0] for item in db.execute(
+                "SELECT control_id FROM native_binding_controls WHERE binding_id=?", (binding_id,)))
+            db.execute("UPDATE native_bindings SET state='complete',completion=? WHERE id=? AND state='active'",
+                       (json.dumps(receipt, sort_keys=True), binding_id))
+        self._recover_controls(bound_ids)
+        return True
+
     def complete_native_group_controls(self, binding_id: str, *, completion: dict) -> bool:
         """Release only after every declared started worker and host release is proven."""
         from msplatform.execution.native_artifact_controls import validate_native_completion

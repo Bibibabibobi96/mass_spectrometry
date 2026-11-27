@@ -345,6 +345,79 @@ class NativeArtifactControlsTests(unittest.TestCase):
         paths = {Path(record["path"]) for record in captured["immutable_input_records"]}
         self.assertEqual(paths, {raw, parent, lua, inputs / "member.json"})
 
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_os_launch_failure_reconciles_without_releasing_live_outer_controls(self) -> None:
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls, reconcile_native_receipt
+        from msplatform.execution.processes import ProcessExecutionError, run_observed_process
+        from msplatform.execution.resources import resource_path
+        invalid = self.root / "invalid.exe"
+        invalid.write_bytes(b"not an executable image")
+        context = ExecutionContext(workspace=self.root, python_executable=Path(sys.executable).resolve(),
+            powershell_executable=Path(shutil.which("pwsh")).resolve(), tools={},
+            host_state_path=self.root / "actual-host.sqlite", policy_path=resource_path("host_resource_policy.json"))
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with self.store.claim_token(self.asset) as (claim, _), self.store.reserve(9) as reservation:
+                with protect_native_controls(self.store, run_id=run, claim_ids=(claim,),
+                                             reservation_ids=(reservation,), work_directory=work):
+                    with self.assertRaises(ProcessExecutionError) as caught:
+                        run_observed_process(context, executable=invalid, arguments=[], working_directory=self.root,
+                            run_directory=self.root, stdout_path=self.root / "stdout.log", stderr_path=self.root / "stderr.log",
+                            usage_path=self.root / "usage.json", role="GATE", stage="native_fixture", run_id="native-fixture",
+                            limits=None, operation_id="worker")
+                    self.assertTrue(caught.exception.receipt["error"]["message"])
+                    self.assertIs(caught.exception.receipt["not_started"], True)
+                    receipt, = work.glob("*.receipt.json")
+                    durable = json.loads(receipt.read_text(encoding="utf-8"))
+                    self.assertEqual(durable["not_started"], {"operation_id": "worker", "reason": "os_start_failed"})
+                    self.assertFalse(reconcile_native_receipt(self.store, receipt))
+                    self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+            self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+
+    @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell required")
+    def test_not_started_recovery_requires_matching_durable_identity(self) -> None:
+        from unittest.mock import patch
+        from msplatform.execution.context import ExecutionContext
+        from msplatform.execution.native_artifact_controls import protect_native_controls
+        from msplatform.execution.processes import run_observed_process
+        from msplatform.execution.resources import resource_path
+        invalid = self.root / "invalid.exe"
+        invalid.write_bytes(b"not an executable image")
+        context = ExecutionContext(workspace=self.root, python_executable=Path(sys.executable).resolve(),
+            powershell_executable=Path(shutil.which("pwsh")).resolve(), tools={},
+            host_state_path=self.root / "actual-host.sqlite", policy_path=resource_path("host_resource_policy.json"))
+        run, work = self.store.begin_run()
+        with self.store.run_writer(run):
+            self.store.mark_running(run)
+            with self.assertRaisesRegex(RuntimeError, "interrupt reconciliation"):
+                with self.store.claim_token(self.asset) as (claim, _), self.store.reserve(9) as reservation:
+                    with protect_native_controls(self.store, run_id=run, claim_ids=(claim,),
+                            reservation_ids=(reservation,), work_directory=work), patch(
+                            "msplatform.execution.native_artifact_controls.reconcile_native_receipt",
+                            side_effect=RuntimeError("interrupt reconciliation")):
+                        run_observed_process(context, executable=invalid, arguments=[], working_directory=self.root,
+                            run_directory=self.root, stdout_path=self.root / "stdout.log", stderr_path=self.root / "stderr.log",
+                            usage_path=self.root / "usage.json", role="GATE", stage="native_fixture", run_id="native-fixture",
+                            limits=None, operation_id="worker")
+        receipt, = work.glob("*.receipt.json")
+        original = receipt.read_bytes()
+        missing = json.loads(original)
+        missing.pop("not_started")
+        receipt.write_text(json.dumps(missing), encoding="utf-8")
+        self.store.recover_controls()
+        self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        broken = json.loads(original)
+        broken["not_started"]["operation_id"] = "other"
+        receipt.write_text(json.dumps(broken), encoding="utf-8")
+        self.store.recover_controls()
+        self.assertEqual(self.store.collect(100)["released_bytes"], 0)
+        receipt.write_bytes(original)
+        self.store.recover_controls()
+        self.store.recover_controls()
+        self.assertEqual(self.store.collect(100)["released_bytes"], 5)
+
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell required")
     def test_real_single_process_owner_records_protected_completion(self) -> None:
         from msplatform.execution.context import ExecutionContext

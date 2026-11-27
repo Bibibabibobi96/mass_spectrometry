@@ -865,17 +865,18 @@ ConvertTo-Json -Depth 8 -InputObject $results
                 deep /= 'deep source and artifact segment'
             artifacts, source, _, _ = sealed_mass_source(deep)
             fixture, owner = mass_analysis_fixture(root)
-            original = owner.read_text(encoding='utf-8')
-            marker = '  if($ResumeFinalization){'
-            owner.write_text(original.replace(marker, r'''  $actualObserver=(Get-Command Invoke-ResourceBudgetedProcess).ScriptBlock
-  function Invoke-ResourceBudgetedProcess {
-    param([AllowNull()]$Limits,$RunDir,$UsagePath,$FilePath,$ArgumentList,$WorkingDirectory,
-      $RedirectStandardOutput,$RedirectStandardError,$Environment)
-    @{cwd=$WorkingDirectory;argv=$ArgumentList;environment=$Environment;stdout=$RedirectStandardOutput;stderr=$RedirectStandardError}|
-      ConvertTo-Json -Depth 12|Set-Content -LiteralPath $env:TEST_MASS_CAPTURE -Encoding utf8
-    & $actualObserver @PSBoundParameters
-  }
-'''+marker, 1), encoding='utf-8')
+            # Observe the real process-owner request in the private fixture.
+            # Refuse an obsolete injection point instead of silently passing.
+            process_module = fixture/'src/msplatform/execution/processes.py'
+            original = process_module.read_text(encoding='utf-8')
+            marker = 'def _invoke_process_owner(context, request, resource_name, interpret):\n'
+            self.assertEqual(original.count(marker), 1)
+            observer = ("    if request.get('run_id') == '20261031_100500__analysis__python__mass-deep':\n"
+                        "        capture = Path(os.environ['TEST_MASS_CAPTURE'])\n"
+                        "        capture.write_text(json.dumps({key: request[key] for key in "
+                        "('working_directory', 'run_directory', 'stdout_path', 'stderr_path', 'environment')}), "
+                        "encoding='utf-8')\n")
+            process_module.write_text(original.replace(marker, marker + observer, 1), encoding='utf-8')
             snapshot = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
             env = {key: value for key, value in os.environ.items()
                    if not key.startswith('MASS_SPECTROMETRY_HOST_RESOURCE_') and key not in ('PYTHONPATH', 'SIMULATION_PYTHON_EXE')}
@@ -884,30 +885,40 @@ ConvertTo-Json -Depth 8 -InputObject $results
                        MASS_SPECTROMETRY_EXECUTION_ROOT=str(root/'execution'), TEST_MASS_CAPTURE=str(capture),
                        MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH=str(root/'host.sqlite3'))
             run_id = '20261031_100500__analysis__python__mass-deep'
+            # The measured full closure registration exceeded 90 s before its
+            # 120 s worker budget began; cover both without changing the worker limit.
             completed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ReanalyzeOnly', '-SourceRunPath', str(source),
                        '-RunId', run_id, '-PythonExe', sys.executable, '-AnalysisNewBytes', str(8*1024*1024)],
-                       cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=90)
+                       cwd=fixture, env=env, capture_output=True, text=True, encoding='utf-8', timeout=240)
             self.assertEqual(completed.returncode, 0, completed.stdout+completed.stderr+
                 (capture.read_text(encoding='utf-8-sig') if capture.is_file() else 'no observer'))
             child = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/runs/{run_id}'
             self.assertGreater(len(str(child/'inputs/code')), 259)
+            self.assertTrue(capture.is_file(), 'managed launch observer did not trigger')
             observed = json.loads(capture.read_text(encoding='utf-8-sig'))
-            self.assertLessEqual(len(observed['cwd']), 259)
-            self.assertNotEqual(Path(observed['cwd']), child)
+            self.assertLessEqual(len(observed['working_directory']), 259)
+            self.assertNotEqual(Path(observed['working_directory']), child)
             self.assertEqual(Path(observed['environment']['MASS_SPECTROMETRY_RUN_DIRECTORY']), child)
-            self.assertEqual(observed['environment']['MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY'], observed['cwd'])
-            self.assertIn(observed['cwd'], observed['stdout'])
-            self.assertIn(observed['cwd'], observed['stderr'])
+            self.assertEqual(observed['environment']['MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY'], observed['working_directory'])
+            self.assertIn(observed['working_directory'], observed['stdout_path'])
+            self.assertIn(observed['working_directory'], observed['stderr_path'])
             self.assertTrue((child/'inputs/code/msplatform/workflows/single_reflection_mass_spectrum_worker.py').is_file())
-            self.assertFalse(Path(observed['cwd']).exists(), 'Public finalizer did not remove its disposable alias')
+            self.assertFalse(Path(observed['working_directory']).exists(), 'Public finalizer did not remove its disposable alias')
             completion = child/'results/execution_completion.json'
             completion_bytes = completion.read_bytes()
             details = json.loads(completion_bytes)
             self.assertGreater(details['summary']['native_path_preparation']['calls'], 0)
             self.assertEqual(details['summary']['solver_native_calls'], 0)
             self.assertEqual(details['summary']['pa_materializations'], 0)
-            owner.write_text(original, encoding='utf-8')
+            process_module.write_text(original, encoding='utf-8')
             result_path = artifacts/f'components/{"single_reflection_oa_tof_mass_analyzer"}/scratch/workflow_results/{run_id}/result.json'
+            receipt = json.loads(result_path.read_text(encoding='utf-8-sig'))
+            self.assertEqual((receipt['status'], receipt['stage']), ('success', 'complete'))
+            self.assertTrue(receipt['writers_confirmed'])
+            self.assertEqual(receipt['capacity_session']['status'], 'released')
+            process_receipt = json.loads((child/'logs/operation_0001.process.json').read_text(encoding='utf-8-sig'))
+            self.assertEqual(process_receipt['observation']['exit_code'], 0)
+            self.assertEqual(process_receipt['host_release']['result']['status'], 'released')
             env['MASS_SPECTROMETRY_ARTIFACT_ROOT'] = str(root/'different-current-root')
             resumed = _run_cli(['pwsh', '-NoProfile', '-File', str(owner), '-ResumeFinalization', '-RunId', run_id,
                        '-ResultPath', str(result_path), '-PythonExe', sys.executable],

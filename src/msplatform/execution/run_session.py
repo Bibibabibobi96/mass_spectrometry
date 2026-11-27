@@ -268,6 +268,12 @@ class RunSession:
                 raise failures[0]
 
     def _record_process(self, operation_id: str, receipt: dict[str, Any]) -> None:
+        if receipt.get("not_started") is True:
+            # The protected transport records this only after verifying the
+            # owner’s exact pre-launch failure and host release evidence.
+            with self._lock:
+                self._active.remove(operation_id)
+            return
         observation = receipt.get("observation")
         if not isinstance(observation, dict):
             error = receipt.get("error")
@@ -329,8 +335,8 @@ class RunSession:
                 raise ValueError("Operation prerequisites have not completed successfully")
             ordinal = self.expected_operation_ids.index(operation_id) + 1
             base = self.log_dir / f"operation_{ordinal:04d}"
-            stdout = self.canonical_path(base.with_suffix(".stdout.log"))
-            stderr = self.canonical_path(base.with_suffix(".stderr.log"))
+            stdout = base.with_suffix(".stdout.log")
+            stderr = base.with_suffix(".stderr.log")
             usage = self.canonical_path(base.with_suffix(".usage.json"))
             record_path = self.canonical_path(base.with_suffix(".process.json"))
             _prepare_process_request(self.context, executable=executable, arguments=arguments,

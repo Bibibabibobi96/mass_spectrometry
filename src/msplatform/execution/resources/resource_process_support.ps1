@@ -831,7 +831,7 @@ function Invoke-ResourceBudgetedProcess {
     [string]$RedirectStandardOutput='',[string]$RedirectStandardError='',[hashtable]$Environment=@{},
     [switch]$RequireImmutableInputDrain,
     [string]$WindowStyle='Hidden',
-    $ProcessObservationMetadata=$null,[scriptblock]$OnStarted=$null
+    $ProcessObservationMetadata=$null,[scriptblock]$OnStarted=$null,[scriptblock]$OnStartFailure=$null
   )
   Assert-RepositoryProcessObservationMetadata -Metadata $ProcessObservationMetadata -UsagePath $UsagePath
   if(@('Hidden','Normal')-cnotcontains$WindowStyle){throw 'window_style requires exactly Hidden or Normal'}
@@ -853,7 +853,8 @@ function Invoke-ResourceBudgetedProcess {
       (Test-RepositorySimionProcessSpecification -Specification ([pscustomobject]@{file_path=$FilePath}))) {
     Assert-HostResourceHeavyStage
   }
-  $process=Start-Process @startArguments
+  try{$process=Start-Process @startArguments -ErrorAction Stop}
+  catch{if($null-ne$OnStartFailure){& $OnStartFailure};throw}
   $failure=$null;$rootExitConfirmed=$false;$rootReturnCode=$null;$rootProcessStartedAtUtcTicks=$null
   $trackedProcessIds=@([int]$process.Id);$trackedProcessStartedAtUtcTicks=@{}
   $observation.root_process_id=[int]$process.Id;$observation.root_process_started_at_utc_ticks=$null

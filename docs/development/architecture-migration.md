@@ -34,6 +34,18 @@ Agent 6沿真实调用确认`backends/comsol/oatof_retrace.py`的completion读�
 
 `python -m unittest tests.contracts.test_retired_comsol_execution -v`：3 PASS/0 skip，0.767 s；包括执行前拒绝、历史认证成功和错误检测数/run ID/host release未知反例。Ruff、diff与文档StructureOnly PASS。另一组合命令内历史旧测试因缺`MASS_SPECTROMETRY_HOST_CONTEXT_JSON`而ERROR（42.688 s），未计为PASS，保留原日志/临时失败目录；未执行MATLAB或新增native资格。此单元不授C0/C4整阶段PASS。10个PA种子仍有native_plans/rf_tracking/安装的实际消费者及独立实例需求，暂保留；三个tests生产PS的去留正在逐项处理。
 
+已提交并普通push `1b77f612201cba6604d146ae22afb22976bdbc4d`。规范CLOC 2.10按`78144e45→1b77f612`实际PASS，完整total/production/tests各语言与过滤口径见外部`C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/c4-retrace-cloc.log`，计数以提交为输入，不把并行WIP混入；累计C最终再以最后代码身份报告一次。
+
+### C0-02/03/04：启动失败、remaining 与有效深路径观察
+
+未启动证明只由`resource_process_support.ps1`的实际OS Start-Process失败分支触发，`process_owner.ps1`持久化nonce/binding/operation及原错误；Python核对ACK/host/私有work身份、无worker登记、原host账本文件身份和同token正式释放，Store按既有控制锁幂等关闭binding。缺证据、错身份、活worker/登记失败均不放权；外层仍持有的claim/reservation不删除、不清零。不是以缺worker文件/PID/超时推断退出，group协议不外推单worker未启动证明。
+
+`native_tracing._growth_accountant`在新Store引用/冻结输入/科学输出的真实写入边界更新`reservation_written(reservation, remaining)`；仅计本任务私有目录的新增增长，高水线避免同文件重复扣量，不扫描共享旧PA/MPH、不把已存在共享载荷计入增量，不抹去未知未来增长。超出声明预算明确失败，真实free准入保持。受控例free20/P10→写6/free14/R4后第二任务P5可准入，失败释放与重复调用有回归。
+
+`RunSession.run_process`继续用既有短execution alias作为cwd与实际stdout/stderr路径，持久角色/manifest仍canonical。原测试改在当前`processes._invoke_process_owner`的真实请求边界观察并断言observer触发，保留深路径、流alias、context恢复、来源字节不变、completion不变和host/capacity释放断言。有效observer修前1 test FAIL（111.118s，输出流实际深路径）；修后1 PASS/0 skip（138.413s，0 native）。旧90秒FAIL仍保留；不是性能无退化结论。worker120s预算保持；外层覆盖源码冻结与worker的240s预算有实际阶段依据，不靠只增加原90s蒙混通过。
+
+Agent 3的实际定向命令均为仓库`.venv` Python、显式src环境：`tests.repository.test_native_artifact_controls`的两个not_started方法分别1 PASS/6.169s和1 PASS/6.092s；同模块四项父死子活/精确身份/quickexit/活登记失败4 PASS/27.353s；`tests.contracts.test_native_workflow tests.contracts.test_artifact_store -q`26 PASS/10.385s（含remaining），预算细例另重复1 PASS/0.209s。上述加deep测试共34个调用/33个唯一方法、0 skip；wall分项不相加成端到端历时。Ruff/diff PASS。C04的前后observer与日志在`C:/Users/Liao/msplatform-artifacts/architecture-c-20261127/c0-deep-reanalysis/`；C02/03命令结果来自本轮工具执行记录，未伪造单独stdout日志。外部Linux存储probe直接复制到新C目录在Windows无法按shebang启动，exit1不是重现成功或修复PASS，原recorded JSON未改。C0-01实际点验仍在运行，C0整体验收未完成。
+
 ## 当前批次 B 检查点
 
 批次B按本页声明的BA01–BA15范围交付；最终代码为`90d6d5e8b67e5b0bfe3e823b0130c30c266eea2b`，本次随后提交仅更新交付记录。最终结果见[最终交付记录](#b-最终交付记录2026-11-27)。不启动C/M06–M08，不授全仓门禁或仪器物理资格。

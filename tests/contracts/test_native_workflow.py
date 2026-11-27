@@ -22,6 +22,39 @@ EXAMPLES = ROOT / "src/msplatform/examples"
 
 
 class NativeWorkflowTests(unittest.TestCase):
+    def test_native_reservation_counts_only_new_owned_work_growth(self):
+        from msplatform.workflows.native_tracing import _growth_accountant
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(Path(directory) / "store")
+            work = store.new_work()
+            (work / "existing").write_bytes(b"old")
+            free = [20]
+            with patch("msplatform.storage.store.shutil.disk_usage") as disk:
+                disk.side_effect = lambda _path: SimpleNamespace(free=free[0])
+                with store.reserve(10) as first:
+                    account = _growth_accountant(store, first, 10, work)
+                    (work / "new").write_bytes(b"123456")
+                    free[0] = 14
+                    account(work)
+                    with store._db() as db:
+                        self.assertEqual(db.execute("SELECT remaining FROM reservations WHERE id=?", (first,)).fetchone()[0], 4)
+                    account(work)  # Reusing the same bytes does not spend twice.
+                    with store.reserve(5):
+                        pass
+                    with store._db() as db:
+                        self.assertEqual(db.execute("SELECT remaining FROM reservations WHERE id=?", (first,)).fetchone()[0], 4)
+                    (work / "new").write_bytes(b"1")
+                    account(work)
+                    (work / "new").write_bytes(b"123456")
+                    account(work)
+                    with store._db() as db:
+                        self.assertEqual(db.execute("SELECT remaining FROM reservations WHERE id=?", (first,)).fetchone()[0], 4)
+                with self.assertRaisesRegex(RuntimeError, "failure"):
+                    with store.reserve(1):
+                        raise RuntimeError("failure")
+                with store._db() as db:
+                    self.assertEqual(db.execute("SELECT count(*) FROM reservations").fetchone()[0], 0)
+
     def test_large_executable_identity_has_an_explicit_evidence_role(self):
         from msplatform.workflows.native_tracing import _executable_records
         from msplatform.io.file_identity import file_sha256
@@ -49,7 +82,7 @@ class NativeWorkflowTests(unittest.TestCase):
                 for expected_reuse in (False, True):
                     with ExitStack() as stack:
                         result, receipt = _native_reference(store, stack, "inert-test-key", lambda: artifact,
-                            kind="geometry_artifact", raw_root=Path(directory), claims=[], calls=calls)
+                            kind="geometry_artifact", raw_root=Path(directory), claims=[], calls=calls, account=lambda _work: None)
                         self.assertIs(result, artifact)
                         self.assertEqual(receipt["reused"], expected_reuse)
             self.assertEqual(len(calls), 1)

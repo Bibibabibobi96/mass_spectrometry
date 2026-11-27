@@ -178,7 +178,7 @@ def _complete_trajectory(artifact) -> bool:
             and data["data_integrity"].get("detector_observation", {}).get("status") == "complete")
 
 
-def _native_reference(store, stack, key, produce, *, kind, raw_root, claims, calls):
+def _native_reference(store, stack, key, produce, *, kind, raw_root, claims, calls, account):
     """Verify a tiny cached reference against its real owner before reuse."""
     cached = stack.enter_context(store.claim_key(key))
     from msplatform.execution.native_source_guard import guard_native_source
@@ -205,6 +205,7 @@ def _native_reference(store, stack, key, produce, *, kind, raw_root, claims, cal
                           "cache_status": "ineligible_incomplete_or_failed"}
     work = store.new_work()
     _write(work / "reference.json", artifact.reference)
+    account(work)
     asset_id, _ = stack.enter_context(store.put_asset_claimed("native_reference", key, work, retention="cache"))
     token, _ = stack.enter_context(store.claim_token(asset_id))
     claims.append(token)
@@ -243,7 +244,7 @@ def run_loaded_recipe(loaded: SimulationRecipe, *, context, artifact_root,
         try:
             with store.reserve(reserve_bytes) as reservation:
                 store.mark_running(run_id)
-                _execute(store, recipe, context, run_id, work, reservation, source_revision)
+                _execute(store, recipe, context, run_id, work, reservation, source_revision, reserve_bytes)
         except BaseException as error:
             status = store.run_status(run_id)["execution_status"]
             if status == "queued":
@@ -255,7 +256,28 @@ def run_loaded_recipe(loaded: SimulationRecipe, *, context, artifact_root,
     return {"run_id": run_id, "artifact_root": str(store.root), **inspect_results(run_id, artifact_root=store.root)}
 
 
-def _execute(store, recipe, context, run_id, work, reservation, source_revision):
+def _growth_accountant(store, reservation, budget, work):
+    # Count only observed growth in this run's own Store work, never shared assets
+    # or the separate native owner. Pre-reservation bytes are already in free.
+    seen = {path: path.stat().st_size for path in work.rglob("*") if path.is_file()}
+    written = 0
+    def account(directory):
+        nonlocal written
+        for path in directory.rglob("*"):
+            if path.is_file():
+                size = path.stat().st_size
+                previous = seen.get(path, 0)
+                written += max(0, size - previous)
+                seen[path] = max(previous, size)
+        if written > budget:
+            raise ValueError("observed native Store growth exceeds reserved budget")
+        store.reservation_written(reservation, budget - written)
+
+    return account
+
+
+def _execute(store, recipe, context, run_id, work, reservation, source_revision, budget):
+    account = _growth_accountant(store, reservation, budget, work)
     from msplatform.backends import simion
     from msplatform.execution.native_artifact_controls import protect_native_controls
     study = recipe["study"]["document"]
@@ -264,6 +286,7 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
     resources.mkdir()
     for name, snapshot in recipe["resource_snapshots"].items():
         (resources / name).write_bytes(base64.b64decode(snapshot["bytes_base64"]))
+    account(work)
     drive = copy.deepcopy(study["drive"])
     drive["clock_authority"] = {"contract": file_record(resources / "instrument_clock_authority_v1.json"),
                                  "data_root": str(resources)}
@@ -307,6 +330,7 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
     with ExitStack() as stack:
         snapshot = store.new_work()
         _write(snapshot / "input.json", recipe)
+        account(snapshot)
         input_id, _ = stack.enter_context(store.put_asset_claimed("native_input", recipe["recipe_id"], snapshot, retention="cache"))
         token, _ = stack.enter_context(store.claim_token(input_id))
         control_ids.append(token)
@@ -336,21 +360,25 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
             receipts['field'] = dict(asset_id=None, task_key=field_key, reused=True, reuse_scope='explicit_field_reference',
                                      reference=field.reference, producer=field.producer)
             _write(work / 'native_stages.json', receipts)
+            account(work)
         elif not comsol:
             geometry_key = canonical_json_sha256({"stage": "geometry", "compiled": compiled.__dict__, "implementation": field_implementation})
             geometry, receipts["geometry"] = _native_reference(store, stack, geometry_key,
-                lambda: invoke(lambda: simion.build_geometry(compiled, context=context)), kind="geometry_artifact", raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls)
+                lambda: invoke(lambda: simion.build_geometry(compiled, context=context)), kind="geometry_artifact", raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls, account=account)
             _write(work / "native_stages.json", receipts)
+            account(work)
             model_key = canonical_json_sha256({"stage": "model", "geometry": geometry_key, "drive": study["drive"],
                 "clock_resources": {name: record["sha256"] for name, record in recipe["resource_snapshots"].items()},
                 "physics": study["physics"], "implementation": field_implementation})
             model, receipts["model"] = _native_reference(store, stack, model_key,
-                lambda: invoke(lambda: simion.prepare_model(geometry, drive=drive, physics=study["physics"], context=context)), kind="prepared_model", raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls)
+                lambda: invoke(lambda: simion.prepare_model(geometry, drive=drive, physics=study["physics"], context=context)), kind="prepared_model", raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls, account=account)
             _write(work / "native_stages.json", receipts)
+            account(work)
             field_key = canonical_json_sha256({"stage": "field", "model": model_key, "numerics": study["numerics"]["fields"], "implementation": field_implementation})
             field, receipts["field"] = _native_reference(store, stack, field_key,
-                lambda: invoke(lambda: simion.solve_fields(model, numerics=study["numerics"]["fields"], context=context)), kind="field_bundle", raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls)
+                lambda: invoke(lambda: simion.solve_fields(model, numerics=study["numerics"]["fields"], context=context)), kind="field_bundle", raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls, account=account)
             _write(work / "native_stages.json", receipts)
+            account(work)
         if not comsol and field.metadata.get('ground_representation') != 'analytic_zero_on_native_geometry':
             from msplatform.backends.simion import grounded_runtime, native_plans
             from msplatform.backends.simion.resources import native_resource_path
@@ -362,9 +390,10 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
                 'native_executable': backend_identity['native_executable']})
             field, receipts['runtime_field'] = _native_reference(store, stack, runtime_key,
                 lambda: invoke(lambda: grounded_runtime.prepare_grounded_runtime_fields(source_field, context=context)),
-                kind='field_bundle', raw_root=context.workspace/'artifacts', claims=control_ids, calls=calls)
+                kind='field_bundle', raw_root=context.workspace/'artifacts', claims=control_ids, calls=calls, account=account)
             field_key = runtime_key
             _write(work / 'native_stages.json', receipts)
+            account(work)
         from .mass_scan import merge_mass_scan, analyze_mass_scan
         batches, common, stage_memo = [], None, {}
         for ordinal, particles in enumerate(_realizations(study["release"])):
@@ -380,12 +409,14 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
                         receipt = {**receipt, "reused": True, "reuse_scope": "current_run"}
                         receipts[f"batch_{ordinal}_{name}"] = receipt
                         _write(work / "native_stages.json", receipts)
+                        account(work)
                         return artifact, receipt
                     result = _native_reference(store, stack, key, produce, kind=kind,
-                        raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls)
+                        raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls, account=account)
                     stage_memo[cache_id] = result
                     receipts[f"batch_{ordinal}_{name}"] = result[1]
                     _write(work / "native_stages.json", receipts)
+                    account(work)
                     return result
                 trajectory, batch_receipts = run_stages(recipe, instrument, particles, context=context,
                     invoke=invoke, stage_cache=stage_cache, implementation=field_implementation,
@@ -399,7 +430,7 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
                 trajectory, receipts["trace_" + str(ordinal)] = _native_reference(store, stack, trace_key,
                     lambda: invoke(lambda: simion.track(field, particles, propagation=propagation, observations=observations,
                         numerics=study["numerics"]["tracing"]["simion"], context=context)), kind="trajectory_result",
-                    raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls)
+                    raw_root=context.workspace / "artifacts", claims=control_ids, calls=calls, account=account)
             data = read_particle_data(trajectory.data_path("particle_data_execution_json").parent)
             if scalar:
                 from msplatform.backends.simion.model import require_prepared_model
@@ -420,6 +451,7 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
             common = data["metadata"]
             batches.append(data)
             _write(work / "native_stages.json", receipts)
+            account(work)
         results = [TraceResult(**{key: batch[key] for key in ("initial_states", "terminal_states", "events", "trajectories", "execution_status", "data_integrity")})
                    for batch in batches]
         if all(result.execution_status == "succeeded" and result.data_integrity.get("status") == "complete" for result in results):
@@ -448,5 +480,6 @@ def _execute(store, recipe, context, run_id, work, reservation, source_revision)
             "repository_source": {"sha": source_revision, "status": "declared" if source_revision else "unavailable"},
             "stages": receipts, "stage_productions": calls,
             "raw_asset_owner": "existing_native_execution_owner", "implementation": implementation})
+        account(work)
         store.publish_run(work, run_id=run_id, execution_status=data["execution_status"],
                           provenance_assets=[input_id, *(receipt["asset_id"] for receipt in receipts.values() if receipt["asset_id"])])

@@ -336,11 +336,13 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
     except ProcessExecutionError as error:
         interpretation_failure = error
         receipt = error.receipt
-    if binding_id is None or not worker_recorded:
+    if binding_id is None:
         raise ValueError("native owner did not complete the protected handshake")
     durable = json.loads(Path(paths["receipt"]).read_text(encoding="utf-8"))
     if durable.get("nonce") != nonce or durable.get("binding_id") != binding_id or durable.get("receipt") != receipt:
         raise ValueError("native durable receipt does not match the owner response")
+    if not worker_recorded and "not_started" not in durable:
+        raise ValueError("native owner did not complete the protected handshake")
     if group:
         from msplatform.execution.native_artifact_controls import reconcile_native_receipt
         reconcile_native_receipt(scope["store"], Path(paths["receipt"]))
@@ -350,6 +352,8 @@ def _invoke_native_artifact_owner(context, request, scope, interpret, resource_n
         return receipt
     from msplatform.execution.native_artifact_controls import reconcile_native_receipt
     reconcile_native_receipt(scope["store"], Path(paths["receipt"]))
+    if not worker_recorded:
+        receipt["not_started"] = True  # Proven by the original owner and exact bound release.
     Path(paths["worker-ack"]).unlink(missing_ok=True)
     if interpretation_failure is not None:
         raise interpretation_failure

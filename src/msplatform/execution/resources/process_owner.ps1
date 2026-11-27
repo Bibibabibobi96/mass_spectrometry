@@ -9,7 +9,7 @@ if($windowStyle-isnot[string]-or@('Hidden','Normal')-cnotcontains$windowStyle){t
 . (Join-Path $PSScriptRoot 'host_execution_lease.ps1') -HostContext $request.context
 . (Join-Path $PSScriptRoot 'resource_process_support.ps1')
 $lease=$null;$failure=$null;$observation=$null;$release=$null
-$native=$null;$bindingId=$null;$parentStarted=$null
+$native=$null;$bindingId=$null;$parentStarted=$null;$script:nativeNeverStarted=$false
 function Write-NativeControlJson($Path,$Value){
   $temporary="$Path.tmp"
   [IO.File]::WriteAllText($temporary,($Value|ConvertTo-Json -Depth 30 -Compress),[Text.UTF8Encoding]::new($false))
@@ -74,8 +74,9 @@ try{
     }
   }
   $limits=if($null-eq$request.limits){$null}else{[pscustomobject]$request.limits}
-  $onStarted=$null
+  $onStarted=$null;$onStartFailure=$null
   if($null-ne$native){
+    $onStartFailure={$script:nativeNeverStarted=$true}
     $onStarted={param($Process,$Started)
       $registration='registered'
       try{
@@ -103,7 +104,7 @@ try{
     -UsagePath $request.usage_path -FilePath $request.executable -ArgumentList @($request.argument_line) `
     -WorkingDirectory $request.working_directory -RedirectStandardOutput $request.stdout_path `
     -RedirectStandardError $request.stderr_path -Environment $request.environment -WindowStyle $windowStyle -RequireImmutableInputDrain:($protected-or$null-ne$native) `
-    -ProcessObservationMetadata @{run_id=$request.run_id;role=$request.role;stage=$request.stage} -OnStarted $onStarted
+    -ProcessObservationMetadata @{run_id=$request.run_id;role=$request.role;stage=$request.stage} -OnStarted $onStarted -OnStartFailure $onStartFailure
 }catch{
   $failure=@{type=$_.Exception.GetType().FullName;message=$_.Exception.Message;data=@{}}
   foreach($key in $_.Exception.Data.Keys){$failure.data[[string]$key]=$_.Exception.Data[$key]}
@@ -122,7 +123,9 @@ try{
 }
 $envelope=@{observation=$observation;error=$failure;host_release=$release}
 if($null-ne$native-and$bindingId){
-  Write-NativeControlJson $native.receipt @{nonce=$native.nonce;binding_id=$bindingId;receipt=$envelope}
+  $durable=@{nonce=$native.nonce;binding_id=$bindingId;receipt=$envelope}
+  if($script:nativeNeverStarted){$durable.not_started=@{operation_id=$request.native_artifact_operation_id;reason='os_start_failed'}}
+  Write-NativeControlJson $native.receipt $durable
 }
 [Console]::Out.WriteLine('EXECUTION_PROCESS_RESULT='+($envelope|ConvertTo-Json -Depth 24 -Compress))
 if($null-ne$failure-or$null-eq$release-or$release.error-or
