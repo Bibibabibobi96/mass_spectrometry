@@ -280,6 +280,8 @@ paired-static 的实际 workflow、模型/样本来源、PA身份、投影与Sto
 
 IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图，worker HS1 期望值也从该已投影配置及 numerics 派生，不恢复重复气体权威或旧质量常数；33父测试全PASS（15.431s），0 skip。OA–MR 保留当前真实 owner 的覆盖/不足资源profile、原500/2500/2000固定分区和最大缺失单元观察断言，仅删除已退役 Prepared owner 的两个无效子例；定向1父测试／2子例PASS，完整52父测试全PASS（116.829s），0 skip。当前 Prepared 历史分析/恢复职责及其专门测试不因这次删减免除。Ruff 与文档 StructureOnly PASS（323 files，0 error）；外部日志为 `fix-ion-batching-unittest-r2.log`、`fix-oa-mr-unittest.log` 和 `regression-doc-structure.log`。未运行原生、完整 Changed/Repository 或双安装。
 
+代码与本记录候选已提交并普通 push `6c0d0be7432ad1361c1fa1c76874cbe1870bcc9e`。规范 CLOC 2.10 `3b0b3484→6c0d0be7` PASS：total code +4、production +0、tests +4，unclassified=0；完整逐语言及过滤证据在外部 `regression-fixtures-6c0d0be7-cloc.log`。仍未关闭 CA19 或整批验收。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
