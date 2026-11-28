@@ -194,39 +194,43 @@ class PlatformApiTests(unittest.TestCase):
         self.assertEqual(selection, fixture.selection)
         self.assertEqual(method, fixture.method)
 
-    def test_finalization_api_delegates_original_owner_without_an_action_callback(self):
-        from msplatform.backends.simion import native_completion
-        from msplatform.execution.completion import no_particle_batch_completion_api
+    def test_store_recovery_apis_replay_publication_without_legacy_owner_or_science(self):
+        from msplatform.execution import owner
+        from msplatform.storage import ArtifactStore
 
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "inputs").mkdir()
-            request = root / "inputs/execution_request.json"
-            result = root / "result.json"
-            result.write_text(json.dumps(dict(run_directory=str(root))), encoding="utf-8")
-            context = expert_context(workspace=root,
-                tools=dict(python=Path(sys.executable), powershell=Path(sys.executable)),
-                policy=dict(host_state_path=root / "state.sqlite3"))
-            sentinel = {"original_owner_fixture": True}
-            with patch("msplatform.execution.owner.resume_finalization", return_value=sentinel) as resume, \
+            store = ArtifactStore(Path(directory) / "store")
+            run, work = store.begin_run()
+            (work / "payload").write_bytes(b"original failed evidence")
+            with store.run_writer(run):
+                store.mark_running(run)
+                with patch("msplatform.storage.store.os.replace", side_effect=OSError("interrupted")):
+                    with self.assertRaises(OSError):
+                        store.publish_run(work, run_id=run)
+                store.finish_run(run, "failed", reason="original failure")
+            with patch("msplatform.execution.owner.resume_finalization",
+                       side_effect=AssertionError("legacy owner must not be called")) as legacy, \
                  patch("subprocess.Popen", side_effect=AssertionError("API must not replay science")):
-                for action, completion in (("solve_fields", lambda: native_completion),
-                                           ("export_cad", no_particle_batch_completion_api)):
-                    request.write_text(json.dumps(dict(payload=dict(action=action))), encoding="utf-8")
-                    with self.subTest(action=action):
-                        self.assertIs(execution_api.resume_run(result, mode="finalization", context=context,
-                                                               completion_api=completion), sentinel)
-                        args, keywords = resume.call_args
-                        self.assertEqual(args, (context, result))
-                        self.assertIs(keywords["completion_api"], completion)
-                        self.assertEqual(set(keywords), {"completion_api"})
-                resume.reset_mock()
-                with self.assertRaisesRegex(ContractError, "supports finalization"):
-                    execution_api.resume_run(result, mode="native_checkpoint", context=context,
-                                             completion_api=lambda: native_completion)
-                with self.assertRaisesRegex(ContractError, "completion policy"):
-                    execution_api.resume_run(result, mode="finalization", context=context, completion_api=None)
-                resume.assert_not_called()
+                self.assertTrue(store.recover_run_publication(run))
+                self.assertFalse(store.recover_run_publication(run))
+                with self.assertRaises(TypeError):
+                    store.recover_run_publication(run, mode="native_checkpoint")
+                with self.assertRaises(TypeError):
+                    store.recover_run_publication(run, completion_api=None)
+                with self.assertRaises(KeyError):
+                    store.recover_run_publication("unknown-run")
+                cache_work = store.new_work()
+                (cache_work / "data").write_bytes(b"cache")
+                ready_asset = store.put_asset("field", "ready-not-native-stage", cache_work)
+                with self.assertRaisesRegex(ValueError, "not an in-place native stage"):
+                    owner.recover_managed_native_store_stage(store, ready_asset, context=None)
+            legacy.assert_not_called()
+            status = store.run_status(run)
+            self.assertEqual(status["execution_status"], "failed")
+            self.assertEqual(status["reason"], "original failure")
+            self.assertEqual(store.inspect_run(run).joinpath("payload").read_bytes(), b"original failed evidence")
+            with store._db() as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM run_writers WHERE run_id=?", (run,)).fetchone()[0], 0)
 
     def test_open_model_dispatches_owned_view_without_export_solve_or_hidden_ack(self):
         from msplatform.applications.model_execution import execute_open_model
