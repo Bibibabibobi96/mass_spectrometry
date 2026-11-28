@@ -382,11 +382,13 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `7a9fc3ca`。CLOC 2.10 `e8ea4767→7a9fc3ca` PASS：total、production、tests 的 code 均为0净变化，unclassified=0；完整逐语言与过滤口径在外部 `prism-trial-7a9fc3ca-cloc.log`。
 
-### C2 MR 原生场审计拆分（WORKTREE）
+### C2 MR 原生场审计拆分（候选）
 
 旧 `prepared_joint.native_preparation` 的场输入／原生查询、操作点渲染和证据冻结归 `backends.simion.mr_field_audit`；纯接口残差与事件能量汇总归 `analysis.mr_field_audit`。旧模块实际删除，没有同义 workflow 容器；查询仍不启动求解器，分析仍不授予匹配或性能资格。来源、时钟、6D、单位和输入身份校验未改。
 
 最终场审计与四路径 Changed 路由共13父测试全PASS（6.079s），0 skip；日志 `prepared-field-audit-final.log`。Ruff/diff PASS，未执行商业 native。Prepared 仅剩 handoff 与旧分析 admission/owner 等待后续实修，本项不是 CA19 完成。
+
+本单元已提交并普通 push `3283e2a7`。CLOC 2.10 `844ac30c→3283e2a7` PASS：total code +19、production +15、tests +4，unclassified=0；逐语言和过滤口径在外部 `field-audit-3283e2a7-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
