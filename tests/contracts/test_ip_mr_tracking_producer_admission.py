@@ -33,6 +33,8 @@ def exercise_published_ip_mr_tracking(test, fields, context, tmp):
     from unittest.mock import patch
     from msplatform.backends.simion import operations
     from msplatform.backends.simion.ip_mr_tracking_admission import admit_ip_mr_tracking_fields
+    from msplatform.storage import ArtifactStore
+    store = ArtifactStore(Path(tmp) / 'tracking-store')
     from msplatform import examples as example_api, particle_release as particle_release_api
     from msplatform.contracts.gas import BoxDomain
     from tests.components.ion_processor.test_functional import HS1_SOURCE_FIXTURE
@@ -85,11 +87,11 @@ def exercise_published_ip_mr_tracking(test, fields, context, tmp):
      else:raise AssertionError(operation_id)
      return original(session,operation_id,executable=executable,arguments=args,role='GATE',stage='inert_generated_tracking',limits=kw['limits'],immutable_input_records=immutable_input_records)
     with test.assertRaisesRegex(ValueError,'already published'):
-        operations.track(ref,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context,hs1_request=request,scalar_field_basis={})
+        operations.track(ref,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context,hs1_request=request,scalar_field_basis={},artifact_store=store)
     with test.assertRaisesRegex(ValueError,'absolute predecessor'):
-        operations.track(ref,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context,hs1_request=request,recovery_reference={'path':'relative'})
+        operations.track(ref,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context,hs1_request=request,recovery_reference={'path':'relative'},artifact_store=store)
     with patch.object(RunSession,'run_process',new=inert):
-        result=operations.track(ref,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context,hs1_request=request)
+        result=operations.track(ref,packet,propagation=propagation,observations={'plane_observations':[]},numerics=numerics,context=context,hs1_request=request,artifact_store=store)
     test.assertEqual((result.kind,result.product_id),('trajectory_result','trajectory'))
     test.assertEqual(observed,['build_tracking_iob','verify_tracking_iob','track_fly'])
     collection=json.loads(result.data_path('collection').read_text(encoding='utf8'))

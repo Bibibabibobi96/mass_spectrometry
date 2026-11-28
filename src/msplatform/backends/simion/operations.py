@@ -938,8 +938,9 @@ def _track(fields: OpenedArtifact | Mapping[str, Any],
     if selected_admission is not None:
         store_sources.extend(_scalar_binding_sources(selected_admission['basis']))
     if ip_mr_admission is not None:
-        store_sources.extend([(ip_mr_admission['prepared_reference'], 'prepared_model'),
-                              (ip_mr_admission['collision_reference'], 'field_bundle')])
+        store_sources.append((ip_mr_admission['prepared_reference'], 'prepared_model'))
+        if ip_mr_admission['collision_reference'] is not None:
+            store_sources.append((ip_mr_admission['collision_reference'], 'field_bundle'))
     if isinstance(discovery, Mapping) and discovery.get('phase') == 'selected':
         store_sources.append((discovery['pilot'], 'trajectory_result'))
     if predecessor is not None:
