@@ -8,7 +8,7 @@ from typing import Any
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
-from msplatform.execution.retention import verify_record
+from msplatform.io.manifest_records import verify_record
 
 
 def _read(path: Path) -> dict[str, Any]:

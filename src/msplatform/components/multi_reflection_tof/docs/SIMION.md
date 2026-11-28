@@ -491,7 +491,10 @@ run与artifact路径取自本次上下文，handoff复制后重绑冻结副本�
 包括旧 `PreparedJointWorkbenchRunPath`、响应／目标／重锚及整批续跑参数。新飞行只通过公共 `msplatform run`
 和 `workflows.tracing` 消费显式原出生 Recipe；不得将旧实测出口状态重建为新源。
 
-`msplatform.analysis.recorded_joint_trial` 仅保留有明确封存输入的等价性参考冻结、轨迹表示比较和 `analyze-probe` 历史分析。
+`msplatform.analysis.recorded_joint_trial` 仅保留纯轨迹表示比较；有明确封存输入的等价性参考冻结和 `analyze-probe`
+历史分析归 `msplatform.workflows.mr_design.recorded_joint_trial`，由该 workflow 组合 manifest、COMSOL/SIMION backend
+和 MR prism 合同。后验科学合同变更归 `workflows.mr_design.execution_contract`，实测出口／参考 MR 能量组合归
+`workflows.mr_design.accelerator_interface`；旧 analysis 合同与能量模块无转发副本。
 这些操作不创建新的原生飞行owner，不授予旧场或轨迹新的资格。当前 `publish_joint_analysis` 从封存记录建立 Store 分析run，
 保护原 run 和显式上游、冻结合同，不复制PA、不重飞、不改写原run；公共执行／Store 恢复只重放既有收尾，
 不重做准备、分析或Fly，也不接受新科学或原生输入。旧 `prepared_joint_execute.ps1` 已删除。

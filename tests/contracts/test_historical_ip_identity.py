@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from msplatform.results.component_exit_history import validate_component_exit_binding
+from msplatform.assembly.ip_mr_connection import validate_component_exit_binding
 from msplatform.results.ip_continuation import continuation_ancestry, continuation_protection_paths
 
 

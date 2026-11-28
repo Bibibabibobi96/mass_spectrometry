@@ -171,7 +171,7 @@ class InterfacePreparationTests(unittest.TestCase):
                 rows=[dict(particle_id=7, instrument_time_us=11.)])
             with patch('msplatform.workflows.mr_design.accelerator_interface.verified_preparation_reference',
                        side_effect=lambda run, relative: paths[relative]), \
-                 patch('msplatform.contracts.particle_state.load_component_particle_state_csv', return_value=table):
+                 patch('msplatform.workflows.mr_design.accelerator_interface.load_component_particle_state_csv', return_value=table):
                 preflight_joint_analysis(root, source, selected)
                 with self.assertRaisesRegex(ValueError, 'selected IP run'):
                     preflight_joint_analysis(root, root/'different', selected)

@@ -7,24 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.analysis.particle_census import partition_cohort
+from msplatform.assembly.ip_mr_connection import validate_component_exit_binding
 from msplatform.contracts.particle_state import ComponentParticleStateTable, load_component_particle_state_csv
 from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
 from msplatform.io.clock_authority import validate_clock_authority
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.strict_json import load_json_object, require_number
-
-
-def validate_component_exit_binding(component: dict[str, Any]) -> tuple[str, str]:
-    """Return the explicit instance pair separately from project provenance."""
-    source, target = component.get("source_instance_id"), component.get("target_instance_id")
-    if (not isinstance(component, dict) or type(component.get("schema_version")) is not int
-            or component.get("schema_version") != 2 or component.get("role") != "ion_processor_component_exit_export"
-            or component.get("status") != "prepared"
-            or component.get("source_project") not in {"ion_processor", "dual_pressure_rectilinear_ion_processor"}
-            or not isinstance(source, str) or not source
-            or not isinstance(target, str) or not target or source == target):
-        raise ValueError("Unsupported measured component instance binding")
-    return source, target
 
 
 def _historical_connection(plan: dict[str, Any]) -> dict[str, Any]:

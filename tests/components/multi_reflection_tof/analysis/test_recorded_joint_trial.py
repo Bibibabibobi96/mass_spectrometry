@@ -285,7 +285,7 @@ class RecordedJointEvidenceTests(unittest.TestCase):
     def test_scientific_event_receipt_reaches_actual_centroid_analysis_cli(self):
         import contextlib
         import io
-        from msplatform.analysis import recorded_joint_trial
+        from msplatform.workflows.mr_design import recorded_joint_trial
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             receipt = root / "merge.json"
@@ -314,7 +314,7 @@ class RecordedJointEvidenceTests(unittest.TestCase):
 
     def test_equivalence_reads_exact_old_or_new_identity_without_execution_fallback(self):
         from msplatform.execution.retention import file_record
-        from msplatform.analysis.recorded_joint_trial import freeze_equivalence_reference
+        from msplatform.workflows.mr_design.recorded_joint_trial import freeze_equivalence_reference
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             prior = root / "prior"
@@ -343,7 +343,7 @@ class RecordedJointEvidenceTests(unittest.TestCase):
                     status="interrupted", outputs=records)))
                 destination = root / str(index)
                 destination.mkdir()
-                with patch("msplatform.execution.manifest_verification.verify_run_manifest") as verifier:
+                with patch("msplatform.workflows.mr_design.recorded_joint_trial.verify_run_manifest") as verifier:
                     if index == 2:
                         with self.assertRaisesRegex(ValueError, "owner/mode"):
                             freeze_equivalence_reference(prior, preparation, destination)

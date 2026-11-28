@@ -6,6 +6,19 @@ from typing import Any
 from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
 
 
+def validate_component_exit_binding(component: dict[str, Any]) -> tuple[str, str]:
+    """Return the explicit instance pair separately from project provenance."""
+    source, target = component.get("source_instance_id"), component.get("target_instance_id")
+    if (not isinstance(component, dict) or type(component.get("schema_version")) is not int
+            or component.get("schema_version") != 2 or component.get("role") != "ion_processor_component_exit_export"
+            or component.get("status") != "prepared"
+            or component.get("source_project") not in {"ion_processor", "dual_pressure_rectilinear_ion_processor"}
+            or not isinstance(source, str) or not source
+            or not isinstance(target, str) or not target or source == target):
+        raise ValueError("Unsupported measured component instance binding")
+    return source, target
+
+
 def resolve_ip_mr_connection(plan: dict[str, Any]) -> dict[str, Any]:
     """Select the supported IP/MR connection from the frozen actual scope."""
     recipe = plan["recipe"]

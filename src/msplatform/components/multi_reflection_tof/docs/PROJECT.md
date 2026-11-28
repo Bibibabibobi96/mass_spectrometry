@@ -15,6 +15,15 @@ Current MR corridor and field-lineage records no longer use total Candidate/Form
 Terminal execution, binding validity, retirement preconditions and downstream references remain independent checks;
 old manifests are not rewritten.
 
+Recorded-joint dependency direction now follows the actual owners: `analysis.recorded_joint_trial` retains only pure
+trajectory-representation comparison; `workflows.mr_design.recorded_joint_trial` owns manifest-verified equivalence
+freezing and the centroid/probe backend composition; `workflows.mr_design.execution_contract` owns scientific-contract
+changes; and `workflows.mr_design.accelerator_interface` owns measured-exit/reference-MR energy composition.
+`assembly.ip_mr_connection` owns the IP/MR component-exit identity check, while neutral JSON and exact-byte primitives
+remain in `io`. The former analysis contract/energy modules are retired without aliases. Frozen input bytes, original
+source/run identities, missing/tampered-record refusal, historical read-only behavior and scientific outputs are unchanged.
+This ownership repair starts no native solver and grants no new field, flight, GUI or scientific qualification.
+
 The native candidate condition and chain now forward the same verified workspace, artifact root and Python to every child that requires them. The condition reads new OA provider manifests and runtime receipts only through the canonical `components/orthogonal_accelerator` artifact owner, never the retired `projects` root; condition context cannot override execution roots. The chain supplies its frozen composition plan and optional local scope to screening and workpoint children, and selects the provider's explicit COMSOL roots or native `HostContextJson` according to the frozen field request. Real PowerShell fixtures cover the actual child calls, OA component-only publication, required-parameter rejection and tampered native-context refusal before flight. Scientific inputs, thresholds and numerical parameters are unchanged; these software fixtures do not launch SIMION/COMSOL or grant native, GUI or scientific qualification.
 
 Cox--de Boor basis evaluation now shares local recursive subexpressions through a per-call dynamic calculation. A content-keyed cache bounded to 65,536 entries covers the measured 42,542 distinct canonical edge/parameter pairs without unbounded process-global growth. On the unchanged `simion_candidate_two_zone.json`, one local original/dynamic pair took 3.702478/1.559438 seconds; the subsequent cached cold/warm pair took 1.237612/0.187433 seconds. Every version produced the same 50,282-byte canonical resolved-geometry JSON, SHA-256 `05b1adb00d9f1dee678be0119d391f1e3caa11b9899bc2192c17dc543abfae6c` and geometry fingerprint `6b71d29c5af6f9aff5f5ceb644c8046afd1b16980a51f5f3c771476876e89f18`. These are controlled local software measurements, not full-gate timings, changed physics or native qualification.

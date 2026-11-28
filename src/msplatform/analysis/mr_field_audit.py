@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 
 from msplatform.contracts.rigid_transform import FramedVector, RigidTransform
-from msplatform.execution.retention import file_record, verify_record
+from msplatform.io.manifest_records import file_record, verify_record
 
 
 def _read(path: Path) -> dict:

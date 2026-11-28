@@ -16,7 +16,10 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from msplatform.assembly.ip_mr_connection import resolve_ip_mr_transform as _resolve_ip_mr_transform
+from msplatform.assembly.ip_mr_connection import (
+    validate_component_exit_binding,
+    resolve_ip_mr_transform as _resolve_ip_mr_transform,
+)
 from msplatform.assembly import ip_mr_connection
 from msplatform.analysis.particle_census import partition_cohort
 from msplatform.contracts.particle_state import (
@@ -25,8 +28,8 @@ from msplatform.contracts.particle_state import (
 )
 from msplatform.contracts.particle_physics import kinetic_energy_ev
 from msplatform.contracts.rigid_transform import PhaseSpaceState, RigidTransform
-from msplatform.results.component_exit_history import validate_component_exit_binding
-from msplatform.results.mr_reference import _bound_file, _finite, _identity, _read
+from msplatform.io.file_identity import file_sha256
+from msplatform.io.strict_json import load_json_object, require_number
 
 
 
@@ -35,6 +38,29 @@ from msplatform.results.mr_reference import _bound_file, _finite, _identity, _re
 
 
 
+
+
+def _read(path: Path) -> dict[str, Any]:
+    return load_json_object(path)
+
+
+def _identity(path: Path) -> dict[str, Any]:
+    return {"path": str(path.resolve()), "sha256": file_sha256(path), "bytes": path.stat().st_size}
+
+
+def _bound_file(identity: dict[str, Any], relative_to: Path) -> Path:
+    path = Path(identity["path"])
+    if not path.is_absolute():
+        path = relative_to / path
+    if file_sha256(path).lower() != identity["sha256"].lower():
+        raise ValueError(f"Bound source SHA-256 differs: {path}")
+    if path.stat().st_size != identity["bytes"]:
+        raise ValueError(f"Bound source byte count differs: {path}")
+    return path
+
+
+def _finite(value: Any, label: str) -> float:
+    return require_number(value, label)
 
 
 def _write(path: Path, value: dict[str, Any]) -> None:

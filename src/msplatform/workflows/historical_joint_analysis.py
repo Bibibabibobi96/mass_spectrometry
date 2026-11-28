@@ -12,6 +12,7 @@ from msplatform.results.historical_joint_source import read_measured_source
 from msplatform.results.mr_peak_output import write_detector_peak
 from msplatform.io.file_identity import file_sha256
 from msplatform.analysis.mr_observations import read_scientific_events
+from msplatform.workflows.mr_design.execution_contract import validate_posthoc_analysis_contract
 
 
 def _identity(path: Path) -> dict[str, Any]:
@@ -160,7 +161,6 @@ def analyze_recorded_joint_flight(preparation_receipt: Path, merged_log: Path, o
     analysis_provenance = None
     if analysis_contract is not None:
         replacement = _read(analysis_contract)
-        from msplatform.analysis.joint_analysis_contract import validate_posthoc_analysis_contract
         execution = validate_posthoc_analysis_contract(contract, replacement, contract_base=analysis_contract.parent)
         analysis_provenance = dict(contract=file_record(analysis_contract),
             original_trajectory_contract=prepared["trajectory_contract"],
