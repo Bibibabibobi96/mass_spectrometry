@@ -31,7 +31,7 @@ MR拥有分析器设计、匹配目标、场消费合同和P/S控制；跨项目
 
 | 任务 | 权威入口 | MR侧须提供或核对 |
 |---|---|---|
-| OA／IP接口需求准备或既有飞行 finalization | [接口准备与绑定](../../../../../docs/INTEGRATION.md#oaip接口准备与绑定)、[accelerator_interface.ps1](../../../../../src/msplatform/workflows/resources/accelerator_interface.ps1) | 显式provider与原始封存MR参考run；准备只生成需求提案。`-ResumeFinalization`只恢复既有owner，不接收新科学或原生输入 |
+| OA／IP接口需求准备 | [接口准备与绑定](../../../../../docs/INTEGRATION.md#oaip接口准备与绑定)、[MR接口准备工作流](../../../../../src/msplatform/workflows/mr_design/accelerator_interface.py) | 显式provider与原始封存MR参考run；通过公共 ExecutionContext／ArtifactStore 只生成需求提案，不启动飞行或接收旧 finalization 恢复参数 |
 | 已封存联合飞行的重新分析或发布恢复 | [历史联合记录](../../../../../docs/INTEGRATION.md#历史-ipmr-记录分析)、`msplatform.workflows.historical_joint_analysis.publish_joint_analysis` | 显式保护原 run 与上游 manifest，冻结合同后由 Store 发布；公共恢复只收尾，不启动出口重释放、新飞行或旧整批续跑。历史结果保留原ID、仪器clock和完整母群 |
 | OA→MR完整飞行 | [OA→MR入口](../../../../../src/msplatform/workflows/resources/oa_mr.ps1)及上述集成状态 | 冻结CompositionPlan及显式局部范围，OA receipt、源与MR科学合同 |
 

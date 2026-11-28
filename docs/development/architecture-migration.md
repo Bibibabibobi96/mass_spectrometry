@@ -456,6 +456,12 @@ Agent 1 以 `319415b4c95f82eec17eed227f8448666fed7a7d` 补回实际 observer、f
 
 本单元已提交并普通 push `ece6ae76910a4e302161461d5ed264f2d3eb538f`。CLOC 2.10 `c44cc1d2→ece6ae76` PASS：total files -10、blank -81、comment -55、code -2666；production files -10、blank -81、comment -57、code -2676；tests files/blank 不变、comment +2、code +10；unclassified=0。逐语言与过滤口径见 `sfi-orphan-ece6ae76-cloc.log`。后续文档门将旧 request9/10 链接改到 `results/historical_schemas/` 并明确只读边界，StructureOnly PASS（321文件、0错误），日志 `current-c2-documentation-r2.log`。
 
+### C5 当前 wheel 离仓冒烟（WORKTREE，非最终验收）
+
+以当前工作树实际构建直接 wheel。首次本机增量构建误收 `build/lib` 中已删除 SFI／Prepared 的旧副本，安装探针据此拒绝；确认正式 harness 从 Git 文件重建源码后，仅删除可重建的 `build/lib` 缓存并重建。第二份 wheel SHA-256 为 `be24c858595569ec275178ddc9d7a52d76563970111a44de72914ca6f33f99f7`，大小5,868,333 B；旧包缺席。没有修改生产清单来掩盖缓存污染。
+
+随后在仓库外带空格路径创建普通非 editable consumer，安装该 wheel 及 `requirements-lock.txt` 中声明的依赖，使用 `-I` 从安装包资源实际执行 `python -m msplatform validate <oa_split_tof_native_small_v1.toml>`，成功返回 `implemented=true`、`native_verified=false`、`verification_scope=scientific_compilation_only`。日志为 `wheel-smoke-worktree-r2.log`、`wheel-smoke-all-dependencies-r2.log`、`wheel-smoke-validate-all-r2.log`。中间缺 `referencing`／`h5py` 的失败已保留；没有声称无网络初始安装、源码不可访问负例、sdist 重建或 native 通过。本项不替代最终同干净 SHA 双发行验收。
+
 ### C2 OA Candidate 重复别名首片（候选，整包未闭合）
 
 Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c22519aeafe7fb761d20806081eaf` 删除 compile／geometry／sync 中无独立职责的别名和包装，测试直接核 Component／backend 真 owner；没有新建 `oa_candidate_v2`，`oa_formal` 继续缺席。保留仍被真实消费者使用的文件绑定生成、局部研究、历史读取和原生执行能力，不把它们改标历史或 prepare-only 来退役。
@@ -463,6 +469,8 @@ Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c225
 该定向范围58 PASS／1 FAIL／1 SKIP（7.295s），另有冻结隔离 PASS（15.873s）和3个 managed-PA 子案 PASS（167.234s）；失败为基线同样存在的 runtime-authority 刷新用例，skip 为显式历史快照缺席，均保留不消红。Ruff、AST 无旧符号导入和 diff PASS。CLOC 2.10 `0455d0fe→5c1eb131`：total code -24、production -21、tests -3，unclassified=0，完整结果在 `oa-candidate-5c1eb131-cloc.log`。整包 Recipe／Store 迁移、私有 owner 和总等级退出仍待后续，不是 OA 完成或 native 验收。
 
 后续 `2facabb8ad8f03c7e3c26605e33b994634bf8c18`／主线 `84bd38dcaaa7de95bf2921abb092c32e7b12e63a` 修正漂移夹具：退役 campaign 的保持旧字节行为不变，活动 authority 漂移改用实际授权 campaign。`truncation_diagnostics` 直接使用 `results.single_reflection_particle_table.read_particle_table`，跨求解器 PowerShell 直接调用 `reference_analysis_core`；`reference_analysis` 的其余真实消费者仍保留并待迁。作者范围125项 PASS／0 skip（51.995s），主线相关模块108/108 PASS（39.976s），日志 `oa-analysis-owner-main.log`；Ruff、PowerShell parser 和 diff PASS。其 CLOC 2.10 为 total/tests code +2、production不变、unclassified=0，详见 `oa-candidate-2facabb8-cloc.log`。无商业 native。
+
+源生成单元 `f65f64f6b2bc9895e21c83f3c41301968137f10f`／主线 `1fafcd078b5e20d2c1afb34392a9056b080ed87e` 将 Candidate static_inputs 改为直接调用 `particle_release.dotnet_gaussian_box_ion11.write_particle_source`，删除私有 PowerShell 命令执行和脚本 entrypoint／闭包项；保留共享脚本给其他真实消费者。新 API 独占创建并复验确定性来源，原 N100 字节 SHA-256 为 `6287A54475008111A7F8AF87329F8AD08911066A564C508CFD424577D693229E`，不改种子顺序、几何、能量或 CRLF 序列化。作者 Candidate84、radial58、相关30项均 PASS；Ruff/diff PASS。CLOC 2.10 为 total +64、production +30、tests +34，unclassified=0，详见 `oa-candidate-f65f64f6-cloc.log`。主线对应测试正在执行，结果另记；整包和 native 资格仍未闭合。
 
 ### C2 当前依赖身份的旧架构命名清退（候选）
 
@@ -487,6 +495,18 @@ Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c225
 独立 Agent 5 对打包 PowerShell 的实际 `src/msplatform` 引用检查发现10个已删除 Prepared 目标。现分别改为 `workflows.oa_mr.prism_trial`、`components.multi_reflection_tof.prism_handoff` 和 `components.multi_reflection_tof.joint_mirror_stripe_l0`；影响 `oa_mr.ps1`、两个 segmented runner、dual-stripe seed 和 exact-K runner。只改真实来源路径，不改变科学参数、运行模式或 native 调用。
 
 `test_prism_runner_contract_matrix` 的实际 source-list／`Copy-VerifiedRunInput` 循环及其余合同5/5 PASS（3.544s），0 skip；日志 `mr-frozen-source-owner-fix.log`。旧 Prepared 路径在当前 workflow resources 零命中，diff PASS。无商业 native 或整体验收声明。本单元已提交并普通 push `7c4972d3ee0139336179621fb1df3de83bb3d7ed`；CLOC 2.10 `0e144205→7c4972d3` PASS，total／production／tests 的 files／blank／comment／code 全部 delta=0，unclassified=0，详见 `mr-source-7c4972d3-cloc.log`。
+
+### C2 Assembly 接口准备与中央依赖收口（候选）
+
+`47dc5bd6`／主线 `f9f45f669c2172847d6ebe01ceeae6ad228650de` 已把 prepare-only 接口准备拆为求解器无关的 `assembly.accelerator_interface` 和显式消费 `ExecutionContext`／`ArtifactStore` 的 `workflows.mr_design.accelerator_interface`，删除旧 workflow 包、私有 PowerShell package/capacity/finalization owner。真实 Store 发布、冷读、缺件／篡改和重复 run 拒绝保留；没有增加连续飞行或商业 native 能力。
+
+本单元删除中央 `runtime_dependencies.json` 中已无生产消费者的 `accelerator_interface`、旧 PS 和12个专属资源记录，共享 `mirror_cycle_counter.lua` 改用实际 backend ID，不保留旧 ID 别名。依赖测试改验当前 `oa_mr` 闭包及新 Assembly／MR owner；首轮组合回归暴露旧目录残留 `__pycache__` 形成命名空间包，以及机械替换造成的重复 consumer／键和4个已退役专属 companion 断言。仅删除3个可重建 `.pyc`，按实际闭包修正断言；未恢复旧入口或删除有效 `ip_batching`／`mr_bunch_source` 覆盖。
+
+最终56项组合回归 PASS／0 skip（170.020s，公共墙钟171.610s），日志 `assembly-store-integrated-r2.log`；首轮4 FAIL 保留在 `assembly-store-integrated.log`。JSON、Ruff 与 `git diff --check` PASS。隔离的 OA 真实公共 owner 用例另1 PASS／0 skip（88.536s），日志 `oa-real-public-owner-isolation.log`；此前整组超时仍不记为整组通过。
+
+候选 Changed 实跑273.204s 后 FAIL，日志 `assembly-registry-changed.log`：hygiene、text bytes、documentation 和 Assembly01 等已执行范围通过；安装臂首错为本轮环境未传 `SIMION_LUA_EXE`，另有 `test_current_scientific_implementations_have_no_repository_or_host_dependencies` 报告47条 analysis／Assembly／results 反向依赖。完整47条已提取到 `boundary-errors-current.log`；它们属于 Prepared 迁移后的独立架构首错，不能由本单元56项绿灯替代，也不把本轮环境错误写成生产 FAIL。后续分片 BLOCKED 未计通过；修复后须以显式本机 Lua 重跑同一干净候选。
+
+本项不代替完整 Changed／Repository、双安装或 native 验收。
 
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 

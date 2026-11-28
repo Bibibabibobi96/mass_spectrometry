@@ -77,15 +77,15 @@ $null=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath 
                         (package / name).write_bytes(raw)
                     relative = package.relative_to(author).as_posix()
                     declaration = dict(schema_version=3, role="workflow_runtime_dependencies",
-                        owner_id="instrument_assembly", consumer_ids=["accelerator_interface"], providers=[
+                        owner_id="instrument_assembly", consumer_ids=["oa_mr"], providers=[
                             dict(provider_scope="repository_core", provider_project="msplatform", files=[],
                                  python_packages=[dict(source_repo_path=relative,
-                                     consumers=["accelerator_interface"], resource_suffixes=[".schema.json", ".py"])],
+                                     consumers=["oa_mr"], resource_suffixes=[".schema.json", ".py"])],
                                  python_modules=[])])
                     contract.write_text(json.dumps(declaration), encoding="utf-8")
                     destination = root / f"inputs{number}"
                     script = f""". '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{contract}' -InputDir '{destination}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}' -ContractPath '{contract}' -InputDir '{destination}' -OwnerId instrument_assembly -ConsumerId oa_mr
 """
                     result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
                         cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
@@ -101,7 +101,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{author}
                     self.assertEqual({entry["source_repo_path"] for entry in entries}, expected)
                     self.assertEqual(len(entries), len(expected))
                     for entry in entries:
-                        self.assertEqual(entry["consumers"], ["accelerator_interface"])
+                        self.assertEqual(entry["consumers"], ["oa_mr"])
                         self.assertEqual((destination / "runtime_snapshot" / entry["source_repo_path"]).read_bytes(),
                                          (author / entry["source_repo_path"]).read_bytes())
 
@@ -231,7 +231,7 @@ foreach($name in @('Start-ObservedFormalProcess','Invoke-SimionBatchPhase','Invo
             script = f"""
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . '{DEPENDENCIES}'
-$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId oa_mr
 $f.import_roots|ConvertTo-Json -Compress
 """
             result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', script], cwd=root,
@@ -248,8 +248,7 @@ $f.import_roots|ConvertTo-Json -Compress
             self.assertEqual(policy_entries[0]["provider_scope"], "repository_core")
             self.assertEqual(policy_entries[0]["provider_project"], "msplatform")
             self.assertEqual(policy_entries[0]["id"], "msplatform_contracts_particle_count_policy_json")
-            self.assertEqual(policy_entries[0]["consumers"],
-                ["accelerator_interface", "oa_mr"])
+            self.assertEqual(policy_entries[0]["consumers"], ["oa_mr"])
             self.assertEqual((snapshot/policy_relative).read_bytes(), (REPO_ROOT/policy_relative).read_bytes())
             resources = [row for row in entries if row['source_repo_path'].endswith('.schema.json')
                          and row['provider_scope'] == 'repository_core']
@@ -288,20 +287,16 @@ print('FROZEN_SRC_CORE=PASS')
                     target.write_bytes(payload)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_accelerator_interface_imports_ip_validator_from_frozen_snapshot(self) -> None:
+    def test_oa_mr_imports_ip_validator_from_frozen_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             inputs = Path(directory) / "inputs"
-            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface"
+            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId oa_mr"
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             snapshot = inputs / "runtime_snapshot"
             required_companions = {
-                "src/msplatform/workflows/resources/ip_functional.ps1",
                 "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
-                "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1",
-                "src/msplatform/backends/simion/resources/build_dirichlet_patch_basis.lua",
-                "src/msplatform/backends/simion/resources/crop_native_static_field.lua",
                 "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
                 "src/msplatform/execution/resources/simion_dispatch_support.ps1",
             }
@@ -354,7 +349,6 @@ assert not (root / 'src/msplatform/workflows/multipole_ip/prepare.py').exists()
         originals = {path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json')}
         self.assertTrue(originals)
         expected_seeds = {
-            'accelerator_interface': {'3_instance_seed.iob', '4_instance_seed.iob', '5_instance_seed.iob'},
             'oa_mr': {'4_instance_seed.iob'},
             'paired_accelerator_pulse': {'1_instance_seed.iob'},
         }
@@ -369,7 +363,7 @@ assert not (root / 'src/msplatform/workflows/multipole_ip/prepare.py').exists()
         entries = {item["source_repo_path"]: set(item["consumers"])
                    for group in load(INVENTORY)["providers"] for item in group["files"]}
         self.assertEqual(entries["src/msplatform/workflows/resources/run_artifact_workflow.ps1"],
-                         {"accelerator_interface", "oa_mr", "paired_accelerator_pulse"})
+                         {"oa_mr", "paired_accelerator_pulse"})
         self.assertNotIn("common/resource_budget_support.ps1", entries)
         self.assertNotIn("common/host_execution_lease.ps1", entries)
 
@@ -446,7 +440,7 @@ assert not (root / 'src/msplatform/workflows/multipole_ip/prepare.py').exists()
             inputs = Path(directory) / "inputs"
             script = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId oa_mr
 """
             freeze = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
@@ -477,7 +471,7 @@ solver_review_retirement._assert_runtime_retirement_unprotected(root/'absent_art
             detached = inputs / "runtime_snapshot"
             script = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId oa_mr
 """
             result = subprocess.run(
                 [shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=REPO_ROOT,
@@ -492,7 +486,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
 $dependency=[pscustomobject]@{{
  id='fixture';provider_scope='repository_core';provider_project='msplatform';provider_repo_path='src/msplatform'
  source_repo_path='src/msplatform/execution/resources/run_artifact_support.ps1';frozen_filename='copied.ps1'
- run_input_name='fixture';consumers=@('accelerator_interface')
+ run_input_name='fixture';consumers=@('oa_mr')
 }}
 Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependency $dependency | ConvertTo-Json -Depth 5
 """
@@ -508,7 +502,7 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
             self.assertEqual(Path(record["snapshot_path"]), destination / "copied.ps1")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_accelerator_interface_derives_scope_from_its_complete_frozen_assembly_closure(self) -> None:
+    def test_oa_mr_derives_scope_from_its_complete_frozen_assembly_closure(self) -> None:
         """Run the actual parent compiler detached, including non-Python schemas."""
         required = (
             "src/msplatform/assembly/resolve_assembly.py",
@@ -524,7 +518,7 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
             shutil.copyfile(REPO_ROOT / "tests/contracts/fixtures/rf_ip_mr_y_minus55_plan.json", parent)
             freeze = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId oa_mr
 """
             frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
@@ -602,10 +596,10 @@ assert Path(native_completion.__file__).is_relative_to(Path.cwd())
 assert Path(write_run_manifest.__file__).is_relative_to(Path.cwd())
 assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
 """
-                if consumer == 'accelerator_interface':
+                if consumer == 'oa_mr':
                     statement += "\nfrom msplatform.backends.simion import ip_batching as batching\n"
                     statement += "assert Path(batching.__file__).is_relative_to(Path.cwd())\n"
-                if consumer == 'accelerator_interface':
+                if consumer == 'oa_mr':
                     statement += "\nfrom msplatform.backends.simion import mr_bunch_source\n"
                 command = [sys.executable, '-B', '-s', '-c', statement]
                 completed = subprocess.run(command, cwd=snapshot, env=environment,
@@ -682,7 +676,7 @@ assert Path(capacity_protection.__file__).is_relative_to(Path.cwd())
             run.mkdir()
             freeze = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{run / 'inputs'}' -OwnerId instrument_assembly -ConsumerId oa_mr
 """
             frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
@@ -765,7 +759,7 @@ function Copy-Item {{
 $dependency=[pscustomobject]@{{
  id='fixture';provider_scope='repository_core';provider_project='msplatform';provider_repo_path='src/msplatform'
  source_repo_path='src/msplatform/fixture.txt';frozen_filename='runtime_snapshot/src/msplatform/fixture.txt'
- run_input_name='fixture';consumers=@('accelerator_interface')
+ run_input_name='fixture';consumers=@('oa_mr')
 }}
 try {{
  $null=Copy-FrozenDependency -RepoRoot '{quote(repo)}' -InputDir '{quote(inputs)}' -Dependency $dependency
@@ -798,10 +792,10 @@ try {{
                 path = root / source
                 path.write_text(f"VALUE = {number}\n", encoding="utf-8")
                 groups[0]["files"].append(dict(id=f"provider{number}", source_repo_path=source,
-                    consumers=["accelerator_interface"]))
+                    consumers=["oa_mr"]))
             contract = root / "src/msplatform/workflows/config/dependencies.json"
             contract.write_text(json.dumps(dict(schema_version=3, role="workflow_runtime_dependencies",
-                owner_id="instrument_assembly", consumer_ids=["accelerator_interface"], providers=groups)), encoding="utf-8")
+                owner_id="instrument_assembly", consumer_ids=["oa_mr"], providers=groups)), encoding="utf-8")
             package = root / "src/msplatform/pkg"
             package.mkdir(parents=True)
             (package / "entry.py").write_text(
@@ -809,7 +803,7 @@ try {{
                 "def prepare(destination):\n"
                 "    destination.write_text(str(VALUE), encoding='utf-8')\n", encoding="utf-8")
             groups[0]["python_packages"].append(dict(
-                source_repo_path="src/msplatform/pkg", consumers=["accelerator_interface"]))
+                source_repo_path="src/msplatform/pkg", consumers=["oa_mr"]))
             groups[0]["python_packages"].append(dict(
                 source_repo_path="src/msplatform/unrequested", consumers=["not_requested"]))
             author = load(contract)
@@ -823,7 +817,7 @@ try {{
             output = Path(directory) / "inputs"
             script = f"""
 . '{DEPENDENCIES}'
-$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId oa_mr
 Write-Output ('FROZEN_INPUT_COUNT='+@($f.identities).Count)
 if(@($f.identities).Count-ne7){{throw 'provider count differs'}}
 $inventory=Get-Content $f.code_inventory_path -Raw|ConvertFrom-Json
@@ -851,13 +845,13 @@ foreach($case in $cases){{
  & $case.change $bad
  $bad|ConvertTo-Json -Depth 30|Set-Content '{contract}'
  $destination='{output}-invalid'+$index
- try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir $destination -OwnerId instrument_assembly -ConsumerId accelerator_interface;throw 'invalid author accepted'}}
+ try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir $destination -OwnerId instrument_assembly -ConsumerId oa_mr;throw 'invalid author accepted'}}
  catch{{Write-Output ('CASE='+$index+' ACTUAL='+$_.Exception.Message+' EXPECTED='+[string]$case.message);if($_.Exception.Message -inotlike ([string]$case.message)){{throw}}}}
  if(Test-Path $destination){{throw 'Invalid author copied files before rejection'}}
  $index++
 }}
 $valid|Set-Content '{contract}'
-try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId accelerator_interface;throw 'existing destination accepted'}}
+try{{Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{root}' -ContractPath '{contract}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId oa_mr;throw 'existing destination accepted'}}
 catch{{if($_.Exception.Message-notlike'*already exists*'){{throw}}}}
 foreach($scope in @('project','repository_common','integration')){{
  try{{Assert-DependencyProviderIdentity -RepoRoot '{root}' -DependencyId 'retired' -Scope $scope -Provider 'legacy' -ProviderRelative 'legacy';throw 'retired scope accepted'}}

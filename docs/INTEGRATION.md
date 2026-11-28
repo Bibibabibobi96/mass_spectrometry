@@ -1704,7 +1704,7 @@ installation and native coupled-field/continuous-flight acceptance remain OPEN.
 
 ## OA／IP接口准备与绑定
 
-当前 [accelerator_interface入口](../src/msplatform/workflows/resources/accelerator_interface.ps1)仅根据已封存MR参考发布OA或IP接口需求提案，保留能量每电荷（V）、焦点位置（mm）、坐标系和参考manifest身份；它不生成出口接力、新源、场或飞行。实际几何与连续追踪由作者显式构造 Assembly 与原始出生 SimulationRecipe，场数据和工程条件仍须明确提供。既有历史 run 的 finalization 可沿其原owner恢复，不把恢复当作新飞行。
+当前 [MR接口准备工作流](../src/msplatform/workflows/mr_design/accelerator_interface.py)通过公共 `ExecutionContext`／`ArtifactStore` 调用 [Assembly提供者选择](../src/msplatform/assembly/accelerator_interface.py)，仅根据已封存MR参考发布OA或IP接口需求提案，保留能量每电荷（V）、焦点位置（mm）、坐标系和参考manifest身份；它不生成出口接力、新源、场或飞行。实际几何与连续追踪由作者显式构造 Assembly 与原始出生 SimulationRecipe，场数据和工程条件仍须明确提供。旧私有 PowerShell package／capacity／finalization owner 已退役；历史联合记录只由公共历史分析入口只读收尾，不把恢复当作新飞行。
 
 此前 Changed 验证23项PASS是旧接口的软件历史证据，不构成当前组件或原生资格。
 
