@@ -91,7 +91,7 @@ try {
   }
   Write-RunJson -Path $definitionPath -Value $definition
   $sourcePaths = @(
-    'src/msplatform/workflows/prepared_joint/fixed_grid_workpoint.py',
+    'src/msplatform/workflows/mr_design/fixed_grid_workpoint.py',
     'src/msplatform/workflows/resources/run_downstream_fixed_grid_workpoint.ps1',
     'src/msplatform/components/multi_reflection_tof/joint_mirror_stripe_l0.py',
     'src/msplatform/components/multi_reflection_tof/prism_workpoint_math.py',
@@ -120,7 +120,7 @@ try {
   $proposalPath = Join-Path $package.result_dir 'downstream_fixed_grid_workpoint.json'
   $analysisLog = Join-Path $package.log_dir 'downstream_fixed_grid_workpoint.log'
   $lease = Enter-HostExecutionLease -Role GATE -Stage downstream_workpoint_audit -RunId $RunId
-  & $python -I -B -m msplatform.workflows.prepared_joint.fixed_grid_workpoint `
+  & $python -I -B -m msplatform.workflows.mr_design.fixed_grid_workpoint `
     --definition $definitionPath --output $proposalPath --freeze-input-dir (Join-Path $package.input_dir 'trials') `
     2>&1 | Tee-Object -FilePath $analysisLog
   if ($LASTEXITCODE -ne 0) { throw 'Downstream fixed-grid workpoint audit failed.' }

@@ -170,6 +170,13 @@ class NativeCandidateChainRunnerTests(unittest.TestCase):
             for change in (None, "missing", "hash"):
                 with self.subTest(change=change):
                     document = copy.deepcopy(manifest)
+                    document["project"] = "multi_reflection_tof"
+                    config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
+                    config["project"] = "multi_reflection_tof"
+                    config_path = root / "run_config.json"
+                    config_path.write_text(json.dumps(config), encoding="utf-8")
+                    document["run_config"] = dict(document["run_config"], path=str(config_path),
+                        bytes=config_path.stat().st_size, sha256=hashlib.sha256(config_path.read_bytes()).hexdigest())
                     document["inputs"]["native_global_fallback_pa"]["sha256"] = "unused-invalid-hash"
                     if change == "missing":
                         del document["inputs"]["bunch_source_receipt"]

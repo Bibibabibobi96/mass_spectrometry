@@ -411,7 +411,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
     def _te1_field_preflight(self, mutation=None, *, variation_enabled=True, center_view=False):
         from msplatform.backends.comsol import static_field_binding as fields
         from msplatform.backends.comsol import candidate_authority as provider
-        from msplatform.workflows.prepared_joint import fixed_grid_workpoint as workpoint
+        from msplatform.workflows.mr_design import fixed_grid_workpoint as workpoint
         text = RUNNER.read_text(encoding="utf-8-sig")
         helper = text.split("function Assert-StaticScreeningField {", 1)[1].split("\nfunction ", 1)[0]
         code = helper.split("$code=@'\n", 1)[1].split("\n'@", 1)[0]

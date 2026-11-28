@@ -24,7 +24,7 @@ from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.io.file_identity import file_sha256
 
-from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
+from msplatform.workflows.mr_design.fixed_grid_workpoint import (
     native_bank_identity,
     assert_trial_matches_jacobian,
     _trial,

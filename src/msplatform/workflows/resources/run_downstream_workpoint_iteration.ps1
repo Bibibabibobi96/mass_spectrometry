@@ -1495,7 +1495,7 @@ if($ResumeParentCheckpoint){
     if($freshBootstrap){$resumeBootstrapPath=Get-ManifestOutputPath -ManifestPath $resumeManifest -FileName 'workpoint_bootstrap.json'}
     $priorStatic=Get-Content -LiteralPath (Join-Path $resumeParentRun 'inputs/field_provider_request.json') -Raw|ConvertFrom-Json -AsHashtable
     if(($priorStatic|ConvertTo-Json -Depth 100 -Compress)-ne($fieldProviderRequest|ConvertTo-Json -Depth 100 -Compress)){
-      $storageResumeCode="import json,sys; from msplatform.workflows.prepared_joint.fixed_grid_workpoint import assert_native_provider_storage_resume; assert_native_provider_storage_resume(json.loads(sys.argv[1]),json.loads(sys.argv[2]))"
+      $storageResumeCode="import json,sys; from msplatform.workflows.mr_design.fixed_grid_workpoint import assert_native_provider_storage_resume; assert_native_provider_storage_resume(json.loads(sys.argv[1]),json.loads(sys.argv[2]))"
       & {
         & $python -I -B -c $storageResumeCode ($priorStatic|ConvertTo-Json -Depth 100 -Compress) ($fieldProviderRequest|ConvertTo-Json -Depth 100 -Compress)
         if($LASTEXITCODE-ne0){throw 'Static recovery field provider inputs differ beyond the exact sealed storage view.'}

@@ -472,7 +472,7 @@ class RefinementWindowProviderTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="mrtof-window-provider-")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.runs = self.root / "artifacts/projects/parallel_mirror_dual_stripe_mr_tof/runs"
+        self.runs = self.root / "artifacts/components/multi_reflection_tof/runs"
         self.runs.mkdir(parents=True)
         self.retention = dict(policy_version=1, **{"class":"solver_review"}, reason="Tiny contract fixture")
         self.authority = dict(analyzer_electrode_voltages_v=getattr(self, "initial_voltages", list(range(20))), component_voltages_v=[],

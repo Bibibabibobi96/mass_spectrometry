@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.backends.comsol import corridor_field
-from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
+from msplatform.workflows.mr_design.fixed_grid_workpoint import (
     _native_static_binding_problem, _static_field_problem, _transport_invariants, assert_trial_matches_jacobian,
 )
 from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
@@ -24,7 +24,7 @@ from msplatform.workflows.prepared_joint.prism_trial import (
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/multi_reflection_tof"
 RUNNER = PROJECT.parents[3] / "src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1"
-MODULE = "msplatform.workflows.prepared_joint.fixed_grid_workpoint"
+MODULE = "msplatform.workflows.mr_design.fixed_grid_workpoint"
 
 
 class NativeStaticIdentityTest(unittest.TestCase):

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
+from msplatform.workflows.mr_design.fixed_grid_workpoint import (
     _trial,
     _static_field_problem,
     _native_static_binding_problem,
@@ -33,7 +33,7 @@ RUNNER = Path(__file__).resolve().parents[4] / "src/msplatform/workflows/resourc
 
 class DownstreamFixedGridWorkpointTests(unittest.TestCase):
     def test_native_source_validation_keeps_precedence_and_layout_read_order(self):
-        module = "msplatform.workflows.prepared_joint.fixed_grid_workpoint"
+        module = "msplatform.workflows.mr_design.fixed_grid_workpoint"
         binding = dict(mode="native_static_pa", authority={"analyzer_electrode_voltages_v": [0.] * 20},
                        instances=[], consumer_view={"kind": "x_symmetry_plane"})
         materialization = dict(analyzer_electrode_voltages_v=[0.] * 20,
@@ -138,20 +138,20 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                 Path(level['pa_path']).unlink()
                 Path(level['surface_path']).unlink()
             self.assertEqual(expected, _native_static_binding_problem(thin, mat, canonical_consumer_layout=True))
-            from msplatform.workflows.prepared_joint.fixed_grid_workpoint import assert_native_provider_storage_resume
+            from msplatform.workflows.mr_design.fixed_grid_workpoint import assert_native_provider_storage_resume
             previous_request = dict(schema_version=1, role=provider.ROLE, candidate_voltages_v={'s1': 0.},
                 source_binding_path=str(bank.base_path), source_field_manifest=full['manifest'],
                 numerical_contract_path=str(bank.contract_path), response_basis_paths={})
             current_request = dict(previous_request, source_binding_path='sealed_view.json',
                 source_field_manifest=thin['manifest'], numerical_contract_path=str(contract_path))
-            with patch('msplatform.workflows.prepared_joint.fixed_grid_workpoint.load_binding', return_value=thin):
+            with patch('msplatform.workflows.mr_design.fixed_grid_workpoint.load_binding', return_value=thin):
                 assert_native_provider_storage_resume(previous_request, current_request)
                 for change in ('candidate_voltages_v', 'mirror_contract_path', 'response_basis_paths'):
                     bad = dict(current_request); bad[change] = {'extra': 1.}
                     with self.assertRaises(ValueError):
                         assert_native_provider_storage_resume(previous_request, bad)
                 bad = copy.deepcopy(thin); bad['authority']['analyzer_electrode_voltages_v'][10] = 1.
-                with patch('msplatform.workflows.prepared_joint.fixed_grid_workpoint.load_binding', return_value=bad):
+                with patch('msplatform.workflows.mr_design.fixed_grid_workpoint.load_binding', return_value=bad):
                     with self.assertRaisesRegex(ValueError, 'voltage anchor'):
                         assert_native_provider_storage_resume(previous_request, current_request)
             composed = copy.deepcopy(thin)
@@ -207,7 +207,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
     def test_sealed_native_history_validates_actual_multiwindow_ancestry(self):
         """Historical projection validates small identities, not retired PA bytes."""
         from msplatform.analysis.mr_observations import _collision_geometry_projection
-        module = "msplatform.workflows.prepared_joint.fixed_grid_workpoint"
+        module = "msplatform.workflows.mr_design.fixed_grid_workpoint"
         cases = (([3, 3, 0], None), ([0], None), ([3, 3, 0], "unknown"),
                  ([3, 3, 0], "missing"), ([1, 3, 0], "self"), ([2, 1, 0], "cycle"),
                  ([3, 3, 0], "manifest"), ([3, 3, 0], "authority"), ([3, 3, 0], "outside"))
@@ -595,7 +595,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         receipt = {"field_binding": {"mode": "comsol_static_scalar_v", "path": "combined.json"},
                    "analyzer_electrode_voltages_v": values.copy(), "stripe_biases_v": [-27., 54.],
                    "prism_voltages_v": [190., -190.]}
-        module = "msplatform.workflows.prepared_joint.fixed_grid_workpoint"
+        module = "msplatform.workflows.mr_design.fixed_grid_workpoint"
         with patch(module + ".load_binding", return_value=binding):
             for representation in ("exploratory_affine_s_responses", "exploratory_affine_ps_responses",
                                    "exploratory_materialized_affine_ps_responses"):
@@ -620,7 +620,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         receipt = {"field_binding": {"mode": "comsol_static_scalar_v", "path": "materialized.json"},
                    "analyzer_electrode_voltages_v": values.copy(), "stripe_biases_v": [-27., 54.],
                    "prism_voltages_v": [190., -190.]}
-        module = "msplatform.workflows.prepared_joint.fixed_grid_workpoint"
+        module = "msplatform.workflows.mr_design.fixed_grid_workpoint"
         with patch(module + ".load_binding", return_value=binding), patch(module + ".scalar_binding_problem") as direct:
             problem = _static_field_problem(receipt)
             problem.pop("geometry_sha256")
@@ -634,7 +634,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
                     _static_field_problem(bad)
 
     def test_static_family_compares_geometry_content_not_export_json_bytes(self):
-        module = "msplatform.workflows.prepared_joint.fixed_grid_workpoint"
+        module = "msplatform.workflows.mr_design.fixed_grid_workpoint"
         receipt = {"field_binding": {"mode": "comsol_static_scalar_v", "path": "field.json"}}
         geometry = {"slot_mm": 4., "origin_mm": [0., -55., 0.]}
         variants = [json.loads(json.dumps(geometry, indent=2)),
@@ -659,7 +659,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
         source = RUNNER.read_text(encoding="utf-8-sig")
         for parameter in ("WorkspaceRoot", "ArtifactRoot", "PythonExe"):
             self.assertIn(f"[Parameter(Mandatory)][string]${parameter}", source)
-        self.assertIn("& $python -I -B -m msplatform.workflows.prepared_joint.fixed_grid_workpoint", source)
+        self.assertIn("& $python -I -B -m msplatform.workflows.mr_design.fixed_grid_workpoint", source)
         self.assertIn("Join-Path $packageRoot 'components\\multi_reflection_tof\\simion_candidate_two_zone.json'", source)
         for retired in (".venv", "SIMULATION_PYTHON_EXE", "PYTHONPATH", "Invoke-RunToolRootContext"):
             self.assertNotIn(retired, source)

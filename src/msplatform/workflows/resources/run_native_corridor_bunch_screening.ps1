@@ -200,7 +200,7 @@ from pathlib import Path
 from msplatform.backends.comsol.static_field_binding import load_binding, _record
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
 from msplatform.components.multi_reflection_tof.candidate_voltage import candidate_authority
-from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _native_static_binding_problem
+from msplatform.workflows.mr_design.fixed_grid_workpoint import _native_static_binding_problem
 def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 center, actual = [load_binding(Path(p)) for p in sys.argv[1:3]]

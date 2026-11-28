@@ -845,7 +845,7 @@ if(($b|ConvertTo-Json -Depth 100 -Compress)-ne$before){throw 'Actual resume rewr
             value = json.loads(result.stdout)
             self.assertEqual((value["flight"], value["candidate"]), (10, 4))
             self.assertTrue(value["pending"].endswith("r03-stage-010"))
-            from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _trajectory_physics_identity
+            from msplatform.workflows.mr_design.fixed_grid_workpoint import _trajectory_physics_identity
             old_path = parent / "inputs/contract.json"
             from msplatform.io.file_identity import file_sha256
             identities = []

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.workflows.prepared_joint.fixed_grid_workpoint import (
+from msplatform.workflows.mr_design.fixed_grid_workpoint import (
     native_bank_identity,
 )
 from msplatform.components.multi_reflection_tof.candidate_contract import (

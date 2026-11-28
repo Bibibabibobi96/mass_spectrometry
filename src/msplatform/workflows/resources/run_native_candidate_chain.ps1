@@ -214,7 +214,7 @@ import copy, hashlib, json, sys
 from pathlib import Path
 from msplatform.backends.comsol.static_field_binding import load_binding, _record, native_numerics_match, resolve_native_refine_numerics
 from msplatform.backends.comsol.candidate_authority import derive_candidate_authority
-from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _native_static_binding_problem
+from msplatform.workflows.mr_design.fixed_grid_workpoint import _native_static_binding_problem
 def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 request = read(sys.argv[2])
@@ -311,7 +311,7 @@ function Assert-WorkpointPhysicalBinding {
 import json, sys
 from pathlib import Path
 from msplatform.backends.comsol.static_field_binding import load_binding
-from msplatform.workflows.prepared_joint.fixed_grid_workpoint import _native_static_binding_problem
+from msplatform.workflows.mr_design.fixed_grid_workpoint import _native_static_binding_problem
 materialization = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 actual = load_binding(Path(materialization['field_binding']['path']))
 request = json.loads(Path(sys.argv[2]).read_text(encoding='utf-8-sig'))
