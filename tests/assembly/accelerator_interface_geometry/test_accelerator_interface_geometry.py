@@ -233,7 +233,7 @@ class AcceleratorGeometryTests(unittest.TestCase):
         command = f"""
 . '{repo / 'src/msplatform/execution/resources/dependencies.ps1'}'
 $path='{repo / 'src/msplatform/workflows/config/runtime_dependencies.json'}'
-$snapshot=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
+$snapshot=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{repo}' -ContractPath $path -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId oa_mr
 ConvertTo-Json -InputObject @($snapshot.import_roots) | Out-File -LiteralPath '{inputs / "import_roots.json"}' -Encoding utf8NoBOM
 """
         frozen = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=repo,
