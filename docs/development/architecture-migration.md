@@ -542,6 +542,14 @@ Agent 10 的 `fcdf67ba37d8048958000329b376d61d65de8d00`／主线 `4f3ed532` 将�
 
 CLOC 2.10 `c7f6eedc→4f3ed532`：total files -3、code -1140，production code -498、tests code -642；连同后续路由清理的 `c7f6eedc→WORKTREE` 为 total code -1165、production -523、tests -642，unclassified=0。逐语言与过滤口径见 `wehnelt-store-4f3ed532-cloc.log`、`wehnelt-store-worktree-cloc.log`。
 
+### C4 OA 总等级字段退役（主线整合候选）
+
+Agent 6 的 `c419b86e76a959de192d25e94966f94d4f0db42a`／主线 `a4ee07a8` 删除 OA writer、发布器和历史分析 guard 中的总等级、晋升与 claim 授权字段，保留实际终态、生命周期、科学状态、来源身份及失败关闭。活动 v2 campaign authority 通过现有 `render_campaign_authorities` 刷新，科学值不变；历史 fixture／reader 保持原版本，未为“零命中”删除旧证据。
+
+作者在非 OA `0d39f580` 组合快照上完成253个定向用例：252 PASS、1个既有可选 T5 receipt skip（Candidate111、publisher/history79、theory/source63）；Ruff、PowerShell parser、JSON、diff 与 CLOC PASS。主线全部13个变更 Python 测试模块首轮193项为185 PASS、1个既有可选 skip、7 ERROR（1392.537s），7项共同缺 `MASS_SPECTROMETRY_HOST_CONTEXT_JSON`，发生在测试上下文建立而非字段断言；原日志 `oa-grades-main.log` 保留。用显式 TEST host policy／独立账本重跑两个所属模块31/31 PASS／0 skip（227.622s），覆盖全部7个原环境错误；同一主线 SHA 的193个唯一用例因此闭合为192 PASS、1 skip、0 ERROR，日志 `oa-grades-main-host-context-r2.log`。当前生产源码六字段零命中；仅最近 PROJECT 文档保留历史或退役说明。
+
+主线 CLOC 2.10 `e897da83→a4ee07a8` PASS：total code -23、production -31、tests +8，files／blank／comment不变，unclassified=0；逐语言与过滤口径见 `oa-grades-a4ee07a8-cloc.log`。文档 StructureOnly PASS。无商业 native；Agent 6 的2小时后台会话在提交后到期，不影响已保存提交，但未交付的完整长套件不计 PASS。
+
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 
 Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime dependency 无缺失目标；旧名负例和历史 reader 均有效。上述10处 PS 断链已在本工作树修复并复验。其余实际阻塞按真实调用保留如下，不转为文档豁免：
@@ -549,7 +557,7 @@ Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime depend
 | 优先级 | 当前活路径 | 实际替代与当前责任 |
 |---|---|---|
 | P0 | `execution.owner.run_managed_stage` 仍允许无 Store 并初始化旧 ledger；`artifact_capacity_maintenance`、`run_artifact_support.ps1` 仍调用旧维护／恢复；MR native-condition、standalone IP、OA focus 与 RF profiles 仍有旧 package writer；Wehnelt 已迁至 Store | 现有 `standalone_native_store`、Store 分支、`ArtifactStore.collect/recover_run_publication`；需逐调用迁移后删除旧写入／GC／恢复分支，不新建第二生命周期 |
-| P1 | 非 OA 总等级 writer／guard 已在 `23a54dbf` 删除；OA focus 和 OA Candidate 仍有 candidate/promotion 状态 | Agent 6 继续 OA；保留旧 manifest 的精确只读验证，不改写历史 |
+| P1 | 非 OA 总等级 writer／guard 已在 `23a54dbf` 删除；OA 对应字段已在 `a4ee07a8` 删除，主线193个唯一用例已闭合 | 保留旧 manifest 的精确只读验证，不改写历史；完整门禁仍未闭合 |
 | P1 | registry 仍直挂特殊 `oa_mr.ps1`；旧 `accelerator_interface.ps1` 及中央 consumer 已删除 | 科学归 Assembly／MR owner，执行归公共 Store；连续飞行只能走公共原出生 tracing，prepare-only 不冒充飞行 |
 
 Agent 7 沿实际消费者复核：公开 Python 的 OA source comparison、COMSOL gas/tracing、SIMION split/grounded/dual-cone/operations 仍可裸入旧 ledger；standalone IP、RF profiles、MR native-condition 和 `oa_mr.ps1` 仍有真实科学职责，公共 `msplatform run` 尚未覆盖这些组合，不能标历史或整链删除。退役顺序固定为：仅测试引用的三类专用恢复体（已删除）→Wehnelt 既有 Store API（已接管）→公开 Python 无 Store 消费者→特殊 PowerShell 科学链→公共旧回落／通用恢复→旧日常维护／GC。新 `ArtifactStore.collect` 只管理自己的新根，不借迁移清理既有旧研究根。
