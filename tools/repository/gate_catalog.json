@@ -3582,7 +3582,6 @@
           "test_paired_accelerator_pulse_execute": 30.926169,
           "test_paired_accelerator_pulse_preparation": 6.285976,
           "test_paired_accelerator_pulse_runtime": 9.514838,
-          "test_paired_accelerator_static_field_execute": 58.409332,
           "test_paired_inherited_lease": 2.490444,
           "test_historical_joint_publication": 31.054,
           "test_repository_bindings": 0.018886,
@@ -3829,7 +3828,7 @@
               }
             ],
             "modules": [
-              "tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py"
+              "tests/components/single_reflection_oa_tof_mass_analyzer/analysis/test_paired_accelerator_field_adapters.py"
             ],
             "dependency_profile": "locked"
           },
