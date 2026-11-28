@@ -47,7 +47,7 @@ $ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]
 $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'New-BuildSummary'},$true)
 Invoke-Expression $node.Extent.Text
 $summary=New-BuildSummary -Status interrupted -Reason fixture -FailureStage $(if($ExpectFailure-eq'true'){'input_freshness'}else{'frozen_input_validation'})
-if($summary.input_freshness_passed-ne($ExpectFailure-ne'true')-or$summary.Contains('static_gate_passed')-or$summary.formal_gate_passed){throw 'Input admission was misreported as software/scientific qualification'}
+if($summary.input_freshness_passed-ne($ExpectFailure-ne'true')-or$summary.Contains('static_gate_passed')-or$summary.Contains('candidate_evidence_allowed')-or$summary.Contains('formal_gate_passed')){throw 'Input admission emitted a retired qualification field'}
 'BUILD_INPUT_ADMISSION=PASS'
 ''', encoding="utf-8")
                 result = subprocess.run(["pwsh", "-NoProfile", "-File", str(fixture), str(REPO),

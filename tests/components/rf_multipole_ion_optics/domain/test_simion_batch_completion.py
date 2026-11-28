@@ -22,7 +22,7 @@ class SimionBatchCompletionTests(unittest.TestCase):
             (root / "logs").mkdir()
             (root / "run_config.json").write_text(json.dumps({
                 "schema_version": 2, "run_id": "20261029_120000__sim__simion__rf-receipt", "project": "rf_multipole_ion_optics",
-                "mode": "resolved_design_transport", "inputs": {}, "formal_gate_passed": False,
+                "mode": "resolved_design_transport", "inputs": {},
                 "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None},
             }), encoding="utf-8")
             receipt = root / "results/simion_batch_completion__rf_on__batch_01.json"

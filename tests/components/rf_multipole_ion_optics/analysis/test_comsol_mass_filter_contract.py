@@ -196,15 +196,12 @@ if($outputs.Count-ne8){throw 'Existing three outputs and mapping must remain for
         self.assertIn("'--source-format','ion11'", "".join(transport_runner.split()))
         self.assertIn("msplatform.workflows.rf_event_table_validation", transport_runner)
 
-    def test_mass_filter_functional_pass_does_not_claim_formal_eligibility(self) -> None:
+    def test_mass_filter_functional_pass_has_no_total_grade_field(self) -> None:
         runner = (
             REPO_ROOT / "src/msplatform/workflows/resources/run_mass_filter_comsol.ps1"
         ).read_text(encoding="utf-8")
-        self.assertIn("formal_gate_passed=$false", runner)
-        self.assertNotIn(
-            "$runConfiguration.formal_gate_passed=($metricDocument.status-eq 'PASS')",
-            runner,
-        )
+        self.assertNotIn("formal_gate_passed", runner)
+        self.assertIn("functional_gate=$metricDocument.status", runner)
 
     def test_comsol_mass_runner_has_no_cross_source_dependency(self) -> None:
         runner = (

@@ -15,6 +15,8 @@ SIMION/Lua 后端、COMSOL/MATLAB 资源和具名 workflow 继续使用已有安
 
 The component verifier now loads the installed execution lease resource with an explicit HostContext. Callers must select Python through `-PythonExe` or `SIMULATION_PYTHON_EXE`; the verifier no longer assumes a checkout `.venv`. Contract checks, tests and scientific behavior are unchanged.
 
+Current dual-cone mode records omit `formal_eligible`; execution, analysis and publication status are reported by their actual terminal fields. Historical records keep their original schema and bytes.
+
 ## Dual-cone shared terminal evidence
 
 Current fresh and saved-field dual-cone preparation freezes the common native

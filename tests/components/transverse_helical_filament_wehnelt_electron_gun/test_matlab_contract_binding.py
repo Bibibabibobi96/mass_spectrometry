@@ -157,10 +157,8 @@ class MatlabContractBindingTests(unittest.TestCase):
         self.assertIn("physical.usable_final_state_metric", self.binding)
         self.assertNotIn("collection_metric", self.binding)
 
-    def test_loader_allows_non_candidate_functional_mode_fail_closed(self) -> None:
+    def test_loader_enforces_execution_mode_and_particle_count(self) -> None:
         required = (
-            "~contract.numerical.candidate_evidence_allowed",
-            "~contract.evidence.candidate_evidence_allowed",
             "minimumCount = contract.evidence.minimum_particle_count",
             "strcmp(contract.numerical.execution_mode, 'full')",
             "sampling.seed_control",
@@ -178,7 +176,6 @@ class MatlabContractBindingTests(unittest.TestCase):
             "contract_project_id",
             "selected_mode_id",
             "parameter_bindings_verified",
-            "candidate_evidence_allowed",
         )
         report = (MATLAB / "write_wehnelt_build_only_report.m").read_text(encoding="utf-8")
         self.assertIn("write_wehnelt_build_only_report(result, reportPath)", self.build_task)
@@ -527,12 +524,10 @@ function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SH
         )
         self.assertNotIn("Tee-Object -LiteralPath", self.build_runner)
 
-    def test_all_summary_states_share_governance_and_solver_fields(self) -> None:
+    def test_all_summary_states_share_execution_and_solver_fields(self) -> None:
         required = (
             "threshold_result_eligible = $false",
-            "candidate_evidence_allowed = $false",
             "formal_asset_modified = $false",
-            "formal_gate_passed = $false",
             "input_freshness_passed = $inputFreshnessPassed",
             "commercial_wrapper_invocation_attempted = $CommercialWrapperInvocationAttempted",
             "commercial_wrapper_completed = $CommercialWrapperCompleted",
@@ -582,6 +577,8 @@ function Get-RunFileSha256($Path){(Get-FileHash -LiteralPath $Path -Algorithm SH
                 summary["commercial_wrapper_completed"], completed_wrapper
             )
             self.assertNotIn("commercial_wrapper_started", summary)
+            self.assertNotIn("candidate_evidence_allowed", summary)
+            self.assertNotIn("formal_gate_passed", summary)
 
     def test_governance_and_actual_common_entries_are_frozen(self) -> None:
         required = (
@@ -767,7 +764,6 @@ function Get-HostResourceSnapshot {
                         "mode": "build_only_smoke",
                         "project_root": str(snapshot),
                         "inputs": {"runner": str(snapshot / "src/msplatform/workflows/resources/wehnelt_build_only.ps1")},
-                        "formal_gate_passed": False,
                     }
                 ),
                 encoding="utf-8",

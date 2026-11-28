@@ -56,7 +56,7 @@ class TrackingCollectionTests(unittest.TestCase):
         self.assertEqual(result["original_mother"]["mother_records"], provenance["mother_records"])
         self.assertEqual(result["original_mother"]["mother_fates"], {"99": "unknown"})
         self.assertEqual((self.source, provenance, self.batch), original)
-        self.assertFalse(result["census"]["formal_gate_passed"])
+        self.assertNotIn("formal_gate_passed", result["census"])
 
     def test_original_completion_and_per_id_terminal_are_mandatory(self):
         with self.subTest("missing native completion"):
@@ -91,7 +91,7 @@ class TrackingCollectionTests(unittest.TestCase):
         self.assertEqual(row["kinetic_energy_eV"], 4.)
         self.assertEqual(first["census"]["census"]["source_release"], 1)
         self.assertNotIn("pulse_effective_peak", first["census"])
-        self.assertFalse(first["census"]["formal_gate_passed"])
+        self.assertNotIn("formal_gate_passed", first["census"])
         self.assertEqual(self.collect(observation_times=[7.5]), first)
 
     def test_shared_time_allows_only_binary64_serialization_difference(self):

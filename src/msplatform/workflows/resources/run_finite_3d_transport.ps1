@@ -360,7 +360,7 @@ function Invoke-FiniteComsolAnalysis {
   [ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';status='success';
     qualification_status=$qualification;project_id=$ProjectId;design_profile_id=$DesignProfileId;
     parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primary.transmission_fraction;
-    control_transmission=$control.transmission_fraction;model_level='L3';formal_gate_passed=$false;
+    control_transmission=$control.transmission_fraction;model_level='L3';
     exit_state_plot_status=$exitStatePlotStatus;exit_state_plot_reason=$exitStatePlotReason}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
   $outputs=@($metrics,$exitStatePlot,$exitStatePlotManifest,$summary)+@($NativeOutputs)
@@ -834,7 +834,7 @@ function Invoke-FiniteComsolAnalysisChild {
     if($state.phase-eq'analysis'){$state.phase_timings.analysis=$state.timer.Elapsed.TotalSeconds-$state.analysis_started_at}
     if($context-and-not$context.completion_written-and-not$state.finalization_started){
       $failed=@{schema_version=1;role='multipole_finite_3d_transport_summary';failure_stage=$state.phase;
-        failure_reason=$failure.Exception.Message;recovery_action='repair_analysis_and_create_new_analysis_child';formal_gate_passed=$false}
+        failure_reason=$failure.Exception.Message;recovery_action='repair_analysis_and_create_new_analysis_child'}
       try{$null=Complete-FiniteComsolOwner -Context $context -State $state -RunId $RunId -Status failed -Summary $failed -OriginalFailure $failure `
         -Outputs @((Get-ChildItem -LiteralPath $package.result_dir -File|ForEach-Object FullName))}catch{$failure.Exception.Data['failure_closure_error']=$_.Exception.Message}
     }
@@ -1188,8 +1188,7 @@ $comsolRunFailure=$null
     parameters=[ordered]@{model_level='L3';runtime_profile_id=$RuntimeProfileId;design_profile_id=$DesignProfileId;
       operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});mesh_convergence=$false;
-      stop_stage=$StopStage};
-    formal_gate_passed=$false}
+      stop_stage=$StopStage}}
   foreach($key in @($configDocument.inputs.Keys)){
     if($configDocument.inputs[$key]-is[string]){$configDocument.inputs[$key]=Convert-WorkflowOwnerPath $ownerContext $configDocument.inputs[$key]}
   }
@@ -1312,8 +1311,7 @@ $comsolRunFailure=$null
       qualification_status='UNQUALIFIED_MESH_BUILD_DIAGNOSTIC_ONLY';project_id=$ProjectId;
       design_profile_id=$DesignProfileId;parent_resolved_design_sha256=$resolvedHash;
       model_level='L3';stop_stage='mesh_build';field_physics_created=0;field_studies_created=0;
-      field_solutions_created=0;particle_physics_created=0;particle_studies_created=0;
-      formal_gate_passed=$false}
+      field_solutions_created=0;particle_physics_created=0;particle_studies_created=0}
     if($null-ne$maximumMeshCells){
       $summaryDocument.mesh_cells=$meshCells
       $summaryDocument.maximum_mesh_cells=$maximumMeshCells
@@ -1345,7 +1343,7 @@ $comsolRunFailure=$null
   $hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}
   if($null-ne$ownerContext){
     $failedSummary=[ordered]@{schema_version=1;role='multipole_finite_3d_transport_summary';failure_stage=$ownerState.phase;
-      failure_reason=$comsolRunFailure.Exception.Message;recovery_action='inspect_failure';formal_gate_passed=$false}
+      failure_reason=$comsolRunFailure.Exception.Message;recovery_action='inspect_failure'}
     $failureOutputs=@(foreach($directory in @($resultDir,$logDir)){
       if(Test-Path -LiteralPath $directory){Get-ChildItem -LiteralPath $directory -Recurse -File|Select-Object -ExpandProperty FullName}
     })

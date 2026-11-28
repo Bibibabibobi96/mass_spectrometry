@@ -17,7 +17,6 @@
     "lifecycle": "candidate",
     "overwrite": false,
     "manifest_required": true,
-    "particle_state_required": true,
-    "formal_eligible": false
+    "particle_state_required": true
   }
 }

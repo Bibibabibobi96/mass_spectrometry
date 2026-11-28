@@ -107,7 +107,6 @@ $task = Join-Path $repoRoot 'src\msplatform\backends\comsol\matlab\solve_round_r
     field_dimension = 2
     particle_tracking = $false
   }
-  formal_gate_passed = $false
 } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 [ordered]@{ schema_version=1; role='multipole_round_rod_field_screen_summary'; status='checkpoint' } |
   ConvertTo-Json | Set-Content -LiteralPath $summary -Encoding UTF8
@@ -139,7 +138,6 @@ try {
       model_level = 'L2'
       candidate_count = @($result.candidates).Count
       particle_tracking = $false
-      formal_gate_passed = $false
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $summary -Encoding UTF8
     & $python -c $manifestWriter --run-config $runConfig --status success --software 'COMSOL 6.4' --software 'MATLAB R2025b' --software 'Python 3.11' --output $samples --output $metrics --output $report --output $summary
     if ($LASTEXITCODE -ne 0) { throw 'Final run manifest failed.' }

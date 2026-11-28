@@ -255,7 +255,6 @@ try {
             baseline_run_id=$BaselineRunId
             refined_run_id=$RefinedRunId
         }
-        formal_gate_passed=$false
     }
     Write-RunJson -Path $runConfigPath -Depth 12 -Value $runConfiguration
 

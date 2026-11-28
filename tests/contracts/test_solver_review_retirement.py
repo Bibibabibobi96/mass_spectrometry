@@ -411,7 +411,7 @@ if($selected.Count){$params.SelectedHeavyPaths=[string[]]$selected}
         for name, path in roles.items():
             path.write_bytes(b"native" if path.suffix.lower().startswith(".pa") else name.encode())
         config = {"schema_version": 2, "run_id": run_id, "project": "p", "mode": "three_component_candidate_iob_assembly",
-                  "inputs": {name: str(path) for name, path in roles.items()}, "formal_gate_passed": False,
+                  "inputs": {name: str(path) for name, path in roles.items()},
                   "artifact_retention": {"policy_version": 1, "class": "solver_review", "reason": "GUI review"}}
         summary = {"run_id": run_id, "status": status}
         for name, value in (("run_config.json", config), ("summary.json", summary)):
@@ -422,7 +422,7 @@ if($selected.Count){$params.SelectedHeavyPaths=[string[]]$selected}
                     "bytes": (run / 'run_config.json').stat().st_size, "sha256": _sha(run / 'run_config.json')},
                     "inputs": inputs, "outputs": [{"path": str(run / 'summary.json'), "exists": True,
                     "bytes": (run / 'summary.json').stat().st_size, "sha256": _sha(run / 'summary.json'), "retention_role": "required_evidence"}],
-                    "formal_eligible": False, "artifact_retention": config["artifact_retention"]}
+                    "artifact_retention": config["artifact_retention"]}
         (run / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return run
 

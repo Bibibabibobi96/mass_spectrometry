@@ -10,8 +10,6 @@ function evidence = verify_ei_source_model(modelPath, resolvedContractPath)
     contract = load_ei_source_contract(resolvedContractPath);
     assert(strcmp(contract.numerical.execution_mode, 'build_only'), ...
         'EISource:NotBuildOnly', 'Cold EI verification requires a build-only contract.');
-    assert(~contract.evidence.candidate_evidence_allowed, ...
-        'EISource:NotBuildOnly', 'Unsolved EI preparation cannot grant candidate evidence.');
 
     import com.comsol.model.util.*
     tag = char(ModelUtil.uniquetag('EISourceCold'));
@@ -83,7 +81,7 @@ function evidence = verify_ei_source_model(modelPath, resolvedContractPath)
         'parameter_bindings_verified', parameterBindingsVerified, ...
         'geometry_domains', geometryDomains, 'mesh_complete', meshComplete, ...
         'solution_data_empty', solutionDataEmpty, 'compute_calls', 0, ...
-        'model_rewritten', false, 'candidate_evidence_allowed', false);
+        'model_rewritten', false);
     evidence.physics_tags = physicsTags;
     evidence.geometry_tags = geometryTags;
     evidence.study_tags = studyTags;

@@ -783,7 +783,7 @@ function Invoke-RunArtifactWorkflow {
         }
       }
     }
-    $reserved=@('schema_version','role','run_id','project','mode','status','recorded_at_utc','host','python','software','run_config','inputs','outputs','artifact_retention','formal_eligible')
+    $reserved=@('schema_version','role','run_id','project','mode','status','recorded_at_utc','host','python','software','run_config','inputs','outputs','artifact_retention')
     if(@($completion.manifest_extra_fields.Keys|Where-Object{$_-in$reserved}).Count){throw 'Workflow manifest extras override public fields.'}
     foreach($name in @('output_paths','required_output_paths','retention_preserve_paths')){
       if($completion[$name]-isnot[array]){throw "Workflow $name must be an array."}

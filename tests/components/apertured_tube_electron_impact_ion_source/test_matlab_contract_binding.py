@@ -54,7 +54,7 @@ class MatlabContractBindingTests(unittest.TestCase):
         self.assertIn("resolved_model.json", self.build_test)
         self.assertIn("contract_project_id", self.build_test)
         self.assertIn("parameter_bindings_verified", self.build_test)
-        self.assertIn("candidate_evidence_allowed", self.build_test)
+        self.assertNotIn("candidate_evidence_allowed", self.build_test)
 
     def test_old_argument_and_duplicate_physical_values_are_absent(self) -> None:
         forbidden = (

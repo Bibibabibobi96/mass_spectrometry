@@ -113,7 +113,6 @@ foreach ($entry in $inputs.GetEnumerator()) {
   provider_project_id = $providerProject
   template_role = 'shared_multipole_single_pa_layout_template'
   physical_model = $false
-  formal_gate_passed = $false
   inputs = $inputs
   input_sha256 = $inputSha256
   structural_contract = [ordered]@{

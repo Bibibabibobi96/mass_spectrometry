@@ -117,7 +117,7 @@ def transport_run(
         "mode": mode, "project_root": str(component_root),
         "design_profile_id": design_profile_id, "structural_variant_id": structural_variant_id,
         "inputs": {name: str(path) for name, path in inputs.items()},
-        "parameters": dict(parameters), "formal_gate_passed": False,
+        "parameters": dict(parameters),
     })
     run = TransportRun(contract=contract, run_dir=run_dir, result_dir=result_dir, summary_role=summary_role,
                        outputs=[result_dir / name for name in output_names], completion=None, frozen_identity=frozen_identity)

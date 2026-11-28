@@ -641,7 +641,6 @@ class SameSolverNumericalConvergenceTests(unittest.TestCase):
             "parameters": {
                 "lifecycle_stage": "inputs_frozen_and_validated",
             },
-            "formal_gate_passed": False,
             "frozen_python": {
                 "package": {
                     "root": str(frozen_code.parents[2]),

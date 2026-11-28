@@ -144,7 +144,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
         run, config = self.fixture(root, "20260101_000000__build__simion__failed")
         document = json.loads(config.read_text())
         document.update(schema_version=2, run_id=run.name, project="p", mode="static_pilot",
-                        inputs={}, formal_gate_passed=False,
+                        inputs={},
                         artifact_retention={"policy_version": 1, "class": "solver_review", "reason": "review"})
         if retained_evidence:
             document["capacity_ledger_lifecycle"]["light_evidence_budget_bytes"] = 1024
@@ -164,7 +164,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
                     "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper()}
         (run / "run_manifest.json").write_text(json.dumps({
             "schema_version": 2, "run_id": run.name, "project": "p", "mode": "static_pilot",
-            "status": "failed", "formal_eligible": False, "recorded_at_utc": "2026-01-01T00:00:00Z",
+            "status": "failed", "recorded_at_utc": "2026-01-01T00:00:00Z",
             "run_config": record(config), "inputs": {},
             "outputs": [record(summary), record(payload)] + ([record(evidence)] if retained_evidence else [])
                        + ([record(extra)] if additional_payload else []),
@@ -477,7 +477,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
         run, config = self.fixture(root, "20260101_000000__sim__simion__checkpoint")
         document = json.loads(config.read_text())
         document.update(schema_version=2, run_id=run.name, project="p", mode="runtime_iteration",
-                        inputs={}, formal_gate_passed=False)
+                        inputs={})
         config.write_text(json.dumps(document))
         summary = run / "summary.json"
         summary.write_text(json.dumps({"run_id": run.name, "status": "checkpoint"}))
@@ -501,7 +501,7 @@ class RunCapacityLifecycleTests(unittest.TestCase):
         }))
         (run / "run_manifest.json").write_text(json.dumps({
             "schema_version": 2, "run_id": run.name, "project": "p", "mode": document["mode"],
-            "status": "checkpoint", "formal_eligible": False, "recorded_at_utc": "2026-01-01T00:00:00Z",
+            "status": "checkpoint", "recorded_at_utc": "2026-01-01T00:00:00Z",
             "run_config": record(config), "inputs": {}, "outputs": [record(summary), record(checkpoint)],
             "artifact_retention": document["artifact_retention"],
         }))

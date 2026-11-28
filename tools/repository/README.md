@@ -1116,8 +1116,10 @@ OA的二区／三区和RF的四／六／八极使用同一选择语义；极数�
   --output-dir <new-run-directory>
 ```
 
-规划器只写`design_plan.json`和`run_config.json`，不启动商业求解器、不宣称满足指标，也不把
-`formal_gate_passed`设为真。后续执行器必须继续使用项目门禁、summary和manifest闭合实际证据。
+规划器只写`design_plan.json`和`run_config.json`，不启动商业求解器、不宣称满足指标。
+当前run config、summary和manifest不写`formal_gate_passed`、`formal_eligible`或其他总等级／晋升授权字段；
+执行器以实际process、completion、summary和manifest `status`闭合证据。历史manifest中的旧字段按原字节保留，
+版本化reader继续校验其文件身份，不重新调用旧producer或重写旧记录。
 
 ## 执行dry-run
 

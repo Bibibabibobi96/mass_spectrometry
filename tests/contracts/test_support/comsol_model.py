@@ -33,7 +33,7 @@ def inert_native(arguments, *, model_relative_paths, failure=None):
     result = dict(status="PASS", execution_mode="build_only", model_path=str(model), contract_path=str(contract),
         contract_project_id=resolved["project_id"], contract_model_id=resolved["model_id"],
         selected_mode_id=resolved["selected_mode_id"], parameter_bindings_verified=True,
-        candidate_evidence_allowed=False, geometry_built=True, mesh_built=True,
+        geometry_built=True, mesh_built=True,
         electrostatics_solved=False, particle_tracing_solved=False, solution_data_empty=[True, True],
         compute_calls=0, model_rewritten=False, geometry_domains=3, mesh_complete=True,
         physics_tags=["es", "cpt"], study_tags=["std1", "std2"], solver_tags=["sol1", "sol2"])

@@ -1457,8 +1457,6 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
             "summary_role_changed",
             "summary_schema_changed",
             "summary_running",
-            "formal_manifest",
-            "formal_config",
         )
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
@@ -1488,10 +1486,6 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
                     elif case == "summary_running":
                         summary["status"] = "running"
                     summary_path.write_text(json.dumps(summary), encoding="utf-8")
-                elif case == "formal_manifest":
-                    manifest["formal_eligible"] = True
-                elif case == "formal_config":
-                    config["formal_gate_passed"] = True
                 config_path.write_text(json.dumps(config), encoding="utf-8")
                 manifest["run_config"] = {
                     "path": config_path.name,
@@ -2096,11 +2090,11 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
             _directory_bytes(Path("capacity-root").absolute())
 
     def _run(self, root: Path, name: str, *, status: str, age: float,
-             manifest: bool = True, formal_eligible: bool = False) -> Path:
+             manifest: bool = True) -> Path:
         run = root / "projects" / "p" / "runs" / name
         run.mkdir(parents=True)
         (run / "payload.bin").write_bytes(b"x" * 1024)
-        summary = {"status": status, "formal_eligible": formal_eligible}
+        summary = {"status": status}
         (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
         if manifest:
             (run / "run_manifest.json").write_text(json.dumps(summary), encoding="utf-8")
@@ -2219,14 +2213,12 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
             older = self._run(root, "older", status="interrupted", age=now - 900)
             newer = self._run(root, "newer", status="failed", age=now - 100, manifest=False)
             successful = self._run(root, "successful", status="success", age=now - 1200)
-            formal = self._run(root, "formal", status="failed", age=now - 1300, formal_eligible=True)
             cache = self._cache(root, "role", "a" * 64, age=now - 200)
             receipt = plan(root, minimum_free_bytes=0, target_bytes=0)
             planned = [Path(item["path"]) for item in receipt["planned"]]
             self.assertNotIn(older, planned)
             self.assertNotIn(newer, planned)
             self.assertNotIn(successful, planned)
-            self.assertNotIn(formal, planned)
             self.assertEqual(planned, [cache])
             applied = apply(receipt)
             self.assertFalse(applied["satisfied_after_apply"])
@@ -2280,7 +2272,7 @@ assert 'tools.repository.legacy_capacity_backfill' not in sys.modules
                 age=time.time() - 1000,
             )
             (run / "run_manifest.json").write_text(
-                json.dumps({"status": "checkpoint", "formal_eligible": False}),
+                json.dumps({"status": "checkpoint"}),
                 encoding="utf-8",
             )
             receipt = plan(root, minimum_free_bytes=0, target_bytes=0)

@@ -133,8 +133,9 @@ class ResolveContractTests(unittest.TestCase):
         )
         self.assertEqual(resolved["selected_mode_id"], "build_only_smoke")
         self.assertEqual(resolved["numerical"]["execution_mode"], "build_only")
-        self.assertFalse(resolved["numerical"]["candidate_evidence_allowed"])
-        self.assertFalse(resolved["evidence"]["candidate_evidence_allowed"])
+        self.assertNotIn("candidate_evidence_allowed", resolved["numerical"])
+        self.assertNotIn("candidate_evidence_allowed", resolved["evidence"])
+        self.assertNotIn("formal_performance_claim_allowed", resolved["physical"]["capability"])
         self.assertEqual(
             resolved["source_identity"]["baseline_sha256"],
             contract_sha256(self.baseline),
@@ -163,7 +164,7 @@ class ResolveContractTests(unittest.TestCase):
         resolved = resolve_contract(
             self.baseline, self.modes, "functional_reference", 100
         )
-        self.assertFalse(resolved["evidence"]["candidate_evidence_allowed"])
+        self.assertNotIn("candidate_evidence_allowed", resolved["evidence"])
 
     def test_particle_emission_and_terminal_assumptions_fail_closed(self) -> None:
         changed = copy.deepcopy(self.baseline)
@@ -242,11 +243,11 @@ class ResolveContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "step <= end"):
             validate_modes(changed)
 
-    def test_build_smoke_is_always_evidence_ineligible(self) -> None:
+    def test_build_smoke_retains_its_analysis_scope(self) -> None:
         resolved = resolve_contract(
             self.baseline, self.modes, "build_only_smoke", 5
         )
-        self.assertFalse(resolved["evidence"]["candidate_evidence_allowed"])
+        self.assertNotIn("candidate_evidence_allowed", resolved["evidence"])
         self.assertEqual(resolved["evidence"]["scope"], "build_smoke_only")
 
     def test_deterministic_round_trip(self) -> None:

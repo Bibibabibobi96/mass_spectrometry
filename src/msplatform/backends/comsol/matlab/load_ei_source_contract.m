@@ -42,12 +42,12 @@ function contract = load_ei_source_contract(contractPath)
     assert(strcmp(contract.numerical.solver.time_integrator, 'BDF'), ...
         'The current builder supports only the resolved BDF integrator.');
 
-    if contract.numerical.candidate_evidence_allowed
+    if strcmp(contract.numerical.execution_mode, 'full')
         assert(contract.evidence.requested_particle_count >= ...
             contract.evidence.minimum_particle_count, ...
             'Functional evidence particle count is below the contract minimum.');
     else
         assert(strcmp(contract.numerical.execution_mode, 'build_only'), ...
-            'Evidence-ineligible mode must remain build-only.');
+            'A mode without a particle minimum must remain build-only.');
     end
 end

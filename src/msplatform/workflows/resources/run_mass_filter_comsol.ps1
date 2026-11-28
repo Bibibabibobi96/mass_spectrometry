@@ -208,7 +208,6 @@ try {
     solver_numerics_profile_id=$compiledNumerics.selection.profile_id
     numerical_experiment_id=$compiledNumerics.selection.numerical_experiment_id
     parameters=[ordered]@{particles_per_mass=$particlesPerMass;masses=$massCount;total_particles=$totalParticles;rf_steps_per_period=$compiledNumerics.trajectory.rf_steps_per_period;mesh_auto_level=$compiledNumerics.mesh.global_auto_level;compact_outputs=$true;saved_model_mass_Th=$centerMass;lifecycle_stage='inputs_frozen'}
-    formal_gate_passed=$false
   }
   Write-RunJson -Value $runConfiguration -Path $package.run_config
 

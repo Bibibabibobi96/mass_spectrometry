@@ -603,7 +603,7 @@ def run_managed_stage(context: ExecutionContext, *, descriptor: Mapping[str, Any
                      host_resource_state_path=str(context.host_state_path))
         config = dict(schema_version=2, run_id=run_id, project=project, mode=descriptor["mode"],
             project_root=str(context.workspace), inputs={"execution_request": str(session.execution_request)},
-            parameters=dict(payload), formal_gate_passed=False, paths=paths, artifact_retention=dict(retention),
+            parameters=dict(payload), paths=paths, artifact_retention=dict(retention),
             capacity_ledger_lifecycle=dict(schema_version=1, enabled=store_scope is None, artifact_root=str(root),
                 light_evidence_budget_bytes=policy_snapshot["light_evidence_budget_bytes"]))
         request = dict(schema_version=1, role="run_artifact_workflow_request", package=dict(descriptor, run_id=run_id),

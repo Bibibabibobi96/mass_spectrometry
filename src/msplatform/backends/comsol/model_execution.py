@@ -79,8 +79,7 @@ def _report(path: Path, contract: dict, contract_path: Path) -> dict:
             or value.get("contract_project_id") != contract["project_id"]
             or value.get("contract_model_id") != contract["model_id"]
             or Path(value.get("contract_path", "")).resolve() != contract_path.resolve()
-            or value.get("parameter_bindings_verified") is not True
-            or value.get("candidate_evidence_allowed") is not False):
+            or value.get("parameter_bindings_verified") is not True):
         raise ValueError("COMSOL report differs from the frozen unsolved contract")
     return value
 

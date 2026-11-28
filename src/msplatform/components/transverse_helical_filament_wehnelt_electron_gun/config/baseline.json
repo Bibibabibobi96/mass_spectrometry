@@ -6,8 +6,7 @@
   "constants_authority": "electron_mass_codata2022_repository_u_v1",
   "capability": {
     "id": "wehnelt_thermal_electron_transport",
-    "imaging_quality_claim_allowed": false,
-    "formal_performance_claim_allowed": false
+    "imaging_quality_claim_allowed": false
   },
   "coordinate_convention": {
     "frame_id": "wehnelt_electron_gun_component",

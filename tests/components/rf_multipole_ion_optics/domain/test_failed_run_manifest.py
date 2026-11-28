@@ -88,7 +88,6 @@ class FailedRunManifestTest(unittest.TestCase):
                         "mode": "resolved_design_transport",
                         "project_root": str(run),
                         "inputs": {"request": str(run / "inputs/request.json")},
-                        "formal_gate_passed": False,
                     }
                 ),
                 encoding="utf-8",

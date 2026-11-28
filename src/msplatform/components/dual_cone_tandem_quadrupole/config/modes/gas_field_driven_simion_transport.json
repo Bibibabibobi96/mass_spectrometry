@@ -5,7 +5,6 @@
   "mode_id": "gas_field_driven_simion_transport",
   "model_id": "simion_sds_gas_assisted_transport_v1",
   "evidence_level": "plan",
-  "formal_eligible": false,
   "limitations": [
     "The registered SIMION trajectory runner remains unqualified qualitative Prototype evidence",
     "Every run must freeze a successful COMSOL gas-flow manifest and canonical field identity before SIMION starts",

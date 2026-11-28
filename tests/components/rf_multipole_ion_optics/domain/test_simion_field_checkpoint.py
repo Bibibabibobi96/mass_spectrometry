@@ -150,7 +150,6 @@ foreach($path in $second.output_paths|Where-Object{$_-ne$second.checkpoint_path}
             "refine_arguments": ["refine", "quad_monolithic.pa#"]}), encoding="utf-8")
         config = {"schema_version": 2, "run_id": run.name, "project": "rf_multipole_ion_optics",
             "mode": "resolved_design_transport", "inputs": {"simion_field_identity": str(identity)},
-            "formal_gate_passed": False,
             "artifact_retention": {"policy_version": 1, "class": "solver_review", "reason": "inert checkpoint fixture"}}
         (run / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
         (run / "run_manifest.json").write_text(json.dumps(build_run_manifest(run / "run_config.json", "checkpoint", retention_api=_manifest_retention_api)), encoding="utf-8")

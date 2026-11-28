@@ -3032,7 +3032,7 @@ assert hashlib.sha256(collection_output.read_bytes()).hexdigest() == collection_
 assert json.loads(collection_output.read_text(encoding='utf-8')) == collection_case['expected']
 assert actual_collection['native_complete'] is True and len(actual_collection['native_terminals']) == 100
 assert actual_collection['census']['peak_or_bootstrap_computed'] is False
-assert actual_collection['census']['formal_gate_passed'] is False
+assert 'formal_gate_passed' not in actual_collection['census']
 incomplete_log = root/('installed-collection-incomplete-'+sys.argv[2]+'.log')
 incomplete_log.write_text(pathlib.Path(collection_case['log']).read_text(encoding='utf-8').replace(
     'status,Fly completed. 100 splats', 'status,Fly incomplete'), encoding='utf-8')

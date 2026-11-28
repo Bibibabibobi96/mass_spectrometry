@@ -3526,13 +3526,13 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             (source / "summary.json").write_text(json.dumps({"status": "success"}))
             retention = {"policy_version": 1, "class": "solver_review", "reason": "Tiny lineage fixture"}
             (source / "run_config.json").write_text(json.dumps({"run_id": source.name,
-                "project": "multi_reflection_tof", "formal_gate_passed": False,
+                "project": "multi_reflection_tof",
                 "artifact_retention": retention}))
             helper.seal(source, owner)
             manifest = json.loads(owner.read_text())
             for record in manifest["outputs"]:
                 record["exists"] = True
-            manifest.update(run_id=source.name, formal_eligible=False, artifact_retention=retention,
+            manifest.update(run_id=source.name, artifact_retention=retention,
                             run_config=dict(helper.record(source / "run_config.json"), exists=True))
             owner.write_text(json.dumps(manifest))
             return helper, descriptor, gui, owner, request
@@ -3665,13 +3665,13 @@ class RetiredIonProcessorOperatorTest(unittest.TestCase):
             # Freeze normal terminal metadata before downstream children bind it.
             retention = dict(policy_version=1, **{"class": "solver_review"}, reason="Tiny lineage fixture")
             (root / "run_config.json").write_text(json.dumps(dict(run_id=root.name,
-                project="multi_reflection_tof", formal_gate_passed=False, artifact_retention=retention)))
+                project="multi_reflection_tof", artifact_retention=retention)))
             (root / "summary.json").write_text(json.dumps(dict(status="success")))
             original_seal(helper, root, owner)
             manifest = json.loads(owner.read_text())
             for record in manifest["outputs"]:
                 record["exists"] = True
-            manifest.update(run_id=root.name, formal_eligible=False, artifact_retention=retention,
+            manifest.update(run_id=root.name, artifact_retention=retention,
                 run_config=dict(helper.record(root / "run_config.json"), exists=True))
             owner.write_text(json.dumps(manifest))
 

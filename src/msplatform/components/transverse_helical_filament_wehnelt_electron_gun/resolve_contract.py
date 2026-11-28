@@ -173,7 +173,6 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
         {
             "id",
             "imaging_quality_claim_allowed",
-            "formal_performance_claim_allowed",
         },
         "baseline.capability",
     )
@@ -184,11 +183,6 @@ def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:
         "baseline.capability.imaging_quality_claim_allowed",
     ):
         raise ContractError("the transverse prototype cannot claim imaging quality")
-    if _require_bool(
-        capability["formal_performance_claim_allowed"],
-        "baseline.capability.formal_performance_claim_allowed",
-    ):
-        raise ContractError("the current prototype cannot claim formal performance")
 
     coordinate = _require_dict(
         raw["coordinate_convention"], "baseline.coordinate_convention"
@@ -441,7 +435,6 @@ def _validate_mode(mode_id: str, mode: dict[str, Any]) -> None:
         {
             "execution_mode",
             "evidence_kind",
-            "candidate_evidence_allowed",
             "minimum_evidence_particle_count",
             "mesh",
             "particle_time_ns",
@@ -453,13 +446,7 @@ def _validate_mode(mode_id: str, mode: dict[str, Any]) -> None:
     expected_execution = "build_only" if mode_id == "build_only_smoke" else "full"
     if mode["execution_mode"] != expected_execution:
         raise ContractError(f"mode.{mode_id}.execution_mode mismatch")
-    allowed = _require_bool(
-        mode["candidate_evidence_allowed"],
-        f"mode.{mode_id}.candidate_evidence_allowed",
-    )
     minimum_count = mode["minimum_evidence_particle_count"]
-    if allowed:
-        raise ContractError("current Wehnelt modes cannot produce Candidate evidence")
     if mode_id == "build_only_smoke":
         if minimum_count is not None:
             raise ContractError("build-only smoke must remain evidence-ineligible")
@@ -684,7 +671,6 @@ def resolve_contract(
         "numerical": selected,
         "evidence": {
             "requested_particle_count": evidence_particle_count,
-            "candidate_evidence_allowed": selected["candidate_evidence_allowed"],
             "minimum_particle_count": minimum_count,
             "scope": selected["evidence_kind"],
         },

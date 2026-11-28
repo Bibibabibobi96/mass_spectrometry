@@ -50,7 +50,7 @@ classdef wehneltContractTest < matlab.unittest.TestCase
             testCase.verifyEqual(actual.project_id, 'transverse_helical_filament_wehnelt_electron_gun');
             testCase.verifyEqual(actual.numerical.execution_mode, 'build_only');
             testCase.verifyEqual(actual.physical.particle.charge_state, -1);
-            testCase.verifyFalse(actual.evidence.candidate_evidence_allowed);
+            testCase.verifyFalse(isfield(actual.evidence, 'candidate_evidence_allowed'));
         end
         function missingContractStopsBeforeComsol(testCase, phaseBuilder)
             testCase.verifyError(@() phaseBuilder(), 'Wehnelt:MissingContract');

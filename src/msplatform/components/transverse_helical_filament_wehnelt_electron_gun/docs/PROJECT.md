@@ -22,6 +22,10 @@ adapters. Its canonical package selector supplies those resources exactly once.
 The actual selector and frozen-input/tamper checks passed in 22.383 seconds with
 an explicit HostContext; no MATLAB/COMSOL execution or qualification follows.
 
+Current Wehnelt inputs and run records no longer carry `candidate_evidence_allowed`,
+`formal_performance_claim_allowed` or `formal_gate_passed`. Build-only execution facts, particle-count minima and
+actual asset-modification facts remain explicit; existing frozen inputs and historical manifests are not rewritten.
+
 ## 当前基线
 
 当前物理基线为5匝横置螺旋钨丝、2700 K热发射的Wehnelt电子枪，面向EI离子源的电子利用率，不声明

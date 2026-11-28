@@ -116,7 +116,6 @@ if($operations.Count-ne2-or-not$operations[0].observation.exit_confirmed-or$oper
                         "mode": "iob_observability_test",
                         "project_root": str(REPO_ROOT),
                         "inputs": {},
-                        "formal_gate_passed": False,
                     }
                 ),
                 encoding="utf-8",

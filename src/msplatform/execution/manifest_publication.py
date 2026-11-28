@@ -153,9 +153,6 @@ def build_run_manifest(
         ),
         "inputs": inputs,
         "outputs": outputs,
-        "formal_eligible": bool(run_config.get("formal_gate_passed", False))
-        and status == "success"
-        and all(item["exists"] for item in outputs),
     }
     if retention is not None:
         manifest["artifact_retention"] = {

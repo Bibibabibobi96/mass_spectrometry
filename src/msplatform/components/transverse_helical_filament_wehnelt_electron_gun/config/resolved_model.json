@@ -8,9 +8,9 @@
     "hash_algorithm": "SHA-256",
     "serialization": "canonical_json_sorted_keys_compact_utf8",
     "baseline_path": "config/baseline.json",
-    "baseline_sha256": "D2466F0AB4B2D69784ED8A48CDEFA0FDFCBBC9D46D744403D656ED1633FDA5BD",
+    "baseline_sha256": "A8396DF0622A75C9BC33F90787BE00661FA14363752A08F59080DEF41B83420B",
     "numerical_modes_path": "config/numerical_modes.json",
-    "numerical_modes_sha256": "02FA0D53BD05464C209C244137B123685F8064A62522196EC0C4081041D6D18E"
+    "numerical_modes_sha256": "516803D4AEA34CFE77741476B6B4D77A5531690113E6BD63F42824C91B35D671"
   },
   "physical": {
     "schema_version": 1,
@@ -20,8 +20,7 @@
     "constants_authority": "electron_mass_codata2022_repository_u_v1",
     "capability": {
       "id": "wehnelt_thermal_electron_transport",
-      "imaging_quality_claim_allowed": false,
-      "formal_performance_claim_allowed": false
+      "imaging_quality_claim_allowed": false
     },
     "coordinate_convention": {
       "frame_id": "wehnelt_electron_gun_component",
@@ -105,7 +104,6 @@
   "numerical": {
     "execution_mode": "build_only",
     "evidence_kind": "build_smoke_only",
-    "candidate_evidence_allowed": false,
     "minimum_evidence_particle_count": null,
     "mesh": {
       "automatic_level": 3,
@@ -142,7 +140,6 @@
   },
   "evidence": {
     "requested_particle_count": 1,
-    "candidate_evidence_allowed": false,
     "minimum_particle_count": null,
     "scope": "build_smoke_only"
   }

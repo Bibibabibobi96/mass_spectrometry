@@ -5,7 +5,6 @@
   "mode_id": "axisymmetric_gas_flow_screening",
   "model_id": "axisymmetric_high_mach_n2_screening_v1",
   "evidence_level": "plan",
-  "formal_eligible": false,
   "limitations": [
     "The axisymmetric empty-enclosure model omits rods, asymmetric pump ports and other three-dimensional obstructions",
     "A successful gas-flow solve is an upstream field result and does not establish ion transmission",

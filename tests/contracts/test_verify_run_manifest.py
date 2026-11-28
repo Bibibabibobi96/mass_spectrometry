@@ -212,6 +212,7 @@ Write-RunJson -Value @{logs=@('single');count=1} -Path (Join-Path $Output 'objec
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertIn(f"RUN_MANIFEST=PASS PATH={root / 'run_manifest.json'}", result.stdout)
                     manifest = json.loads((root / "run_manifest.json").read_text(encoding="utf-8"))
+                    self.assertNotIn("formal_eligible", manifest)
                     self.assertEqual([row["path"] for row in manifest["outputs"]], [str(p.resolve()) for p in files])
 
     def test_output_list_rejects_non_list_non_strings_and_accepts_empty(self):
@@ -689,6 +690,7 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
     def test_historical_run_relative_records_resolve_from_manifest(self) -> None:
         document = json.loads(self.manifest.read_text(encoding="utf-8"))
         document["run_config"]["path"] = "run_config.json"
+        document["formal_eligible"] = False
         self.manifest.write_text(json.dumps(document), encoding="utf-8")
         result = self._verify()
         self.assertEqual(result.returncode, 0, result.stderr)

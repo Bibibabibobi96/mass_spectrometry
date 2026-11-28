@@ -112,7 +112,7 @@ function Invoke-AnalysisLifecycle {
       role='multipole_campaign_analysis_summary';status='success';project_id=[string]$Plan.project_id;
       campaign_id=[string]$Preflight.campaign_id;capability_id=[string]$Plan.capability_id;
       claim_class=[string]$Plan.claim_class;source_run_count=@($Plan.sources).Count;
-      baseline_experiment_id=[string]$Plan.baseline_experiment_id;formal_gate_passed=$false})
+      baseline_experiment_id=[string]$Plan.baseline_experiment_id})
     $retention=Apply-RunArtifactRetention -Python $Python -RepoRoot $Repository -RunConfig $package.run_config
     $frozenOutputs=@($package.summary)+@($outputs.Values)+@($retention)
     Write-VerifiedRunManifest -Python $Python -RepoRoot $Repository -RunConfig $package.run_config `

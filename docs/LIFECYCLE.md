@@ -184,9 +184,9 @@ Formal继续归原项目，联合发布不自动授予或替换它们的资格�
 
 |记录|创建时机|唯一职责|
 |---|---|---|
-|`run_config.json`|运行前|冻结项目、模式、输入路径、唯一变量、种子、软件环境和是否具备正式门禁资格|
+|`run_config.json`|运行前|冻结项目、模式、输入路径、唯一变量、种子、软件环境和保留合同|
 |`summary.json`或具名`*_summary.json`|运行结束或中断时|记录样本数、关键指标、终止阶段、判据结果和简短错误分类，不复制原始长日志|
-|`run_manifest.json`|所有输出落盘后|冻结run config、输入和输出的存在性、字节数、SHA-256、运行状态及正式资格|
+|`run_manifest.json`|所有输出落盘后|冻结run config、输入和输出的存在性、字节数、SHA-256及实际运行状态|
 
 原始报告、CSV、模型、图像和崩溃日志是manifest列出的输出，不替代summary。运行器用
 `msplatform.execution.manifest_publication`在producer停写后计算全部输入/输出身份、拒绝缺失文件并检查保留合同，

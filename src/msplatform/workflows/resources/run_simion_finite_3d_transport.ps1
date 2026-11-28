@@ -1016,8 +1016,7 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
       case_set=$CaseSet;stop_stage=$StopStage;
       operating_mode_id=$modeId;
       operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
-      reference_comsol_run_id=$ReferenceComsolRunId};
-    formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
+      reference_comsol_run_id=$ReferenceComsolRunId}}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
   $continuationUnits=@{};$continuationAllReuse=$false
   if($continuationPredecessor){
@@ -1150,7 +1149,7 @@ print(json.dumps(prepare_exit_observation_inputs(run,json.loads(resolved.read_te
     $fieldSummary=[ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status='success';run_id=$RunId;
       native_execution_complete=$true;checks=@{};qualification_status='NOT_EVALUATED';project_id=$ProjectId;
       design_profile_id=$DesignProfileId;parent_resolved_design_sha256=$resolvedHash;case_set=$CaseSet;
-      model_level='L3';stop_stage='field_solve';formal_gate_passed=$false;execution_status='completed';data_validity='valid';
+      model_level='L3';stop_stage='field_solve';execution_status='completed';data_validity='valid';
       scientific_result='NOT_EVALUATED';failure_stage=$null;failure_reason=$null;recovery_action='none';
       phase_timings_seconds=$phaseTimings;elapsed_before_finalization_seconds=$runTimer.Elapsed.TotalSeconds}
     $fieldOutputs=@($summary,(Join-Path $solverDir 'quad_monolithic.pa0'),$gem,
@@ -1697,7 +1696,7 @@ print(json.dumps(result,allow_nan=False))
     parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primaryTransmission;
     case_set=$CaseSet;
     control_transmission=$controlTransmission;
-    model_level='L3';formal_gate_passed=$false;execution_status='completed';data_validity='valid';
+    model_level='L3';execution_status='completed';data_validity='valid';
     scientific_result=$qualification;failure_stage=$null;failure_reason=$null;recovery_action='none';
     phase_timings_seconds=$phaseTimings;elapsed_before_finalization_seconds=$runTimer.Elapsed.TotalSeconds;
     continuation_predecessor=$(if($continuationPredecessor){$continuationPredecessor}else{$null});

@@ -31,7 +31,7 @@ classdef eiSourceContractTest < matlab.unittest.TestCase
             testCase.verifyEqual(actual.project_id, 'apertured_tube_electron_impact_ion_source');
             testCase.verifyEqual(actual.selected_mode_id, 'build_only_smoke');
             testCase.verifyEqual(actual.numerical.execution_mode, 'build_only');
-            testCase.verifyFalse(actual.evidence.candidate_evidence_allowed);
+            testCase.verifyFalse(isfield(actual.evidence, 'candidate_evidence_allowed'));
         end
 
         function missingContractStopsBeforeComsol(testCase)
@@ -83,8 +83,6 @@ classdef eiSourceContractTest < matlab.unittest.TestCase
             fullContract = testCase.Contract;
             fullContract.selected_mode_id = 'functional_reference';
             fullContract.numerical.execution_mode = 'full';
-            fullContract.numerical.candidate_evidence_allowed = true;
-            fullContract.evidence.candidate_evidence_allowed = true;
             fullContract.evidence.requested_particle_count = 100;
             fullContract.evidence.minimum_particle_count = 100;
             contractPath = testCase.writeContract(fullContract);
@@ -114,7 +112,7 @@ classdef eiSourceContractTest < matlab.unittest.TestCase
 
         function belowMinimumFunctionalEvidenceIsRejected(testCase)
             invalid = testCase.Contract;
-            invalid.numerical.candidate_evidence_allowed = true;
+            invalid.numerical.execution_mode = 'full';
             invalid.evidence.requested_particle_count = 1;
             invalid.evidence.minimum_particle_count = 100;
             contractPath = testCase.writeContract(invalid);

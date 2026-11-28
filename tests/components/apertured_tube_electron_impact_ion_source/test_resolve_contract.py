@@ -62,7 +62,7 @@ class ResolveContractTests(unittest.TestCase):
             1,
         )
         self.assertEqual(resolved["selected_mode_id"], "build_only_smoke")
-        self.assertFalse(resolved["evidence"]["candidate_evidence_allowed"])
+        self.assertNotIn("candidate_evidence_allowed", resolved["evidence"])
         self.assertEqual(resolved["evidence"]["requested_particle_count"], 1)
 
     def test_current_contract_resolves_for_functional_n100(self) -> None:
@@ -72,7 +72,8 @@ class ResolveContractTests(unittest.TestCase):
             "functional_reference",
             100,
         )
-        self.assertTrue(resolved["evidence"]["candidate_evidence_allowed"])
+        self.assertEqual(resolved["numerical"]["execution_mode"], "full")
+        self.assertNotIn("candidate_evidence_allowed", resolved["evidence"])
         self.assertEqual(resolved["evidence"]["minimum_particle_count"], 100)
 
     def test_unknown_mode_is_rejected(self) -> None:
@@ -129,11 +130,11 @@ class ResolveContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "below the functional minimum"):
             resolve_contract(self.baseline, self.modes, "functional_reference", 99)
 
-    def test_low_n_build_smoke_never_becomes_evidence(self) -> None:
+    def test_low_n_build_smoke_retains_its_analysis_scope(self) -> None:
         resolved = resolve_contract(
             self.baseline, self.modes, "build_only_smoke", 2
         )
-        self.assertFalse(resolved["evidence"]["candidate_evidence_allowed"])
+        self.assertNotIn("candidate_evidence_allowed", resolved["evidence"])
         self.assertEqual(resolved["evidence"]["scope"], "build_smoke_only")
 
     def test_functional_mode_requires_declared_n(self) -> None:

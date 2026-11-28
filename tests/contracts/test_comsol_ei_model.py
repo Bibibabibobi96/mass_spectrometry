@@ -184,7 +184,7 @@ class EiModelTests(unittest.TestCase):
                     self.assertEqual(len(calls), 2)
                     manifest = json.loads(product.manifest_location.read_text(encoding="utf-8"))
                     self.assertEqual(manifest["status"], "success")
-                    self.assertFalse(manifest["formal_eligible"])
+                    self.assertNotIn("formal_eligible", manifest)
 
 
 if __name__ == "__main__":

@@ -1200,7 +1200,7 @@ function New-RunPackage {
   $initialConfig=[ordered]@{
     schema_version=$(if($RetentionContractEnabled){2}else{1});
     run_id=$RunId;project=$Project;mode=$Mode;project_root=$RepoRoot;inputs=[ordered]@{};
-    parameters=[ordered]@{lifecycle_stage='run_package_initialized'};formal_gate_passed=$false
+    parameters=[ordered]@{lifecycle_stage='run_package_initialized'}
     paths=$resolvedPaths
   }
   if($RetentionContractEnabled){

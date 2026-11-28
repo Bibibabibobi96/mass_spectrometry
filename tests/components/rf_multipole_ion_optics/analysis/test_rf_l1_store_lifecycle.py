@@ -47,7 +47,7 @@ class RfL1StoreLifecycleTests(unittest.TestCase):
             self.assertEqual(json.loads((run / 'run_manifest.json').read_text(encoding='utf-8'))['status'], 'failed')
             summary = json.loads((run / 'summary.json').read_text(encoding='utf-8'))
             self.assertEqual(summary['functional_gate'], 'FAIL')
-            self.assertFalse(json.loads((run / 'run_manifest.json').read_text(encoding='utf-8'))['formal_eligible'])
+            self.assertNotIn('formal_eligible', json.loads((run / 'run_manifest.json').read_text(encoding='utf-8')))
 
     def test_input_freezing_failure_retains_original_error_and_failed_evidence(self):
         from msplatform.execution import inputs

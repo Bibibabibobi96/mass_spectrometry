@@ -210,6 +210,10 @@ if(-not$rejected){{throw 'Native nonzero was swallowed'}}
         with tempfile.TemporaryDirectory(prefix="workflow-ps-owner-") as directory:
             root = Path(directory)
             _, run, _, _ = self.invoke_fixture(root, {}, failure_stage="retention_before")
+            config = json.loads((run / "run_config.json").read_text(encoding="utf-8-sig"))
+            manifest = json.loads((run / "run_manifest.json").read_text(encoding="utf-8-sig"))
+            self.assertNotIn("formal_gate_passed", config)
+            self.assertEqual(manifest["status"], "checkpoint")
             request_path = run / "inputs/execution_request.json"
             request = json.loads(request_path.read_text(encoding="utf-8-sig"))
             entry = run / "inputs/owner.ps1"

@@ -188,8 +188,6 @@ def _load_run(
             f"{label} is not a complete {expected} run: {run_id} "
             f"(manifest={manifest_status!r}, summary={summary_status!r})"
         )
-    if config.get("formal_gate_passed") is not False or manifest.get("formal_eligible") is not False:
-        raise RetirementError(f"Formal or ambiguously non-Formal run cannot be retired: {run_id}")
     try:
         retention = validate_retention(config.get("artifact_retention"))
         manifest_retention = validate_retention(manifest.get("artifact_retention"))

@@ -271,11 +271,11 @@ def prepare(
         # Nested export receipts share the parent run identity and lifecycle owner.
         write_json_atomic(receipt / "run_config.json", dict(schema_version=2,
             run_id=run.name, project=run.parent.parent.name, mode="same_mesh_ps_field_provider",
-            formal_gate_passed=False, artifact_retention=plan["artifact_retention"],
+            artifact_retention=plan["artifact_retention"],
             parameters=local_plan, inputs={p.name:str(p) for p in local.iterdir() if p.is_file()}))
     write_json_atomic(inputs / "plan.json", plan)
     config = dict(schema_version=2,run_id=run.name,project=run.parent.parent.name,
-                  mode="same_mesh_ps_field_provider",formal_gate_passed=False,
+                  mode="same_mesh_ps_field_provider",
                   artifact_retention=plan["artifact_retention"],parameters=plan,
                   capacity_ledger_lifecycle=dict(schema_version=1,enabled=True,artifact_root=str(root),
                                                light_evidence_budget_bytes=plan["artifact_budget_bytes"]),
@@ -332,7 +332,7 @@ def finalize(run: Path) -> dict[str, Any]:
             binding["refinement_windows"] = [dict(name=w["name"], active_box_mm=w["active_box_mm"],
                 export_manifest=str(run / w["receipt_directory"] / "run_manifest.json")) for w in windows]
         write_json_atomic(inputs / "field_binding.json", binding)
-    summary = dict(status=status,result=result,usage=usage,formal_gate_passed=False,
+    summary = dict(status=status,result=result,usage=usage,
                    field_binding=str(inputs / "field_binding.json") if success else None,
                    source_mph=plan["source_mph"],source_mph_not_copied_or_rehashed=True,
                    limitations=["Same-grid voltage synchronization, not field convergence or trajectory qualification."])
@@ -348,7 +348,7 @@ def finalize(run: Path) -> dict[str, Any]:
                 (local / name).chmod(0o444)
         local_summary = dict(status=status, result=read(local / "result.json")
                              if (local / "result.json").is_file() else None,
-                             parent_run=str(run), formal_gate_passed=False)
+                             parent_run=str(run))
         local_manifest = build_run_manifest(receipt / "run_config.json", status,
             software=["COMSOL=6.4", "MATLAB=R2025b"],
             output_paths=[receipt / "summary.json", *[p for p in local.iterdir() if p.is_file()]],

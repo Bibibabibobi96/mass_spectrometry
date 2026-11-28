@@ -610,7 +610,7 @@ def canonical_census(
         "clock_basis": clock_basis, "pulse_effective_time_us": effective_pulse_time_us,
         "analysis_scope": "complete_mother_canonical_events_and_terminal_census",
         "pulse_eligibility_validation_applied": False,
-        "peak_or_bootstrap_computed": False, "formal_gate_passed": False,
+        "peak_or_bootstrap_computed": False,
     }
 
 

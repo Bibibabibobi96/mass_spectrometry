@@ -770,7 +770,7 @@ $frozenCountPolicy = Get-FrozenPythonPackageFile -Package $frozenPythonPackage -
         maximum_time_us=$compiledNumerics.trajectory.maximum_time_us
         output_policy=[ordered]@{save_model=$true;write_detailed_outputs=$true}
         results_dir=$resultDir;comsol_dir=$candidateDir;logs_dir=$logDir
-        runtime_dir=$runtimeDir;run_dir=$runDir;formal_gate_passed=$false
+        runtime_dir=$runtimeDir;run_dir=$runDir
         parameters=[ordered]@{
             lifecycle_stage='inputs_frozen_and_validated'
             execution_stage=if($ReleaseConstructionGate){

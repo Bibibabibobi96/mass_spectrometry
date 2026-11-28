@@ -19,6 +19,10 @@ saved extraction and source-mismatch refusal; 14 completed before the outer
 300-second command ended and the final method passed separately in 49.999 seconds.
 No native COMSOL/SIMION execution or new scientific qualification follows.
 
+New RF run configs, summaries and manifests no longer write `formal_gate_passed` or `formal_eligible`.
+Actual process/completion state, workflow-specific functional or numerical outcomes and publication status remain separate;
+historical grade-bearing records retain their original bytes and read-only verification.
+
 ## Installed publication owner
 
 `msplatform.workflows.rf_publication` owns the complete request compiler, freshness

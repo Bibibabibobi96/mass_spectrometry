@@ -291,7 +291,6 @@ def validate_modes(raw: dict[str, Any]) -> dict[str, Any]:
             {
                 "execution_mode",
                 "evidence_kind",
-                "candidate_evidence_allowed",
                 "minimum_evidence_particle_count",
                 "mesh",
                 "time_ns",
@@ -303,15 +302,11 @@ def validate_modes(raw: dict[str, Any]) -> dict[str, Any]:
         expected_execution = "build_only" if mode_id == "build_only_smoke" else "full"
         if mode["execution_mode"] != expected_execution:
             raise ContractError(f"mode.{mode_id}.execution_mode mismatch")
-        allowed = _require_bool(
-            mode["candidate_evidence_allowed"],
-            f"mode.{mode_id}.candidate_evidence_allowed",
-        )
         minimum_count = mode["minimum_evidence_particle_count"]
         if mode_id == "build_only_smoke":
-            if allowed or minimum_count is not None:
-                raise ContractError("build-only smoke must remain evidence-ineligible")
-        elif not allowed or _require_positive_integer(
+            if minimum_count is not None:
+                raise ContractError("build-only smoke must not declare a functional particle minimum")
+        elif _require_positive_integer(
             minimum_count, f"mode.{mode_id}.minimum_evidence_particle_count"
         ) < 100:
             raise ContractError("functional evidence minimum must be at least N=100")
@@ -386,7 +381,7 @@ def resolve_contract(
             evidence_particle_count, "evidence_particle_count"
         )
     minimum_count = selected["minimum_evidence_particle_count"]
-    if selected["candidate_evidence_allowed"]:
+    if selected["execution_mode"] == "full":
         if evidence_particle_count is None:
             raise ContractError("functional mode requires an evidence particle count")
         if evidence_particle_count < minimum_count:
@@ -396,7 +391,6 @@ def resolve_contract(
             )
     evidence = {
         "requested_particle_count": evidence_particle_count,
-        "candidate_evidence_allowed": selected["candidate_evidence_allowed"],
         "minimum_particle_count": minimum_count,
         "scope": selected["evidence_kind"],
     }

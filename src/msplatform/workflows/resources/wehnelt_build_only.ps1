@@ -200,9 +200,7 @@ function New-BuildSummary {
     reason = $Reason
     failure_stage = $FailureStage
     threshold_result_eligible = $false
-    candidate_evidence_allowed = $false
     formal_asset_modified = $false
-    formal_gate_passed = $false
     input_freshness_passed = $inputFreshnessPassed
     commercial_wrapper_invocation_attempted = $CommercialWrapperInvocationAttempted
     commercial_wrapper_completed = $CommercialWrapperCompleted
@@ -264,7 +262,6 @@ try {
     mesh_build_required = $true
     electrostatics_solver_run = $false
     particle_solver_run = $false
-    candidate_evidence_allowed = $false
     formal_asset_modified = $false
     lifecycle_stage = $failureStage
     bootstrap_boundary = [ordered]@{

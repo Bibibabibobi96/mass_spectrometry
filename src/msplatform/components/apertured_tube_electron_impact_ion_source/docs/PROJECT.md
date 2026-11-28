@@ -33,6 +33,10 @@ The EI MATLAB builder and loader now have one canonical installed owner under `m
 
 Changed routing now selects the original EI/Wehnelt project owners and the existing common model/capability behavior suites for Python and MATLAB implementation changes. Native freezing and resource-registration changes also select the ordinary installation parent. Two planner tests, nine managed EI/Wehnelt tests and fourteen capability tests passed; this closes the selection hole without Compute, GUI or new scientific qualification.
 
+Current EI numerical/resolved contracts omit `candidate_evidence_allowed`; full-mode particle-count requirements still use
+`execution_mode` and `minimum_evidence_particle_count`. Reports and manifests retain actual execution status, while old
+contracts and grade-bearing manifests remain read-only historical evidence.
+
 - 源码已移除COMSOL安装路径和`mphstart`，只能由仓库统一R2025b连接入口运行。运行
   `20260722_120000__test__comsol__build-only-smoke`已在真实MATLAB R2025b/COMSOL 6.4连接中完成
   几何、网格、静电和CPT Study/Solver树构建并保存隔离MPH，未运行静电或粒子求解器；三件套manifest

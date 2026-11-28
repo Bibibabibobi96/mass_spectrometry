@@ -152,7 +152,6 @@ if(-not$caught){throw 'Actual selector error was swallowed'}
                     inputs["simion_execution_batch_plan"] = str(partition)
                     (run / "run_config.json").write_text(json.dumps({"schema_version": 2, "run_id": run.name,
                         "project": "rf_multipole_ion_optics", "mode": mode, "inputs": inputs,
-                        "formal_gate_passed": False,
                         "artifact_retention": {"policy_version": 1, "class": "solver_review", "reason": "fixture producer-owned field"},
                         "capacity_ledger_lifecycle": {"schema_version": 1, "enabled": True,
                             "artifact_root": str(artifact_root), "light_evidence_budget_bytes": 1048576}}), encoding="utf-8")
