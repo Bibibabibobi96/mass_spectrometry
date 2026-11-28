@@ -37,6 +37,7 @@ from msplatform.components.orthogonal_accelerator.three_zone_ideal_theory import
 from msplatform.workflows.oa_tof_design import slope_scan, acceptance_theory
 from msplatform.workflows.oa_tof_design import source_comparison as run_comparison
 from msplatform.io.file_identity import file_sha256
+from msplatform.storage import ArtifactStore
 
 
 from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import (
@@ -101,9 +102,13 @@ class IdealSourceComparisonTests(unittest.TestCase):
             config_path.write_text(json.dumps(config), encoding="utf-8")
             original_inputs = {path: path.read_bytes() for path in (config_path, receipt,
                                input_root / "config/analysis_contract.json")}
+            store = ArtifactStore(root / "store")
             with owned_workflow_environment():
-                result = run_comparison.execute(config_path, input_root=input_root, receipt_root=receipt_root,
-                    context=context, seed=73, run_id="20260827_210003__analysis__python__slope-test")
+                managed = slope_scan.execute_slope_scan(config_path, input_root=input_root, receipt_root=receipt_root,
+                    context=context, seed=73, run_id="20260827_210003__analysis__python__slope-test",
+                    resume_from=None, artifact_store=store)
+            result = Path(managed["run_directory"])
+            self.assertEqual(store.inspect_run(managed["store_run_id"]), Path(managed["store_run_path"]))
             summary = json.loads((result / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["status"], "success", summary)
             self.assertNotIn("formal_gate_passed", summary)
@@ -128,14 +133,14 @@ class IdealSourceComparisonTests(unittest.TestCase):
             with patch.object(run_comparison, "_source_references") as owner_sources:
                 with self.assertRaisesRegex(ValueError, "receipt hash differs"):
                     run_comparison.execute(config_path, input_root=input_root, receipt_root=receipt_root,
-                        context=context, seed=73, run_id="20260827_210004__analysis__python__slope-tampered")
+                        context=context, seed=73, run_id="20260827_210004__analysis__python__slope-tampered",
+                        artifact_store=store)
                 owner_sources.assert_not_called()
             receipt.unlink()
             with self.assertRaisesRegex(ValueError, "receipt is unavailable"):
                 run_comparison._resolve_inputs(config_path, input_root=input_root, receipt_root=receipt_root)
 
     def test_long_artifact_owner_uses_short_cwd_and_keeps_canonical_package_and_figure_parent(self):
-        from msplatform.execution.capacity_protection import load_capacity_protection_leases
         with retained_workspace() as root:
             input_root = copy_input_root(PROJECT_ROOT, root / "explicit-author-inputs")
             workspace = root / ("long-research-workspace-" + "x" * 48) / ("scientific-artifacts-" + "y" * 48)
@@ -148,9 +153,12 @@ class IdealSourceComparisonTests(unittest.TestCase):
             config_path = root / "explicit-comparison.json"
             config_path.write_text(json.dumps(config), encoding="utf-8")
             run_id = "20260827_210005__analysis__python__long-artifact"
+            store = ArtifactStore(root / ("long-store-" + "s" * 80) / ("artifact-store-" + "t" * 80))
             with owned_workflow_environment():
-                result = run_comparison.execute(config_path, input_root=input_root, context=context,
-                    seed=9, run_id=run_id)
+                managed = run_comparison.execute(config_path, input_root=input_root, context=context,
+                    seed=9, run_id=run_id, artifact_store=store)
+            result = Path(managed["run_directory"])
+            self.assertEqual(store.inspect_run(managed["store_run_id"]), Path(managed["store_run_path"]))
             self.assertEqual(result.name, run_id)
             self.assertEqual(json.loads((result / "summary.json").read_text(encoding="utf-8"))["status"], "success")
             request = json.loads((result / "inputs/scientific_request.json").read_text(encoding="utf-8"))
@@ -183,13 +191,14 @@ class IdealSourceComparisonTests(unittest.TestCase):
             self.assertEqual([row["operation_id"] for row in operations], ["scientific_analysis"])
             self.assertEqual(operations[0]["observation"]["returncode"], 0)
             self.assertGreater(operations[0]["observation"]["process_id"], 0)
-            owner_result = (context.workspace / "artifacts/components" / result.parent.parent.name /
-                "scratch/workflow_results" / run_id / "result.json")
-            public = json.loads(owner_result.read_text(encoding="utf-8"))
-            self.assertIs(public["writers_confirmed"], True)
-            self.assertIsNone(public["resume_action"])
-            self.assertEqual(public["capacity_session"]["status"], "released")
-            self.assertFalse(load_capacity_protection_leases(context.workspace / "artifacts")["audit"])
+            self.assertIs(managed["writers_confirmed"], True)
+            self.assertIsNone(managed["resume_action"])
+            state = store.run_status(managed["store_run_id"])
+            self.assertEqual((state["execution_status"], state["publication_status"]),
+                             ("succeeded", "ready"))
+            self.assertEqual(state["run_path"],
+                             Path(managed["store_run_path"]).relative_to(store.root).as_posix())
+            self.assertFalse((context.workspace / "artifacts").exists())
         self.assertFalse(root.exists(), "a fully closed healthy owned workspace must be cleaned")
 
     def legacy_ideal_parent(self, root):
@@ -279,31 +288,24 @@ class IdealSourceComparisonTests(unittest.TestCase):
             checked = []
 
             def protected_projection(*args):
-                from msplatform.execution.manifest_publication import publish_run_manifest
-                active = load_capacity_protection_leases(artifact_root.parents[1])
-                self.assertIn(parent.resolve(), active["protected_paths"])
-                stage = json.loads(context.stage_policy_path.read_text(encoding="utf-8"))
-                own_commitment = stage["stages"]["ideal_source_comparison"]["limits"]["transient_run_directory_bytes"]
-                # Same-root source protection is merged into the actual owning
-                # lease. It adds no second capacity reservation.
-                self.assertEqual(active["committed_new_bytes"], own_commitment)
-                self.assertEqual(len(active["audit"]), 1)
-                lease = active["audit"][0]
-                self.assertEqual(lease["committed_new_bytes"], own_commitment)
-                self.assertIn(str(parent.resolve()), lease["protected_paths"])
-                self.assertTrue(any(Path(path).parent == artifact_root / "runs"
-                                    and Path(path) != parent for path in lease["protected_paths"]))
                 if not checked:
-                    with self.assertRaisesRegex(ValueError, "already published terminal"):
-                        publish_run_manifest(parent / "run_config.json", "failed", retention_api=_manifest_retention_api)
+                    with self.assertRaises(PermissionError):
+                        (parent / "run_manifest.json").unlink()
                     checked.append(True)
                 return projection(*args)
 
+            store = ArtifactStore(root / "store")
             with patch.object(run_comparison, "_legacy_ideal_projection", side_effect=protected_projection), owned_workflow_environment():
-                child = run_comparison.execute(config_path, input_root=input_root, context=context, seed=73,
-                    run_id="20261031_150200__analysis__python__legacy-projected", resume_from=parent)
-                descendant = run_comparison.execute(config_path, input_root=input_root, context=context, seed=73,
-                    run_id="20261031_150300__analysis__python__legacy-descendant", resume_from=child)
+                child_result = run_comparison.execute(config_path, input_root=input_root, context=context, seed=73,
+                    run_id="20261031_150200__analysis__python__legacy-projected", resume_from=parent,
+                    artifact_store=store)
+                child = Path(child_result["run_directory"])
+                descendant_result = run_comparison.execute(config_path, input_root=input_root, context=context, seed=73,
+                    run_id="20261031_150300__analysis__python__legacy-descendant", resume_from=child,
+                    artifact_store=store)
+                descendant = Path(descendant_result["run_directory"])
+                self.assertEqual(store.inspect_run(descendant_result["store_run_id"]),
+                                 Path(descendant_result["store_run_path"]))
                 self.assertEqual(json.loads((descendant / "summary.json").read_text(encoding="utf-8"))["reused_cases"], len(cases))
             self.assertTrue(checked)
             summary = json.loads((child / "summary.json").read_text(encoding="utf-8"))
@@ -312,7 +314,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
             child_config = json.loads((child / "run_config.json").read_text(encoding="utf-8"))
             execution_request = json.loads((child / "inputs/execution_request.json").read_text(encoding="utf-8"))
             self.assertTrue(execution_request["capacity"]["source_references"])
-            self.assertEqual(child_config["paths"]["artifact_root"], str(artifact_root.parents[1]))
+            self.assertEqual(child_config["paths"]["artifact_root"], str(store.root))
             self.assertEqual(child_config["paths"]["execution_root"], str(context.execution_root))
             proof = json.loads(Path(child_config["inputs"]["legacy_numerical_projection"]).read_text(encoding="utf-8"))
             self.assertEqual(proof["execution_context"], child_config["paths"])
@@ -327,7 +329,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
             protection = load_capacity_protection_leases(artifact_root.parents[1])
             self.assertFalse(protection["protected_paths"])
 
-    def test_legacy_reference_rejects_unmanaged_target_before_capacity_or_source_reads(self):
+    def test_execute_requires_store_or_protected_parent_before_source_reads(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             parent = root / "parent"
@@ -336,18 +338,78 @@ class IdealSourceComparisonTests(unittest.TestCase):
             (parent / "run_manifest.json").write_text('{}', encoding="utf-8")
             before = {path: path.read_bytes() for path in parent.iterdir()}
             context = make_context(root / "arbitrary-target")
-            # A pre-existing uncalibrated artifact tree is not silently adopted.
-            (context.workspace / "artifacts").mkdir()
             with patch.object(run_comparison, "_resolve_inputs") as command, \
                     patch.object(run_comparison, "_source_references") as source_reads:
-                with self.assertRaisesRegex(ValueError, "explicit calibrated capacity ledger"):
+                with self.assertRaisesRegex(ValueError, "explicit ArtifactStore or protected parent scope"):
                     run_comparison.execute(root / "unread-experiment.json", input_root=root,
                         context=context, seed=73, resume_from=parent,
                         run_id="20261031_152000__analysis__python__legacy-unmanaged")
                 command.assert_not_called()
                 source_reads.assert_not_called()
             self.assertEqual(before, {path: path.read_bytes() for path in parent.iterdir()})
-            self.assertFalse((context.workspace / "artifacts/components").exists())
+            self.assertFalse((context.workspace / "artifacts").exists())
+
+    def test_matching_parent_store_is_reused_and_a_different_store_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_root = copy_input_root(PROJECT_ROOT, root / "author-inputs")
+            context = make_context(root / "study")
+            store = ArtifactStore(root / "store")
+            parent_scope = dict(store=store, produced=[], retain_source_assets=True,
+                required_source_assets=set(), parent_run_id="parent-store-run", published_path=None)
+            with patch("msplatform.execution.owner.current_managed_native_store", return_value=parent_scope), \
+                    patch.object(run_comparison, "_resolve_inputs") as source_reads:
+                with self.assertRaisesRegex(ValueError, "must use the parent Store"):
+                    run_comparison.execute(input_root / "config/experiments/ideal_source_comparison.json",
+                        input_root=input_root, context=context, seed=73,
+                        run_id="20261128_160000__analysis__python__wrong-parent-store",
+                        artifact_store=ArtifactStore(root / "other-store"))
+                source_reads.assert_not_called()
+            # Dispatch-only parent: real input/policy reads, no fabricated science or OS receipt.
+            def complete_parent(_context, **kwargs):
+                parent_scope["produced"].append("source-stage")
+                return {"status": "success"}
+            with patch("msplatform.execution.owner.current_managed_native_store", return_value=parent_scope), \
+                    patch("msplatform.execution.owner.run_managed_stage", side_effect=complete_parent) as managed_stage, \
+                    patch("msplatform.execution.owner.standalone_native_store") as standalone:
+                result = run_comparison.execute(input_root / "config/experiments/ideal_source_comparison.json",
+                    input_root=input_root, context=context, seed=73,
+                    run_id="20261128_160001__analysis__python__matching-parent-store")
+            standalone.assert_not_called()
+            self.assertIs(managed_stage.call_args.kwargs["artifact_store"], store)
+            self.assertEqual((result["store_run_id"], result["store_stage_asset_id"]),
+                             ("parent-store-run", "source-stage"))
+            self.assertIsNone(result["store_run_path"])
+
+    def test_store_recovery_replays_stage_then_run_and_rejects_other_workflows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "stage/runs/20261128_160002__analysis__python__store-recovery"
+            run.mkdir(parents=True)
+            manifest = run / "run_manifest.json"
+            manifest.write_text(json.dumps(dict(role="simulation_run_manifest",
+                project=run_comparison.PROJECT_ID, mode="ideal_source_comparison", run_id=run.name)),
+                encoding="utf-8")
+            store = Mock()
+            store.asset_status.return_value = {"path": str(root / "stage"), "state": "ready"}
+            store.recover_run_publication.return_value = True
+            store.run_status.return_value = {"execution_status": "succeeded"}
+            context = object()
+            with patch("msplatform.execution.owner.recover_managed_native_store_stage", return_value=True) as stage:
+                result = run_comparison.recover_finalization(context, artifact_store=store,
+                    stage_asset_id="source-stage", store_run_id="outer-store-run")
+                stage.assert_called_once_with(store, "source-stage", context=context)
+                store.recover_run_publication.assert_called_once_with("outer-store-run")
+            self.assertEqual((result["stage_recovered"], result["run_recovered"]), (True, True))
+            manifest.write_text(json.dumps(dict(role="simulation_run_manifest",
+                project=run_comparison.PROJECT_ID, mode="other", run_id=run.name)), encoding="utf-8")
+            store.recover_run_publication.reset_mock()
+            with patch("msplatform.execution.owner.recover_managed_native_store_stage") as stage:
+                with self.assertRaisesRegex(ValueError, "not an OA source comparison"):
+                    run_comparison.recover_finalization(context, artifact_store=store,
+                        stage_asset_id="source-stage", store_run_id="outer-store-run")
+                stage.assert_not_called()
+                store.recover_run_publication.assert_not_called()
 
     def test_legacy_association_requires_both_exact_source_identities(self):
         for name, original, current in (

@@ -16,6 +16,7 @@ import shutil
 import sys
 import time
 import traceback
+from contextlib import ExitStack, contextmanager, nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,6 @@ from msplatform.execution.artifact_naming import validate_run_id
 from msplatform.execution.context import python_runtime_version
 from msplatform.execution.artifact_retention import validate_retention
 from msplatform.execution.retention import file_record, verify_record, classify_file
-from msplatform.execution.resources.workspace_paths import resolve_run_artifact_root
 from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from .source_experiment import build_case_plan, summarize_stage, validate_experiment
@@ -459,6 +459,39 @@ def _source_references(previous: Path | None) -> tuple[list[dict], dict | None]:
                         "original_owner": str(original)}
 
 
+@contextmanager
+def _guard_resume_source(previous: Path | None, store: Any):
+    """Hold an explicit historical source or its Store asset through publication."""
+    if previous is None:
+        yield ()
+        return
+    from msplatform.execution.native_source_guard import guard_stopped_store_evidence
+    from msplatform.io.file_identity import guarded_file_identity
+    record = file_record(previous / "run_manifest.json", "required_evidence")
+    manifest_path = Path(record["path"]).resolve(strict=True)
+    if not manifest_path.is_relative_to(store.root / "assets"):
+        with guarded_file_identity(manifest_path, expected_bytes=record["bytes"],
+                                   expected_sha256=record["sha256"]):
+            yield ()
+        return
+    parts = manifest_path.relative_to(store.root).parts
+    if len(parts) < 6 or parts[:2] != ("assets", "native_stage"):
+        raise ValueError("resume source Store identity differs")
+    asset_id = parts[3]
+    state = store.asset_status(asset_id)["state"]
+    if state == "ready":
+        with store.claim_verified(asset_id) as asset_root:
+            if asset_root != store.root.joinpath(*parts[:4]):
+                raise ValueError("resume source Store owner differs")
+            yield (asset_id,)
+        return
+    if state != "failed":
+        raise ValueError("resume source Store stage is not terminal")
+    with guard_stopped_store_evidence(store, record) as (manifest, hold_records):
+        hold_records(manifest["outputs"])
+        yield ()
+
+
 def _source_package_root() -> Path:
     from importlib.resources import files
     return Path(str(files("msplatform"))).resolve()
@@ -644,7 +677,9 @@ def _numerical_identity(input_sha256: dict[str, str], *, seed: int) -> str:
 
 
 def _renew_selected_capacity(capacity: dict) -> None:
-    """Renew only this existing owner-bound capacity/source lease at case boundaries."""
+    """Renew legacy TTL leases; Store reservations remain owned by their writer."""
+    if capacity.get("role") == "store_native_stage_capacity":
+        return
     from msplatform.execution.capacity_session import renew_capacity_session
     now = time.monotonic()
     previous = capacity.get("_worker_last_renewal_monotonic")
@@ -686,9 +721,9 @@ def _verify_scientific_worker_origin() -> None:
 
 
 def _renew_worker_capacity() -> None:
-    """Renew the request's same owner lease at an existing scientific task boundary."""
+    """Renew a legacy owner lease; Store reservations require no TTL renewal."""
     request = _BOUND_SCIENTIFIC_REQUEST
-    if request is not None:
+    if request is not None and request["capacity_session"].get("role") != "store_native_stage_capacity":
         from msplatform.execution.capacity_session import renew_capacity_session
         renew_capacity_session(request["capacity_session"])
 
@@ -849,21 +884,23 @@ def _run_action(session: Any, *, requested: dict[str, Path], original: dict[str,
 
 def _execute_role(config_path: Path, *, input_root: Path, context: Any, seed: int,
                   run_id: str, resume_from: Path | None, max_workers: int | None = None,
-                  receipt_root: Path | None = None, expected_role: str | None = None) -> Path:
-    """Use the existing managed owner; no author checkout or engineering defaults."""
+                  receipt_root: Path | None = None, expected_role: str | None = None,
+                  artifact_store: Any = None) -> dict[str, Any]:
+    """Run one scientific role in an explicit Store or its matching parent scope."""
     from functools import partial
-    from msplatform.execution import capacity_ledger
     from msplatform.execution.context import ExecutionContext
-    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.owner import current_managed_native_store, run_managed_stage, standalone_native_store
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.execution.completion import no_particle_batch_completion_api
     if not isinstance(context, ExecutionContext):
         raise ValueError("execution requires an explicit managed ExecutionContext")
     validate_run_id(run_id)
-    artifact_root = context.workspace / "artifacts"
-    # Same existing owner precondition, before source/CSV/lease reads; no ad-hoc adoption.
-    if artifact_root.exists() and capacity_ledger.load_capacity_ledger(artifact_root) is None:
-        raise ValueError("Existing artifact root lacks its explicit calibrated capacity ledger")
+    parent_scope = current_managed_native_store()
+    if artifact_store is None and parent_scope is None:
+        raise ValueError("OA source comparison requires an explicit ArtifactStore or protected parent scope")
+    store = artifact_store if artifact_store is not None else parent_scope["store"]
+    if parent_scope is not None and parent_scope["store"] is not store:
+        raise ValueError("OA source comparison must use the parent Store")
     config, requested = _resolve_inputs(config_path, input_root=input_root,
         receipt_root=receipt_root, expected_role=expected_role)
     if max_workers is not None and config["role"] != "ideal_acceptance_theory":
@@ -872,33 +909,74 @@ def _execute_role(config_path: Path, *, input_root: Path, context: Any, seed: in
     identities = {name: row["sha256"] for name, row in original.items()}
     identity = _numerical_identity(identities, seed=seed)
     previous = None if resume_from is None else Path(resume_from).resolve(strict=True)
-    references, legacy = _source_references(previous)
     stage, policy_record = read_stage_policy(context, config["role"])
-    run_managed_stage(context, descriptor=dict(project=PROJECT_ID, mode=config["role"],
-        software=["Python solver-free OA-TOF design"]), run_id=run_id,
-        payload=dict(claim_scope=config["scope"],
-            scientific_role=config["role"], numerical_identity=identity,
-            requested_input_paths={name: str(path) for name, path in requested.items()}),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy_record, *original.values()], retention=stage["artifact_retention"],
-        expected_operation_ids=["scientific_analysis"], operation_dependencies={},
-        expected_relative_paths=["."],
-        action=partial(_run_action, requested=requested, original=original, config=config,
-            seed=seed, identity=identity, resume_from=previous, max_workers=max_workers,
-            stage=stage, policy_record=policy_record, legacy_protection=legacy),
-        action_record=file_record(Path(__file__).resolve(), "required_evidence"),
-        source_references=references, completion_api=no_particle_batch_completion_api)
-    return resolve_run_artifact_root(
-        artifact_root, owner_kind="component", owner_id=PROJECT_ID,
-    ) / "runs" / run_id
+    with ExitStack() as source_guards:
+        required_assets = set(source_guards.enter_context(_guard_resume_source(previous, store)))
+        references, legacy = _source_references(previous)
+        if legacy is not None and Path(legacy["original_owner"]) != previous:
+            required_assets.update(source_guards.enter_context(_guard_resume_source(
+                Path(legacy["original_owner"]), store)))
+        required_assets = tuple(sorted(required_assets))
+        if parent_scope is not None and parent_scope["retain_source_assets"]:
+            parent_scope["required_source_assets"].update(required_assets)
+        scope = (standalone_native_store(store, task_key="oa-source:" + run_id,
+            budget=stage["limits"]["transient_run_directory_bytes"], required_assets=required_assets)
+            if parent_scope is None else nullcontext(parent_scope))
+        with scope as active_scope:
+            produced_before = len(active_scope["produced"])
+            result = run_managed_stage(context, descriptor=dict(project=PROJECT_ID, mode=config["role"],
+                software=["Python solver-free OA-TOF design"]), run_id=run_id,
+                payload=dict(claim_scope=config["scope"],
+                    scientific_role=config["role"], numerical_identity=identity,
+                    requested_input_paths={name: str(path) for name, path in requested.items()}),
+                committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
+                commitment_inputs=[policy_record, *original.values()], retention=stage["artifact_retention"],
+                expected_operation_ids=["scientific_analysis"], operation_dependencies={},
+                expected_relative_paths=["."],
+                action=partial(_run_action, requested=requested, original=original, config=config,
+                    seed=seed, identity=identity, resume_from=previous, max_workers=max_workers,
+                    stage=stage, policy_record=policy_record, legacy_protection=legacy),
+                action_record=file_record(Path(__file__).resolve(), "required_evidence"),
+                source_references=references, completion_api=no_particle_batch_completion_api,
+                artifact_store=store)
+            if parent_scope is None:
+                active_scope["reported_status"] = result["status"]
+        produced = active_scope["produced"]
+        if len(produced) != produced_before + 1:
+            raise ValueError("OA source comparison Store stage identity is unavailable")
+        return dict(result, store_run_id=active_scope["parent_run_id"],
+            store_run_path=(str(active_scope["published_path"])
+                            if active_scope["published_path"] is not None else None),
+            store_stage_asset_id=produced[-1])
+
+
+def recover_finalization(context: Any, *, artifact_store: Any, stage_asset_id: str,
+                         store_run_id: str) -> dict[str, Any]:
+    """Replay one OA Store stage and its outer publication without new science."""
+    from msplatform.execution.owner import recover_managed_native_store_stage
+    stage = artifact_store.asset_status(stage_asset_id)
+    candidates = list((Path(stage["path"]) / "runs").iterdir())
+    if len(candidates) != 1 or not candidates[0].is_dir():
+        raise ValueError("OA source recovery requires one terminal run")
+    manifest = load_json(candidates[0] / "run_manifest.json")
+    if (manifest.get("role") != "simulation_run_manifest" or manifest.get("project") != PROJECT_ID
+            or manifest.get("mode") not in {"ideal_source_comparison", "ideal_source_slope_scan",
+                                            "ideal_acceptance_theory"}
+            or manifest.get("run_id") != candidates[0].name):
+        raise ValueError("recovery stage is not an OA source comparison run")
+    stage_recovered = recover_managed_native_store_stage(artifact_store, stage_asset_id, context=context)
+    run_recovered = artifact_store.recover_run_publication(store_run_id)
+    return dict(stage_recovered=stage_recovered, run_recovered=run_recovered,
+                stage=artifact_store.asset_status(stage_asset_id), run=artifact_store.run_status(store_run_id))
 
 
 def execute(config_path: Path, *, input_root: Path, context: Any, seed: int,
             run_id: str, resume_from: Path | None = None, max_workers: int | None = None,
-            receipt_root: Path | None = None) -> Path:
-    """Run one explicitly selected scientific role; failed science still returns its run."""
+            receipt_root: Path | None = None, artifact_store: Any = None) -> dict[str, Any]:
+    """Run one explicitly selected scientific role; failed science still returns its result."""
     return _execute_role(config_path, input_root=input_root, context=context, seed=seed,
-        run_id=run_id, resume_from=resume_from, max_workers=max_workers, receipt_root=receipt_root)
+        run_id=run_id, resume_from=resume_from, max_workers=max_workers, receipt_root=receipt_root,
+        artifact_store=artifact_store)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -915,14 +993,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--environment", type=Path)
     parser.add_argument("--profile")
-    parser.add_argument("--resume-finalization", type=Path)
+    parser.add_argument("--artifact-root", type=Path,
+                        help="dedicated Store root; defaults to <workspace>/store")
+    parser.add_argument("--resume-finalization")
+    parser.add_argument("--stage-asset-id")
     parser.add_argument("--worker-request", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
         if args.worker_request is not None:
             if any(value is not None for value in (args.config, args.input_root, args.receipt_root,
                     args.seed, args.run_id, args.resume_from, args.max_workers, args.workspace,
-                    args.environment, args.profile, args.resume_finalization)) or args.plan:
+                    args.environment, args.profile, args.artifact_root, args.resume_finalization,
+                    args.stage_asset_id)) or args.plan:
                 raise ValueError("frozen worker accepts only its bound request")
             from msplatform.workflows.oa_tof_design import source_comparison
             source_comparison._scientific_worker(args.worker_request)
@@ -939,22 +1021,26 @@ def main(argv: list[str] | None = None) -> int:
         elif (args.plan or any(value is not None for value in (args.config, args.input_root,
                 args.receipt_root, args.seed, args.run_id, args.resume_from, args.max_workers))):
             raise ValueError("finalization-only cannot replace frozen scientific inputs")
+        if args.resume_finalization is not None and args.stage_asset_id is None:
+            raise ValueError("finalization recovery requires the explicit Store stage asset ID")
+        if args.resume_finalization is None and args.stage_asset_id is not None:
+            raise ValueError("stage asset ID is valid only for finalization recovery")
         if args.workspace is None or args.environment is None or args.profile is None:
             raise ValueError("execution requires explicit workspace, environment and profile")
         from msplatform.execution.context import load_environment
+        from msplatform.storage import ArtifactStore
         context = load_environment(args.environment, workspace=args.workspace, profile=args.profile)
+        store = ArtifactStore(args.artifact_root or args.workspace / "store")
         if args.resume_finalization is not None:
-            from msplatform.execution.owner import resume_finalization
-            from msplatform.execution.completion import no_particle_batch_completion_api
-            result = resume_finalization(context, result_path=args.resume_finalization,
-                completion_api=no_particle_batch_completion_api)
-            return 0 if result["status"] == "success" else 1
+            result = recover_finalization(context, artifact_store=store,
+                stage_asset_id=args.stage_asset_id, store_run_id=args.resume_finalization)
+            return 0 if result["run"]["execution_status"] == "succeeded" else 1
         run_id = args.run_id or datetime.now(ZoneInfo("Asia/Shanghai")).strftime(
             "%Y%m%d_%H%M%S__analysis__python__ideal-source-comparison")
-        run_dir = execute(args.config, input_root=args.input_root, context=context,
+        result = execute(args.config, input_root=args.input_root, context=context,
             seed=args.seed, run_id=run_id, resume_from=args.resume_from,
-            max_workers=args.max_workers, receipt_root=args.receipt_root)
-        return 0 if load_json(run_dir / "summary.json")["status"] == "success" else 1
+            max_workers=args.max_workers, receipt_root=args.receipt_root, artifact_store=store)
+        return 0 if result["status"] == "success" else 1
     except Exception as exc:
         print(f"IDEAL_COMPARISON STATUS=failed REASON={type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
         return 1

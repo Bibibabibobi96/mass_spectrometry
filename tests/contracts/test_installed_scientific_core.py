@@ -5713,7 +5713,7 @@ def main():
         print('TOF_WORKFLOW_REPORT='+json.dumps(dict(status='ORIGINS_ONLY',origins=origins)));return
     from msplatform.execution.context import load_environment
     from msplatform.execution.resources import resource_path as execution_resource_path
-    from msplatform.execution.capacity_protection import load_capacity_protection_leases
+    from msplatform.storage import ArtifactStore
     from msplatform.io.manifest_records import verify_record
     case_root=pathlib.Path(sys.argv[3]);case_root.mkdir(parents=True,exist_ok=False)
     input_root=case_root/'explicit-authoring';input_root.mkdir()
@@ -5750,7 +5750,7 @@ def main():
         profiles=dict(installed_tof_test=dict(stage_policy_path=str(stage_path))))),encoding='utf-8')
     context=load_environment(deployment,workspace=workspace,profile='installed_tof_test')
     assert context.capacity_policy_path==capacity_path and context.stage_policy_path==stage_path
-    api=modules['source_comparison'];project='single_reflection_oa_tof_mass_analyzer'
+    api=modules['source_comparison'];store=ArtifactStore(case_root/'store')
     from unittest.mock import patch as _timing_patch
     timing_counts={}
     timing_case=[None]
@@ -5793,20 +5793,25 @@ def main():
     api._invoke_worker=invoke_with_process_span
 
     def run_id(label):return '20261111_220000__test__python__installed-tof-'+case_root.name+'-'+label.replace('_','-')
-    def result_path(identity):return workspace/'artifacts/components'/project/'scratch/workflow_results'/identity/'result.json'
-    def assert_owner(run,identity,*,success=True):
-        result=json.loads(result_path(identity).read_text(encoding='utf-8'))
-        assert result['status']==('success' if success else 'failed') and result['writers_confirmed'] is True
-        assert result['resume_action'] is None and result['capacity_session']['status']=='released'
-        verify_record('installed TOF terminal manifest',result['manifest'])
-        selected_capacity=result['capacity_session']['capacity_policy']
+    def failed_run_path(identity):
+        with store._db() as db:asset=db.execute('SELECT asset_id FROM native_run_ids WHERE run_id=?',(identity,)).fetchone()[0]
+        return pathlib.Path(store.asset_status(asset)['path'])/'runs'/identity
+    def assert_owner(run,identity,*,managed=None,success=True):
+        if managed is not None:
+            assert managed['status']==('success' if success else 'failed') and managed['writers_confirmed'] is True
+            assert managed['resume_action'] is None and managed['capacity_session']['role']=='store_native_stage_capacity'
+            verify_record('installed TOF terminal manifest',managed['manifest'])
+            assert store.inspect_run(managed['store_run_id'])==pathlib.Path(managed['store_run_path'])
+            selected_capacity=managed['capacity_session']['capacity_policy']
+        else:
+            selected_capacity=json.loads((run/'logs/capacity_session.json').read_text(encoding='utf-8'))['capacity_policy']
         assert pathlib.Path(selected_capacity['source_record']['path'])==capacity_path
         assert selected_capacity['snapshot']==capacity_policy
         verify_record('installed TOF TEST capacity source',selected_capacity['source_record'])
         verify_record('installed TOF frozen capacity policy',selected_capacity['frozen_record'])
         assert json.loads(pathlib.Path(selected_capacity['frozen_record']['path']).read_text(encoding='utf-8'))==capacity_policy
         manifest=json.loads((run/'run_manifest.json').read_text(encoding='utf-8'))
-        assert manifest['run_id']==identity and manifest['status']==result['status']
+        assert manifest['run_id']==identity and manifest['status']==('success' if success else 'failed')
         for record in manifest['outputs']:verify_record('installed TOF manifest output',record)
         completion=json.loads((run/'results/execution_completion.json').read_text(encoding='utf-8'))
         operations=completion['writer_completion']['operations']
@@ -5819,8 +5824,7 @@ def main():
             release=releases[operations[0]['resource_release_id']]
             assert release['inherited'] is False and release['error'] is None and release['result']==dict(status='released',token=release['token'])
         else:assert operations==[] and releases=={}
-        assert load_capacity_protection_leases(workspace/'artifacts')['audit']==[]
-        return result,completion
+        return managed,completion
     inherited={key:os.environ.get(key) for key in ('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE')}
     records=[]
     retained=os.environ.get('MASS_SPECTROMETRY_INSTALLED_CORE_ARTIFACT_DIR')
@@ -5840,11 +5844,14 @@ def main():
         for key in inherited:os.environ[key]=''
         if sys.argv[4]=='resource_missing':
             identity=run_id('missing-resource')
-            try:api.execute(config_paths['basic'],input_root=input_root,context=context,seed=9,run_id=identity)
+            try:api.execute(config_paths['basic'],input_root=input_root,context=context,seed=9,run_id=identity,artifact_store=store)
             except FileNotFoundError as error:
                 assert 'frozen_python_package.ps1' in str(error)
+                outer=next(note.removeprefix('Store run_id: ') for note in error.__notes__ if note.startswith('Store run_id: '))
+                state=store.run_status(outer)
+                assert (state['execution_status'],state['publication_status'])==('failed','unpublished')
             else:raise AssertionError('missing selected frozen executor resource accepted')
-            run=workspace/'artifacts/components'/project/'runs'/identity
+            run=failed_run_path(identity)
             retain_case(run,'missing-resource')
             result,completion=assert_owner(run,identity,success=False)
             assert completion['exception']['type']=='FileNotFoundError'
@@ -5856,15 +5863,16 @@ def main():
             timing_case[0]=name
             selected='basic' if name=='resume' else name
             identity=run_id(name)
-            arguments=dict(input_root=input_root,context=context,seed=seed,run_id=identity)
+            arguments=dict(input_root=input_root,context=context,seed=seed,run_id=identity,artifact_store=store)
             if workers is not None:arguments['max_workers']=workers
             if name=='slope':arguments['receipt_root']=receipt_root
             if name=='resume':arguments['resume_from']=basic_parent
             with section_timing('tof_owner',name):
-                run=api.execute(config_paths[selected],**arguments)
+                managed=api.execute(config_paths[selected],**arguments)
+            run=pathlib.Path(managed['run_directory'])
             retain_case(run,name)  # Actual producer bytes before any consumer assertion.
-            assert run==workspace/'artifacts/components'/project/'runs'/identity
-            result,owner_completion=assert_owner(run,identity)
+            assert run==pathlib.Path(store.asset_status(managed['store_stage_asset_id'])['path'])/'runs'/identity
+            result,owner_completion=assert_owner(run,identity,managed=managed)
             config=json.loads((run/'run_config.json').read_text(encoding='utf-8'))
             assert config['run_instance']['seed']==seed and 'formal_gate_passed' not in config
             assert config['parameters']['scientific_role']==configs[selected]['role']
@@ -5940,20 +5948,20 @@ def main():
                 assert all(pathlib.Path(path).read_bytes()==body for path,body in parent_before.items())
             records.append(dict(case=name,run=str(run),operations=1,worker_pids=sorted({row['pid'] for row in worker_origins}),source_csv_files=case_rows))
         # Input-resolution refusals preserve the existing run set; no fake owner or fallback inputs.
-        before_runs={path.name for path in (workspace/'artifacts/components'/project/'runs').iterdir()}
-        try:api.execute(config_paths['basic'],context=context,seed=9,run_id=run_id('no-input-root'))
+        with store._db() as db:before_runs={row[0] for row in db.execute('SELECT run_id FROM native_run_ids')}
+        try:api.execute(config_paths['basic'],context=context,seed=9,run_id=run_id('no-input-root'),artifact_store=store)
         except TypeError:pass
         else:raise AssertionError('required input_root silently defaulted')
         timing_case[0]=None
         sibling=case_root/'wrong-sibling';sibling.mkdir()
-        try:api.execute(config_paths['basic'],input_root=sibling,context=context,seed=9,run_id=run_id('wrong-input-root'))
+        try:api.execute(config_paths['basic'],input_root=sibling,context=context,seed=9,run_id=run_id('wrong-input-root'),artifact_store=store)
         except FileNotFoundError:pass
         else:raise AssertionError('wrong explicit input_root used fallback')
         for name,target,extra in (('analysis',analysis,{}),('reference',reference_path,{}),('receipt',receipt,{'receipt_root':receipt_root})):
             role='single_candidate' if name=='reference' else 'slope' if name=='receipt' else 'basic'
             held=target.with_name(target.name+'.held');assert not held.exists();target.rename(held)
             try:
-                try:api.execute(config_paths[role],input_root=input_root,context=context,seed=9,run_id=run_id('missing-'+name),**extra)
+                try:api.execute(config_paths[role],input_root=input_root,context=context,seed=9,run_id=run_id('missing-'+name),artifact_store=store,**extra)
                 except (FileNotFoundError,ValueError) as error:
                     if name=='receipt':
                         assert type(error) is ValueError and 'historical slope receipt is unavailable:' in str(error) and str(target) in str(error)
@@ -5962,14 +5970,17 @@ def main():
             finally:held.rename(target)
         raw_receipt=receipt.read_bytes();receipt.write_bytes(raw_receipt+b'\n')
         try:
-            try:api.execute(config_paths['slope'],input_root=input_root,receipt_root=receipt_root,context=context,seed=73,run_id=run_id('tampered-receipt'))
+            try:api.execute(config_paths['slope'],input_root=input_root,receipt_root=receipt_root,context=context,seed=73,run_id=run_id('tampered-receipt'),artifact_store=store)
             except ValueError:pass
             else:raise AssertionError('tampered scalar receipt accepted')
         finally:receipt.write_bytes(raw_receipt)
-        assert {path.name for path in (workspace/'artifacts/components'/project/'runs').iterdir()}==before_runs
+        with store._db() as db:
+            assert {row[0] for row in db.execute('SELECT run_id FROM native_run_ids')}==before_runs
+            assert db.execute('SELECT COUNT(*) FROM reservations').fetchone()[0]==0
+            assert db.execute("SELECT COUNT(*) FROM native_bindings WHERE state='active'").fetchone()[0]==0
         assert all(pathlib.Path(path).read_bytes()==body for path,body in input_before.items())
         assert capacity_resource.read_bytes()==capacity_original
-        assert load_capacity_protection_leases(workspace/'artifacts')['audit']==[]
+        assert not (workspace/'artifacts').exists()
         print('TOF_WORKFLOW_REPORT='+json.dumps(dict(status='PASS',origins=origins,cases=records,native_executions=0)))
     finally:
         for key,value in inherited.items():

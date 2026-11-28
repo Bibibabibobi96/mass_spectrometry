@@ -209,9 +209,9 @@ def _run_slope_cases(config: dict[str, Any], *, seed: int, run_dir: Path,
 
 def execute_slope_scan(config_path: Path, *, input_root: Path, receipt_root: Path,
                        context: ExecutionContext, seed: int, run_id: str,
-                       resume_from: Path | None) -> Path:
-    """Run the explicit slope study using one observed scientific worker."""
+                       resume_from: Path | None, artifact_store: Any = None) -> dict[str, Any]:
+    """Run the explicit slope study in the selected Store or matching parent scope."""
     from .source_comparison import _execute_role
     return _execute_role(config_path, input_root=input_root, receipt_root=receipt_root,
-                         context=context, seed=seed, run_id=run_id,
-                         resume_from=resume_from, expected_role="ideal_source_slope_scan")
+                         context=context, seed=seed, run_id=run_id, resume_from=resume_from,
+                         expected_role="ideal_source_slope_scan", artifact_store=artifact_store)

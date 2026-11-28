@@ -223,9 +223,12 @@ require `--receipt-root` for the existing scalar-receipt declaration. Absolute
 scientific references remain absolute; relative references use the selected base.
 Planning does not load engineering deployment or create an owner. The project
 execution profile is an explicit fixed author preset, not a package default.
-For long Windows artifact paths, select a short absolute `policy.execution_root`
-in that deployment. The existing owner manages the temporary execution alias;
-persisted package and scientific run paths remain canonical.
+`--artifact-root` selects the dedicated ArtifactStore and defaults to
+`<workspace>/store`; Python callers instead pass `artifact_store` explicitly or use
+its matching protected parent scope. For long Windows Store paths, select a short
+absolute `policy.execution_root` in that deployment. The existing owner manages
+the temporary execution alias; persisted package and scientific run paths remain
+canonical.
 
 Basic comparison automatically completes the declared residual and two/three-zone
 width scans, reporting per-case progress, complete particle CSV, peak/tail/mode
@@ -251,17 +254,23 @@ frozen input records and parsed analysis settings explicitly. Reuse does not
 reopen a child run configuration as an alternative authority. Original legacy
 CSV/manifest hashes, numerical projection and provenance checks remain unchanged.
 
-The existing managed owner alone creates the run, capacity/source protection,
-execution request, summary, manifest and recovery result. One observed Python
-scientific worker consumes frozen role records and retains its existing ProcessPool
-work; actual child origins and immutable package guards belong to that same process
-family. Case boundaries renew the same owner-bound leases. Scientific failures keep
-their original failed run/checkpoints; transport or publication failures remain errors.
-`--resume-finalization <Result>` with the explicit engineering deployment only resumes
-the original stopped-owner finalization, without new scientific inputs or execution.
-Copied source records are execution provenance; this installed workflow actually
-executes the selected frozen package. The historical audited-live snapshots keep
-their original meaning and bytes. No commercial solver or new qualification is implied.
+ArtifactStore owns the independent run, reservation, native-stage asset and outer
+publication; the existing managed owner still creates the stage's execution request,
+summary and manifest. One observed Python scientific worker consumes frozen role
+records and retains its existing ProcessPool work; actual child origins and immutable
+package guards belong to that same process family. Store reservations do not enter
+the retired TTL-renewal path. Resume sources are held by the existing file guard or
+Store claim through publication, including failed-stage evidence. Scientific failures
+keep their original failed run/checkpoints; transport or publication failures remain
+errors. The returned managed result exposes the actual stage `run_directory`,
+`store_stage_asset_id`, outer `store_run_id` and `store_run_path`, rather than deriving
+a path from the retired component root.
+`--resume-finalization <store-run-id> --stage-asset-id <asset>` with the explicit
+engineering deployment calls the existing Store stage recovery followed by
+`recover_run_publication`, without new scientific inputs or execution. Copied source
+records are execution provenance; this installed workflow actually executes the
+selected frozen package. The historical audited-live snapshots keep their original
+meaning and bytes. No commercial solver or new qualification is implied.
 
 运行状态为`success/failed/interrupted`，科学状态独立报告`SUPPORTED/NOT_SUPPORTED/INCONCLUSIVE`
 或已表征的接受范围；负结果不阻止另一项低成本比较。技术异常停止并保存`failure_stage`、`failure_reason`

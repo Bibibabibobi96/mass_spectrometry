@@ -558,8 +558,13 @@ snapshot mechanism. This is audited live execution, not a claim that copied sour
 snapshots are executed. The three reusable ideal-source scientific roles now have
 one installed workflow closure under `msplatform.workflows.oa_tof_design`: residual/
 width comparison, theory-first acceptance and the scalar-reference slope study.
-Their public input bases are explicit; the existing execution owner alone freezes,
-observes, publishes and recovers them. Scientific workers consume selected frozen
+Their public input bases are explicit; a dedicated ArtifactStore owns each new
+standalone run, or the workflow joins its matching protected parent Store scope.
+The existing managed owner still freezes and observes the native stage. Store claims
+or file guards protect every resume source through publication; Store reservations
+replace the old ledger/TTL path. The managed result returns actual Store/stage
+identities, and finalization recovery replays the existing stage plus outer Store
+publication without another state machine. Scientific workers consume selected frozen
 records, never re-resolve original author roots. The six corresponding root bodies
 are retired without aliases. Same-epoch modern resume and the finite original-basic
 reference-only reader are separate contracts; pre-migration modern scientific
@@ -575,6 +580,11 @@ source SHAs are locked; this is an association-rule migration, not unchanged raw
 identity, a generic source waiver or complete historical execution equivalence.
 Software, ordinary installation and native qualification require their own evidence;
 this solver-free workflow grants no commercial/native or Formal qualification.
+The Store lifecycle migration passed 28 source-comparison tests and 16 acceptance/
+failure-resume consumer tests, plus two real Store recovery-primitive tests. These
+covered explicit/matching Store scopes, ready and failed resume sources, long-path
+alias cleanup, scientific failure preservation and publication replay. No commercial
+solver ran; the complete two-arm installation probe remains a separate acceptance.
 
 The TOF worker now selects its actual analysis/contracts/execution/I/O and TOF/OA/RF
 provider closure through the existing package freezer, instead of copying unrelated

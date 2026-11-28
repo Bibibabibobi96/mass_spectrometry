@@ -18,7 +18,7 @@ from msplatform.components.single_reflection_oa_tof import (
 )
 from msplatform.components.single_reflection_oa_tof import ideal_acceptance_experiment
 from msplatform.workflows.oa_tof_design import acceptance_theory as workflow
-from msplatform.workflows.oa_tof_design import source_comparison as runner
+from msplatform.storage import ArtifactStore
 
 
 from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import (
@@ -75,11 +75,15 @@ class AcceptanceWorkflowTests(unittest.TestCase):
         with retained_workspace() as root:
             input_root = copy_input_root(PROJECT_ROOT, root / "author-inputs")
             context = make_context(root / "study")
+            store = ArtifactStore(root / "store")
             config_path = root / "experiment.json"
             config_path.write_text(json.dumps(self.config), encoding="utf-8")
             with owned_workflow_environment(), contextlib.redirect_stdout(io.StringIO()):
-                result = runner.execute(config_path, seed=41, run_id="20260827_210001__analysis__python__theory-test",
-                                        input_root=input_root, context=context, max_workers=2)
+                managed = workflow.execute_theory(config_path, seed=41, run_id="20260827_210001__analysis__python__theory-test",
+                                        input_root=input_root, context=context, max_workers=2,
+                                        resume_from=None, artifact_store=store)
+            result = Path(managed["run_directory"])
+            self.assertEqual(store.inspect_run(managed["store_run_id"]), Path(managed["store_run_path"]))
             summary = load_json(result / "summary.json")
             self.assertEqual(summary["status"], "success", summary)
             self.assertGreaterEqual(summary["completed_confirmations"], 1)
@@ -121,11 +125,14 @@ class AcceptanceWorkflowTests(unittest.TestCase):
         with retained_workspace() as root:
             input_root = copy_input_root(PROJECT_ROOT, root / "author-inputs")
             context = make_context(root / "study")
+            store = ArtifactStore(root / "store")
             config_path = root / "experiment.json"
             config_path.write_text(json.dumps(config), encoding="utf-8")
             with owned_workflow_environment(), contextlib.redirect_stdout(io.StringIO()):
-                result = runner.execute(config_path, seed=41, run_id="20260827_210002__analysis__python__theory-test",
-                                        input_root=input_root, context=context)
+                managed = workflow.execute_theory(config_path, seed=41, run_id="20260827_210002__analysis__python__theory-test",
+                                        input_root=input_root, context=context, resume_from=None, artifact_store=store)
+            result = Path(managed["run_directory"])
+            self.assertEqual(store.inspect_run(managed["store_run_id"]), Path(managed["store_run_path"]))
             summary = load_json(result / "summary.json")
             self.assertEqual(summary["status"], "success", summary)
             self.assertEqual(summary["completed_confirmations"], 1)

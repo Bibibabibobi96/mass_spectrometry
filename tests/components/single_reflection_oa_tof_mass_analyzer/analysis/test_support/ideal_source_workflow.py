@@ -36,7 +36,7 @@ def copy_input_root(source_project: Path, destination: Path) -> Path:
 
 
 def make_context(workspace: Path) -> ExecutionContext:
-    """Select explicit TEST policies; retain actual public admission and ledger."""
+    """Select explicit TEST policies for the real managed owner and Store."""
     workspace.mkdir(parents=True, exist_ok=True)
     stage = workspace / 'test-owned-stage-policy.json'
     limits = dict(wall_clock_seconds=120,
@@ -95,6 +95,7 @@ def retained_workspace() -> Iterator[Path]:
         try:
             owners = {}
             artifact_roots = set()
+            store_roots = set()
             for path in root.rglob('result.json'):
                 if path.parent.parent.name != 'workflow_results':
                     continue
@@ -118,6 +119,18 @@ def retained_workspace() -> Iterator[Path]:
                 if not artifact_root.is_relative_to(root.resolve()):
                     raise AssertionError('Test capacity authority escaped its owned workspace')
                 artifact_roots.add(artifact_root)
+                if snapshot.get('role') == 'store_native_stage_capacity':
+                    from msplatform.storage import ArtifactStore
+                    store = ArtifactStore(artifact_root)
+                    with store._db() as db:
+                        reservations = db.execute('SELECT COUNT(*) FROM reservations').fetchone()[0]
+                        bindings = db.execute("SELECT COUNT(*) FROM native_bindings WHERE state='active'").fetchone()[0]
+                        publishing = db.execute("SELECT COUNT(*) FROM runs WHERE state!='ready'").fetchone()[0]
+                    if reservations or bindings or publishing:
+                        active.append(str(path))
+                        retain = True
+                    store_roots.add(artifact_root)
+                    continue
                 public = owners.get(run)
                 final = {} if public is None else public.get('capacity_session', {})
                 # The immutable preparation snapshot can remain status=active.
@@ -128,7 +141,7 @@ def retained_workspace() -> Iterator[Path]:
                         or any(final.get(key) != snapshot[key] for key in ('artifact_root', 'lease_id', 'owner'))):
                     active.append(str(path))
                     retain = True
-            for artifact_root in artifact_roots:
+            for artifact_root in artifact_roots - store_roots:
                 audit = load_capacity_protection_leases(artifact_root)
                 if audit['audit']:
                     active.extend(str(row['lease_id']) for row in audit['audit'])

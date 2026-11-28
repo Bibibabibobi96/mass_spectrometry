@@ -19,6 +19,7 @@ from msplatform.workflows.oa_tof_design.source_experiment import (
     build_case_plan, summarize_stage, validate_experiment,
 )
 from msplatform.workflows.oa_tof_design import source_comparison as runner
+from msplatform.storage import ArtifactStore
 
 
 from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.ideal_source_workflow import (
@@ -162,22 +163,24 @@ class IdealExperimentTests(unittest.TestCase):
             self.assertTrue(all(not Path(path).is_absolute() for path in load_json(request)["outputs"]))
             self.assertEqual(len(load_json(request)["outputs"]), 168)
 
-    def test_finalization_cli_transports_the_same_no_particle_completion_policy(self) -> None:
-        from msplatform.execution.completion import no_particle_batch_completion_api
+    def test_finalization_cli_recovers_store_stage_and_outer_publication(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             # This dispatch-only context requires no host policy or lease.
             context = SimpleNamespace(workspace=root / "study")
-            result = root / "result.json"
-            # CLI dispatch unit only: actual finalization/unknown-writer behavior
-            # remains with the existing owner tests, not this controlled return.
+            store = SimpleNamespace()
+            recovered = {"run": {"execution_status": "succeeded"}}
             with patch("msplatform.execution.context.load_environment", return_value=context) as environment, \
-                    patch("msplatform.execution.owner.resume_finalization", return_value={"status": "success"}) as resume, \
+                    patch("msplatform.storage.ArtifactStore", return_value=store) as selected_store, \
+                    patch.object(runner, "recover_finalization", return_value=recovered) as resume, \
                     patch.object(runner, "execute", side_effect=AssertionError("finalization cannot rerun science")) as science:
                 self.assertEqual(runner.main(["--workspace", str(context.workspace), "--environment", str(root / "machine.json"),
-                                              "--profile", "explicit-test", "--resume-finalization", str(result)]), 0)
-                resume.assert_called_once_with(context, result_path=result,
-                                               completion_api=no_particle_batch_completion_api)
+                                              "--profile", "explicit-test", "--artifact-root", str(root / "store"),
+                                              "--resume-finalization", "outer-store-run",
+                                              "--stage-asset-id", "source-stage"]), 0)
+                selected_store.assert_called_once_with(root / "store")
+                resume.assert_called_once_with(context, artifact_store=store,
+                    stage_asset_id="source-stage", store_run_id="outer-store-run")
                 environment.assert_called_once()
                 science.assert_not_called()
 
@@ -190,6 +193,7 @@ class IdealExperimentTests(unittest.TestCase):
         with retained_workspace() as root, contextlib.redirect_stdout(io.StringIO()):
             input_root = copy_input_root(PROJECT_ROOT, root / "author-inputs")
             context = make_context(root / "study")
+            store = ArtifactStore(root / "store")
             config_path = root / "experiment.json"
             config_path.write_text(json.dumps(config), encoding="utf-8")
             source_provider = runner._source_package_root()
@@ -231,16 +235,23 @@ class IdealExperimentTests(unittest.TestCase):
                     patch.object(runner, "_source_files", side_effect=selected_sources), \
                     owned_workflow_environment():
                 self.assertFalse(marker.exists())
-                failed = runner.execute(config_path, input_root=input_root, context=context, seed=9,
-                    run_id="20260827_010000__test__python__ideal-source-failure")
+                failed_result = runner.execute(config_path, input_root=input_root, context=context, seed=9,
+                    run_id="20260827_010000__test__python__ideal-source-failure", artifact_store=store)
+                failed = Path(failed_result["run_directory"])
+                self.assertIsNone(failed_result["store_run_path"])
+                self.assertEqual(store.run_status(failed_result["store_run_id"])["execution_status"], "failed")
                 self.assertEqual(load_json(failed / "summary.json")["completed_cases"], 1)
                 self.assertEqual(load_json(failed / "run_manifest.json")["status"], "failed")
                 self.assertIn("ArithmeticError: injected exact-model failure",
                               load_json(failed / "summary.json")["failure_reason"])
                 self.assertEqual(marker.read_text(encoding="utf-8"), "case2 explicit once-only fixture failure")
                 first_csv = (failed / "results/residual_scan__0001__particles.csv").read_bytes()
-                resumed = runner.execute(config_path, input_root=input_root, context=context, seed=9,
-                    run_id="20260827_010001__test__python__ideal-source-resume", resume_from=failed)
+                resumed_result = runner.execute(config_path, input_root=input_root, context=context, seed=9,
+                    run_id="20260827_010001__test__python__ideal-source-resume", resume_from=failed,
+                    artifact_store=store)
+                resumed = Path(resumed_result["run_directory"])
+                self.assertEqual(store.inspect_run(resumed_result["store_run_id"]),
+                                 Path(resumed_result["store_run_path"]))
                 summary = load_json(resumed / "summary.json")
                 self.assertEqual(summary["status"], "success")
                 self.assertEqual(summary["completed_cases"], 4)
@@ -271,13 +282,15 @@ class IdealExperimentTests(unittest.TestCase):
                     self.assertGreater(operations[0]["observation"]["process_id"], 0)
                 with self.assertRaisesRegex(ValueError, "differs"):
                     runner.execute(config_path, input_root=input_root, context=context, seed=10,
-                        run_id="20260827_010002__test__python__ideal-source-mismatch", resume_from=failed)
+                        run_id="20260827_010002__test__python__ideal-source-mismatch", resume_from=failed,
+                        artifact_store=store)
                 fixed_kernel = kernel.read_bytes()
                 try:
                     kernel.write_bytes(fixed_kernel + b"\n# Explicit changed scientific-source fixture.\n")
                     with self.assertRaisesRegex(ValueError, "differs"):
                         runner.execute(config_path, input_root=input_root, context=context, seed=9,
-                            run_id="20260827_010003__test__python__ideal-source-code-mismatch", resume_from=failed)
+                            run_id="20260827_010003__test__python__ideal-source-code-mismatch", resume_from=failed,
+                            artifact_store=store)
                 finally:
                     kernel.write_bytes(fixed_kernel)
             self.assertEqual(provider_before, {path.relative_to(provider): path.read_bytes()

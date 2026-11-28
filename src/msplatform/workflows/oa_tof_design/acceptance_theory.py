@@ -462,9 +462,9 @@ def _run_theory_cases(config: dict[str, Any], baseline: dict[str, Any], *, seed:
 
 def execute_theory(config_path: Path, *, input_root: Path, context: ExecutionContext, seed: int,
                    run_id: str, resume_from: Path | None,
-                   max_workers: int | None = None) -> Path:
-    """Run explicit theory inputs through the single existing execution owner."""
+                   max_workers: int | None = None, artifact_store: Any = None) -> dict[str, Any]:
+    """Run explicit theory inputs through the selected Store's managed owner."""
     from .source_comparison import _execute_role
     return _execute_role(config_path, input_root=input_root, context=context, seed=seed,
                          run_id=run_id, resume_from=resume_from, max_workers=max_workers,
-                         expected_role="ideal_acceptance_theory")
+                         expected_role="ideal_acceptance_theory", artifact_store=artifact_store)
