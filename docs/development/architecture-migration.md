@@ -326,11 +326,13 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `206c760c`。CLOC 2.10 `d7aeafed→206c760c` PASS：total code +15、production +12、tests +3，unclassified=0；逐语言和过滤口径在外部 `sfi-fields-206c760c-cloc.log`。
 
-### C2 Prepared 中 MR 数学职责退出（WORKTREE）
+### C2 Prepared 中 MR 数学职责退出（候选）
 
 旧 `prepared_joint.joint_mirror_stripe_l0` 与 `prism_handoff` 归 `components.multi_reflection_tof` 同名模块：前者保留固定几何 Mirror–Stripe L0 算法，后者保留 P1/P2→Stripe 相空间交接；二者不再是流程容器成员。MR design、trial/workpoint、运行资源、全部测试和安装/Changed 路由改用组件 owner，原模块实际删除，无别名。公式、几何、工作点与参数未改。
 
 相关8个测试模块共169父测试全PASS（121.427s），0 skip；安装 Mirror–L0 路由定向1父测试PASS。日志为 `prepared-mr-domain-migration.log` 与 `prepared-mr-domain-selection.log`。Ruff/diff PASS；未执行原生。Prepared 其余运行/恢复职责仍未关闭，本项不是 CA19 完成。
+
+本单元已提交并普通 push `428cb06e`。CLOC 2.10 `12b46917→428cb06e` PASS：total、production、tests 的 code 均为0净变化，unclassified=0；完整逐语言 files/blank/comment/code 与过滤口径在外部 `prepared-mr-domain-428cb06e-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
