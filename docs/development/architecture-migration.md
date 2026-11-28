@@ -452,7 +452,7 @@ Agent 1 以 `319415b4c95f82eec17eed227f8448666fed7a7d` 补回实际 observer、f
 
 随后把仍在使用的 `preflight_frontend_resources` 原算法及数值依据迁到 `backends.simion.native_plans`，实际删除孤儿 `downstream_fields.py`、`frontend_fields.py`、`field_plan.py`、`workflows/pulse_execution.py`、`contracts/single_reflection_preparation.py` 和当前 contracts 下五份旧 request schema；`results/historical_schemas/`、历史请求 fixture 和 migration map 保持原字节。安装探针改用真实 Recipe→prepared model→`plan_solve_fields`，删除原 producer 依赖，并加入旧模块缺席断言。路由加入公共 recorded-birth 与新 `test_native_field_verifier.py`，修正 regex／exact 及真实附加消费者对账。
 
-最终该工作树 SFI 140/140 PASS（44.267s），外部及公共入口52/52 PASS（22.975s），日志 `sfi-orphan-retirement-main.log`、`sfi-orphan-external-main.log`；Ruff、安装探针语法和 diff PASS。依赖／路由24项首轮仅旧 `frontend_fields.py` 子案失败，改测实际 `field_validation.py` 后1项复验 PASS（4.095s），其余23项 PASS（207.308s）；日志 `sfi-orphan-dependencies-routing.log`、`sfi-current-field-route.log`。未执行商业 native 或双发行最终验收，不能据此标记 CA19。
+最终该工作树 SFI 140/140 PASS（44.267s），外部及公共入口52/52 PASS（22.975s），日志 `sfi-orphan-retirement-main.log`、`sfi-orphan-external-main.log`；Ruff、安装探针语法和 diff PASS。依赖／路由24项首轮仅旧 `frontend_fields.py` 子案失败，改测实际 `field_validation.py` 后1项复验 PASS（4.095s），其余23项 PASS（207.308s）；日志 `sfi-orphan-dependencies-routing.log`、`sfi-current-field-route.log`。合并后完整 finalization／stopped-source 与 field-observation 再跑14/14 PASS（39.629s），日志 `sfi-cross-suite-recovery-main.log`。未执行商业 native 或双发行最终验收，不能据此标记 CA19。
 
 本单元已提交并普通 push `ece6ae76910a4e302161461d5ed264f2d3eb538f`。CLOC 2.10 `c44cc1d2→ece6ae76` PASS：total files -10、blank -81、comment -55、code -2666；production files -10、blank -81、comment -57、code -2676；tests files/blank 不变、comment +2、code +10；unclassified=0。逐语言与过滤口径见 `sfi-orphan-ece6ae76-cloc.log`。
 
