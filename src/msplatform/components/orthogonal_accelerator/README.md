@@ -53,12 +53,12 @@
 
 组件根拥有器件理论、几何派生和科研配置；`msplatform.workflows.oa_focus_*`拥有聚焦编排与分析，
 `msplatform.backends`拥有SIMION/COMSOL资源，`tests/components/orthogonal_accelerator/`拥有独立回归。
-共享运行、IOB基础机制、坐标与证据工具继续使用根`common/`。不保留另一份`common/accelerator/`领域实现。
+共享运行、IOB基础机制、坐标与证据工具归 `msplatform.execution`、`msplatform.io` 和对应 backend；不再使用根 `common/`。
 粒子释放、粒子状态和 FLY2 序列化是共享层职责；本组件只声明源包络与组件验收，不得复制释放器。
 
 仪器项目通过明确接口复用本组件，保留系统布局约束、联合聚焦与整机科学验收；
 [统一集成](../../../../docs/ASSEMBLY.md)拥有组件实例装配、跨组件执行及冻结依赖，不保存第二份加速器模型。
-Candidate、Formal、radial、compensation和五物种研究保持各自workflow，不共用隐式科学合同。
+旧 Candidate／Formal 总等级及其生产入口已退出；数学候选、局部研究和历史证据按准确职责归属，不共用隐式科学合同。
 新器件独立运行产物归`artifacts/components/orthogonal_accelerator/`；既有OA/MR历史证据不迁移、不改身份。
 旧`projects/orthogonal_accelerator/`活动树已退役，不保留兼容桥。
 
