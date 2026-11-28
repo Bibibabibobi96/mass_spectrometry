@@ -10,8 +10,9 @@ import tempfile
 import unittest
 from functools import partial
 from pathlib import Path
+from msplatform.components.single_reflection_oa_tof.design_compilation import EnvelopeReviewRequired
 from msplatform.contracts.machine_contracts import load_json, sha256
-from msplatform.workflows.oa_candidate.compile_candidate_design import EnvelopeReviewRequired, write_candidate as _write_candidate
+from msplatform.workflows.oa_candidate.compile_candidate_design import write_candidate as _write_candidate
 from msplatform.workflows.oa_candidate.prepare_candidate_consumers import prepare as _prepare, verify_routing_coverage
 
 from tests.components.single_reflection_oa_tof_mass_analyzer.analysis.test_support.candidate_fixtures import (

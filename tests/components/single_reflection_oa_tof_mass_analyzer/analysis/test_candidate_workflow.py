@@ -1157,9 +1157,8 @@ print('FROZEN_ION_CONSUMER_PASS')
             compiler_log = planning_root / "logs/prepare_consumers.stdout.log"
             self.assertIn(f"SOURCE={compiler}", compiler_log.read_text(encoding="utf-8"))
             frozen_resolved = json.loads((planning_root / "inputs/candidate_resolved_geometry.json").read_text())
-            from msplatform.workflows.oa_candidate.sync_geometry_contract import (
-                render_fly2, render_program, render_resolved_lua,
-            )
+            from msplatform.backends.simion.oatof_inputs import render_fly2, render_resolved_lua
+            from msplatform.workflows.oa_candidate.sync_geometry_contract import render_program
             expected = {"oatof_resolved.lua": render_resolved_lua(frozen_resolved),
                         "oatof_ideal_grounded.lua": render_program(frozen_resolved),
                         "oatof_ideal_grounded.fly2": render_fly2(frozen_resolved, particle_source_seed=20260713)}

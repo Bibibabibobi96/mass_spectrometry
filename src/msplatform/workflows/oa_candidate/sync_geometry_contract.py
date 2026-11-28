@@ -18,15 +18,7 @@ import shutil
 import tempfile
 from typing import Iterator
 
-from msplatform.backends.simion.oatof_inputs import (
-    generated_adjustables as generated_adjustables,
-    lua_value as lua_value,
-    number as number,
-    render_fly2 as render_fly2,
-    render_resolved_lua as render_resolved_lua,
-    validate_resolved_contract as validate_resolved_contract,
-)
-from msplatform.backends.simion.oatof_inputs import render_program as _render_program
+from msplatform.backends.simion import oatof_inputs
 from msplatform.io.file_identity import file_sha256
 from msplatform.workflows.oa_candidate.geometry_contract import resolve_contract, serialized
 
@@ -64,12 +56,12 @@ def package_repository_view(source_ids: tuple[str, ...]) -> Iterator[Path]:
 
 def load_contract(contract_path: Path | None = None) -> dict:
     if contract_path is None:
-        return validate_resolved_contract(resolve_contract())
-    return validate_resolved_contract(json.loads(contract_path.read_text(encoding="utf-8")))
+        return oatof_inputs.validate_resolved_contract(resolve_contract())
+    return oatof_inputs.validate_resolved_contract(json.loads(contract_path.read_text(encoding="utf-8")))
 
 
 def render_program(contract: dict) -> str:
-    return _render_program(contract, PROGRAM_PATH.read_text(encoding="utf-8"))
+    return oatof_inputs.render_program(contract, PROGRAM_PATH.read_text(encoding="utf-8"))
 
 
 def _replace_unique_sha(
@@ -187,9 +179,9 @@ def main() -> None:
         path
         for path, content in (
             (RESOLVED_PATH, serialized(contract)),
-            (RESOLVED_LUA_PATH, render_resolved_lua(contract)),
+            (RESOLVED_LUA_PATH, oatof_inputs.render_resolved_lua(contract)),
             (PROGRAM_PATH, render_program(contract)),
-            (FLY2_PATH, render_fly2(contract, particle_source_seed=source_seed)),
+            (FLY2_PATH, oatof_inputs.render_fly2(contract, particle_source_seed=source_seed)),
             (OPTIMIZATION_ENVELOPE_PATH, optimization_envelope),
             *(
                 (path, render_authority_document(path, optimization_envelope))

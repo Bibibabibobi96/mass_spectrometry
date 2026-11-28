@@ -15,11 +15,10 @@ import subprocess
 import tempfile
 import unittest
 
-from msplatform.workflows.oa_candidate.geometry_contract import (
-    PROJECT_ROOT, resolve_contract, resolve_electrode_geometry,
-)
+from msplatform.components.single_reflection_oa_tof.geometry_contract import resolve_electrode_geometry
+from msplatform.workflows.oa_candidate.geometry_contract import PROJECT_ROOT, resolve_contract
+from msplatform.backends.simion.oatof_inputs import lua_value, render_resolved_lua
 from msplatform.backends.simion.tof_geometry import resolve_physical_geometry
-from msplatform.workflows.oa_candidate.sync_geometry_contract import lua_value, render_resolved_lua
 
 from msplatform.backends.simion.resources import gem_template_path, gem_template_text, native_resource_path
 

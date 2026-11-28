@@ -13,10 +13,9 @@ from msplatform.workflows.oa_candidate.sync_geometry_contract import (
     frozen_fly2_seed,
     load_contract,
     render_authority_document,
-    render_fly2,
     render_optimization_envelope,
-    render_resolved_lua,
 )
+from msplatform.backends.simion.oatof_inputs import render_fly2, render_resolved_lua
 from msplatform.backends.simion import oatof_inputs
 from msplatform.contracts.machine_contracts import sha256
 from msplatform.backends.simion.tof_geometry import derive_simion_geometry, resolve_physical_geometry

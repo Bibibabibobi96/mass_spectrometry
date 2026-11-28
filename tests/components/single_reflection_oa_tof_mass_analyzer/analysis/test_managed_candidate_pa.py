@@ -38,9 +38,8 @@ class ManagedCandidatePaTests(unittest.TestCase):
             freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
         )
         from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan
-        from msplatform.workflows.oa_candidate.sync_geometry_contract import (
-            render_fly2, render_program, render_resolved_lua,
-        )
+        from msplatform.backends.simion.oatof_inputs import render_fly2, render_resolved_lua
+        from msplatform.workflows.oa_candidate.sync_geometry_contract import render_program
 
         for case in cases:
             with self.subTest(case=case):
@@ -444,9 +443,8 @@ write_json_atomic(run/'run_config.json',config)
             freeze_candidate_source_closure, frozen_source_path, verify_candidate_source_closure,
         )
         from msplatform.backends.simion.simion_component_pa_plan import compile_component_pa_plan
-        from msplatform.workflows.oa_candidate.sync_geometry_contract import (
-            render_fly2, render_program, render_resolved_lua,
-        )
+        from msplatform.backends.simion.oatof_inputs import render_fly2, render_resolved_lua
+        from msplatform.workflows.oa_candidate.sync_geometry_contract import render_program
 
         with tempfile.TemporaryDirectory(prefix="candidate-detached-build-") as directory:
             root = Path(directory)

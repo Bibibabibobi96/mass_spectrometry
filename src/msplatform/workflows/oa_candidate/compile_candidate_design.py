@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from msplatform.components.single_reflection_oa_tof.design_compilation import (
-    EnvelopeReviewRequired as EnvelopeReviewRequired,
+    EnvelopeReviewRequired,
     compile_design_proposal,
-    _validate_invariants as _canonical_validate_invariants,
     compile_design_overrides as _canonical_compile_overrides,
 )
 
@@ -24,11 +23,6 @@ from msplatform.workflows.oa_candidate.science_paths import CandidateSciencePath
 def compile_design_overrides(base_contract, overrides, *, science_root: Path):
     catalog = load_json(CandidateSciencePaths(science_root).catalog)
     return _canonical_compile_overrides(base_contract, overrides, catalog=catalog)
-
-def _validate_invariants(baseline, *, science_root: Path):
-    catalog = load_json(CandidateSciencePaths(science_root).catalog)
-    return _canonical_validate_invariants(baseline, catalog=catalog)
-
 
 def compile_proposal(proposal_path: Path, *, science_root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     paths = CandidateSciencePaths(science_root)

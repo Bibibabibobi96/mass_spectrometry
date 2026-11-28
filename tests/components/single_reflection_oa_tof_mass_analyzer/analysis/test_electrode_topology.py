@@ -31,7 +31,7 @@ class ElectrodeTopologyTests(unittest.TestCase):
                     else:
                         changed[key] = {"not_a_backend_contract": True, "local_electrode_id": 997}
             with self.subTest(mode=mode), patch(
-                "msplatform.workflows.oa_candidate.geometry_contract.resolve_physical_geometry",
+                "msplatform.backends.simion.tof_geometry.resolve_physical_geometry",
                 side_effect=AssertionError("neutral topology must not call native adapter"),
             ):
                 self.assertEqual(build_electrode_topology(changed, projection=projection), expected)

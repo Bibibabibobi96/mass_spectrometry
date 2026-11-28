@@ -8,8 +8,9 @@ import tempfile
 import unittest
 
 from msplatform.workflows.oa_candidate.geometry_contract import resolve_contract
+from msplatform.backends.simion.oatof_inputs import generated_adjustables, render_resolved_lua
 from msplatform.backends.simion.tof_geometry import resolve_physical_geometry
-from msplatform.workflows.oa_candidate.sync_geometry_contract import generated_adjustables, render_program, render_resolved_lua
+from msplatform.workflows.oa_candidate.sync_geometry_contract import render_program
 
 LUA = (os.environ["SIMION_LUA_EXE"] if "SIMION_LUA_EXE" in os.environ else
        shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
