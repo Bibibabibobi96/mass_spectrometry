@@ -570,6 +570,8 @@ Agent 11 的 `1ea529ae`／主线 `0dfbdf11` 修复前项四组真实失败：IP�
 
 前项 CLOC 2.10 `1ce7d170→0dfbdf11` PASS：total／production／tests code +50／+41／+9，files不变，unclassified=0，详见 `store-integration-fixes-main-cloc.log`。后续单元 CLOC 2.10 `a50d805a→ca59d716` PASS：total／production code +45、tests不变，files／blank／comment不变，unclassified=0；详见 `static-ipmr-f0f85307-cloc.log`。无完整 Changed／Repository、双安装或商业 native。
 
+后续 `17afca82` 关闭上述 IPMR 完整用例超时。周期堆栈把首处瓶颈定位到 `_protect_input_sources` 对每个不可变成员×每个来源×每个候选重复 `Path.resolve()`；同类嵌套也存在于通用 SIMION `_protected_source`。现分别预索引来源成员的路径／bytes／SHA 和 manifest 的 path→records，重复记录仍保留列表并拒绝，未改变来源、篡改、恢复或科学断言。完整 `test_ip_mr_sampled_field_execution` 1/1 PASS（514.952s），`test_simion_model_execution`＋`test_open_model_execution` 15/15 PASS（89.431s）；日志 `ipmr-indexed-sources-worktree-r9.log`、`model-source-index-worktree.log`。早期诊断钩子异常退出与手工停止不计通过。Ruff／diff PASS；CLOC 2.10 `c5a80178→17afca82` total／production code +4／+4、tests不变，unclassified=0，见 `ipmr-source-index-worktree-cloc.log`。未运行商业 native、完整门禁或双安装。
+
 ### C3 standalone IP Store 接管（主线整合候选）
 
 Agent 12 的 `7894fa04a90b1d7322a2be12bb104a50fd830069`／主线 `718af786` 将 execution profile 切到现有公共 `msplatform.cli ion-processor-native-functional run`，由新 workflow 组合显式 deployment、workspace、`standalone_native_store` 和 `run_managed_stage`。删除旧容量会话、New-RunPackage、Result writer、PowerShell 终态收尾及 `-ResumeFinalization`；`ip_functional.ps1` 只保留 Store stage 实际消费的原生科学资源，不再是独立 owner 或恢复入口。
