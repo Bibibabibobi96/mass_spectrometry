@@ -550,6 +550,16 @@ Agent 6 的 `c419b86e76a959de192d25e94966f94d4f0db42a`／主线 `a4ee07a8` 删�
 
 主线 CLOC 2.10 `e897da83→a4ee07a8` PASS：total code -23、production -31、tests +8，files／blank／comment不变，unclassified=0；逐语言与过滤口径见 `oa-grades-a4ee07a8-cloc.log`。文档 StructureOnly PASS。无商业 native；Agent 6 的2小时后台会话在提交后到期，不影响已保存提交，但未交付的完整长套件不计 PASS。
 
+### C3 公开 Python 原生消费者接入 Store（主线整合候选）
+
+Agent 11 的 `9c55486c2fc432c08809ff8e3174ba48bad3b117`／主线 `93e2ba0b` 将 COMSOL gas／Assembly tracing、通用 SIMION prepare／fields／track、grounded／split scalar 和双锥四阶段接到显式 standalone 或匹配父 Store scope。递归来源、recorded birth、恢复和模型成员在准入前 guard／claim；已有父 Store 的 workflow 不另建生命周期。双锥保留四阶段 operation graph 和 saved-field 复用，gas-flow 原 CLI 选择工作区内 Store，没有新增第二 CLI。
+
+`native_source_guard` 补双锥 producer closure 与 trajectory→FieldBundle 递归 lineage；`model_execution` 使用现有 `claim_verified` 和精确成员 guard。科学动作、原始ID／时钟、来源、失败恢复和重复 run 语义保持；未改 `execution.owner` 或启动商业 native。
+
+作者定向证据包括平台／Store59、COMSOL particle／ground15、双锥 fresh16、Store accounting13及多个真实进程／恢复首错修复；Ruff、diff、文档321文件0错误。主线组合105项实际为92 success、2 FAIL、11 ERROR（777.533s），日志 `public-store-main.log`：IP–MR成员唯一绑定、gas-flow旧参数／来源哈希、混合物种显式合同及 native-controls旧错误文案四组问题已由原负责人接续定位；另有子进程 traceback 但所在用例 PASS，不重复计失败。上述失败保持未关闭，不用作者定向结果代替主线通过。
+
+主线 CLOC 2.10 `396d538e→93e2ba0b` PASS：total／production／tests code +584／+357／+227，files不变，blank +28／+14／+14，comment不变，unclassified=0；详见 `public-store-93e2ba0b-cloc.log`。无完整 Changed／Repository、双安装或 native 验收声明。
+
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 
 Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime dependency 无缺失目标；旧名负例和历史 reader 均有效。上述10处 PS 断链已在本工作树修复并复验。其余实际阻塞按真实调用保留如下，不转为文档豁免：
