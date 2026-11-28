@@ -523,6 +523,13 @@ print(json.dumps(str(p)))
       }
     }
     if($providerRun){
+      if(-not$completedBinding){
+        $providerSummary=Get-Content -LiteralPath (Join-Path $providerRun 'summary.json') -Raw|ConvertFrom-Json
+        if($providerSummary.status-ne'success'-or-not$providerSummary.field_binding){
+          throw 'Field provider did not publish a binding.'
+        }
+        $Arguments.FieldBindingPath=[string]$providerSummary.field_binding
+      }
       $renewal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedPaths @($providerRun)
       $script:capacitySession=$renewal.session
     }

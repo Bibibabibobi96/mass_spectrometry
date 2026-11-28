@@ -424,6 +424,12 @@ CLOC 2.10 `d995a2e77c52406426d131286900ebccef0fdea4→7584e8f897802c1a988728bd47
 
 total 代码变化为 JSON -69、PowerShell -170、Python -354；production 为 JSON -69、PowerShell -170、Python -67；tests 仅 Python -287。`WORKTREE_TRACKED_DIRTY_COUNT=0`，未跟踪产物不计入。
 
+### C2 MR 新场 provider binding 修复（WORKTREE）
+
+`run_downstream_workpoint_iteration.ps1` 的新执行分支在容量续期和 trial 前读取实际 `summary.json`，要求 `status=success` 且存在 `field_binding`，再把该值传给现有 trial；不再让新场分支以空 binding 继续。已完成 provider 的匹配分支继续使用公共 resolver 验证的 binding，不虚构一次新求解或要求不存在的 summary。
+
+`PowerShellTrialBoundaryTest` 12/12 PASS（13.206s），0 skip；覆盖普通新场、completed match/nonmatch/invalid、同场复用、镜像变化、预检和 provider 失败、native 旁路等；日志 `mr-provider-binding-fix-r2.log`。首轮 completed-match 负例发现 summary 读取误覆盖复用分支，已收窄到新执行路径后全组复验。无商业 native 或最终门禁声明。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
