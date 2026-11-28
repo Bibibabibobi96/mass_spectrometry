@@ -1933,6 +1933,25 @@ print('FROZEN_ION_CONSUMER_PASS')
                     self.assertFalse(extra.exists())
 
 
+    def test_static_particle_source_uses_public_release_owner(self):
+        with tempfile.TemporaryDirectory() as root:
+            _, _, plan = self.materialize_candidate_run(Path(root))
+            runtime_plan = load_json(Path(plan["run_root"]) / "candidate_workflow_plan.json")
+            stage = runtime_plan["stages"][0]
+            with mock.patch.object(
+                candidate_workflow, "_run_command",
+                side_effect=AssertionError("source generation must not launch a subprocess"),
+            ):
+                evidence = execute_stage(stage, runtime_plan, "unused")
+            output = Path(evidence["particle_table"])
+            self.assertEqual(
+                sha256(output).upper(),
+                "6287A54475008111A7F8AF87329F8AD08911066A564C508CFD424577D693229E",
+            )
+            with self.assertRaises(FileExistsError):
+                execute_stage(stage, runtime_plan, "unused")
+
+
     def test_frozen_candidate_source_tamper_blocks_stage_and_finalize(self):
         with tempfile.TemporaryDirectory() as root:
             _, run_root, plan = self.materialize_candidate_run(Path(root))

@@ -9,6 +9,7 @@ from msplatform.particle_release.dotnet_gaussian_box_ion11 import (
     _serialized_particle_source,
     generate_particle_source,
     validate_particle_source,
+    write_particle_source,
 )
 
 
@@ -47,6 +48,23 @@ class GenerateIonSourceTest(unittest.TestCase):
 
         self.assertEqual(n100, n1000[:100])
         self.assertIn("5.24000000E+002", n100[0])
+
+    def test_public_writer_preserves_n100_bytes_and_rejects_overwrite(self) -> None:
+        arguments = dict(
+            self.source_arguments(),
+            particle_count=100,
+            center_xyz_mm=(-48.8, 0.0, -18.42918680341103),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "candidate.ion"
+            receipt = write_particle_source(source_path=source, **arguments)
+            self.assertEqual(receipt["status"], "success")
+            self.assertEqual(
+                receipt["source_sha256"],
+                "6287A54475008111A7F8AF87329F8AD08911066A564C508CFD424577D693229E",
+            )
+            with self.assertRaises(FileExistsError):
+                write_particle_source(source_path=source, **arguments)
 
     def test_existing_n1000_requires_exact_deterministic_rebuild(self) -> None:
         arguments = self.source_arguments()

@@ -98,7 +98,6 @@ RELATIVE_PATHS = (
     "src/msplatform/backends/comsol/matlab/oatof_parse_field_idealization.m",
     "src/msplatform/backends/comsol/matlab/verify_oatof_comsol_sync.m",
     "src/msplatform/backends/comsol/matlab/oatof_assert_formal_write_authorized.m",
-    "src/msplatform/backends/simion/resources/generate_comsol_consistent_particles.ps1",
     "src/msplatform/backends/simion/resources/analyze_ideal_field_log.ps1",
     "src/msplatform/backends/simion/resources/build_formal_delivery.ps1",
     "src/msplatform/backends/simion/resources/build_formal_iob.lua",

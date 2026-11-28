@@ -108,6 +108,36 @@ def _serialized_particle_source(lines: list[str]) -> bytes:
     return ("\r\n".join(lines) + "\r\n").encode("ascii")
 
 
+def write_particle_source(
+    *,
+    source_path: Path,
+    particle_count: int,
+    mass_amu: float,
+    charge: int,
+    energy_mean_ev: float,
+    energy_std_ev: float,
+    half_width_xyz_mm: tuple[float, float, float],
+    center_xyz_mm: tuple[float, float, float],
+    seed: int,
+) -> dict[str, Any]:
+    """Write a new deterministic ION11 source and verify its frozen identity."""
+    source_path = Path(source_path)
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    arguments = dict(
+        particle_count=particle_count,
+        mass_amu=mass_amu,
+        charge=charge,
+        energy_mean_ev=energy_mean_ev,
+        energy_std_ev=energy_std_ev,
+        half_width_xyz_mm=half_width_xyz_mm,
+        center_xyz_mm=center_xyz_mm,
+        seed=seed,
+    )
+    with source_path.open("xb") as stream:
+        stream.write(_serialized_particle_source(generate_particle_source(**arguments)))
+    return validate_particle_source(source_path=source_path, **arguments)
+
+
 def validate_particle_source(
     *,
     source_path: Path,

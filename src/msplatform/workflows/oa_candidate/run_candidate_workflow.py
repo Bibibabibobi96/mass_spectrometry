@@ -225,20 +225,28 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
     closure = plan.get("execution_source_closure")
     if closure is not None:
         verify_candidate_source_closure(closure)
-    run_root = Path(plan["run_root"])
-    logs = run_root / "logs"
     if stage_id == "static_inputs":
         if closure is None:
             raise RuntimeError("candidate source closure is required")
         output = Path(stage["pending_output"])
         output.parent.mkdir(parents=True, exist_ok=True)
-        command = _powershell(
-            frozen_source_path(closure, "src/msplatform/backends/simion/resources/generate_comsol_consistent_particles.ps1"),
-            _ps_arguments(stage["arguments"]),
+        from msplatform.particle_release.dotnet_gaussian_box_ion11 import write_particle_source
+        arguments = stage["arguments"]
+        write_particle_source(
+            source_path=output,
+            particle_count=arguments["N"],
+            mass_amu=arguments["MassAmu"],
+            charge=arguments["Charge"],
+            energy_mean_ev=arguments["EnergyMeanEv"],
+            energy_std_ev=arguments["EnergyStdEv"],
+            half_width_xyz_mm=(
+                arguments["HalfWidthXmm"],
+                arguments["HalfWidthYmm"],
+                arguments["HalfWidthZmm"],
+            ),
+            center_xyz_mm=(arguments["CenterXmm"], arguments["CenterYmm"], arguments["CenterZmm"]),
+            seed=arguments["Seed"],
         )
-        _run_command(command, logs / "static_inputs.log")
-        if not output.is_file():
-            raise RuntimeError(f"candidate particle table was not generated: {output}")
         return {"particle_table": str(output)}
     if stage_id == "structural_acceptance":
         evidence = {item["stage_id"]: item.get("evidence", {}) for item in plan["stage_results_so_far"]}

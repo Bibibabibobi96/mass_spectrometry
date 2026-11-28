@@ -646,10 +646,6 @@ def prepare_candidate_run(
                 "status": "prepared_except_particle_table",
                 "prepared_outputs": [str(path) for path in generated.values()],
                 "pending_output": str(candidate_ion),
-                "entrypoint": frozen_source_path(
-                    source_closure,
-                    "src/msplatform/backends/simion/resources/generate_comsol_consistent_particles.ps1",
-                ),
                 "arguments": {
                     "N": 100,
                     "MassAmu": target["mass_amu"],
