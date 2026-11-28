@@ -593,11 +593,11 @@
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
-          "reason": "common_comsol_direct_dependency_changed"
+          "reason": "comsol_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/backends/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "exact": "tools/repository/resource_budget_support.ps1",
@@ -645,11 +645,11 @@
         },
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
@@ -2766,7 +2766,7 @@
         },
         {
           "regex": "^src/msplatform/backends/simion/(?!(?:test_dirichlet_patch_basis\\.py|test_dirichlet_patch_basis_fixture\\.lua|build_dirichlet_patch_basis\\.lua)$)",
-          "reason": "common_simion_changed"
+          "reason": "simion_backend_changed"
         },
         {
           "exact": "src/msplatform/execution/inputs.py",
@@ -2790,11 +2790,11 @@
         },
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
-          "reason": "common_simion_changed"
+          "reason": "simion_backend_changed"
         },
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-          "reason": "common_simion_changed"
+          "reason": "simion_backend_changed"
         },
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
@@ -3078,11 +3078,11 @@
         },
         {
           "regex": "^src/msplatform/backends/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_simion_dependency_changed"
+          "reason": "simion_backend_dependency_changed"
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
-          "reason": "common_comsol_dependency_changed"
+          "reason": "comsol_backend_dependency_changed"
         },
         {
           "exact": "tools/repository/resource_budget_support.ps1",
@@ -3102,11 +3102,11 @@
         },
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
-          "reason": "common_simion_dependency_changed"
+          "reason": "simion_backend_dependency_changed"
         },
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-          "reason": "common_simion_dependency_changed"
+          "reason": "simion_backend_dependency_changed"
         },
         {
           "prefix": "src/msplatform/workflows/multipole_ip/",
@@ -3400,7 +3400,7 @@
         },
         {
           "regex": "^src/msplatform/backends/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/components/rf_multipole/(?!runtime/comsol_solver_numerics\\.ps1$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)(?:core/|runtime/|analysis/|comsol/|simion/|config/(?:contracts|campaigns|sources)/|config/simion_layout_template\\.json$|tests/domain/)",
@@ -5010,7 +5010,7 @@
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
-          "reason": "common_comsol_direct_dependency_changed"
+          "reason": "comsol_backend_direct_dependency_changed"
         },
         {
           "exact": "tools/repository/resource_budget_support.ps1",
@@ -5477,11 +5477,11 @@
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
-          "reason": "common_comsol_direct_dependency_changed"
+          "reason": "comsol_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/backends/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "exact": "tools/repository/resource_budget_support.ps1",
@@ -5561,11 +5561,11 @@
         },
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
@@ -6026,11 +6026,11 @@
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
-          "reason": "common_comsol_direct_dependency_changed"
+          "reason": "comsol_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/backends/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "exact": "tools/repository/resource_budget_support.ps1",
@@ -6082,11 +6082,11 @@
         },
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
@@ -6183,11 +6183,11 @@
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
-          "reason": "common_comsol_direct_dependency_changed"
+          "reason": "comsol_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/backends/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "exact": "tools/repository/resource_budget_support.ps1",
@@ -6239,11 +6239,11 @@
         },
         {
           "exact": "src/msplatform/backends/simion/resources/rf_drive.lua",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "exact": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
-          "reason": "common_simion_direct_dependency_changed"
+          "reason": "simion_backend_direct_dependency_changed"
         },
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
@@ -6606,7 +6606,7 @@
         },
         {
           "regex": "(?:^src/msplatform/backends/comsol/matlab/(?!(?:(?:configure_comsol_mesh|add_comsol_size_feature|read_comsol_mesh_size_controls|write_wehnelt_build_only_report)\\.m|tests/ComsolMeshSizeTest\\.m|tests/test_support/MeshSizeRecorder\\.m)$|README\\.md$|test_livelink_(?:(?:environment|failure_classification)\\.ps1|resource_stages\\.py)$)|^src/msplatform/backends/comsol/(?:launcher/|matlab/(?:comsolstartup|build_multipole_enclosure|classify_finite_particle_terminal|compare_rf_gui_observations|configure_comsol_segment_hybrid_mesh|configure_comsol_stationary_solver|create_comsol_grounded_connector|create_multipole_round_rods|create_multipole_segmented_round_rods|export_finite_3d_particle_outputs|extract_rf_particle_records|plan_rf_exact_birth_releases|reextract_finite_3d_transport|solve_finite_3d_transport|validate_finite_extraction_context|validate_finite_source_start|visit_rf_particle_windows|prepare_interface_readiness_run|solve_deterministic_rf_quadrupole_particles|load_oatof_contract|oatof_paths|configure_oatof_segmented_output|oatof_extract_detector_arrivals|oatof_detector_arrival_reducer|run_fixed_particle_retrace|workspace_paths|resolve_path_identity)\\.m$|matlab/(?:interface_readiness/run_release_construction_gate|mass_filter_reference/run_scan)\\.m$))",
-          "reason": "common_comsol_direct_dependency_changed"
+          "reason": "comsol_backend_direct_dependency_changed"
         },
         {
           "exact": "tools/repository/resource_budget_support.ps1",

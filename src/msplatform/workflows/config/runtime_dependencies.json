@@ -26,28 +26,28 @@
       ],
       "files": [
         {
-          "id": "accelerator_interface_projects_multi_reflection_tof_config_accelerator_component_request_n100_json",
+          "id": "msplatform_components_multi_reflection_tof_config_accelerator_component_request_n100_json",
           "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/accelerator_component_request_n100.json",
           "consumers": [
             "accelerator_interface"
           ]
         },
         {
-          "id": "accelerator_interface_projects_multi_reflection_tof_config_accelerator_dependency_json",
+          "id": "msplatform_components_multi_reflection_tof_config_accelerator_dependency_json",
           "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/accelerator_dependency.json",
           "consumers": [
             "accelerator_interface"
           ]
         },
         {
-          "id": "accelerator_interface_projects_multi_reflection_tof_config_accelerator_interfaces_json",
+          "id": "msplatform_components_multi_reflection_tof_config_accelerator_interfaces_json",
           "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/accelerator_interfaces.json",
           "consumers": [
             "accelerator_interface"
           ]
         },
         {
-          "id": "accelerator_interface_projects_multi_reflection_tof_config_ion_processor_dependency_json",
+          "id": "msplatform_components_multi_reflection_tof_config_ion_processor_dependency_json",
           "source_repo_path": "src/msplatform/components/multi_reflection_tof/config/ion_processor_dependency.json",
           "consumers": [
             "accelerator_interface"
@@ -226,7 +226,7 @@
           ]
         },
         {
-          "id": "accelerator_interface_common_simion_assets_iob_instance_seeds_4_instance_seed_iob",
+          "id": "msplatform_backends_simion_4_instance_seed_iob",
           "source_repo_path": "src/msplatform/backends/simion/resources/4_instance_seed.iob",
           "consumers": [
             "accelerator_interface",
@@ -234,7 +234,7 @@
           ]
         },
         {
-          "id": "accelerator_interface_common_simion_assets_iob_instance_seeds_5_instance_seed_iob",
+          "id": "msplatform_backends_simion_5_instance_seed_iob",
           "source_repo_path": "src/msplatform/backends/simion/resources/5_instance_seed.iob",
           "consumers": [
             "accelerator_interface"
@@ -277,7 +277,7 @@
           ]
         },
         {
-          "id": "common_artifact_retention_policy",
+          "id": "msplatform_execution_artifact_retention_policy",
           "source_repo_path": "src/msplatform/execution/resources/artifact_retention.json",
           "consumers": [
             "accelerator_interface",
@@ -286,7 +286,7 @@
           ]
         },
         {
-          "id": "local_frontend_machine_contracts_artifact_capacity_policy_json",
+          "id": "msplatform_execution_artifact_capacity_policy_json",
           "source_repo_path": "src/msplatform/execution/resources/artifact_capacity_policy.json",
           "consumers": [
             "accelerator_interface",
@@ -295,7 +295,7 @@
           ]
         },
         {
-          "id": "local_frontend_common_host_resource_policy_json",
+          "id": "msplatform_execution_host_resource_policy_json",
           "source_repo_path": "src/msplatform/execution/resources/host_resource_policy.json",
           "consumers": [
             "accelerator_interface",
@@ -382,42 +382,42 @@
           ]
         },
         {
-          "id": "accelerator_interface_common_simion_assets_iob_instance_seeds_3_instance_seed_iob",
+          "id": "msplatform_backends_simion_3_instance_seed_iob",
           "source_repo_path": "src/msplatform/backends/simion/resources/3_instance_seed.iob",
           "consumers": [
             "accelerator_interface"
           ]
         },
         {
-          "id": "common_comsol_livelink_environment_ps1",
+          "id": "msplatform_backends_comsol_livelink_environment_ps1",
           "source_repo_path": "src/msplatform/backends/comsol/launcher/livelink_environment.ps1",
           "consumers": [
             "paired_accelerator_pulse"
           ]
         },
         {
-          "id": "common_comsol_livelink_failure_classification_ps1",
+          "id": "msplatform_backends_comsol_livelink_failure_classification_ps1",
           "source_repo_path": "src/msplatform/backends/comsol/launcher/livelink_failure_classification.ps1",
           "consumers": [
             "paired_accelerator_pulse"
           ]
         },
         {
-          "id": "common_comsol_livelink_r2025b_comsolstartup_m",
+          "id": "msplatform_backends_comsol_livelink_r2025b_comsolstartup_m",
           "source_repo_path": "src/msplatform/backends/comsol/matlab/comsolstartup.m",
           "consumers": [
             "paired_accelerator_pulse"
           ]
         },
         {
-          "id": "common_comsol_resolve_comsol_64_ps1",
+          "id": "msplatform_backends_comsol_resolve_comsol_64_ps1",
           "source_repo_path": "src/msplatform/backends/comsol/launcher/resolve_comsol_64.ps1",
           "consumers": [
             "paired_accelerator_pulse"
           ]
         },
         {
-          "id": "common_comsol_run_comsol_r2025b_ps1",
+          "id": "msplatform_backends_comsol_run_comsol_r2025b_ps1",
           "source_repo_path": "src/msplatform/backends/comsol/launcher/run_comsol_r2025b.ps1",
           "consumers": [
             "paired_accelerator_pulse"
@@ -438,7 +438,7 @@
           ]
         },
         {
-          "id": "common_paths_workspace_paths_ps1",
+          "id": "msplatform_execution_workspace_paths_ps1",
           "source_repo_path": "src/msplatform/execution/resources/workspace_paths.ps1",
           "consumers": [
             "accelerator_interface",
@@ -447,7 +447,7 @@
           ]
         },
         {
-          "id": "common_run_artifact_support",
+          "id": "msplatform_execution_artifact_support",
           "source_repo_path": "src/msplatform/execution/resources/run_artifact_support.ps1",
           "consumers": [
             "accelerator_interface",
@@ -456,7 +456,7 @@
           ]
         },
         {
-          "id": "common_run_artifact_workflow",
+          "id": "msplatform_execution_artifact_workflow",
           "source_repo_path": "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
           "consumers": [
             "accelerator_interface",
@@ -465,7 +465,7 @@
           ]
         },
         {
-          "id": "common_require_powershell7",
+          "id": "msplatform_execution_require_powershell7",
           "source_repo_path": "src/msplatform/execution/resources/require_powershell7.ps1",
           "consumers": [
             "accelerator_interface",
@@ -474,7 +474,7 @@
           ]
         },
         {
-          "id": "local_frontend_common_simion_assets_iob_instance_seeds_iob_seed_placeholder_01_pa0",
+          "id": "msplatform_backends_simion_assets_iob_instance_seeds_iob_seed_placeholder_01_pa0",
           "source_repo_path": "src/msplatform/backends/simion/resources/iob_seed_placeholder_01.pa0",
           "consumers": [
             "oa_mr",
@@ -483,7 +483,7 @@
           ]
         },
         {
-          "id": "local_frontend_common_simion_short_pa_path_support_ps1",
+          "id": "msplatform_backends_simion_short_pa_path_support_ps1",
           "source_repo_path": "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
           "consumers": [
             "oa_mr",
@@ -492,21 +492,21 @@
           ]
         },
         {
-          "id": "common_simion_native_fast_adjust_runtime_support_ps1",
+          "id": "msplatform_backends_simion_native_fast_adjust_runtime_support_ps1",
           "source_repo_path": "src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1",
           "consumers": [
             "oa_mr"
           ]
         },
         {
-          "id": "common_simion_assemble_native_fast_adjust_family_lua",
+          "id": "msplatform_backends_simion_assemble_native_fast_adjust_family_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/assemble_native_fast_adjust_family.lua",
           "consumers": [
             "oa_mr"
           ]
         },
         {
-          "id": "projects_multi_reflection_tof_simion_native_corridor_runtime_support_ps1",
+          "id": "msplatform_backends_simion_native_corridor_runtime_support_ps1",
           "source_repo_path": "src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1",
           "consumers": [
             "oa_mr"
