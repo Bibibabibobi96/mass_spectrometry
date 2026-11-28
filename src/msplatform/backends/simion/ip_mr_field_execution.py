@@ -154,20 +154,20 @@ def _protect_input_sources(session: Any, plan: Mapping[str, Any]) -> None:
         path = record_path(record).resolve(strict=True)
         if path not in sources:
             sources[path] = (record, json.loads(path.read_text(encoding='utf-8-sig')))
+    members_by_source = {}
+    for path, (_, document) in sources.items():
+        bound = [*document.get('inputs', {}).values(), *document.get('outputs', [])]
+        members_by_source[path] = {
+            (record_path(candidate, base_dir=path.parent),
+             candidate.get('bytes'), str(candidate.get('sha256', '')).upper())
+            for candidate in bound if isinstance(candidate, Mapping)
+        }
     required_by_source = {path: [] for path in sources}
     for record in plan['immutable_input_records']:
         selected_path = Path(record['path']).resolve()
-        matches = []
-        for path, (_, document) in sources.items():
-            bound = [*document.get('inputs', {}).values(), *document.get('outputs', [])]
-            if path == selected_path:
-                continue
-            if any(isinstance(candidate, Mapping)
-                   and record_path(candidate, base_dir=path.parent).resolve() == selected_path
-                   and candidate.get('bytes') == record['bytes']
-                   and str(candidate.get('sha256', '')).upper() == str(record['sha256']).upper()
-                   for candidate in bound):
-                matches.append(path)
+        identity = (selected_path, record['bytes'], str(record['sha256']).upper())
+        matches = [path for path, members in members_by_source.items()
+                   if path != selected_path and identity in members]
         if not matches and any(path == selected_path for path in sources):
             continue
         if not matches:

@@ -81,10 +81,14 @@ def _protected_source(session: RunSession, manifest: Mapping[str, Any], *, requi
             expected_bytes=manifest['bytes'], expected_sha256=manifest['sha256']))
         document = json.loads(manifest_path.read_text(encoding='utf-8-sig'))
         bound = [*document.get('inputs', {}).values(), *document.get('outputs', [])]
+        records_by_path = {}
+        for record in bound:
+            if isinstance(record, Mapping):
+                path = record_path(record, base_dir=manifest_path.parent)
+                records_by_path.setdefault(path, []).append(record)
         for required in map(Path, required_paths):
             selected = required.resolve(strict=True)
-            records = [record for record in bound if isinstance(record, Mapping)
-                       and record_path(record, base_dir=manifest_path.parent).resolve() == selected]
+            records = records_by_path.get(selected, [])
             if len(records) != 1:
                 raise ValueError('managed source member is not uniquely bound by its manifest')
             record = records[0]
