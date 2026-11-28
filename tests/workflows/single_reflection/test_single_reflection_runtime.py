@@ -28,7 +28,7 @@ from msplatform.workflows.single_reflection_flight import field_evidence
 from msplatform.workflows.single_reflection_flight import runtime
 from msplatform.backends.simion.field_identity import frontend_field_identity
 from msplatform.workflows.single_reflection_flight.runtime import materialize_workbench, _SOURCES
-from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
+from msplatform.workflows.pulse_execution import resolve_phase_flight
 from msplatform.workflows.single_reflection_flight.runtime import _prepare_context, materialize_batches, prepare_dispatch
 from msplatform.backends.simion.particle_batching import plan_single_wave_batches
 from msplatform.execution.retention import file_record

@@ -19,7 +19,7 @@ from msplatform.execution.retention import file_record
 from tests.workflows.single_reflection.test_single_reflection_preparation import fixture, write_json
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.workflows.single_reflection_flight.collect import collect_log, compare_collections, select_pulse
-from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight
+from msplatform.workflows.pulse_execution import resolve_phase_flight
 
 ROOT = Path(__file__).resolve().parents[3]
 

@@ -3474,6 +3474,10 @@
           "reason": "installed_single_reflection_workflow_changed"
         },
         {
+          "exact": "src/msplatform/workflows/pulse_execution.py",
+          "reason": "installed_recorded_pulse_workflow_changed"
+        },
+        {
           "regex": "^src/msplatform/results/(?:field_sources|single_reflection_source|single_reflection_continuation)\\.py$",
           "reason": "single_reflection_result_adapter_changed"
         },
@@ -3790,6 +3794,10 @@
               {
                 "exact": "src/msplatform/workflows/single_reflection_flight/field_plan.py",
                 "reason": "single_reflection_shared_field_plan_changed"
+              },
+              {
+                "exact": "src/msplatform/workflows/pulse_execution.py",
+                "reason": "recorded_pulse_workflow_changed"
               },
               {
                 "exact": "src/msplatform/workflows/single_reflection_flight/frontend_fields.py",

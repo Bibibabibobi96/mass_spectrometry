@@ -892,14 +892,17 @@ foreach($scope in @('Owner','Repository')){
                 self.assertIn(f"tests/components/dual_cone_tandem_quadrupole/{name}.py", result["Modules"])
         self.assertEqual(selected[-1]["Modules"], ["tests/simion/test_analyze_terminal_plane.py"])
 
-    def test_single_reflection_frontend_producer_selects_actual_owner_consumers(self) -> None:
-        path = 'src/msplatform/workflows/single_reflection_flight/frontend_fields.py'
-        result, = self.selections(REPO_ROOT, [dict(stage='instrument_assembly', paths=[path])])
-        for module in ('test_single_reflection_field_stage',
-                       'test_dependencies', 'test_native_path_consumers'):
-            expected_root = 'tests/workflows/single_reflection/' if module == 'test_single_reflection_field_stage' else 'tests/execution/'
-            self.assertIn(expected_root + module + '.py', result['Modules'])
-        self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
+    def test_single_reflection_workflow_changes_select_actual_owner_consumers(self) -> None:
+        paths = ('src/msplatform/workflows/single_reflection_flight/frontend_fields.py',
+                 'src/msplatform/workflows/pulse_execution.py')
+        for path in paths:
+            with self.subTest(path=path):
+                result, = self.selections(REPO_ROOT, [dict(stage='instrument_assembly', paths=[path])])
+                for module in ('test_single_reflection_field_stage',
+                               'test_dependencies', 'test_native_path_consumers'):
+                    expected_root = 'tests/workflows/single_reflection/' if module == 'test_single_reflection_field_stage' else 'tests/execution/'
+                    self.assertIn(expected_root + module + '.py', result['Modules'])
+                self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
 
     def test_sfi_retired_entries_and_current_configs_have_distinct_selection(self) -> None:
         paths = ['src/msplatform/workflows/single_reflection_flight/recorded_birth.py',

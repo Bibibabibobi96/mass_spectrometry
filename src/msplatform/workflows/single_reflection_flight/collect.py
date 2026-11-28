@@ -22,7 +22,8 @@ from msplatform.execution.retention import classify_file
 verify_record=partial(_verify_record,retention_classifier=classify_file)
 file_record=partial(_file_record,retention_classifier=classify_file)
 from msplatform.backends.simion.tracking_program import validate_native_flight, validate_native_field_observation
-from msplatform.workflows.single_reflection_flight.pulse import resolve_phase_flight, select_discovery_pulse
+from msplatform.workflows.pulse_execution import resolve_phase_flight
+from msplatform.analysis.pulse_selection import select_discovery_pulse
 from msplatform.backends.simion.source import GLOBAL_COLUMNS
 from msplatform.contracts.particle_state import binary64_serialization_close as _close
 

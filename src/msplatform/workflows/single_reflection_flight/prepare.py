@@ -33,7 +33,7 @@ from msplatform.backends.simion.tracking_program import validate_native_flight
 from msplatform.backends.simion.frontend import native_frontend_instances
 from msplatform.backends.simion.geometry import compile_frontend_geometry
 from msplatform.backends.simion.fields import prepare_field_design
-from msplatform.workflows.single_reflection_flight.pulse import _capture_bounds
+from msplatform.analysis.pulse_selection import _capture_bounds
 
 file_record = partial(_file_record, retention_classifier=classify_file)
 verify_record = partial(_verify_record, retention_classifier=classify_file)
