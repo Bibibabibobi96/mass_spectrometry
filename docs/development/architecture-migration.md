@@ -570,6 +570,16 @@ Agent 12 的 `7894fa04a90b1d7322a2be12bb104a50fd830069`／主线 `718af786` 将 
 
 主线 CLOC 2.10 `ddf01ea9→718af786` PASS：total files +1、code +431，production code +226、tests +205，unclassified=0；逐语言和过滤口径见 `standalone-ip-718af786-cloc.log`。历史资源画像仍只读查询旧科学 ID／路径，不改写封存 manifest 或旧 run。
 
+### C3 OA source comparison Store 接管（主线整合候选）
+
+Agent 6 的 `6d4030b6974572d2e0df04abd464f8825a3accd6`／主线 `d7fd425d` 将 source comparison、acceptance theory 和 slope scan 改为显式 ArtifactStore 或匹配的受保护父 scope；不同父 Store 提前拒绝。raw 历史来源、ready Store 来源和 failed Store 来源分别使用既有 file guard、`claim_verified` 和 stopped-evidence guard，保护持续到发布结束。
+
+返回 managed result 的实际 run directory 和 Store stage/parent 身份，不再从旧组件根推导路径；旧 TTL 续租退出。OA `recover_finalization` 依次复用 `recover_managed_native_store_stage` 与 `recover_run_publication`，不重放科学阶段。CLI 在原 execution profile 内运输 `--artifact-root`，缺省为 `<workspace>/store`，没有第二套科学配置或 CLI。
+
+目标三个 workflow 中旧 `resolve_run_artifact_root`、旧 ledger 和通用 `resume_finalization` 调用均为零；共享定义待全部消费者清零后退役。作者最终44/44 PASS／0 skip（332.641s），另有真实 Store 恢复2/2、安装态 shared-import1/1；主线73项组合回归 PASS／0 skip（303.136s），日志 `oa-source-store-main.log`。Ruff、diff、开发标准、文档321文件0错误；无商业 native、完整门禁或双安装声明。
+
+主线 CLOC 2.10 `99684854→d7fd425d` PASS：total／production／tests code +189／+81／+108，files不变，unclassified=0；逐语言与过滤口径见 `oa-source-store-d7fd425d-cloc.log`。本任务临时测试对象已清理，原历史字节未改。
+
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 
 Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime dependency 无缺失目标；旧名负例和历史 reader 均有效。上述10处 PS 断链已在本工作树修复并复验。其余实际阻塞按真实调用保留如下，不转为文档豁免：
@@ -580,7 +590,7 @@ Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime depend
 | P1 | 非 OA 总等级 writer／guard 已在 `23a54dbf` 删除；OA 对应字段已在 `a4ee07a8` 删除，主线193个唯一用例已闭合 | 保留旧 manifest 的精确只读验证，不改写历史；完整门禁仍未闭合 |
 | P1 | registry 仍直挂特殊 `oa_mr.ps1`；旧 `accelerator_interface.ps1` 及中央 consumer 已删除 | 科学归 Assembly／MR owner，执行归公共 Store；连续飞行只能走公共原出生 tracing，prepare-only 不冒充飞行 |
 
-Agent 7 沿实际消费者复核：公开 Python 的 OA source comparison、COMSOL gas/tracing、SIMION split/grounded/dual-cone/operations 仍可裸入旧 ledger；standalone IP、RF profiles、MR native-condition 和 `oa_mr.ps1` 仍有真实科学职责，公共 `msplatform run` 尚未覆盖这些组合，不能标历史或整链删除。退役顺序固定为：仅测试引用的三类专用恢复体（已删除）→Wehnelt 既有 Store API（已接管）→公开 Python 无 Store 消费者→特殊 PowerShell 科学链→公共旧回落／通用恢复→旧日常维护／GC。新 `ArtifactStore.collect` 只管理自己的新根，不借迁移清理既有旧研究根。
+Agent 7 沿实际消费者复核的旧缺口正在逐链关闭：OA source comparison、COMSOL gas/tracing、SIMION split/grounded/dual-cone/operations 已在 `93e2ba0b`／`d7fd425d` 迁移，整合回归首错仍由 Agent 11 修复；standalone IP 已有主线160项 PASS。RF profiles、MR native-condition 和 `oa_mr.ps1` 仍有真实科学职责或在途迁移，公共 `msplatform run` 尚未覆盖这些组合，不能标历史或整链删除。退役顺序固定为：仅测试引用的三类专用恢复体（已删除）→Wehnelt 既有 Store API（已接管）→公开 Python 无 Store 消费者→特殊 PowerShell 科学链→公共旧回落／通用恢复→旧日常维护／GC。新 `ArtifactStore.collect` 只管理自己的新根，不借迁移清理既有旧研究根。
 
 上述未完成项直接阻止 CA07／CA12／CA13／CA14／CA19 与最终同 SHA 验收。当前分支仍只是中间候选；未运行完整 Repository、双发行或适用真实 native。
 
