@@ -358,11 +358,13 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `f0822e12`。CLOC 2.10 `c86a9e8f→f0822e12` PASS：total code -20、production +0、tests -20，unclassified=0；完整逐语言和过滤口径在外部 `batch-continuation-f0822e12-cloc.log`。
 
-### C2 记录型 Joint trial 归分析层（WORKTREE）
+### C2 记录型 Joint trial 归分析层（候选）
 
 旧 `prepared_joint.trial` 只保留历史等价冻结、轨迹表示比较和 centroid/probe 分析，实际迁至 `analysis.recorded_joint_trial`；测试同步为 `test_recorded_joint_trial.py`／`RecordedJointBatchTests`。原 CLI 消费者、安装探针和 Changed 路由改用新 owner，旧模块删除，无别名。历史 `prepared_joint_trial.json`、role、ID、时钟和冻结字节不改写。
 
 8个记录/历史准备父测试全PASS（20.469s），2个直接 CLI/等价消费者PASS，新路径的 Changed 路由1父测试PASS。日志为 `recorded-joint-trial-owner.log`、`recorded-joint-trial-consumers-r2.log`、`recorded-joint-trial-selection.log`。Ruff/diff PASS；未执行商业 native。Prepared 的原生准备、handoff 和 admission 仍未全部退出。
+
+本单元已提交并普通 push `bd0ed648`。CLOC 2.10 `22aab80c→bd0ed648` PASS：total、production、tests 的 code 均为0净变化，unclassified=0；完整逐语言和过滤口径在外部 `recorded-trial-bd0ed648-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
