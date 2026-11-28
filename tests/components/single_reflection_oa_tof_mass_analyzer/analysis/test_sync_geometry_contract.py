@@ -265,7 +265,9 @@ class SyncGeometryContractTests(unittest.TestCase):
             (root / "config").mkdir()
             campaign = root / "config" / "experiment_campaign.json"
             runtime = root / "config" / "candidate_runtime.json"
-            campaign.write_bytes((PROJECT_ROOT / "config" / campaign.name).read_bytes())
+            campaign_document = json.loads((PROJECT_ROOT / "config" / campaign.name).read_text(encoding="utf-8"))
+            campaign_document.update(status="authorized", execution_authorized=True)
+            campaign.write_text(json.dumps(campaign_document, indent=2) + "\n", encoding="utf-8")
             runtime.write_bytes((PROJECT_ROOT / "config" / runtime.name).read_bytes())
             execution = root / "config" / "execution_profiles.json"
             execution.write_bytes((PROJECT_ROOT / "config" / execution.name).read_bytes())

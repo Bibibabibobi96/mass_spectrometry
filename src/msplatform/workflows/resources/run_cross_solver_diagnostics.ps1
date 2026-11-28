@@ -109,7 +109,7 @@ if (-not (Select-String -LiteralPath $sourceTraceLog -Pattern '^TRACE: \d+,' -Qu
 }
 
 $pairingDir = Join-Path $resultDir 'particle_pairing'
-& $python -I -B -m msplatform.workflows.oa_candidate.reference_analysis compare `
+& $python -I -B -m msplatform.workflows.oa_candidate.reference_analysis_core compare `
   $formalComsolCsv $formalSimionCsv --mass 524 --output $pairingDir `
   --left-label COMSOL --right-label SIMION --require-paired-particle-ids
 if ($LASTEXITCODE -ne 0) { throw 'Formal particle pairing failed.' }

@@ -22,7 +22,7 @@ from msplatform.analysis.peak_metrics import (
     compute_peak_metrics,
 )
 from msplatform.io.file_identity import file_sha256 as _sha256
-from msplatform.workflows.oa_candidate.reference_analysis import read_particle_table
+from msplatform.results.single_reflection_particle_table import read_particle_table
 
 
 def _paired_frames(left_path: Path, right_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
