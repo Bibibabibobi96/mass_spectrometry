@@ -137,6 +137,30 @@ class ArtifactStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'lock evidence'):
             self.store.recover_run_publication(missing)
 
+    def test_one_run_recovery_rejects_modified_or_ambiguous_payload(self) -> None:
+        for case in ('modified', 'ambiguous'):
+            with self.subTest(case=case):
+                run, work = self.store.begin_run()
+                payload = work / 'payload'
+                payload.write_bytes(b'original evidence')
+                with self.store.run_writer(run):
+                    self.store.mark_running(run)
+                    with patch('msplatform.storage.store.os.replace', side_effect=OSError('interrupted')):
+                        with self.assertRaises(OSError):
+                            self.store.publish_run(work, run_id=run)
+                    self.store.finish_run(run, 'failed', reason='original failure')
+                if case == 'modified':
+                    payload.write_bytes(b'tampered evidence')
+                else:
+                    destination = self.store.root / self.store.run_status(run)['run_path']
+                    destination.mkdir()
+                with self.assertRaisesRegex(ValueError, 'missing or modified|ambiguous'):
+                    self.store.recover_run_publication(run)
+                status = self.store.run_status(run)
+                self.assertEqual(status['publication_status'], 'publishing')
+                self.assertEqual(status['execution_status'], 'failed')
+                self.assertEqual(status['reason'], 'original failure')
+
     def test_shared_required_reference_and_claim_survive_collection(self) -> None:
         identity = self.asset("same")
         for _ in range(2):
