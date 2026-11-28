@@ -4859,11 +4859,24 @@
               {
                 "exact": "src/msplatform/workflows/mr_design/execution_contract.py",
                 "reason": "mr_execution_contract_changed"
+              },
+              {
+                "exact": "src/msplatform/assembly/ip_mr_handoff.py",
+                "reason": "assembly_measured_handoff_changed"
+              },
+              {
+                "exact": "src/msplatform/analysis/mr_exit_energy.py",
+                "reason": "mr_exit_energy_analysis_changed"
+              },
+              {
+                "exact": "src/msplatform/contracts/schemas/ion_processor_matching_request.schema.json",
+                "reason": "mr_matching_request_contract_changed"
               }
             ],
             "modules": [
               "tests/components/multi_reflection_tof/analysis/test_ip_prism_distance_study.py",
               "tests/components/multi_reflection_tof/analysis/test_ip_prism_aperture_diagnostics.py",
+              "tests/components/multi_reflection_tof/analysis/test_ion_processor_handoff.py",
               "tests/components/multi_reflection_tof/analysis/test_ion_processor_energy_comparison.py",
               "tests/components/multi_reflection_tof/analysis/test_joint_flight_preparation.py",
               "tests/components/multi_reflection_tof/analysis/test_prepare_accelerator_interface.py",

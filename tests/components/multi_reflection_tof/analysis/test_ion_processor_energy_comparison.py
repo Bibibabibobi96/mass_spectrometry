@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from msplatform.contracts.particle_state import write_component_particle_state_csv
 from msplatform.contracts.particle_physics import kinetic_energy_ev
-from msplatform.workflows.prepared_joint.ip_mr_handoff import compare_measured_exit_energy
+from msplatform.analysis.mr_exit_energy import compare_measured_exit_energy
 from tests.components.multi_reflection_tof.analysis import test_ion_processor_handoff as fixtures
 
 

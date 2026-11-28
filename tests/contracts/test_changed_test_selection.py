@@ -2691,8 +2691,9 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
     def test_mr_reference_and_analysis_contracts_select_actual_consumers(self) -> None:
         direct = [MR + "/analysis/" + name + ".py" for name in (
             "test_ip_prism_distance_study", "test_ip_prism_aperture_diagnostics",
-            "test_ion_processor_energy_comparison", "test_joint_flight_preparation",
-            "test_prepare_accelerator_interface", "test_recorded_joint_trial")]
+            "test_ion_processor_handoff", "test_ion_processor_energy_comparison",
+            "test_joint_flight_preparation", "test_prepare_accelerator_interface",
+            "test_recorded_joint_trial")]
         controller_consumers = [MR + "/analysis/" + name + ".py" for name in (
             "test_dual_stripe_l0_math", "test_fixed_grid_mirror_stripe_handoff",
             "test_mirror_l0_l1_runner", "test_prism_runner_contract_matrix",
@@ -2700,7 +2701,10 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         paths = ["src/msplatform/results/mr_reference.py",
                  "src/msplatform/workflows/mr_design/execution_contract.py",
                  "src/msplatform/backends/simion/mr_field_audit.py",
-                 "src/msplatform/analysis/mr_field_audit.py"]
+                 "src/msplatform/analysis/mr_field_audit.py",
+                 "src/msplatform/assembly/ip_mr_handoff.py",
+                 "src/msplatform/analysis/mr_exit_energy.py",
+                 "src/msplatform/contracts/schemas/ion_processor_matching_request.schema.json"]
         for path, selected in zip(paths, self.selections(REPO_ROOT,
                 [dict(stage="multi_reflection_tof_static", paths=[path]) for path in paths]), strict=True):
             with self.subTest(path=path):

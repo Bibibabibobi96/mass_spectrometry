@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/ion_processor_matching_request.schema.json",
   "title": "MR-owned ion processor matching preparation request",
   "type": "object",
   "additionalProperties": false,

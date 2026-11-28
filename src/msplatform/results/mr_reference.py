@@ -2,14 +2,20 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
+from typing import Any
 
+from msplatform.io.file_identity import file_sha256
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 
 
-def _read(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+def _read(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected a JSON object: {path}")
+    return value
 
 
 def verified_reference(run: Path, relative: str, *, required_status: str = "success") -> Path:
@@ -30,3 +36,24 @@ def verified_reference(run: Path, relative: str, *, required_status: str = "succ
     for record in matches:
         verify_record("consumed MR reference", record, base_dir=run)
     return desired
+
+
+def _identity(path: Path) -> dict[str, Any]:
+    return {"path": str(path.resolve()), "sha256": file_sha256(path), "bytes": path.stat().st_size}
+
+
+def _bound_file(identity: dict[str, Any], relative_to: Path) -> Path:
+    path = Path(identity["path"])
+    if not path.is_absolute():
+        path = relative_to / path
+    if file_sha256(path).lower() != identity["sha256"].lower():
+        raise ValueError(f"Bound source SHA-256 differs: {path}")
+    if path.stat().st_size != identity["bytes"]:
+        raise ValueError(f"Bound source byte count differs: {path}")
+    return path
+
+
+def _finite(value: Any, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{label} must be finite")
+    return float(value)
