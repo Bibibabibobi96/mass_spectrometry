@@ -2331,7 +2331,7 @@ def load_prepared_centroid_trial(manifest_path: Path, target_path: Path,
         raise CandidateContractError("Prepared observation P/S voltages differ from actual bound field")
     materialization.update({key:copy.deepcopy(target[key]) for key in (
         "prism_handoff_target","target_positive_mirror_turn_y_mm","target_low_field_tangent_ratio_vy_over_vz","target_slow_turn_y_mm")})
-    from msplatform.workflows.prepared_joint.prism_handoff import ProjectPhaseSpaceState
+    from msplatform.components.multi_reflection_tof.prism_handoff import ProjectPhaseSpaceState
     from msplatform.workflows.prepared_joint.prism_trial import (
         _bunch_center_prism_handoff_validation,_bunch_center_stripe_stage_validation,
         _bunch_center_workpoint_validation,_termination_diagnostic,_static_return_diagnostic,

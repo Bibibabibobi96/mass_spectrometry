@@ -14,7 +14,7 @@ from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     load_contract,
 )
-from msplatform.workflows.prepared_joint.prism_handoff import (
+from msplatform.components.multi_reflection_tof.prism_handoff import (
     ProjectPhaseSpaceState,
 )
 from msplatform.workflows.mr_design.two_prism_segmented_voltage_seed import (

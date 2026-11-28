@@ -36,7 +36,7 @@ from msplatform.components.multi_reflection_tof.prism_analytic import (
     hard_boundary_bias_v,
     trace_triangular_hard_boundary_prism,
 )
-from msplatform.workflows.prepared_joint.prism_handoff import (
+from msplatform.components.multi_reflection_tof.prism_handoff import (
     ProjectPhaseSpaceState,
 )
 

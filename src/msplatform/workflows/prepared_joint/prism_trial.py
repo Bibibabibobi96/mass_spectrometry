@@ -81,7 +81,7 @@ from msplatform.components.multi_reflection_tof.operating_authority import (
     vector as _vector,
 )
 from msplatform.analysis.mr_event_analysis import summarize_events
-from msplatform.workflows.prepared_joint.prism_handoff import (
+from msplatform.components.multi_reflection_tof.prism_handoff import (
     ProjectPhaseSpaceState,
     observation_from_simion_events,
     prism_handoff_residuals,

@@ -11,7 +11,7 @@ from msplatform.io.file_identity import file_sha256
 from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.workflows.prepared_joint.prism_handoff import (
+from msplatform.components.multi_reflection_tof.prism_handoff import (
     ProjectPhaseSpaceState,
 )
 

@@ -42,7 +42,7 @@ from msplatform.backends.simion.mr_geometry import resolve_mr_geometry as resolv
 from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.workflows.prepared_joint.prism_handoff import (
+from msplatform.components.multi_reflection_tof.prism_handoff import (
     ProjectPhaseSpaceState,
     TwoPrismTransportObservation,
     prism_handoff_residuals,

@@ -44,7 +44,7 @@ from msplatform.components.multi_reflection_tof.resolved_geometry import (
     compile_dual_stripe_width_evaluator,
     dual_stripe_width_at_y_mm,
 )
-from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
+from msplatform.components.multi_reflection_tof.joint_mirror_stripe_l0 import (
     stripes_from_contract,
 )
 from msplatform.workflows.mr_design.dual_stripe_operating_seed import (

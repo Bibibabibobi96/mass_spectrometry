@@ -43,7 +43,7 @@ from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     theory_drift_y_mm,
 )
 from msplatform.components.multi_reflection_tof.constraint_classification import classify_constraint_system
-from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
+from msplatform.components.multi_reflection_tof.joint_mirror_stripe_l0 import (
     JointL0Trial,
     StripeHardBoundary,
     coupled_normalized_period_slope_at_energy,
@@ -82,7 +82,7 @@ from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
     derive_operating_energy_envelope,
 )
-from msplatform.workflows.prepared_joint.prism_handoff import (
+from msplatform.components.multi_reflection_tof.prism_handoff import (
     audit_two_prism_voltage_definition,
 )
 

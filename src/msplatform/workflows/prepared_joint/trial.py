@@ -171,7 +171,7 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     import math
     from msplatform.contracts.particle_physics import kinetic_energy_ev
     from msplatform.analysis.mr_observations import read_scientific_events
-    from msplatform.workflows.prepared_joint.prism_handoff import (
+    from msplatform.components.multi_reflection_tof.prism_handoff import (
         ProjectPhaseSpaceState, observation_from_simion_events, prism_handoff_residuals,
     )
     from msplatform.workflows.prepared_joint.prism_trial import _prism_handoff_event_prefix, _static_field_receipt

@@ -93,7 +93,7 @@ try {
   $sourcePaths = @(
     'src/msplatform/workflows/prepared_joint/fixed_grid_workpoint.py',
     'src/msplatform/workflows/resources/run_downstream_fixed_grid_workpoint.ps1',
-    'src/msplatform/workflows/prepared_joint/joint_mirror_stripe_l0.py',
+    'src/msplatform/components/multi_reflection_tof/joint_mirror_stripe_l0.py',
     'src/msplatform/components/multi_reflection_tof/prism_workpoint_math.py',
     'src/msplatform/components/multi_reflection_tof/candidate_contract.py',
     'src/msplatform/io/file_identity.py',

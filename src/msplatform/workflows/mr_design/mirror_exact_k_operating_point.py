@@ -36,7 +36,7 @@ from msplatform.components.multi_reflection_tof.dual_stripe_l0 import (
     materialize_native_stripe_spatial_return_root,
 )
 from msplatform.components.multi_reflection_tof.constraint_classification import classify_constraint_system
-from msplatform.workflows.prepared_joint.joint_mirror_stripe_l0 import (
+from msplatform.components.multi_reflection_tof.joint_mirror_stripe_l0 import (
     StripeHardBoundary,
     derive_coupled_drift_state,
     spatial_return_kappa_derivative_residual,

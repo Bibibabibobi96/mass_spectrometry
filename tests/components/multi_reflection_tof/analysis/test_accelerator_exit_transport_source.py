@@ -13,7 +13,7 @@ from msplatform.workflows.mr_design.accelerator_exit_transport_source import (
 from msplatform.components.multi_reflection_tof.candidate_contract import (
     CandidateContractError,
 )
-from msplatform.workflows.prepared_joint.prism_handoff import (
+from msplatform.components.multi_reflection_tof.prism_handoff import (
     ProjectPhaseSpaceState,
 )
 
