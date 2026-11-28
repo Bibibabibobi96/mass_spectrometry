@@ -604,7 +604,7 @@ try{
   $failureStage='materialize_trial'
   $acceleratorInstance='3'
   $isBunchFlight=$null-ne$bunchSourceContract
-  $materializeArguments=@('-m','msplatform.workflows.prepared_joint.prism_trial','materialize',
+  $materializeArguments=@('-m','msplatform.workflows.oa_mr.prism_trial','materialize',
     '--accelerator-component-contract',$oaComponentContractLocal,'--accelerator-geometry-profile-id',$AcceleratorGeometryProfileId,
     '--contract',$contract,'--accelerator-geometry-contract',$acceleratorGeometry,'--trajectory-contract',$trajectoryContract,'--reviewed-contract',$reviewed,'--mirror-summary',$mirrorLocal,'--stripe-summary',$stripeLocal,
     '--accelerator-receipt',$acceleratorLocal,'--prism-1-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism1VoltageV)),
@@ -1204,7 +1204,7 @@ try{
     Invoke-ProjectPython -Arguments @('-m','msplatform.analysis.mr_observations','extract-trajectory','--log',$rawLog,'--output',$trajectorySamples,'--receipt',$trajectorySampleReceipt)
   }
   $failureStage='analyze_trial'
-  $analysisArguments=@('-m','msplatform.workflows.prepared_joint.prism_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
+  $analysisArguments=@('-m','msplatform.workflows.oa_mr.prism_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
   if($isBunchFlight){$analysisArguments+=@('--scientific-event-receipt',$batchMergeReceipt)}
   Invoke-ProjectPython -Arguments $analysisArguments
   $observed=Get-Content -LiteralPath $observation -Raw -Encoding UTF8|ConvertFrom-Json

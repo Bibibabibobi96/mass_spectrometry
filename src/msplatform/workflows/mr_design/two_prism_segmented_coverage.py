@@ -51,7 +51,7 @@ from msplatform.workflows.mr_design.two_prism_segmented_voltage_seed import (
     two_prism_legacy_topology_signature,
     two_prism_topology_signature,
 )
-from msplatform.workflows.prepared_joint.prism_trial import (
+from msplatform.workflows.oa_mr.prism_trial import (
     load_schema5_native_source_state,
 )
 

@@ -374,6 +374,12 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `e5817702`。CLOC 2.10 `c4d1a7c2→e5817702` PASS：total code +30、production +13、tests +17，unclassified=0；完整逐语言和过滤口径在外部 `prepared-preparation-e5817702-cloc.log`。
 
+### C2 Prism 原生 trial 归 OA–MR 工作流（WORKTREE）
+
+旧 `prepared_joint.prism_trial` 的实际 P1/P2 有限3D trial 物化、观察、终止与分析归 `workflows.oa_mr.prism_trial`，由真实 OA–MR 公共入口消费；MR design、fixed-grid、记录分析与安装探针同步，旧模块删除，无别名。几何、数值、粒子 ID、终止原因和物理参数未改。
+
+直接 prism 测试70父测试全PASS（10.352s）；真实离仓 provider 与 provider transport 定向全PASS，Changed 路由1父测试PASS。259项 OA–MR／控制器长回归中，唯一失败来自该轮开始前的旧快照仍导入旧包；修正后当前离仓探针实际通过，该历史失败不删除。另两个既有 PowerShell `binding=None` 失败仍不冒充通过。日志为 `prepared-prism-trial-direct-r2.log`、`prepared-prism-trial-detached.log`、`prepared-prism-trial-consumers.log`、`prepared-prism-trial-selection.log`。Ruff/diff PASS；未执行商业 native，最终同 SHA 门禁仍待跑。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

@@ -35,7 +35,7 @@ from msplatform.components.multi_reflection_tof.candidate_contract import (
 from msplatform.components.multi_reflection_tof.native_field_science import _te1_reference
 from msplatform.analysis.peak_metrics import histogram_half_height_bin_span, peak_time_metrics
 from msplatform.analysis.mr_observations import collision_diagnostics, read_scientific_events
-from msplatform.workflows.prepared_joint.prism_trial import _resolve_trial_geometry
+from msplatform.workflows.oa_mr.prism_trial import _resolve_trial_geometry
 from msplatform.analysis.mr_observations import _collision_geometry_projection
 
 

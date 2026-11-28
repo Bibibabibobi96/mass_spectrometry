@@ -1248,7 +1248,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
         prepared = {"joint_flight_preparation": "src/msplatform/workflows/prepared_joint/native_preparation.py",
                     "drift_phase_contract": "src/msplatform/contracts/drift_phase_contract.py",
                     "simion_event_analysis": "src/msplatform/analysis/mr_event_analysis.py",
-                    "two_prism_simion_trial": "src/msplatform/workflows/prepared_joint/prism_trial.py"}
+                    "two_prism_simion_trial": "src/msplatform/workflows/oa_mr/prism_trial.py"}
         def source_path(name):
             if name in prepared:
                 return prepared[name]

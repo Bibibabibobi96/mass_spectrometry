@@ -34,12 +34,12 @@ def mock_recorded_scientific_events(events):
     )
 
 
-from msplatform.workflows.prepared_joint import prism_trial as two_prism_simion_trial
+from msplatform.workflows.oa_mr import prism_trial as two_prism_simion_trial
 from msplatform.backends.simion.mr_bunch_source import (
     materialize_bunch_source,
 )
 from msplatform.analysis.mr_observations import parse_events
-from msplatform.workflows.prepared_joint.prism_trial import (
+from msplatform.workflows.oa_mr.prism_trial import (
     _accelerator_energy_binding,
     _accelerator_geometric_exit_reference,
     _accelerator_geometric_exit_validation,
@@ -178,7 +178,7 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
                             "reference_plane_project_z_mm": 33.,
                             "transit_aperture_project_mm": {"x_mm": [-1., 1.], "y_mm": [-10., 10.]}})
         seed = {"stripe_biases_v": [-20., 50.]}
-        module = "msplatform.workflows.prepared_joint.prism_trial"
+        module = "msplatform.workflows.oa_mr.prism_trial"
         if parent_plan is not None:
             from msplatform.backends.simion.oa_focus_plan import derive
             paths["provider"].write_text(json.dumps(derive(
@@ -671,7 +671,7 @@ print('WORKBENCH_LOAD_PRELOAD_PASS')
                         self.assertIn('WORKBENCH_LOAD_PRELOAD_PASS', actual.stdout)
 
     def test_center_view_validates_actual_source_not_particle_count(self):
-        from msplatform.workflows.prepared_joint.prism_trial import _validate_center_view_source
+        from msplatform.workflows.oa_mr.prism_trial import _validate_center_view_source
         _validate_center_view_source(None, None)
         def state(x, dx):
             return dict(position_workbench_mm=[x, 1., 2.], direction_workbench=[dx, 1., 0.])

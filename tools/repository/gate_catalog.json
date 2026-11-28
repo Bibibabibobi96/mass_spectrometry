@@ -4884,7 +4884,7 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/prepared_joint/prism_trial.py",
+                "exact": "src/msplatform/workflows/oa_mr/prism_trial.py",
                 "reason": "mr_prism_phase_actual_consumer_changed"
               }
             ],

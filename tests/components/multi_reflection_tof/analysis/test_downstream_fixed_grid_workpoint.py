@@ -503,7 +503,7 @@ class DownstreamFixedGridWorkpointTests(unittest.TestCase):
 
     @staticmethod
     def _declared_center():
-        from msplatform.workflows.prepared_joint.prism_trial import (
+        from msplatform.workflows.oa_mr.prism_trial import (
             _bunch_center_source_state, _source_release_record,
         )
         materialization = {

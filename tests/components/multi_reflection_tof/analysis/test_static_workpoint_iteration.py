@@ -17,7 +17,7 @@ from msplatform.workflows.mr_design.fixed_grid_workpoint import (
     _native_static_binding_problem, _static_field_problem, _transport_invariants, assert_trial_matches_jacobian,
 )
 from msplatform.components.multi_reflection_tof.candidate_contract import CandidateContractError
-from msplatform.workflows.prepared_joint.prism_trial import (
+from msplatform.workflows.oa_mr.prism_trial import (
     _project_selected_center_observation, analyze_trial,
 )
 

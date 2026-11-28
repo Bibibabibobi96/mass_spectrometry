@@ -174,7 +174,7 @@ def analyze_centroid_probe(preparation_path: Path, log_path: Path, output_direct
     from msplatform.components.multi_reflection_tof.prism_handoff import (
         ProjectPhaseSpaceState, observation_from_simion_events, prism_handoff_residuals,
     )
-    from msplatform.workflows.prepared_joint.prism_trial import _prism_handoff_event_prefix, _static_field_receipt
+    from msplatform.workflows.oa_mr.prism_trial import _prism_handoff_event_prefix, _static_field_receipt
     preparation = _read(preparation_path)
     if preparation.get("source_mode") != "centroid_probe" or preparation["expected_particle_ids"] != [1]:
         raise ValueError("Independent constructed centroid probe required")

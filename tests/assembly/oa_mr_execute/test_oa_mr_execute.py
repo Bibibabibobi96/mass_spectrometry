@@ -780,7 +780,7 @@ import sys
 from unittest.mock import patch
 from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import file_record as source_record
-from msplatform.workflows.prepared_joint import prism_trial as module
+from msplatform.workflows.oa_mr import prism_trial as module
 assert Path(module.__file__).is_relative_to(Path.cwd())
 assert sys.argv[1:3] == ['-m', module.__name__]
 sys.argv = [module.__name__, *sys.argv[3:]]
@@ -827,7 +827,7 @@ if((Get-FileHash -LiteralPath $oaComponentContractLocal).Hash-ne(Get-FileHash -L
 $env:PYTHONPATH=(Join-Path $script:pythonRoot 'src')+[IO.Path]::PathSeparator+$script:pythonRoot
 Push-Location -LiteralPath $script:pythonRoot
 try{
- & $Python -B -s -c "from pathlib import Path; from msplatform.workflows.prepared_joint import prism_trial as two_prism_simion_trial; from msplatform.backends.simion import mrtof_batch_flight; assert Path(two_prism_simion_trial.__file__).is_relative_to(Path.cwd()); assert Path(mrtof_batch_flight.__file__).is_relative_to(Path.cwd()); from msplatform.contracts import trajectory_recording; assert Path(trajectory_recording.__file__).is_relative_to(Path.cwd()/'src')"
+ & $Python -B -s -c "from pathlib import Path; from msplatform.workflows.oa_mr import prism_trial as two_prism_simion_trial; from msplatform.backends.simion import mrtof_batch_flight; assert Path(two_prism_simion_trial.__file__).is_relative_to(Path.cwd()); assert Path(mrtof_batch_flight.__file__).is_relative_to(Path.cwd()); from msplatform.contracts import trajectory_recording; assert Path(trajectory_recording.__file__).is_relative_to(Path.cwd()/'src')"
  if($LASTEXITCODE-ne0){throw 'Detached provider import failed'}
  & $Python -B -s -m msplatform.contracts.trajectory_recording --contract (Join-Path $script:pythonRoot 'src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json')
  if($LASTEXITCODE-ne0){throw 'Detached provider compilation failed'}

@@ -17,7 +17,7 @@ from msplatform.components.orthogonal_accelerator.assembly_interface import reso
 from msplatform.components.multi_reflection_tof.provider import resolve_component
 from msplatform.backends.simion.oa_focus_plan import derive
 from msplatform.components.orthogonal_accelerator.two_zone_geometry import load_geometry_profile
-from msplatform.workflows.prepared_joint import prism_trial as trial
+from msplatform.workflows.oa_mr import prism_trial as trial
 from msplatform.backends.simion.native_system_geometry import resolve_oa_mr_direct_pose
 from tests.components.multi_reflection_tof.analysis import test_two_prism_simion_trial as trial_fixture
 from tests.components.multi_reflection_tof.test_support.mr_geometry_inputs import geometry_authority
