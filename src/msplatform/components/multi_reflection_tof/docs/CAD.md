@@ -65,9 +65,9 @@ $cadArguments = @{
     OmitMountingHoles = $true
     MachiningHoleAuditRunPath = '<成功原孔审查run>'
 }
-& .\projects\multi_reflection_tof\analysis\run_resolved_cad_export.ps1 @cadArguments -CheckOnly
+& .\src\msplatform\workflows\resources\run_resolved_cad_export.ps1 @cadArguments -CheckOnly
 # 检查通过并获准商业执行后：
-& .\projects\multi_reflection_tof\analysis\run_resolved_cad_export.ps1 @cadArguments -Approved
+& .\src\msplatform\workflows\resources\run_resolved_cad_export.ps1 @cadArguments -Approved
 ```
 
 FieldRunPath提供冻结resolved_geometry与frozen_input；AssemblyRunPath提供实际assembly materialization。
@@ -87,7 +87,7 @@ $stepArguments = @{
     ConnectedStepContacts = $true
     FrozenMirrorPose = $true
 }
-& .\projects\multi_reflection_tof\analysis\run_resolved_cad_export.ps1 @stepArguments -CheckOnly
+& .\src\msplatform\workflows\resources\run_resolved_cad_export.ps1 @stepArguments -CheckOnly
 # 计划通过且获准后，同一参数对象加-Approved执行。
 ```
 
