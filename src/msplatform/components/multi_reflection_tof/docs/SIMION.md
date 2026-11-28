@@ -32,7 +32,7 @@ MR拥有分析器设计、匹配目标、场消费合同和P/S控制；跨项目
 | 任务 | 权威入口 | MR侧须提供或核对 |
 |---|---|---|
 | OA／IP接口需求准备或既有飞行 finalization | [接口准备与绑定](../../../../../docs/INTEGRATION.md#oaip接口准备与绑定)、[accelerator_interface.ps1](../../../../../src/msplatform/workflows/resources/accelerator_interface.ps1) | 显式provider与原始封存MR参考run；准备只生成需求提案。`-ResumeFinalization`只恢复既有owner，不接收新科学或原生输入 |
-| 已封存 prepared-joint 的重新分析或 finalization | [历史联合记录](../../../../../docs/INTEGRATION.md#已准备ipmr联合飞行)、[prepared_joint入口](../../../../../src/msplatform/workflows/resources/prepared_joint_execute.ps1) | `-AnalyzeRunPath`只读重分析；`-ResumeFinalization`只恢复原收尾。不再启动出口重释放、新飞行或旧整批续跑；历史结果保留原ID、仪器clock和完整母群 |
+| 已封存联合飞行的重新分析或发布恢复 | [历史联合记录](../../../../../docs/INTEGRATION.md#历史-ipmr-记录分析)、`msplatform.workflows.historical_joint_analysis.publish_joint_analysis` | 显式保护原 run 与上游 manifest，冻结合同后由 Store 发布；公共恢复只收尾，不启动出口重释放、新飞行或旧整批续跑。历史结果保留原ID、仪器clock和完整母群 |
 | OA→MR完整飞行 | [OA→MR入口](../../../../../src/msplatform/workflows/resources/oa_mr.ps1)及上述集成状态 | 冻结CompositionPlan及显式局部范围，OA receipt、源与MR科学合同 |
 
 [accelerator_interfaces.json](../config/accelerator_interfaces.json)只声明MR支持的provider选择与依赖，
@@ -491,11 +491,10 @@ run与artifact路径取自本次上下文，handoff复制后重绑冻结副本�
 包括旧 `PreparedJointWorkbenchRunPath`、响应／目标／重锚及整批续跑参数。新飞行只通过公共 `msplatform run`
 和 `workflows.tracing` 消费显式原出生 Recipe；不得将旧实测出口状态重建为新源。
 
-`trial.py` 仅保留有明确封存输入的等价性参考冻结、轨迹表示比较和 `analyze-probe` 历史分析。
-这些操作不创建新的原生飞行owner，不授予旧场或轨迹新的资格。`prepared_joint_execute.ps1` 的
-`-AnalyzeRunPath <原run> -ContractPath <分析合同>` 从封存记录建立分析run，不复制PA、不重飞、不改写原run；
-`-ResumeFinalization -RunId <原run> [-ResultPath <原Result>]` 只重放既有公共owner的收尾，
-不重做准备、分析或Fly，也不接受新科学或原生输入。
+`msplatform.analysis.recorded_joint_trial` 仅保留有明确封存输入的等价性参考冻结、轨迹表示比较和 `analyze-probe` 历史分析。
+这些操作不创建新的原生飞行owner，不授予旧场或轨迹新的资格。当前 `publish_joint_analysis` 从封存记录建立 Store 分析run，
+保护原 run 和显式上游、冻结合同，不复制PA、不重飞、不改写原run；公共执行／Store 恢复只重放既有收尾，
+不重做准备、分析或Fly，也不接受新科学或原生输入。旧 `prepared_joint_execute.ps1` 已删除。
 
 历史目标作者、工作点数学和原始科学记录继续按原身份只读使用。若后续迁移仍有科学价值的分析，
 必须由明确owner接到当前记录合同；不得借此恢复旧飞行CLI。历史成功、失败、中断及已有运行证据均保持原终态。

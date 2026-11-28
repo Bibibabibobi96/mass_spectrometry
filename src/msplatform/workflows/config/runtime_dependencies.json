@@ -3,7 +3,6 @@
   "role": "workflow_runtime_dependencies",
   "owner_id": "instrument_assembly",
   "consumer_ids": [
-    "prepared_joint",
     "accelerator_interface",
     "oa_mr",
     "paired_accelerator_pulse"
@@ -16,7 +15,6 @@
         {
           "source_repo_path": "src/msplatform",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -56,13 +54,6 @@
           ]
         },
         {
-          "id": "msplatform_workflows_prepared_joint_execute_ps1",
-          "source_repo_path": "src/msplatform/workflows/resources/prepared_joint_execute.ps1",
-          "consumers": [
-            "prepared_joint"
-          ]
-        },
-        {
           "id": "msplatform_workflows_oa_mr_ps1",
           "source_repo_path": "src/msplatform/workflows/resources/oa_mr.ps1",
           "consumers": [
@@ -94,7 +85,6 @@
           "id": "assembly_registry",
           "source_repo_path": "src/msplatform/workflows/config/assembly_registry.json",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr"
           ]
@@ -103,7 +93,6 @@
           "id": "msplatform_execution_dependency_runtime",
           "source_repo_path": "src/msplatform/execution/resources/dependencies.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -117,19 +106,17 @@
           ]
         },
         {
-          "id": "prepared_joint_msplatform_backends_simion_resources_build_native_corridor_iob_lua",
+          "id": "msplatform_backends_simion_resources_build_native_corridor_iob_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/build_native_corridor_iob.lua",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr"
           ]
         },
         {
-          "id": "prepared_joint_msplatform_backends_simion_resources_run_iob_flight_lua",
+          "id": "msplatform_backends_simion_resources_run_iob_flight_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/run_iob_flight.lua",
           "consumers": [
-            "prepared_joint",
             "oa_mr"
           ]
         },
@@ -142,10 +129,9 @@
           ]
         },
         {
-          "id": "prepared_joint_msplatform_backends_simion_resources_mrtof_candidate_lua",
+          "id": "msplatform_backends_simion_resources_mrtof_candidate_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/mrtof_candidate.lua",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr"
           ]
@@ -168,7 +154,6 @@
           "id": "msplatform_contracts_particle_count_policy_json",
           "source_repo_path": "src/msplatform/contracts/particle_count_policy.json",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr"
           ]
@@ -191,7 +176,6 @@
           "id": "msplatform_simion_scientific_event_csv_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/scientific_event_csv.lua",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr"
           ]
@@ -200,7 +184,6 @@
           "id": "msplatform_simion_scientific_event_reconciliation_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/scientific_event_reconciliation.lua",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr"
           ]
@@ -230,7 +213,6 @@
           "id": "msplatform_mr_scalar_field_adapter_lua",
           "source_repo_path": "src/msplatform/backends/simion/resources/scalar_field_adapter.lua",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr"
           ]
@@ -240,7 +222,6 @@
           "source_repo_path": "src/msplatform/execution/resources/payload_file_support.ps1",
           "consumers": [
             "oa_mr",
-            "prepared_joint",
             "paired_accelerator_pulse"
           ]
         },
@@ -249,7 +230,6 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/4_instance_seed.iob",
           "consumers": [
             "accelerator_interface",
-            "prepared_joint",
             "oa_mr"
           ]
         },
@@ -257,15 +237,13 @@
           "id": "accelerator_interface_common_simion_assets_iob_instance_seeds_5_instance_seed_iob",
           "source_repo_path": "src/msplatform/backends/simion/resources/5_instance_seed.iob",
           "consumers": [
-            "accelerator_interface",
-            "prepared_joint"
+            "accelerator_interface"
           ]
         },
         {
           "id": "msplatform_execution_host_execution_lease",
           "source_repo_path": "src/msplatform/execution/resources/host_execution_lease.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -275,7 +253,6 @@
           "id": "msplatform_execution_resource_process_support",
           "source_repo_path": "src/msplatform/execution/resources/resource_process_support.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -285,7 +262,6 @@
           "id": "msplatform_execution_process_owner",
           "source_repo_path": "src/msplatform/execution/resources/process_owner.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -295,7 +271,6 @@
           "id": "msplatform_execution_resources_native_run_path_lua",
           "source_repo_path": "src/msplatform/execution/resources/native_run_path.lua",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -305,7 +280,6 @@
           "id": "common_artifact_retention_policy",
           "source_repo_path": "src/msplatform/execution/resources/artifact_retention.json",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -315,7 +289,6 @@
           "id": "local_frontend_machine_contracts_artifact_capacity_policy_json",
           "source_repo_path": "src/msplatform/execution/resources/artifact_capacity_policy.json",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -325,7 +298,6 @@
           "id": "local_frontend_common_host_resource_policy_json",
           "source_repo_path": "src/msplatform/execution/resources/host_resource_policy.json",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -335,7 +307,6 @@
           "id": "msplatform_execution_run_paths",
           "source_repo_path": "src/msplatform/execution/resources/run_paths.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -345,7 +316,6 @@
           "id": "msplatform_voltage_waveforms",
           "source_repo_path": "src/msplatform/backends/simion/resources/voltage_waveforms.lua",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -390,7 +360,6 @@
           "id": "msplatform_execution_run_paths_owner",
           "source_repo_path": "src/msplatform/execution/resources/run_paths_owner.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -400,7 +369,6 @@
           "id": "msplatform_execution_simion_dispatch_support",
           "source_repo_path": "src/msplatform/execution/resources/simion_dispatch_support.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -459,7 +427,6 @@
           "id": "msplatform_simion_mrtof_measured_source_runtime",
           "source_repo_path": "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface"
           ]
         },
@@ -467,7 +434,6 @@
           "id": "msplatform_execution_frozen_python_package",
           "source_repo_path": "src/msplatform/execution/resources/frozen_python_package.ps1",
           "consumers": [
-            "prepared_joint",
             "oa_mr"
           ]
         },
@@ -475,7 +441,6 @@
           "id": "common_paths_workspace_paths_ps1",
           "source_repo_path": "src/msplatform/execution/resources/workspace_paths.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -485,7 +450,6 @@
           "id": "common_run_artifact_support",
           "source_repo_path": "src/msplatform/execution/resources/run_artifact_support.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -495,7 +459,6 @@
           "id": "common_run_artifact_workflow",
           "source_repo_path": "src/msplatform/workflows/resources/run_artifact_workflow.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -505,7 +468,6 @@
           "id": "common_require_powershell7",
           "source_repo_path": "src/msplatform/execution/resources/require_powershell7.ps1",
           "consumers": [
-            "prepared_joint",
             "accelerator_interface",
             "oa_mr",
             "paired_accelerator_pulse"
@@ -525,7 +487,6 @@
           "source_repo_path": "src/msplatform/backends/simion/resources/short_pa_path_support.ps1",
           "consumers": [
             "oa_mr",
-            "prepared_joint",
             "accelerator_interface",
             "paired_accelerator_pulse"
           ]
@@ -534,8 +495,7 @@
           "id": "common_simion_native_fast_adjust_runtime_support_ps1",
           "source_repo_path": "src/msplatform/backends/simion/resources/native_fast_adjust_runtime_support.ps1",
           "consumers": [
-            "oa_mr",
-            "prepared_joint"
+            "oa_mr"
           ]
         },
         {
@@ -549,8 +509,7 @@
           "id": "projects_multi_reflection_tof_simion_native_corridor_runtime_support_ps1",
           "source_repo_path": "src/msplatform/backends/simion/resources/native_corridor_runtime_support.ps1",
           "consumers": [
-            "oa_mr",
-            "prepared_joint"
+            "oa_mr"
           ]
         }
       ],

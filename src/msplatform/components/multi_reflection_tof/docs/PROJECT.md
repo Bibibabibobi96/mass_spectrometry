@@ -178,10 +178,11 @@ the retired `host_resource_python` helpers; host lease, scheduler and policy sta
 explicit. The downstream/prism selection passed 126 parents with 319 successes
 and one existing skip in 250.111 seconds. Segmented research remains bounded and
 is not relabeled as continuous original-birth production.
-Prepared-joint production responsibilities now have installed owners: native bunch serialization and event
-reading are in `msplatform.backends.simion.mr_bunch_source`; mixed IP assembly and joint L0 are in
-`msplatform.workflows.prepared_joint`; MR event analysis is in `msplatform.analysis.mr_event_analysis`;
-source-control and plain-Lua process boundaries are in `msplatform.execution`. The integrations and project scripts remain research/CLI consumers. Architecture
+Historical joint responsibilities now have installed owners: native bunch serialization and event
+reading are in `msplatform.backends.simion.mr_bunch_source`; mixed IP assembly and connection checks are in
+`msplatform.assembly`; MR event analysis is in `msplatform.analysis`; recorded-flight Store publication is in
+`msplatform.workflows.historical_joint_analysis`; source-control and plain-Lua process boundaries are in
+`msplatform.execution`. The former `msplatform.workflows.prepared_joint` container is removed. Architecture
 and targeted consumer checks have passed; the complete integration suite passed 585 tests with four
 existing external-asset skips. Ordinary wheel and sdist-rebuilt outside-checkout acceptance passed in
 1790.246 seconds. Full MR, Changed and applicable native acceptance remain separately bounded and are
@@ -452,7 +453,7 @@ IP路径保留native轴置换限制，不能据共同刚体回归声称任意相
 不以PA编号、数值marker或机械端面替代完整驱动与场验收。
 
 OA→MR的原生功能与两代完整批恢复已有证据，结果统一见
-[联合飞行状态](../../../../../docs/INTEGRATION.md#已准备ipmr联合飞行)。
+[联合飞行状态](../../../../../docs/INTEGRATION.md#历史-ipmr-记录分析)。
 旧173601及恢复run的manifest未完整登记父plan／local-scope，不能追认其配方身份已完整绑定；
 当前owner已补齐永久输入角色及篡改拒绝。恢复不改写原记录，也不以重复Fly修复统计或发布问题。
 
@@ -796,25 +797,24 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 `native_condition`指向原条件runner，显式消费ConditionPath、ContextPath与CompositionPlanPath，不猜latest资产。`src/msplatform/workflows/mr_design/execution_binding.py`从本次release/context小合同核对实际质量／电荷，物种不匹配不能READY；无结构变体时返回null。Candidate／Formal请求须符合真实支持域，不能静默降级。现公开profile的100／524 Da、+1条件仅表示输入适用范围，不代表科学资格。
 编译结果绑定小定义并持续保护，原owner从同一定义准备／冻结／执行；能力查询不生成GEM、不读大PA。OA几何与IOB pose消费纯几何提供者，新机械exit-origin与合法旧PA frame显式转换；未知frame拒绝，旧plan只读，世界布局不变。查询与执行入口见[公共合同](../../../../../tools/repository/README.md#执行dry-run)，READY不代表科学资格。
 
-## Installed prepared-joint recorded analysis
+## 安装后的历史联合记录分析
 
 `msplatform.workflows.historical_joint_analysis analyze-joint` owns the complete recorded-data
 analysis CLI. `measured_population` closes the original source census and `loss_acceptance` supplies
 the existing diagnostics; the sole SIMION recorded-event/trajectory implementation is
-`msplatform.analysis.mr_observations`. The old backend path only reexports the five symbols still consumed by
-the in-flight `historical_joint_analysis` owner and retires with that import migration. CSV iteration and PNG/SVG export are installed neutral
+`msplatform.analysis.mr_observations`. CSV iteration and PNG/SVG export are installed neutral
 I/O. Their former project/common implementations and moved CLI operations are retired.
 
-Prepared-joint materialization, continuation, controller and research operations now live under
-`msplatform.workflows.prepared_joint`; complete MR geometry/physics primitives remain in the MR component,
-SIMION programs and native adapters in the SIMION backend, and recorded-event analysis in `msplatform.results`.
-The integration entry selects study configuration and invokes those owners without reading project production
-modules. Installed sources contain no MR-project imports. The four migrated Lua programs are package resources
-and the declared freezer consumes those same paths. Complete consumer, isolated-install and native acceptance
-remain separately required; this ownership migration does not grant field convergence, Fly, GUI or Formal qualification.
+`publish_joint_analysis` owns protected Store publication and freezes any explicit post-hoc contract before use.
+The former `msplatform.workflows.prepared_joint` package, private PowerShell owner and admission CLI are removed.
+Complete MR geometry/physics primitives remain in the MR component, SIMION programs and native adapters in the
+SIMION backend, and recorded-event analysis in `msplatform.results`／`msplatform.analysis`. New flights use the
+public original-birth tracing chain, never this historical reader. Complete consumer, isolated-install and native
+acceptance remain separately required; this ownership migration does not grant field convergence, Fly, GUI or Formal qualification.
 
-The operation consumes explicit preparation, merge, source, timing, field-binding metadata and declared
-observations. It does not discover Git or invoke a supplier, need PA payloads, or create a run owner.
+Direct analysis consumes explicit preparation, merge, source, timing, field-binding metadata and declared
+observations. It does not discover Git, invoke a supplier or need PA payloads; Store publication separately creates
+its managed run owner.
 Posthoc peak-method changes preserve the native/nonpeak contract; relative timing records are resolved
 against the explicitly supplied analysis contract directory. Original mother IDs, birth/absolute clocks,
 repeated/reverse events, unknown loss and declared trajectory choices remain authoritative. Missing or
@@ -888,32 +888,21 @@ CI 41181531874 的失败记录仍保留，本修正不是完整软件性能或�
 
 MR analytical and native-geometry callers now import the installed OA two-zone renderer. Existing source inventories also retain its three canonical backend files; geometry/voltage semantics and historical runs remain unchanged. This migration does not establish new MR native or frozen-execution qualification.
 
-## Installed prepared-joint analysis admission
+## 安装后的历史分析准入
 
-`msplatform.workflows.prepared_joint.analysis_inputs.prepare_analysis_inputs` admits
-one explicit terminal prepared-joint source and freezes only its manifest and the
-author's analysis contract. The current historical guard verifies terminal and
-stopped-writer evidence and holds the original manifest/config read-only; no
-capacity ledger or second lifecycle owner participates.
-Original native logs, batch receipts, FLY2, preparation and protected source paths
-remain at their producer locations. Complete original-ID merge, mother/launched
-counts, clock epoch, ready owner and failed-analysis stage checks are unchanged.
-Earlier failed native flights are not newly admitted; their existing continuation
-path remains separate. Admission does not perform scientific analysis or native Fly.
+`msplatform.workflows.historical_joint_analysis.publish_joint_analysis` admits one explicit terminal historical
+source and its explicitly named ancestors, then publishes through Store. The source guard verifies terminal and
+stopped-writer evidence and holds the original manifests/configs read-only. An external analysis contract is also
+write-protected and frozen into the new run; the analyzer receives only that frozen path. Original native logs,
+batch receipts, FLY2, preparation and protected source paths remain at their producer locations. Complete original-ID
+merge, mother/launched counts and clock epoch remain authoritative. No native Fly is performed and a failed historical
+flight is not relabeled successful.
 
-The sole recording validator and query CLI are now
-`msplatform.contracts.trajectory_recording` (`python -m ... --contract <path>`).
-Original every-step/fixed-interval choices, positive explicit output budget,
-solver-review retention/reason and default-off behavior remain unchanged. The old
-multipurpose recording-config command and root admission module are retired.
-Full prepared-joint diagnostics and trajectory extraction remain explicit P4 work;
-this slice does not claim them installed or change cohort/clock/event/loss semantics.
-
-The bounded admission migration passed the original six-scenario public post-hoc
-analysis fixture with its 45-second/process/outcome assertions preserved, focused
-source/policy/boundary regressions, frozen OA/MR provider origin checks and the
-original five-method ordinary wheel/sdist acceptance. Plain-Lua launcher fixtures
-are software checks; no new SIMION Fly/Refine or COMSOL solve was performed.
+The sole recording validator and query CLI are `msplatform.contracts.trajectory_recording`
+(`python -m ... --contract <path>`). Original every-step/fixed-interval choices, positive explicit output budget,
+solver-review retention/reason and default-off behavior remain unchanged. The former admission module, package and
+PowerShell owner are retired. Historical test numbers above describe only those retired implementations; current
+batch-C verification is recorded in `docs/development/architecture-migration.md`, without native or scientific qualification.
 
 ### Installed batching dependency
 
@@ -1186,12 +1175,11 @@ flight, or physical match.
 
 ### Installed measured-source preparation
 
-The measured population, constructed centroid and scheduler ordinal slice are prepared
-by `msplatform.workflows.prepared_joint.source`; IP/MR source binding and connection
-policy are owned by `msplatform.assembly.ip_mr_connection`. The
-source runtime is an installed SIMION resource. The real accelerator-interface and
-prepared-joint consumers use these implementations; the remaining trial lifecycle
-continues in its original entry. This does not establish native flight or qualification.
+Measured-source serialization belongs to `msplatform.backends.simion.mr_bunch_source`; IP/MR source binding,
+connection and measured handoff policy are owned by `msplatform.assembly`. Recorded post-hoc analysis belongs to
+`msplatform.workflows.historical_joint_analysis`. The former prepared-joint source, trial lifecycle and entry are
+removed; new flights use explicit original-birth recipes and public tracing. This does not establish native flight
+or qualification.
 
 
 ### Explicit MR component provider and mechanical composition

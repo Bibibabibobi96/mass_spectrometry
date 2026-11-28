@@ -269,7 +269,7 @@ class ChangedGateContractTests(unittest.TestCase):
                 request, _ = self.plan("-ChangedPath", path)
                 for stage, parameter, required in (
                     ("multi_reflection_tof_static", "ChangedTestModules", {"test_native_static_field_provider", "test_native_static_field_provider_runner", "test_static_field_binding"}),
-                    ("instrument_assembly", "SelectedTestModules", {"test_accelerator_interface", "test_oa_mr_execute", "test_prepared_joint_execute"}),
+                    ("instrument_assembly", "SelectedTestModules", {"test_accelerator_interface", "test_oa_mr_execute", "test_recorded_joint_trial"}),
                 ):
                     modules = {value.rsplit(".", 1)[-1] for row in request["stages"]
                                if row["selected"] and row["name"].startswith(stage)

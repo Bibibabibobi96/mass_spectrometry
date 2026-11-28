@@ -3490,8 +3490,8 @@
           "reason": "canonical_rf_exit_observation_changed"
         },
         {
-          "prefix": "src/msplatform/workflows/prepared_joint/",
-          "reason": "canonical_prepared_joint_admission_changed"
+          "exact": "src/msplatform/workflows/historical_joint_analysis.py",
+          "reason": "historical_joint_publication_changed"
         },
         {
           "regex": "^src/msplatform/(?:backends/simion/particle_batching|execution/partitioning)\\.py$",
@@ -3514,10 +3514,6 @@
           "reason": "installed_oa_focus_dependency_changed"
         },
         {
-          "exact": "src/msplatform/workflows/prepared_joint/source.py",
-          "reason": "installed_measured_source_consumer_changed"
-        },
-        {
           "exact": "src/msplatform/assembly/ip_mr_connection.py",
           "reason": "installed_measured_source_consumer_changed"
         },
@@ -3531,7 +3527,7 @@
         },
         {
           "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
-          "reason": "prepared_joint_frozen_executor_changed"
+          "reason": "assembly_frozen_executor_changed"
         },
         {
           "exact": "src/msplatform/backends/comsol/matlab/add_comsol_size_feature.m",
@@ -3611,7 +3607,7 @@
           "test_paired_accelerator_pulse_runtime": 9.514838,
           "test_paired_accelerator_static_field_execute": 58.409332,
           "test_paired_inherited_lease": 2.490444,
-          "test_prepared_joint_execute": 108.740789,
+          "test_historical_joint_publication": 31.054,
           "test_repository_bindings": 0.018886,
           "test_saved_workbench_replay_policy": 1.434473,
           "test_single_reflection_collection": 4.909472,
@@ -3710,7 +3706,7 @@
             "modules": [
               "tests/assembly/accelerator_interface/test_accelerator_interface.py",
               "tests/assembly/oa_mr_execute/test_oa_mr_execute.py",
-              "tests/test_prepared_joint_execute.py"
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3729,22 +3725,6 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
-                "reason": "prepared_joint_frozen_executor_changed"
-              }
-            ],
-            "modules": [
-              "tests/test_prepared_joint_execute.py"
-            ],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {
-                "exact": "src/msplatform/workflows/prepared_joint/source.py",
-                "reason": "installed_measured_source_consumer_changed"
-              },
-              {
                 "exact": "src/msplatform/assembly/ip_mr_connection.py",
                 "reason": "installed_measured_source_consumer_changed"
               },
@@ -3760,7 +3740,7 @@
             "modules": [
               "tests/assembly/accelerator_interface/test_accelerator_interface.py",
               "tests/assembly/accelerator_interface_geometry/test_accelerator_interface_geometry.py",
-              "tests/test_prepared_joint_execute.py"
+              "tests/execution/test_historical_joint_publication.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4222,8 +4202,8 @@
           "reason": "installed_particle_batching_dependency_changed"
         },
         {
-          "prefix": "src/msplatform/workflows/prepared_joint/",
-          "reason": "installed_prepared_joint_analysis_changed"
+          "exact": "src/msplatform/workflows/historical_joint_analysis.py",
+          "reason": "historical_joint_analysis_changed"
         },
         {
           "exact": "src/msplatform/analysis/mr_observations.py",
@@ -4274,10 +4254,6 @@
           "reason": "installed_standalone_pa_authority_changed"
         },
         {
-          "exact": "src/msplatform/workflows/prepared_joint/source.py",
-          "reason": "installed_measured_source_consumer_changed"
-        },
-        {
           "exact": "src/msplatform/assembly/ip_mr_connection.py",
           "reason": "installed_measured_source_consumer_changed"
         },
@@ -4291,7 +4267,7 @@
         },
         {
           "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
-          "reason": "prepared_joint_frozen_executor_changed"
+          "reason": "assembly_frozen_executor_changed"
         },
         {
           "exact": "src/msplatform/components/catalog.py",
@@ -4500,7 +4476,7 @@
             "matches": [
               {
                 "exact": "src/msplatform/execution/resources/frozen_python_package.ps1",
-                "reason": "prepared_joint_frozen_executor_changed"
+                "reason": "assembly_frozen_executor_changed"
               }
             ],
             "modules": [
@@ -4510,10 +4486,6 @@
           },
           {
             "matches": [
-              {
-                "exact": "src/msplatform/workflows/prepared_joint/source.py",
-                "reason": "installed_measured_source_consumer_changed"
-              },
               {
                 "exact": "src/msplatform/assembly/ip_mr_connection.py",
                 "reason": "installed_measured_source_consumer_changed"

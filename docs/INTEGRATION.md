@@ -2524,16 +2524,11 @@ instrument qualification. The original recipe and upstream pose are preserved;
 its old measured-state handoff and local PA domain are not new continuous-field
 evidence. No OA is synthesized to resolve this scope distinction.
 
-## 已准备IP→MR联合飞行
+## 历史 IP→MR 记录分析
 
-[记录型联合分析入口](../src/msplatform/workflows/resources/prepared_joint_execute.ps1)消费`-AnalyzeRunPath`与`-ContractPath`，
-从封存原生日志建立新分析run，不重飞、不复制PA或改写原run。
-同入口`-ResumeFinalization -RunId <原run_id> [-ResultPath <小Result>]`沿公共PowerShell owner收尾；
-默认Result位于`artifacts/assemblies/instrument_assembly/scratch/workflow_results/<run_id>/result.json`。
-该模式直接读取原run冻结的execution request与实际停写／host释放事实，不重做准备、Fly或分析，也不要求重传科学输入。
-正常流程在retention／发布前持久保存小完成记录；收尾失败可原命令重试，未知writer先确认完成。
-继承容量会话不由child减承诺或释放；heavy child只发布自己的终态，Result明确提示`parent_capacity_owner_finalize`，
-不把父owner尚未封存的载荷报告为收尾完成。旧 FullJoint 外层恢复转发已删除；恢复直接由原分析 owner 执行。
+`msplatform.workflows.historical_joint_analysis.publish_joint_analysis` 是当前 Store 发布 API：显式接收执行上下文、原 `run_manifest.json`、需保护的上游 manifest、可选分析合同、ArtifactStore、run ID、容量承诺和 retention。它在同一源图保护范围内核对终态、原始 ID、时钟和停写事实；显式合同冻结到本次 run 后才用于分析，不重飞、不复制 PA 或改写原 run。直接分析函数 `analyze_recorded_joint_flight` 不负责 Store 发布。
+
+旧 `prepared_joint_execute.ps1`、`prepared_joint.analysis_inputs` 及其私有 PowerShell owner 已删除。恢复只走公共执行／Store 的既有持久完成记录，不重建旧 owner；未知 writer 必须先确认完成。继承容量会话和父 owner 的责任不因历史分析而转移。
 
 显式前驱恢复以固定完整批为单位，仅执行缺失批，来源和借用控制文件继续绑定原owner。
 全批复用不申请或释放不存在的SIMION重型租约；批次执行器异常且写入者未确认停止时保留保护，
@@ -2897,37 +2892,11 @@ do not rewrite the original failed run or prove its unique permission cause.
 Wall time was 3,862.029 s at four requested gate workers with concurrent P4
 diagnostics; this is not a controlled performance comparison. Full Repository
 and the 15-minute target remain open.
-### Installed prepared-joint source admission
+### 历史联合分析 Store 准入
 
-Measured population, centroid and batch-source materialization now use the installed
-`msplatform.workflows.prepared_joint.source` owner and its packaged SIMION runtime;
-the research target author remains project-owned. The selected prepare call uses the existing
-isolated frozen executor with the actual copied dependency identities, including its contract.
-It checks before and after execution and excludes the live repository; this is not a held
-immutability lock. Full owner/native acceptance remains separate from source preparation.
+当前公开入口是 `msplatform.workflows.historical_joint_analysis.publish_joint_analysis`。它保护显式原 run 与上游 owner，校验停写和完整原始 ID 证据，并把外部分析合同冻结到新 Store run；分析只消费该副本。原生日志、FLY2、准备记录和原始科学状态不改写。旧 `prepared_joint.source`、`prepared_joint.analysis_inputs` 和对应 PowerShell 执行／恢复入口均已退出；新飞行不从这些历史出口重释放。
 
-The post-hoc source-admission CLI is
-`python -m msplatform.workflows.prepared_joint.analysis_inputs --source-run <run>
---contract <author.json> --output-inputs <managed-run-inputs>`.
-It consumes explicit sealed source evidence and does not run an owner, Fly or the
-full analyzer. The existing prepared-joint PowerShell owner invokes this installed
-stage and the sole `msplatform.contracts.trajectory_recording --contract <path>`
-query. Source data is never relocated or rewritten. Both admission and diagnostics execute through the frozen-package
-executor, which verifies their module origins; analysis consumes the already-frozen `analysis_contract.json` rather than
-reading or overwriting it from the author path. The real public-entry fixture passes when that original is modified or
-removed after freezing, preserves the published contract SHA-256, and rejects missing frozen admission/diagnostics modules
-instead of accepting same-named installed modules. Full diagnostics/extraction now use the installed workflow and SIMION adapters;
-native-controller migration remains open. Admission does not confer scientific qualification.
-
-The integrated implementation passed two main-checkout admission tests in 0.432 s.
-Independent byte review matched all production and protected process-fixture code
-to the accepted 13-method checkpoint (227.497 s, no skips), retaining all six
-scenarios, the original 45-second deadlines and the canonical batching CLI.
-The exact admission code also passed the combined ordinary-wheel/sdist-rebuilt
-acceptance with the subsequent analyzer and beam slices; those later slices are
-recorded separately. No repeated full gate or native execution is claimed here.
-Official CLOC 2.10, e0ae4690 to this slice: total +26, production +11, tests +15,
-zero unclassified; full language counts and filtering are retained in task evidence.
+下列历史软件数字只描述当时已退役实现，不是当前 SHA 的验收：旧实现曾通过两个准入测试（0.432 s）、13 方法检查点（227.497 s）及当时双发行检查，未执行新的原生求解。当前实现证据以批次 C 唯一迁移记录为准。准入或分析不授予科学资格。
 
 ### Dependency source enumeration
 
@@ -3200,9 +3169,9 @@ the new chain does not inherit the former Candidate/Formal grade.
 
 The former `ip_mr_chain` registry and `accelerator_interface -FullJoint` route
 are removed. Recorded-joint analysis and Store publication belong to
-`historical_joint_analysis`; the remaining prepared-joint analysis adapter is a
-C migration remnant, not a new-flight entry. OA–MR interface preparation is not
-particle propagation. Historical population/frame/clock readers remain read-only.
+`historical_joint_analysis`; its former admission and PowerShell adapter are also
+removed. OA–MR interface preparation is not particle propagation. Historical
+population/frame/clock readers remain read-only.
 
 ## 当前 paired 静态场 Store 入口
 

@@ -12,8 +12,8 @@ from unittest.mock import patch
 from msplatform.io import scientific_csv as io
 from msplatform.execution.resources import workspace_paths
 from msplatform.backends.simion import mrtof_batch_flight as merger
-from msplatform.workflows.prepared_joint import continuation
-from msplatform.workflows.prepared_joint import trial as prepared
+from msplatform.workflows.mr_design import batch_continuation as continuation
+from msplatform.analysis import recorded_joint_trial as prepared
 from msplatform.workflows.oa_mr import source_z_energy_timing_diagnostic as source_z
 from msplatform.backends.simion import mr_bunch_source as pilot
 from msplatform.backends.simion.resources import native_resource_path
@@ -500,7 +500,7 @@ scientific_events:close();scientific_trajectory:close()
         pwsh = shutil.which('pwsh')
         if not pwsh:
             self.skipTest('PowerShell 7 unavailable')
-        for consumer in ('prepared_joint', 'oa_mr', 'accelerator_interface'):
+        for consumer in ('oa_mr', 'accelerator_interface'):
             with self.subTest(consumer=consumer), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory)
                 script = output / 'freeze.ps1'

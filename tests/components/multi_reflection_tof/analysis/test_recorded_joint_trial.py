@@ -3,7 +3,6 @@
 from msplatform.backends.simion.native_completion import retention_api as _manifest_retention_api
 from msplatform.backends.simion.mr_prepared_field import compile_memory_consumer_crops, validate_candidate_binding
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,63 +15,6 @@ from msplatform.analysis.recorded_joint_trial import compare_trajectory_represen
 
 
 class RecordedJointBatchTests(unittest.TestCase):
-
-
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_public_analysis_invoker_rejects_changed_frozen_source(self):
-        repo = Path(__file__).resolve().parents[4]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            script = root / "check.ps1"
-            script.write_text(r"""param($Repo,$Destination,$Python)
-$repoRoot=$Repo
-. (Join-Path $Repo 'src/msplatform/execution/resources/dependencies.ps1')
-. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $Repo -ContractPath (Join-Path $Repo 'src/msplatform/workflows/config/runtime_dependencies.json') -InputDir $Destination -OwnerId instrument_assembly -ConsumerId prepared_joint
-$source=Get-Content -LiteralPath (Join-Path $Repo 'src/msplatform/workflows/resources/prepared_joint_execute.ps1') -Raw
-$tokens=$null;$errors=$null
-$tree=[System.Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
-if($errors.Count){throw 'launcher parser errors'}
-$function=$tree.FindAll({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Invoke-ProjectPython'},$true)
-if($function.Count-ne1){throw 'launcher invoker not unique'}
-. ([scriptblock]::Create($function[0].Extent.Text))
-$script:pythonRoot=[string]$frozen.execution_root;$script:preparedPackage=$null
-$module='msplatform.analysis.recorded_joint_trial'
-$help=@('-m',$module,'--help')
-$good=@(Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen)-join "`n"
-if($good-notmatch 'usage:'){throw 'real selected module did not return help'}
-$identity=@($frozen.identities|Where-Object {$_.source_repo_path-ceq 'src/msplatform/analysis/recorded_joint_trial.py'})
-if($identity.Count-ne1){throw 'selected source identity missing'}
-$target=[string]$identity[0].snapshot_path;$original=[IO.File]::ReadAllBytes($target)
-try{
-  Remove-Item -LiteralPath $target
-  try{Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen|Out-Null;throw 'missing source accepted'}catch{if($_.Exception.Message-notmatch 'Frozen Python dependency is missing'){throw}}
-  [IO.File]::WriteAllBytes($target,($original+[byte[]](1)))
-  try{Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen|Out-Null;throw 'changed source accepted'}catch{if($_.Exception.Message-notmatch 'Frozen Python dependency hash differs'){throw}}
-}finally{[IO.File]::WriteAllBytes($target,$original)}
-try{Invoke-ProjectPython -Arguments @('-m',$module,'--invalid-option') -FrozenPackage $frozen|Out-Null;throw 'bad arguments accepted'}catch{if($_.Exception.Message-notmatch '^Python stage failed:' -or $_.Exception.Data['exit_code'] -ne 2 -or $null -eq $_.Exception.InnerException){throw}}
-# A junction is an execution alias for the same frozen tree; do not copy it.
-$alias=Join-Path (Split-Path -Parent $Destination) 'projected_snapshot'
-$null=New-Item -ItemType Junction -Path $alias -Target $frozen.execution_root
-try{
-  $script:preparedPackage=[pscustomobject]@{}
-  function Get-RunNativeExecutionContext {param($Package,$Paths,$Tool) [pscustomobject]@{projected_paths=@($alias);environment=@{}}}
-  $aliasHelp=@(Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen)-join "`n"
-  if($aliasHelp-notmatch 'usage:'){throw 'projected selected module did not return help'}
-  [IO.File]::WriteAllBytes($target,($original+[byte[]](1)))
-  try{Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen|Out-Null;throw 'projected changed source accepted'}catch{if($_.Exception.Message-notmatch 'Frozen Python dependency hash differs'){throw}}
-}finally{
-  [IO.File]::WriteAllBytes($target,$original)
-  Remove-Item -LiteralPath $alias
-  $script:preparedPackage=$null
-}
-Write-Output 'FROZEN_ANALYSIS_INVOKER=PASS'
-""", encoding="utf-8")
-            result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(script), str(repo),
-                                     str(root / "inputs"), sys.executable], cwd=root, capture_output=True,
-                                    text=True, encoding="utf-8", errors="replace", timeout=180)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("FROZEN_ANALYSIS_INVOKER=PASS", result.stdout)
 
 
 
@@ -337,3 +279,76 @@ Write-Output 'FROZEN_ANALYSIS_INVOKER=PASS'
                     merge_measured_event_logs(batches=batches, preparation_path=preparation,
                                              output_path=root/"bad.log", receipt_path=root/"bad.json")
                 fly.write_bytes(original)
+
+
+class RecordedJointEvidenceTests(unittest.TestCase):
+    def test_scientific_event_receipt_reaches_actual_centroid_analysis_cli(self):
+        import contextlib
+        import io
+        from msplatform.analysis import recorded_joint_trial
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "merge.json"
+            arguments = ["analyze-probe", "--preparation", str(root / "preparation.json"),
+                         "--log", str(root / "native.log"), "--output", str(root / "diagnostics"),
+                         "--scientific-event-receipt", str(receipt)]
+            with patch.object(recorded_joint_trial, "analyze_centroid_probe") as actual_analysis, \
+                    patch.object(sys, "argv", ["trial", *arguments]), contextlib.redirect_stdout(io.StringIO()):
+                recorded_joint_trial.main()
+                self.assertEqual(actual_analysis.call_args.kwargs["scientific_event_receipt"], receipt)
+                actual_analysis.side_effect = RuntimeError("ORIGINAL_CLI_ANALYSIS_FAILURE")
+                with self.assertRaisesRegex(RuntimeError, "ORIGINAL_CLI_ANALYSIS_FAILURE"):
+                    recorded_joint_trial.main()
+
+    def test_centroid_reader_rejects_old_or_wrong_owner(self):
+        from msplatform.workflows.mr_design.downstream_workpoint import load_prepared_centroid_trial
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "run_manifest.json"
+            for owner, mode in (("multi_reflection_tof", "two_prism_joint_measured_trial"),
+                                ("orthogonal_accelerator", "prepared_joint"),
+                                ("instrument_assembly", "two_prism_joint_measured_trial")):
+                manifest.write_text(json.dumps(dict(status="success", project=owner, mode=mode)))
+                with self.subTest(owner=owner, mode=mode), self.assertRaisesRegex(
+                        ValueError, "published successful measured joint"):
+                    load_prepared_centroid_trial(manifest, manifest, manifest)
+
+    def test_equivalence_reads_exact_old_or_new_identity_without_execution_fallback(self):
+        from msplatform.execution.retention import file_record
+        from msplatform.analysis.recorded_joint_trial import freeze_equivalence_reference
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prior = root / "prior"
+            (prior / "results/source").mkdir(parents=True)
+            (prior / "logs").mkdir()
+            current = root / "current"
+            current.mkdir()
+            filenames = ("component_particle_state.csv", "source_census.csv", "source_states.lua",
+                         "source_projection.lua", "source.fly2", "clock_authority.json")
+            for name in filenames:
+                (prior / "results/source" / name).write_text("same frozen scientific bytes")
+                (current / name).write_text("same frozen scientific bytes")
+            log = prior / "logs/joint_flight_batch_001.log"
+            log.write_text("MRTOF_EVENT terminal ion=7 t_us=7500.57\nstatus,Fly completed. 1 splats\nIOB_FLIGHT: PASS complete\n")
+            preparation = dict(expected_particle_ids=[7], mother_particle_count=100, launched_particle_count=1,
+                solver_epoch_instrument_time_us=7500, numerics=dict(maximum_step_us=.001),
+                parent_preparation=dict(sha256="A"*64), field_binding=dict(sha256="B"*64),
+                trajectory_contract=dict(sha256="C"*64), measured_source_directory=str(current))
+            receipt = prior / "results/prepared_joint_trial.json"
+            receipt.write_text(json.dumps(dict(preparation, measured_source_directory=str(prior / "results/source"))))
+            records = [file_record(path) for path in [receipt, log, *sorted((prior / "results/source").iterdir())]]
+            for index, (owner, mode) in enumerate((("instrument_assembly", "prepared_joint"),
+                ("multi_reflection_tof", "two_prism_joint_measured_trial"),
+                ("multi_reflection_tof", "prepared_joint"))):
+                (prior / "run_manifest.json").write_text(json.dumps(dict(project=owner, mode=mode,
+                    status="interrupted", outputs=records)))
+                destination = root / str(index)
+                destination.mkdir()
+                with patch("msplatform.execution.manifest_verification.verify_run_manifest") as verifier:
+                    if index == 2:
+                        with self.assertRaisesRegex(ValueError, "owner/mode"):
+                            freeze_equivalence_reference(prior, preparation, destination)
+                    else:
+                        result = freeze_equivalence_reference(prior, preparation, destination)
+                        self.assertEqual(result["original_particle_ids"], [7])
+                        self.assertEqual(Path(result["reference_log"]["path"]).read_bytes(), log.read_bytes())
+                    verifier.assert_called_once()

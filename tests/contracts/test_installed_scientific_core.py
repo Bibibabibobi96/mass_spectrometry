@@ -352,8 +352,9 @@ with section_timing('b_native_preflight', sys.argv[2]):
                 return True
             raise
     assert installed_missing_module('msplatform.workflows.single_reflection_flight.recorded_birth')
-    assert installed_missing_module('msplatform.workflows.prepared_joint.source')
-    assert installed_missing_module('msplatform.workflows.prepared_joint.flight')
+    assert installed_missing_module('msplatform.workflows.prepared_joint')
+    assert installed_missing_module('msplatform.workflows.prepared_joint.analysis_inputs')
+    assert not (installed_purelib / 'msplatform/workflows/resources/prepared_joint_execute.ps1').exists()
     assert not (installed_purelib / 'msplatform/workflows/resources/single_reflection_flight.ps1').exists()
     assert installed_missing_module('msplatform.workflows.oa_formal')
     assert installed_missing_module('msplatform.workflows.oa_formal.prepare_formal_promotion')
@@ -2826,37 +2827,57 @@ try:
 finally:
     gas_policy_backup.rename(gas_policy_path)
 
-from msplatform.workflows.prepared_joint.analysis_inputs import prepare_analysis_inputs
-import msplatform.workflows.prepared_joint.analysis_inputs as admission_module
+from msplatform.workflows import historical_joint_analysis as admission_module
+from msplatform.storage.store import ArtifactStore as AdmissionStore
 import msplatform.contracts.trajectory_recording as recording_module
 assert pathlib.Path(admission_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
 assert pathlib.Path(recording_module.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')))
+from unittest.mock import patch as admission_patch
+from msplatform.execution.context import ExecutionContext as AdmissionContext
+from msplatform.execution.resources import resource_path as admission_resource
+from msplatform.execution.capacity_admission import _capacity_policy as admission_capacity_policy
+admission_root = root / ('historical-analysis-store-' + sys.argv[2])
+admission_policy = admission_root / 'capacity.json'
+admission_root.mkdir()
+admission_policy.write_text(json.dumps(dict(admission_capacity_policy(), target_gib=1, minimum_free_gib=0)), encoding='utf-8')
+admission_context = AdmissionContext(workspace=admission_root / 'study with spaces',
+    python_executable=pathlib.Path(sys.executable), powershell_executable=pathlib.Path(shutil.which('pwsh')),
+    tools={}, host_state_path=admission_root / 'host_resources.sqlite3',
+    policy_path=admission_resource('host_resource_policy.json'), execution_root=admission_root / 'aliases',
+    capacity_policy_path=admission_policy)
+admission_context.workspace.mkdir()
+admission_store = AdmissionStore(admission_root / 'store')
+def admission_inert_analysis(preparation, log, output, **kwargs):
+    output.mkdir(parents=True)
+    receipt = dict(schema_version=1, role='installed_analysis_probe', status='complete_recorded_diagnostics',
+                   counts=dict(mother_source=100), outputs=[])
+    (output / 'diagnostics_receipt.json').write_text(json.dumps(receipt), encoding='utf-8')
+    return receipt
 for admission_case in fixture['prepared_joint_admission']:
     source = pathlib.Path(admission_case['source'])
     author_contract = pathlib.Path(admission_case['contract'])
     original = {path: path.read_bytes() for path in source.rglob('*') if path.is_file()}
-    output = root / ('admitted-' + admission_case['scenario'] + '-' + sys.argv[2])
+    arguments = dict(source_manifest=source / 'run_manifest.json', ancestor_manifests=(),
+        analysis_contract=author_contract, artifact_store=admission_store, committed_new_bytes=100000000,
+        run_id='20261128_120000__analysis__python__' + admission_case['scenario'] + '-' + sys.argv[2],
+        retention=dict(policy_version=1, **{'class':'compact'}, reason=None))
     if admission_case['scenario'] in ('success', 'failed_analysis'):
-        admitted = prepare_analysis_inputs(source, author_contract, output)
-        assert (admitted['mother_particle_count'], admitted['launched_particle_count']) == (100, 97)
-        assert admitted['preparation'] == str(source/'results/prepared_joint_trial.json')
-        assert admitted['merged_log'] == str(source/'logs/native_two_prism_flight.log')
-        assert pathlib.Path(admitted['analysis_contract']).read_bytes() == author_contract.read_bytes()
-        assert {path.name for path in output.iterdir()} == {'source_run_manifest.json','analysis_contract.json'}
-        cli_output = output.with_name(output.name + '-cli')
-        admitted_cli = subprocess.run([sys.executable, '-I', '-m', 'msplatform.workflows.prepared_joint.analysis_inputs',
-            '--source-run', str(source), '--contract', str(author_contract), '--output-inputs', str(cli_output)],
-            cwd=root, capture_output=True, timeout=30)
-        assert admitted_cli.returncode == 0, admitted_cli.stderr
-        assert json.loads(admitted_cli.stdout)['mother_particle_count'] == 100
+        with admission_patch.object(admission_module, 'analyze_recorded_joint_flight',
+                                    side_effect=admission_inert_analysis) as actual_analysis:
+            admitted = admission_module.publish_joint_analysis(admission_context, **arguments)
+        assert admitted['diagnostics']['counts']['mother_source'] == 100
+        frozen = admitted['manifest']['path']
+        manifest = json.loads(pathlib.Path(frozen).read_text(encoding='utf-8-sig'))
+        frozen_contract = manifest['inputs']['analysis_contract']
+        assert pathlib.Path(frozen_contract['path']).read_bytes() == author_contract.read_bytes()
+        assert actual_analysis.call_args.kwargs['analysis_contract'] != author_contract
     else:
         try:
-            prepare_analysis_inputs(source, author_contract, output)
+            admission_module.publish_joint_analysis(admission_context, **arguments)
         except ValueError as error:
             assert admission_case['error'] in str(error)
         else:
             raise AssertionError('invalid sealed source was admitted')
-        assert not output.exists()
     assert all(path.read_bytes() == value for path,value in original.items())
 recording_path = pathlib.Path(recording_module.__file__)
 recording_backup = recording_path.with_suffix('.absent')
@@ -6521,17 +6542,17 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
                     expected=collect_log(case.preparation,case.workbench,case.run,case.log))
 
     def prepared_joint_admission_probe_fixture(self, root: Path) -> list[dict]:
-        from tests.test_prepared_joint_execute import analysis_source_fixture
+        from tests.execution.test_historical_joint_publication import stopped_source_fixture
         result = []
         for scenario in ("success", "failed_analysis", "wrong_owner", "incomplete_native"):
             workspace = root / ("sealed-analysis-source-" + scenario)
             workspace.mkdir()
-            source, contract = analysis_source_fixture(workspace,
+            source, contract = stopped_source_fixture(workspace,
                 status="success" if scenario == "success" else "failed",
                 owner="multi_reflection_tof" if scenario == "wrong_owner" else "instrument_assembly",
                 complete=scenario != "incomplete_native")
             result.append(dict(scenario=scenario, source=str(source), contract=str(contract),
-                error="instrument_assembly/prepared_joint" if scenario == "wrong_owner" else "complete original-ID"))
+                error="source must be a historical joint flight" if scenario == "wrong_owner" else "complete original-ID"))
         return result
 
     def gas_field_probe_fixture(self, root: Path) -> dict:

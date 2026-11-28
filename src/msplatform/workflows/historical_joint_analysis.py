@@ -311,7 +311,10 @@ def analyze_recorded_joint_flight(preparation_receipt: Path, merged_log: Path, o
 
 
 from contextlib import ExitStack, contextmanager
+from msplatform.contracts.trajectory_recording import resolve_trajectory_recording
+from msplatform.execution.inputs import freeze_file
 from msplatform.execution.native_source_guard import guard_historical_measured_flight, guard_historical_joint_component
+from msplatform.io.file_identity import guarded_file_identity
 from msplatform.io.manifest_records import validate_file_record
 
 
@@ -430,18 +433,35 @@ def _guard_joint_sources(source_manifest: Path, ancestor_manifests: tuple[Path, 
         summary_path = hold(root.root / "summary.json")
         merged = _read(merge_path)
         merged_log = hold(record_path(merged["merged_log"], base_dir=merge_path.parent), merged["merged_log"])
-        contract = hold(analysis_contract) if analysis_contract is not None else None
         from msplatform.results.historical_joint_source import validate_joint_recorded_evidence
         validate_joint_recorded_evidence(root.manifest, root.config, _read(summary_path), _read(preparation), merged, run_id=root.root.name)
+        contract = None
+        contract_record = None
+        if analysis_contract is not None:
+            contract = Path(analysis_contract).resolve(strict=True)
+            contract_record = file_record(contract, "required_evidence")
+            stack.enter_context(guarded_file_identity(contract, expected_bytes=contract_record["bytes"],
+                                                       expected_sha256=contract_record["sha256"]))
+            if resolve_trajectory_recording(_read(contract)) is None:
+                raise ValueError("Joint analysis requires the original retained-observation budget")
         yield dict(preparation=preparation, merged_log=merged_log, merge=merge_path, contract=contract,
-                   source_status=root.manifest["status"], manifests=paths, held=held)
+                   contract_record=contract_record, source_status=root.manifest["status"], manifests=paths, held=held)
 
 
 def _joint_analysis_action(session, *, inputs):
     output = session.result_dir / "recorded_diagnostics"
     try:
+        analysis_contract = inputs["contract"]
+        if analysis_contract is not None:
+            frozen_contract = session.declare_file(
+                session.artifact_run_dir / "inputs/analysis_contract.json", "required_evidence")
+            frozen_record = freeze_file(analysis_contract, frozen_contract, retention_role="required_evidence")
+            if any(frozen_record[key] != inputs["contract_record"][key] for key in ("bytes", "sha256")):
+                raise ValueError("Frozen analysis contract differs from its admitted source")
+            session.add_input("analysis_contract", file_record(frozen_contract, "required_evidence"))
+            analysis_contract = frozen_contract
         report = analyze_recorded_joint_flight(inputs["preparation"], inputs["merged_log"], output,
-            merge_receipt=inputs["merge"], analysis_contract=inputs["contract"])
+            merge_receipt=inputs["merge"], analysis_contract=analysis_contract)
         provenance = session.declare_file(session.result_dir / "historical_source.json", "required_evidence")
         _write(provenance, dict(schema_version=1, role="historical_joint_analysis_source",
             source_execution_status=inputs["source_status"], source_manifests=[str(path) for path in inputs["manifests"]],
@@ -467,19 +487,24 @@ def publish_joint_analysis(context, *, source_manifest: Path, ancestor_manifests
     All explicitly named source owners and their dependency records remain held
     until publication completes. Unsupported or incomplete source evidence fails
     before an analysis run begins; no original scientific status is changed.
+    An explicit post-hoc contract is write-protected, copied into this run and
+    consumed only from that frozen copy.
     """
     from msplatform.execution.completion import no_particle_batch_completion_api
     from msplatform.execution.owner import run_managed_stage, standalone_native_store
     if type(committed_new_bytes) is not int or committed_new_bytes <= 0:
         raise ValueError("committed_new_bytes must be a positive integer")
     with _guard_joint_sources(source_manifest, ancestor_manifests, analysis_contract) as inputs:
+        authorities = [file_record(path, "required_evidence") for path in inputs["manifests"]]
+        if inputs["contract_record"] is not None:
+            authorities.append(inputs["contract_record"])
         with standalone_native_store(artifact_store, task_key="historical-joint:" + run_id,
                                      budget=committed_new_bytes) as scope:
             result = run_managed_stage(context, artifact_store=artifact_store,
                 descriptor=dict(project="instrument_assembly", mode="historical_joint_analysis", software=["Python"]),
                 run_id=run_id, payload=dict(analysis_only=True, source_execution_status=inputs["source_status"]),
                 committed_new_bytes=committed_new_bytes,
-                commitment_inputs=[file_record(path, "required_evidence") for path in inputs["manifests"]],
+                commitment_inputs=authorities,
                 retention=retention, expected_operation_ids=[], operation_dependencies={},
                 action=partial(_joint_analysis_action, inputs=inputs),
                 action_record=file_record(Path(__file__), "required_evidence"),

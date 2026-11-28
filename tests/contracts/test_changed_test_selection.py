@@ -1567,7 +1567,6 @@ $results|ConvertTo-Json -Depth 8 -Compress
             "src/msplatform/assembly/ip_mr_connection.py",
             "src/msplatform/backends/simion/resources/mrtof_measured_source_runtime.lua",
             "src/msplatform/io/strict_json.py",
-            "src/msplatform/execution/resources/frozen_python_package.ps1",
         )
         with tempfile.TemporaryDirectory(prefix="measured_source_consumer_plans_") as directory:
             for index, path in enumerate(paths):
@@ -1587,14 +1586,13 @@ $results|ConvertTo-Json -Depth 8 -Compress
                     for name, stage in stages.items():
                         if name.startswith("instrument_assembly"):
                             integration.update(stage["command"]["parameters"].get("SelectedTestModules", []))
-                    self.assertIn("tests.test_prepared_joint_execute", integration)
+                    self.assertIn("tests.execution.test_historical_joint_publication", integration)
                     if path.endswith("strict_json.py"):
                         self.assertIn("rf_multipole_domain_tests", stages)
-                    if not path.endswith("frozen_python_package.ps1"):
-                        self.assertIn(
-                            "tests.components.multi_reflection_tof.analysis.test_measured_component_source",
-                            mr)
-                        self.assertIn("tests.assembly.accelerator_interface.test_accelerator_interface", integration)
+                    self.assertIn(
+                        "tests.components.multi_reflection_tof.analysis.test_measured_component_source",
+                        mr)
+                    self.assertIn("tests.assembly.accelerator_interface.test_accelerator_interface", integration)
 
     def test_installed_ip_reader_selects_its_actual_project_and_installation(self) -> None:
         paths = ("src/msplatform/results/ip_continuation.py",

@@ -16,11 +16,10 @@ class HistoricalComponentExitTests(unittest.TestCase):
         from msplatform.workflows.accelerator_interface import prepare as interface_prepare
         self.assertFalse(hasattr(interface_prepare, "bind_joint_workbench"))
         self.assertFalse(hasattr(interface_prepare, "finalize_interface"))
-        from msplatform.workflows.prepared_joint import trial
-        self.assertFalse(hasattr(trial, 'prepare_trial'))
-        self.assertFalse(hasattr(trial, 'materialize_batch'))
-        self.assertIsNone(importlib.util.find_spec('msplatform.workflows.prepared_joint.source'))
-        self.assertIsNone(importlib.util.find_spec('msplatform.workflows.prepared_joint.flight'))
+        from msplatform.analysis import recorded_joint_trial
+        self.assertFalse(hasattr(recorded_joint_trial, 'prepare_trial'))
+        self.assertFalse(hasattr(recorded_joint_trial, 'materialize_batch'))
+        self.assertIsNone(importlib.util.find_spec('msplatform.workflows.prepared_joint'))
 
     def test_frozen_history_preserves_cohort_and_rejects_tamper(self):
         witness = Path(__file__).resolve().parents[1]/'components/multi_reflection_tof/fixtures/mr_measured_source_old_witness.json'

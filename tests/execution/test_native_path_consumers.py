@@ -134,52 +134,6 @@ foreach($mode in @('success','science_failure','no_science','no_operations')){
                 cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
-    def test_prepared_joint_explicit_source_uses_its_original_root_lease(self):
-        import json
-        from msplatform.execution.capacity_ledger import initialize_capacity_ledger
-        from msplatform.execution.capacity_protection import load_capacity_protection_leases
-        from tests.contracts.test_cross_root_protection import CrossRootProtectionTests
-
-        with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary)
-            source, _ = CrossRootProtectionTests().source(base/"source")
-            target = base/"target"
-            target.mkdir()
-            initialize_capacity_ledger(target, objects=[])
-            before = (source/"run_manifest.json").read_bytes()
-            request = base/"request.json"
-            request.write_text(json.dumps(dict(source=str(source), target=str(target))), encoding="utf-8")
-            script = base/"check.ps1"
-            script.write_text(r"""param($Repo,$Entry,$Python,$Request)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
-foreach($name in @('Invoke-ProjectPython','Get-PreparedJointSourceReferences')){
- $node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$name},$true)
- Invoke-Expression $node.Extent.Text
-}
-$script:preparedPackage=$null
-$repoRoot=(Resolve-Path -LiteralPath $Repo).Path
-$script:pythonRoot=$Repo;$python=$Python
-$data=Get-Content $Request -Raw|ConvertFrom-Json -AsHashtable
-function Invoke-ArtifactWorkflowCapacityAdmission {return @{satisfied=$true;fixture_admission=$true}}
-$references=@(Get-PreparedJointSourceReferences -RunDirectories @($data.source))
-$session=Enter-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -ArtifactRoot $data.target -RunDirectory (Join-Path $data.target 'projects/fixture/runs/new') -CommittedNewBytes 1024 -SourceReferences $references
-try{
- if($session.source_protection_leases.Count-ne1){throw 'entry did not retain original source capacity owner'}
- if($session.source_protection_leases[0].artifact_root-eq$session.artifact_root){throw 'source root was relabeled target'}
- $lease=Get-Content (Join-Path $session.source_protection_leases[0].artifact_root ('platform/capacity_protection_leases/'+$session.source_protection_leases[0].lease_id+'.json')) -Raw|ConvertFrom-Json
- if($lease.committed_new_bytes-ne0){throw 'borrowed data counted as new bytes'}
-}finally{$null=Exit-ArtifactWorkflowCapacitySession -Python $Python -RepoRoot $Repo -Session $session}
-""", encoding="utf-8", newline="\n")
-            result = subprocess.run(["pwsh", "-NoProfile", "-File", str(script), str(REPO),
-                str(CONSUMER_ROOT/"src/msplatform/workflows/resources/prepared_joint_execute.ps1"), sys.executable,
-                str(request)], cwd=REPO, capture_output=True, text=True, encoding="utf-8", timeout=60)
-            self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-            self.assertEqual((source/"run_manifest.json").read_bytes(), before)
-            self.assertFalse(load_capacity_protection_leases(base/"source")["protected_paths"])
-            self.assertFalse(load_capacity_protection_leases(target)["protected_paths"])
-
     def test_mr_continuation_routes_only_explicit_manifest_authorities(self):
         code = r"""param($Support,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
@@ -229,44 +183,25 @@ try{
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
 
-    def test_ip_and_prepared_joint_use_the_public_package_and_propagate_failure(self):
-        code = r'''param($Ip,$Prepared,$Repo,$Python,$Root)
+    def test_ip_uses_public_package_transport(self):
+        code = r'''param($Ip,$Repo,$Python,$Root)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
 . (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 . (Join-Path $Repo 'src/msplatform/execution/resources/workspace_paths.ps1')
 $run=Join-Path $Root ('canonical_'+('deep_'*40));New-Item -ItemType Directory -Path $run -Force|Out-Null
 $package=[pscustomobject]@{artifact_run_dir=$run;run_dir=$run;execution_alias=$null;execution_path_capacity=$null;python=$Python;log_dir=(Join-Path $run 'logs');
  path_context=[pscustomobject]@{source_root=$Repo;artifact_root=(Join-Path $Root 'artifacts');execution_root=(Join-Path $Root 'x');host_resource_state_path=(Join-Path $Root 'host.sqlite3')}}
-function Import-InertBoundary {param($Path,$Name)
- $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Path,[ref]$tokens,[ref]$errors)
- $node=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq$Name},$true))
- if($node.Count-ne1){throw 'actual consumer boundary missing'}
- Set-Item -Path ('Function:script:'+$Name) -Value ([scriptblock]::Create(($node[0].Body.Extent.Text.TrimStart('{').TrimEnd('}'))))
-}
+$tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Ip,[ref]$tokens,[ref]$errors)
+$node=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'New-IonProcessorProcessSpecification'},$true))
+if($node.Count-ne1){throw 'actual consumer boundary missing'}
+Set-Item -Path 'Function:script:New-IonProcessorProcessSpecification' -Value ([scriptblock]::Create($node[0].Body.Extent.Text.TrimStart('{').TrimEnd('}')))
 try{
- Import-InertBoundary $Ip 'New-IonProcessorProcessSpecification'
  $SimionExe='NOT_STARTED';$numerics=@{trajectory_quality=8};$retainBatchTrajectories='0'
  $batch=[pscustomobject]@{index=1;count=1;particle_id_min=1;particle_id_max=1;simion_particle_id_offset=0}
  $ipSpec=New-IonProcessorProcessSpecification $batch
  if($ipSpec.working_directory-eq(Join-Path $run 'simion_batch_0001')-or$ipSpec.stdout-ne(Join-Path $package.log_dir 'flight_batch_0001.log')){throw 'IP mixed native/persistent paths'}
  if($ipSpec.environment.MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH-ne$package.path_context.host_resource_state_path){throw 'IP host identity drifted'}
- Import-InertBoundary $Prepared 'New-PreparedJointBatch'
- $script:pythonRoot=$Repo;$batchRoot=Join-Path $run 'results/batches';$resultDir=Join-Path $run results;$logDir=$package.log_dir
- $preparationPath=Join-Path $run 'inputs/preparation.json';$simion='NOT_STARTED'
- $trial=@{launcher=(Join-Path $run 'inputs/code/launcher.lua');guard_paths=@()};$script:materializations=0
- function Invoke-ProjectPython {param($Arguments)
-  $script:materializations++
-  $index=[array]::IndexOf($Arguments,'--output');$output=[string]$Arguments[$index+1]
-  if(-not$output.StartsWith($package.artifact_run_dir)){throw 'MR persisted alias in materializer arguments'}
-  if($env:MASS_SPECTROMETRY_RUN_DIRECTORY-ne$package.artifact_run_dir-or$env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY-ne$package.run_dir){throw 'MR materializer missed scoped execution context'}
- }
- $jointSpec=New-PreparedJointBatch $batch
- if($script:materializations-ne1-or$jointSpec.working_directory.StartsWith($run)-or-not$jointSpec.batch_receipt.StartsWith($run)){throw 'prepared joint did not use public transport'}
- if($jointSpec.argument_list[3].StartsWith($run)){throw 'prepared joint launcher was not projected'}
- function Invoke-ProjectPython {throw 'EXPECTED_MATERIALIZATION_FAILURE'}
- $caught=$null;try{New-PreparedJointBatch $batch}catch{$caught=$_}
- if($null-eq$caught-or$caught.Exception.Message-ne'EXPECTED_MATERIALIZATION_FAILURE'){throw 'prepared materialization failure was hidden'}
- 'TWO_NATIVE_CONSUMERS=PASS'
+ 'IP_NATIVE_CONSUMER=PASS'
 }finally{Remove-RunPackageExecutionAlias -Package $package}
 '''
         with tempfile.TemporaryDirectory() as temporary:
@@ -275,11 +210,10 @@ try{
             path.write_text(code, encoding="utf-8", newline="\n")
             result = subprocess.run(["pwsh", "-NoProfile", "-File", str(path),
                 str(CONSUMER_ROOT/"src/msplatform/workflows/resources/ip_functional.ps1"),
-                str(CONSUMER_ROOT/"src/msplatform/workflows/resources/prepared_joint_execute.ps1"),
                 str(REPO), sys.executable, str(root)], cwd=REPO,
                 capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("TWO_NATIVE_CONSUMERS=PASS", result.stdout)
+            self.assertIn("IP_NATIVE_CONSUMER=PASS", result.stdout)
 
 
     def test_iob_process_fact_precedes_science_and_transport_keeps_canonical_case(self):

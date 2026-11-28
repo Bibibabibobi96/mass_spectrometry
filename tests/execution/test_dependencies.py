@@ -231,7 +231,7 @@ foreach($name in @('Start-ObservedFormalProcess','Invoke-SimionBatchPhase','Invo
             script = f"""
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 . '{DEPENDENCIES}'
-$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$f=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 $f.import_roots|ConvertTo-Json -Compress
 """
             result = subprocess.run([shutil.which('pwsh'), '-NoProfile', '-Command', script], cwd=root,
@@ -249,7 +249,7 @@ $f.import_roots|ConvertTo-Json -Compress
             self.assertEqual(policy_entries[0]["provider_project"], "msplatform")
             self.assertEqual(policy_entries[0]["id"], "msplatform_contracts_particle_count_policy_json")
             self.assertEqual(policy_entries[0]["consumers"],
-                ["prepared_joint", "accelerator_interface", "oa_mr"])
+                ["accelerator_interface", "oa_mr"])
             self.assertEqual((snapshot/policy_relative).read_bytes(), (REPO_ROOT/policy_relative).read_bytes())
             resources = [row for row in entries if row['source_repo_path'].endswith('.schema.json')
                          and row['provider_scope'] == 'repository_core']
@@ -348,27 +348,28 @@ assert not (root / 'src/msplatform/workflows/multipole_ip/prepare.py').exists()
             with mock.patch.object(Path, 'read_bytes', new=changed_collector):
                 self.assertNotEqual(tracking_applicability(plan), before)
 
-    def test_shared_dependency_fixture_expands_retained_consumers_without_large_seeds(self) -> None:
+    def test_shared_dependency_fixture_expands_each_current_consumer_seed_closure(self) -> None:
         from tests.workflows.single_reflection.test_support.single_reflection_execute_fixture import declared_dependency_paths
         contract = load(INVENTORY)
         originals = {path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / 'src/msplatform/contracts/schemas').glob('*.schema.json')}
         self.assertTrue(originals)
-        for consumer in ('prepared_joint',):
+        expected_seeds = {
+            'accelerator_interface': {'3_instance_seed.iob', '4_instance_seed.iob', '5_instance_seed.iob'},
+            'oa_mr': {'4_instance_seed.iob'},
+            'paired_accelerator_pulse': {'1_instance_seed.iob'},
+        }
+        for consumer, seeds in expected_seeds.items():
             with self.subTest(consumer=consumer):
                 paths = declared_dependency_paths(REPO_ROOT, contract, consumer)
                 self.assertIn('src/msplatform/execution/inputs.py', paths)
                 self.assertTrue(originals <= paths)
-                self.assertFalse(any('iob_seed_placeholder_' in path for path in paths))
-        prepared = declared_dependency_paths(REPO_ROOT, contract, 'prepared_joint')
-        for name in ('4_instance_seed.iob', '5_instance_seed.iob'):
-            self.assertIn('src/msplatform/backends/simion/resources/' + name, prepared)
+                self.assertEqual({Path(path).name for path in paths if path.endswith('.iob')}, seeds)
 
     def test_joint_finalization_owners_freeze_the_existing_public_adapter(self) -> None:
         entries = {item["source_repo_path"]: set(item["consumers"])
                    for group in load(INVENTORY)["providers"] for item in group["files"]}
         self.assertEqual(entries["src/msplatform/workflows/resources/run_artifact_workflow.ps1"],
-                         {"prepared_joint", "accelerator_interface", "oa_mr",
-                          "paired_accelerator_pulse"})
+                         {"accelerator_interface", "oa_mr", "paired_accelerator_pulse"})
         self.assertNotIn("common/resource_budget_support.ps1", entries)
         self.assertNotIn("common/host_execution_lease.ps1", entries)
 
@@ -389,10 +390,10 @@ assert not (root / 'src/msplatform/workflows/multipole_ip/prepare.py').exists()
             self.assertTrue(simion_resource(name).is_file(), name)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_prepared_joint_loads_shared_mr_continuation_guard_from_snapshot(self) -> None:
+    def test_oa_mr_loads_shared_mr_continuation_guard_from_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             inputs = Path(directory)/"inputs"
-            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint"
+            freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId oa_mr"
             result = subprocess.run([shutil.which("pwsh"),"-NoProfile","-Command",freeze],cwd=REPO_ROOT,
                                     capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
@@ -445,7 +446,7 @@ assert not (root / 'src/msplatform/workflows/multipole_ip/prepare.py').exists()
             inputs = Path(directory) / "inputs"
             script = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
             freeze = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
@@ -468,7 +469,7 @@ solver_review_retirement._assert_runtime_retirement_unprotected(root/'absent_art
             self.assertEqual(probe.returncode, 0, probe.stdout + probe.stderr)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_prepared_snapshot_can_freeze_dependency_without_live_repository(self) -> None:
+    def test_frozen_snapshot_can_freeze_dependency_without_live_repository(self) -> None:
         """The PS freezer resolves its shared implementation from the snapshot."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -476,7 +477,7 @@ solver_review_retirement._assert_runtime_retirement_unprotected(root/'absent_art
             detached = inputs / "runtime_snapshot"
             script = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
             result = subprocess.run(
                 [shutil.which("pwsh"), "-NoProfile", "-Command", script], cwd=REPO_ROOT,
@@ -491,7 +492,7 @@ $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_RO
 $dependency=[pscustomobject]@{{
  id='fixture';provider_scope='repository_core';provider_project='msplatform';provider_repo_path='src/msplatform'
  source_repo_path='src/msplatform/execution/resources/run_artifact_support.ps1';frozen_filename='copied.ps1'
- run_input_name='fixture';consumers=@('prepared_joint')
+ run_input_name='fixture';consumers=@('accelerator_interface')
 }}
 Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependency $dependency | ConvertTo-Json -Depth 5
 """
@@ -507,7 +508,7 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
             self.assertEqual(Path(record["snapshot_path"]), destination / "copied.ps1")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
-    def test_prepared_joint_derives_scope_from_its_complete_frozen_assembly_closure(self) -> None:
+    def test_accelerator_interface_derives_scope_from_its_complete_frozen_assembly_closure(self) -> None:
         """Run the actual parent compiler detached, including non-Python schemas."""
         required = (
             "src/msplatform/assembly/resolve_assembly.py",
@@ -523,7 +524,7 @@ Copy-FrozenDependency -RepoRoot '{detached}' -InputDir '{destination}' -Dependen
             shutil.copyfile(REPO_ROOT / "tests/contracts/fixtures/rf_ip_mr_y_minus55_plan.json", parent)
             freeze = f"""
 . '{DEPENDENCIES}'
-$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId prepared_joint
+$null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{output}' -OwnerId instrument_assembly -ConsumerId accelerator_interface
 """
             frozen = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
@@ -546,13 +547,13 @@ assert len(parent['recipe']['instances'])==3
 assert local['recipe']==parent['recipe']
 assert local['scope']==dict(kind='local',instance_ids=['ion_processor','mrtof'],
     connection_ids=['ip_to_mr'],boundary_connection_ids=['multipole_to_ip'])
-print('FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS')
+print('FROZEN_ASSEMBLY_SCOPE=PASS')
 """
             command = [sys.executable, "-B", "-s", "-c", statement, str(parent)]
             complete = subprocess.run(command, cwd=snapshot, env=environment,
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(complete.returncode, 0, complete.stdout + complete.stderr)
-            self.assertIn("FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS", complete.stdout)
+            self.assertIn("FROZEN_ASSEMBLY_SCOPE=PASS", complete.stdout)
             for relative in required:
                 with self.subTest(missing=relative):
                     resource = snapshot / relative
@@ -562,7 +563,7 @@ print('FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS')
                         refused = subprocess.run(command, cwd=snapshot, env=environment,
                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
                         self.assertNotEqual(refused.returncode, 0, refused.stdout + refused.stderr)
-                        self.assertNotIn("FROZEN_PREPARED_JOINT_ASSEMBLY_SCOPE=PASS", refused.stdout)
+                        self.assertNotIn("FROZEN_ASSEMBLY_SCOPE=PASS", refused.stdout)
                         self.assertIn(Path(relative).stem.split('.')[0], refused.stderr)
                     finally:
                         resource.write_bytes(contents)

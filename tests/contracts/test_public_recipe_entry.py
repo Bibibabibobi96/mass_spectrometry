@@ -53,8 +53,7 @@ class PublicRecipeEntryTests(unittest.TestCase):
                      'msplatform.backends.simion.ip_mr_geometry', 'msplatform.results.component_exit_history'):
             self.assertIsNotNone(importlib.util.find_spec(name), name)
         for name in ('msplatform.assembly.ip_mr_geometry',
-                     'msplatform.workflows.prepared_joint.ip_mr_connection',
-                     'msplatform.workflows.prepared_joint.ion_processor_assembly',
+                     'msplatform.workflows.prepared_joint',
                      'msplatform.workflows.accelerator_interface.geometry'):
             self.assertIsNone(importlib.util.find_spec(name), name)
 

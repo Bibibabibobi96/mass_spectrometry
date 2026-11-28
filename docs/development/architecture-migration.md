@@ -406,6 +406,14 @@ CLOC 2.10 `d995a2e77c52406426d131286900ebccef0fdea4→7584e8f897802c1a988728bd47
 
 非零代码变化为 total JSON +14、Python +18；production JSON +14、Python +14；tests Python +4。`WORKTREE_TRACKED_DIRTY_COUNT=0`，未跟踪产物不属于本提交。
 
+### C2 历史联合分析准入与 Store owner 收口（WORKTREE）
+
+旧职责→新入口：历史 run／上游来源准入、完整原 ID／时钟／停写核对由 `workflows.historical_joint_analysis.publish_joint_analysis` 直接承担；外部 post-hoc 合同先取得写排除保护，再由公共 `freeze_file` 冻结到本次 Store run，分析器只接收该副本。发布、容量和失败恢复使用既有 `run_managed_stage`／Store，不再有第二套生命周期。
+
+实际删除 `workflows/prepared_joint/analysis_inputs.py`、`workflows/prepared_joint/__init__.py`、`workflows/resources/prepared_joint_execute.ps1` 和 `tests/test_prepared_joint_execute.py`；无别名或转发壳。有效 CLI／owner／等价性测试迁至 MR 分析 owner，准入正负例迁至 `tests/execution/test_historical_joint_publication.py`。runtime dependency 的 prepared consumer、旧脚本和当前旧名资源 ID 删除；历史 `mode=prepared_joint`、manifest 输入名与只读 continuation reader 不改写。负例覆盖错误 owner、未完成、未停 writer、缺件、篡改及缺观察预算，均在创建 Store 前拒绝且原字节不变。
+
+真实 Store 测试连续完成无显式合同和有显式合同两次发布；第二次删除原合同后，发布清单中的冻结副本仍逐字节一致。定向48父测试全PASS（121.636s），0 skip；日志 `prepared-retirement-targeted-final.log`。依赖键与 Changed 路由3项PASS，修正后的两个实际冻结消费者用例2项PASS（18.375s）；文档 StructureOnly PASS（321文件、0错误）。完整依赖模块首轮9项失败、第二轮剩2项 Prepared 路由／夹具失败及1项 SFI 旧 consumer；前两项已复验通过，SFI 由独立提交整合，不能据中间轮次称全模块或最终门禁通过。Ruff、JSON 和 diff 检查通过；安装探针语法 PASS，尚未重跑双发行离仓或商业 native。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
@@ -415,7 +423,7 @@ CLOC 2.10 `d995a2e77c52406426d131286900ebccef0fdea4→7584e8f897802c1a988728bd47
 | ip_functional → ion_processor.functional | 现IP provider、source/numerics、HS1/HP-LP输入 | SIMION batch/GUI-replay owner、IP results | ion_processor与唯一N2/模型数据；未闭合 |
 | dual_cone阶段 → dual_cone_stages/COMSOL gas-flow/SIMION transport | 独立双锥provider、气流/SDS/碰撞来源 | 原气流/PA/transport owner与轨迹诊断 | dual_cone_tandem_quadrupole，保留真实能力范围；未闭合 |
 | multipole_ip_continuous → multipole_ip.continuous | RF variants/IP/MR完整场、原birth/clock/HS1 | 既有whole-unit track owner、REC/分析 | 复用连续实现接公共入口/结果/owner；未闭合 |
-| 旧 FullJoint 总控、Prepared 分析与接口准备 | Assembly 接口准备；`historical_joint_analysis`/Store 承接记录分析 | 已删除 FullJoint 参数、恢复转发、私有 stage 及 accelerator 对 Prepared 执行脚本的依赖 | 原历史运行只读；Prepared admission/PS owner 与其余准备模块仍在退役，未闭合 |
+| 旧 FullJoint 总控、Prepared 分析与接口准备 | Assembly 接口准备；`historical_joint_analysis`/Store 承接记录分析 | FullJoint 参数、恢复转发、私有 stage、Prepared admission/PS owner 和空包均已删除 | 原历史运行只读；本单元定向已过，最终同 SHA 安装与完整门禁仍未闭合 |
 | single_reflection_flight RF recorded-birth | schema12/plan6、RF→OA→TOF真实母群 | split track owner、规范终态/事件 | 补有声明的新连续native小例；未闭合 |
 | oa_candidate/oa_formal/compensation及历史mass reanalysis | 本地whole-Fly/response basis、历史分析/认证 | 原local run/验证发布owner、历史reader | 合法研究保留、总等级退出、不可达producer删除；C0-04先修observer |
 | EI/Wehnelt现有组件入口/execution_profiles | 当前真实geometry/model能力与源/常量 | 既有COMSOL/运行owner、各产品合同 | 公共输入/能力/owner按实际范围接入；未闭合 |
