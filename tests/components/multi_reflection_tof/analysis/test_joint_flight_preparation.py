@@ -14,10 +14,12 @@ from msplatform.backends.simion.resources import native_resource_path
 from msplatform.execution.retention import file_record
 from msplatform.io.file_identity import file_sha256
 
-from msplatform.workflows.prepared_joint.native_preparation import (
+from msplatform.backends.simion.mr_field_audit import (
     _lua, render_measured_operating_point, freeze_field_reference,
-    prepare_interface_field_audit, summarize_interface_field_audit,
-    prepare_event_field_audit, summarize_event_field_audit,
+    prepare_interface_field_audit, prepare_event_field_audit,
+)
+from msplatform.analysis.mr_field_audit import (
+    summarize_interface_field_audit, summarize_event_field_audit,
 )
 
 PROJECT = Path(__file__).resolve().parents[4] / "src/msplatform/components/multi_reflection_tof"
@@ -262,7 +264,7 @@ print('CANONICAL_INNER_SOURCE_REOPEN=PASS')
                     (reference/"results/two_prism_trial_materialization.json").write_text(json.dumps(materialization))
                     inputs = root/case
                     inputs.mkdir()
-                    with patch("msplatform.workflows.prepared_joint.native_preparation.verified_reference",
+                    with patch("msplatform.backends.simion.mr_field_audit.verified_reference",
                                side_effect=lambda owner,relative:owner/relative):
                         if case != "valid":
                             with self.assertRaises(ValueError):

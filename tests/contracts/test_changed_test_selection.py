@@ -1245,7 +1245,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                 'test_two_prism_simion_trial',
             ],
         }
-        prepared = {"joint_flight_preparation": "src/msplatform/workflows/prepared_joint/native_preparation.py",
+        prepared = {"joint_flight_preparation": "src/msplatform/backends/simion/mr_field_audit.py",
                     "drift_phase_contract": "src/msplatform/contracts/drift_phase_contract.py",
                     "simion_event_analysis": "src/msplatform/analysis/mr_event_analysis.py",
                     "two_prism_simion_trial": "src/msplatform/workflows/oa_mr/prism_trial.py"}
@@ -2688,7 +2688,7 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                 self.assertFalse(selected["CompleteOwner"])
                 self.assertFalse(selected["OnlyTestModules"])
 
-    def test_mr_reference_and_execution_contract_select_actual_consumers(self) -> None:
+    def test_mr_reference_and_analysis_contracts_select_actual_consumers(self) -> None:
         direct = [MR + "/analysis/" + name + ".py" for name in (
             "test_ip_prism_distance_study", "test_ip_prism_aperture_diagnostics",
             "test_ion_processor_energy_comparison", "test_joint_flight_preparation",
@@ -2698,7 +2698,9 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
             "test_mirror_l0_l1_runner", "test_prism_runner_contract_matrix",
             "test_simion_candidate_reference")]
         paths = ["src/msplatform/results/mr_reference.py",
-                 "src/msplatform/workflows/mr_design/execution_contract.py"]
+                 "src/msplatform/workflows/mr_design/execution_contract.py",
+                 "src/msplatform/backends/simion/mr_field_audit.py",
+                 "src/msplatform/analysis/mr_field_audit.py"]
         for path, selected in zip(paths, self.selections(REPO_ROOT,
                 [dict(stage="multi_reflection_tof_static", paths=[path]) for path in paths]), strict=True):
             with self.subTest(path=path):
