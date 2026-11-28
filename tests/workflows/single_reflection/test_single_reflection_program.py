@@ -71,6 +71,18 @@ def instance_rows(geometry, metadata, carriers):
     return result
 
 
+def field_observation_spec(*, anchor=11, clock='test-clock', source_instance='multipole'):
+    from msplatform.backends.simion.tracking_program import FIELD_OBSERVATION_BUCKETS
+    windows = ((-5.,-4.,-4.5,None),(-3.,-2.,-2.5,0.),(-1.,0.,-.5,math.pi/2),
+               (1.,2.,1.5,math.pi),(9.,10.,10.,None),(10.,11.,10.,None),
+               (12.,13.,13.,None),(13.,14.,13.,None))
+    return dict(schema_version=1,role='single_reflection_applied_field_observation',
+        source_instance_id=source_instance,domain_id='parent',clock_epoch_id=clock,
+        eligible_batch_anchor_particle_id=anchor,deadline_us=20.,max_rows=16,rows_per_bucket=2,max_output_bytes=1048576,
+        buckets=[dict(bucket_id=name,time_min_us=lo,time_max_us=hi,target_time_us=target,target_rf_phase_rad=phase)
+                 for name,(lo,hi,target,phase) in zip(FIELD_OBSERVATION_BUCKETS,windows,strict=True)])
+
+
 class SingleReflectionProgramTests(unittest.TestCase):
     def test_installed_serializers_and_neutral_lua_validator_keep_exact_legacy_protocol(self):
         from msplatform.backends.simion.source import canonical_clock_lua, lua_number, lua_value, render_restart_fly2
@@ -934,33 +946,36 @@ print('MULTIPLE_INDEPENDENT_RF_PROGRAM=PASS COUNT='..#drives)
         self.check_plain_lua_callbacks(False, 'before', terminal_recorder=True)
     def test_equal_time_diagnostic_observes_conflicting_pair(self):
         self.check_plain_lua_callbacks(False, reconciliation='equal_conflict')
+    def use_entrance_refinement(self):
+        from msplatform.backends.simion.compiler import compile_geometry
+        parent = self.geometry['numerical_domains']['parent']
+        repeller = self.oatof['accelerator_topology']['planes_global_z_mm']['repeller']
+        domains = {'parent': dict(parent, pa_bounds_mm=parent['bounds_mm']),
+            'entrance_refinement': dict(cell_mm_xyz=dict(x=.15,y=.125,z=.05),
+                pa_bounds_mm=dict(parent['bounds_mm'],y_min=-21.5,y_max=21.5,
+                    z_min=repeller-20.,z_max=repeller+24.),guard_cells=2)}
+        compiled = compile_geometry(dict(composition_plan=self.geometry['composition_plan'],
+            components_resolved={'multipole':self.upstream,'oatof':self.oatof}), numerics=dict(
+                frontend_domains=domains, geometry_build=self.oatof['simion_geometry_build'],
+                detector_marker=self.oatof['simion_detector_marker'],
+                electrode_group_native_ids=self.geometry['electrode_bindings']))
+        self.geometry = compiled.frontend_geometry
+        field_domains = copy.deepcopy(domains)
+        for domain in field_domains.values():
+            domain['refine_convergence_v'] = self.design['domains'][0]['refine_convergence_v']
+        self.design = prepare_field_design({'multipole':self.upstream},self.oatof,self.geometry,
+            variant_id='three_zone_square',pulse_voltage_policy_id=POLICY,
+            boundary_policy='native_zero_neumann',frontend_domains=field_domains,
+            rf_reference_voltage_v=self.design['rf_reference_voltage_v'])
+        self.dynamic["dynamic_roles"].append(dict(role="entrance_refinement",instance_index=5,
+            carrier_pa_basename="frontend_entrance_refinement.carrier_off.pa",
+            rf_differential_pa_basenames=["frontend_entrance_refinement.rf_reference.pa"],
+            pulse_delta_pa_basename="frontend_entrance_refinement.pulse_delta.pa",
+            rf_reference_voltage_v=self.design["rf_reference_voltage_v"]))
+
     def check_plain_lua_callbacks(self, entrance_refinement, reconciliation=None, terminal_recorder=False):
         if entrance_refinement:
-            from msplatform.backends.simion.compiler import compile_geometry
-            parent = self.geometry['numerical_domains']['parent']
-            repeller = self.oatof['accelerator_topology']['planes_global_z_mm']['repeller']
-            domains = {'parent': dict(parent, pa_bounds_mm=parent['bounds_mm']),
-                'entrance_refinement': dict(cell_mm_xyz=dict(x=.15,y=.125,z=.05),
-                    pa_bounds_mm=dict(parent['bounds_mm'],y_min=-21.5,y_max=21.5,
-                        z_min=repeller-20.,z_max=repeller+24.),guard_cells=2)}
-            compiled = compile_geometry(dict(composition_plan=self.geometry['composition_plan'],
-                components_resolved={'multipole':self.upstream,'oatof':self.oatof}), numerics=dict(
-                    frontend_domains=domains, geometry_build=self.oatof['simion_geometry_build'],
-                    detector_marker=self.oatof['simion_detector_marker'],
-                    electrode_group_native_ids=self.geometry['electrode_bindings']))
-            self.geometry = compiled.frontend_geometry
-            field_domains = copy.deepcopy(domains)
-            for domain in field_domains.values():
-                domain['refine_convergence_v'] = self.design['domains'][0]['refine_convergence_v']
-            self.design = prepare_field_design({'multipole':self.upstream},self.oatof,self.geometry,
-                variant_id='three_zone_square',pulse_voltage_policy_id=POLICY,
-                boundary_policy='native_zero_neumann',frontend_domains=field_domains,
-                rf_reference_voltage_v=self.design['rf_reference_voltage_v'])
-            self.dynamic["dynamic_roles"].append(dict(role="entrance_refinement",instance_index=5,
-                carrier_pa_basename="frontend_entrance_refinement.carrier_off.pa",
-                rf_differential_pa_basenames=["frontend_entrance_refinement.rf_reference.pa"],
-                pulse_delta_pa_basename="frontend_entrance_refinement.pulse_delta.pa",
-                rf_reference_voltage_v=self.design["rf_reference_voltage_v"]))
+            self.use_entrance_refinement()
 
         self.upstream["drive"]["phase_rad"] = .37
         self.assertEqual(self.upstream["drive"]["rf_amplitude_V_zero_to_peak_per_group"], 139.81792)
@@ -1778,6 +1793,275 @@ print('HELD_OFF_RESPONSE_FIXTURE=PASS')
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('HELD_OFF_RESPONSE_FIXTURE=PASS',result.stdout)
 
+
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_static_detector_observer_records_entry_without_extra_query(self):
+        spec = field_observation_spec()
+        spec['domain_id'] = 'detector'
+        observation = dict(specification=spec, evidence_context=dict(
+            phase='full_instrument', clock_epoch_id='test-clock', mother_particle_ids=[11,77],
+            observation_basis='native_entry_gradient_no_extra_query',
+            static_carrier_record=dict(path='C:/inert/detector.pa0',bytes=123,sha256='A'*64)))
+        tail = r'''
+segment.observation_test_setup=function()
+  single_flight_standalone_dynamic_by_instance={}
+  single_flight_initialize_rf_drives()
+  single_flight_pulse=single_flight_pulse_component.new{canonical_clock=single_flight_instrument_time_us,
+    voltage_waveforms=single_flight_voltage_waveforms,pulse_time_us=10,pulse_width_us=3,
+    pulse_mode=function() return 1 end}
+  single_flight_analyzer={efield_adjust=function() body_calls=body_calls+1;return nil end}
+  single_flight_region_field={apply=function(base) return base end}
+  if single_flight_field_observer then single_flight_field_observer.start_run() end
+end
+segment.observation_test_end=function()
+  if single_flight_field_observer then single_flight_field_observer.summary() end
+end
+'''
+        script = self.root / 'static_observe.lua'
+        script.write_text(r'''
+segment={};body_calls=0;carrier_reads=0
+simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+local carrier={path='C:/inert/detector.pa0',dx_mm=.3,dy_mm=.25,dz_mm=.1,
+ field_vc=function() carrier_reads=carrier_reads+1;error('STATIC_EXTRA_QUERY') end}
+simion.wb.instances[4]={pa=carrier,scale=1,az=0,el=0,rt=0}
+dofile(arg[1]);segment.observation_test_setup()
+ion_instance=4;ion_px_mm=4;ion_py_mm=5;ion_pz_mm=6;ion_number=1;ion_time_of_flight=9.25
+ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30
+segment.efield_adjust();segment.observation_test_end()
+print('RESULT '..body_calls..' '..carrier_reads..' '..ion_dvoltsx_gu..' '..ion_dvoltsy_gu..' '..ion_dvoltsz_gu)
+''', encoding='utf-8', newline='\n')
+        outputs = {}
+        for enabled in (False, True):
+            program = self.build(native_path_projection=False, **({'field_observation':observation} if enabled else {}))
+            target = self.root / f'static_{enabled}.lua'
+            target.write_text(re.sub(r'\badjustable\s+', '', program) + tail, encoding='utf-8', newline='\n')
+            result = subprocess.run([str(LUA), str(script), str(target)], cwd=self.root,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            outputs[enabled] = result.stdout
+            self.assertIn('RESULT 1 0 10 20 30', result.stdout)
+        self.assertNotIn('applied_field_observation_header', outputs[False])
+        rows = [json.loads(line.split(' ',2)[2]) for line in outputs[True].splitlines()
+                if line.startswith('TRACE: applied_field_observation ')]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row['basis'], 'native_entry_gradient_no_extra_query')
+        self.assertEqual(row['entry_gradient_gu'], [10,20,30])
+        self.assertEqual(row['final_gradient_gu'], [10,20,30])
+        self.assertNotIn('pa_gu', row)
+        self.assertNotIn('rf_members', row)
+        self.assertNotIn('carrier_native_field_gu', row)
+        from msplatform.backends.simion.tracking_field_observation import _validate_field_observation_row
+        context = dict(eligible_batch_particle_ids=[11,77], instance_index=4, world_frame_id='oatof_global',
+            observation_basis='native_entry_gradient_no_extra_query', static_carrier_record=observation['evidence_context']['static_carrier_record'])
+        def validate(value, selected_context=context):
+            _validate_field_observation_row(value, spec, selected_context,
+                dict(record_seq=0,callback_seq=0), {item['bucket_id']:0 for item in spec['buckets']})
+        validate(row)
+        for key, value in [('basis','efield_adjust_query_only'),('instance_index',3),
+                           ('carrier_native_path','C:/inert/wrong.pa0'),('rf_members',[]),
+                           ('carrier_native_field_gu',[0,0,0]),('pulse_active_used',True)]:
+            bad = dict(row, **{key:value})
+            with self.subTest(key=key), self.assertRaises(ValueError): validate(bad)
+        for key,value in [('instance_index',3),('observation_basis','wrong'),
+                          ('static_carrier_record',dict(path='C:/inert/wrong.pa0'))]:
+            with self.subTest(context=key), self.assertRaises(ValueError): validate(row,dict(context,**{key:value}))
+        summary = next(json.loads(line.split(' ',2)[2]) for line in outputs[True].splitlines()
+                       if line.startswith('TRACE: applied_field_observation_summary '))
+        self.assertFalse(summary['coverage_complete'])
+        from msplatform.backends.simion.tracking_field_observation import collect_native_field_observations
+        header = next(json.loads(line.split(' ',2)[2]) for line in outputs[True].splitlines()
+                      if line.startswith('TRACE: applied_field_observation_header '))
+        log = self.root / 'static-observation.log'
+        case = dict(expected_particle_ids=[11,77], build_metadata={})
+        sources = {11:dict(instrument_time_us=.25),77:dict(instrument_time_us=2.5)}
+        log.write_text(outputs[True], encoding='utf-8')
+        collect = lambda: collect_native_field_observations([log],[case],sources,spec,lambda _:header['context'])
+        result = collect()
+        self.assertEqual(result['status'],'INCONCLUSIVE')
+        self.assertEqual(result['queries'],[row])
+        bad = dict(row,solver_elapsed_us=row['solver_elapsed_us']+1)
+        lines = [('TRACE: applied_field_observation '+json.dumps(bad))
+                 if line.startswith('TRACE: applied_field_observation ') else line for line in outputs[True].splitlines()]
+        log.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+        with self.assertRaisesRegex(ValueError,'clock differs'): collect()
+        log.write_text('\n'.join(line for line in outputs[True].splitlines()
+                         if line.startswith('TRACE: applied_field_observation_header '))+'\n',encoding='utf-8')
+        self.assertEqual(collect()['status'],'INCONCLUSIVE')
+
+    @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
+    def test_bounded_field_observer_preserves_actual_callback_math_and_records_final_overrides(self):
+        observation = dict(specification=field_observation_spec(),evidence_context=dict(
+            phase='full_instrument',clock_epoch_id='test-clock',mother_particle_ids=[11,77],
+            input_records={'fixture':'controlled two-ID software callback, not native evidence'}))
+        tail = r'''
+segment.observation_test_setup=function()
+  local instance=simion.wb.instances[3]
+  local rf={path='C:/inert/rf.pa',field_vc=function() rf_reads=rf_reads+1;return 2,-3,5 end}
+  local pulse={path='C:/inert/delta.pa',field_vc=function() pulse_reads=pulse_reads+1;return 7,11,-13 end}
+  single_flight_standalone_dynamic_by_instance={[3]={role='accelerator_main',
+    rf_differential_pas={rf},pulse_delta_pa=pulse,rf_reference_voltage_v=10000}}
+  single_flight_initialize_rf_drives()
+  single_flight_pulse=single_flight_pulse_component.new{canonical_clock=single_flight_instrument_time_us,
+    voltage_waveforms=single_flight_voltage_waveforms,pulse_time_us=10,pulse_width_us=3,
+    pulse_mode=function() return 1 end}
+  single_flight_analyzer={efield_adjust=function() return {} end}
+  single_flight_region_field={apply=function()
+    if test_override then return {replace_all=true,dvoltsy_gu=5} end
+  end}
+  if single_flight_field_observer then single_flight_field_observer.start_run() end
+end
+segment.observation_test_end=function()
+  if single_flight_field_observer then single_flight_field_observer.summary() end
+end
+'''
+        script = self.root/'observe.lua'
+        script.write_text(r'''
+segment={};carrier_reads=0;rf_reads=0;pulse_reads=0
+simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+local carrier={path='C:/inert/front.pa',dx_mm=.3,dy_mm=.25,dz_mm=.1,
+ field_vc=function() carrier_reads=carrier_reads+1;return -10,-20,-30 end}
+simion.wb.instances[3]={pa=carrier,scale=1,az=0,el=0,rt=0,
+ wb_to_pa_coords=function(self,x,y,z) return x+1,y+2,z+3 end}
+dofile(arg[1])
+if arg[2]=='io_failure' then
+ io.stdout={write=function() return nil,'FORCED_OBSERVATION_IO' end,flush=function() return true end}
+ local ok,err=pcall(segment.observation_test_setup)
+ assert(not ok and tostring(err):find('FORCED_OBSERVATION_IO',1,true))
+ print('OBSERVER_IO_FAILURE_RETAINED');return
+end
+segment.observation_test_setup()
+ion_instance=3;ion_px_mm=4;ion_py_mm=5;ion_pz_mm=6
+local times=arg[2]=='deadline' and {21,9.5} or
+ {-4.5,-4.25,-2.5,-2.25,-.5,-.25,1.5,1.25,9.5,9.75,10,10.5,12.5,12.75,13,13.5,9.5,21,9.75}
+for index,time in ipairs(times) do
+ ion_number=index%2+1
+ ion_time_of_flight=time-(ion_number==1 and .25 or 2.5)
+ ion_dvoltsx_gu=10;ion_dvoltsy_gu=20;ion_dvoltsz_gu=30
+ test_override=index==16
+ segment.efield_adjust()
+ print(string.format('OBSERVATION_NUMERICS %.17g %.17g %.17g',ion_dvoltsx_gu,ion_dvoltsy_gu,ion_dvoltsz_gu))
+end
+segment.observation_test_end()
+print('OBSERVATION_READ_COUNTS '..carrier_reads..' '..rf_reads..' '..pulse_reads)
+''',encoding='utf-8',newline='\n')
+        outputs = {}
+        for enabled,mode in ((False,'normal'),(True,'normal'),(True,'deadline'),(True,'io_failure')):
+            program = self.build(native_path_projection=False,**({'field_observation':observation} if enabled else {}))
+            target = self.root/f'observed_{enabled}_{mode}.lua'
+            target.write_text(re.sub(r'\badjustable\s+','',program)+tail,encoding='utf-8',newline='\n')
+            result = subprocess.run([str(LUA),str(script),str(target),mode],cwd=self.root,
+                                    capture_output=True,text=True,timeout=30,check=False)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            outputs[enabled,mode] = result.stdout
+        numeric = lambda text:[line for line in text.splitlines() if line.startswith('OBSERVATION_NUMERICS ')]
+        self.assertEqual(numeric(outputs[False,'normal']),numeric(outputs[True,'normal']))
+        text = outputs[True,'normal']
+        rows = [json.loads(line.split(' ',2)[2]) for line in text.splitlines()
+                if line.startswith('TRACE: applied_field_observation ')]
+        self.assertEqual(len(rows),16)
+        from msplatform.backends.simion.tracking_field_observation import _validate_field_observation_row
+        parser_context = dict(eligible_batch_particle_ids=[11,77],instance_index=3,world_frame_id='oatof_global',
+            rf_sources=[{'instance_id':'multipole'}],field_records={'parent':{
+                'carrier_off':{'path':'C:/inert/front.pa'},'rf_reference':{'path':'C:/inert/rf.pa'},
+                'pulse_delta':{'path':'C:/inert/delta.pa'}}})
+        previous = dict(record_seq=0,callback_seq=0)
+        counts = {bucket['bucket_id']:0 for bucket in observation['specification']['buckets']}
+        for row in rows:
+            _validate_field_observation_row(row,observation['specification'],parser_context,previous,counts)
+        self.assertTrue(all(count==2 for count in counts.values()))
+        self.assertEqual({row['particle_id'] for row in rows},{11,77})
+        self.assertGreater(rows[6]['instrument_time_us'],rows[7]['instrument_time_us'])
+        self.assertEqual(rows[-1]['final_gradient_gu'],[0,5,0])
+        self.assertNotEqual(rows[-1]['after_dynamic_gradient_gu'],rows[-1]['final_gradient_gu'])
+        self.assertEqual(rows[10]['pulse_active_used'],True)
+        self.assertEqual(rows[14]['pulse_active_used'],False)
+        self.assertEqual(rows[0]['pa_gu'],[5,7,9])
+        for row in rows:
+            drive = self.upstream['drive']
+            self.assertEqual(row['rf_phase_basis'],'unwrapped_kernel_phase_at')
+            self.assertEqual(row['actual_rf_phase_rad'],
+                row['instrument_time_us']*(drive['frequency_Hz']*1e-6*2*math.pi)+drive['phase_rad'])
+        self.assertIn('OBSERVATION_READ_COUNTS 16 19 4',text)
+        self.assertIn('OBSERVATION_READ_COUNTS 1 2 0',outputs[True,'deadline'])
+        self.assertIn('OBSERVER_IO_FAILURE_RETAINED',outputs[True,'io_failure'])
+        summaries = [json.loads(line.split(' ',2)[2]) for line in outputs[True,'deadline'].splitlines()
+                     if line.startswith('TRACE: applied_field_observation_summary ')]
+        self.assertEqual(summaries[0]['rows'],1)
+        self.assertTrue(summaries[0]['deadline_seen'])
+        self.assertFalse(summaries[0]['coverage_complete'])
+
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_instance_candidate_observer_preserves_callback_and_bounds_trace(self):
+        # Controlled Lua callbacks only: no native SIMION or field selection claim.
+        observation = dict(specification=field_observation_spec(),evidence_context=dict(
+            phase='full_instrument',clock_epoch_id='test-clock',mother_particle_ids=[11,77]))
+        tail = "\nsegment.candidate_test_start=function() single_flight_field_observer.start_run() end\n"
+        script = self.root/'candidate_observer_test.lua'
+        script.write_text(r"""
+segment={}; simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+simion.wb.instances[4]={inside_wc=function() return false end}
+dofile(arg[1])
+ion_instance=3;ion_number=1;ion_time_of_flight=0;ion_px_mm=4;ion_py_mm=5;ion_pz_mm=6
+segment.instance_adjust();assert(ion_instance==3)
+segment.candidate_test_start()
+ion_number=2;ion_instance=3;segment.instance_adjust();assert(ion_instance==3)
+ion_number=1;ion_instance=3;segment.instance_adjust();assert(ion_instance==3)
+segment.instance_adjust();assert(ion_instance==3)
+ion_instance=2;segment.instance_adjust();assert(ion_instance==2)
+ion_instance=3;segment.instance_adjust();assert(ion_instance==3)
+for index=1,30 do ion_instance=index+5;segment.instance_adjust();assert(ion_instance==index+5) end
+""",encoding='utf-8',newline='\n')
+        program=self.build(native_path_projection=False,field_observation=observation)
+        target=self.root/'candidate_observed.lua'
+        target.write_text(re.sub(r'\badjustable\s+','',program)+tail,encoding='utf-8',newline='\n')
+        result=subprocess.run([str(LUA),str(script),str(target)],cwd=self.root,
+                              capture_output=True,text=True,timeout=30,check=False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        headers=[json.loads(line.split(' ',2)[2]) for line in result.stdout.splitlines()
+                 if line.startswith('TRACE: instance_adjust_observation_header ')]
+        rows=[json.loads(line.split(' ',2)[2]) for line in result.stdout.splitlines()
+              if line.startswith('TRACE: instance_adjust_observation ')]
+        self.assertEqual(len(headers),1)
+        self.assertEqual((headers[0]['max_rows'],headers[0]['max_output_bytes']),(16,65536))
+        self.assertEqual(len(rows),16)
+        self.assertTrue(all(row['particle_id']==11 and row['ion_number']==1 for row in rows))
+        self.assertEqual(rows[0]['world_position_mm'],[4,5,6])
+        self.assertEqual((rows[0]['candidate_instance'],rows[0]['output_instance']),(3,3))
+        self.assertEqual([row['candidate_instance'] for row in rows[:3]],[3,2,6])
+        self.assertEqual(rows[0]['instrument_time_us'],.25)
+        self.assertEqual([row['record_seq'] for row in rows],list(range(1,17)))
+        self.assertTrue(all(row['semantics']=='candidate_callback_not_accepted_field_selection' for row in rows))
+
+    @unittest.skipUnless(LUA.is_file(), 'plain Lua interpreter unavailable')
+    def test_instance_candidate_observer_keeps_actual_fine_suppression(self):
+        self.use_entrance_refinement()
+        fine=self.geometry['numerical_domains']['entrance_refinement']['active_bounds_mm']
+        midpoint=[(fine[axis+'_min']+fine[axis+'_max'])/2 for axis in 'xyz']
+        dynamic=copy.deepcopy(self.dynamic)
+        spec=field_observation_spec();spec['domain_id']='entrance_refinement'
+        observation=dict(specification=spec,evidence_context=dict(
+            phase='full_instrument',clock_epoch_id='test-clock',mother_particle_ids=[11,77]))
+        program=self.build(native_path_projection=False,standalone_dynamic_field_bank=dynamic,field_observation=observation)
+        target=self.root/'fine_observed.lua'
+        target.write_text(re.sub(r'\badjustable\s+','',program)+
+            "\nsegment.candidate_test_start=function() single_flight_field_observer.start_run() end\n",encoding='utf-8',newline='\n')
+        script=self.root/'fine_candidate.lua'
+        script.write_text(r"""
+segment={};simion={workbench_program=function() end,early_access=function() end,wb={instances={}}}
+simion.wb.instances[4]={inside_wc=function() return false end}
+dofile(arg[1]); segment.candidate_test_start()
+ion_number=1;ion_time_of_flight=0;ion_px_mm=tonumber(arg[2]);ion_py_mm=tonumber(arg[3]);ion_pz_mm=tonumber(arg[4])
+ion_instance=5;segment.instance_adjust();assert(ion_instance==5,'inside fine changed')
+ion_px_mm=tonumber(arg[5]);ion_instance=5;segment.instance_adjust();assert(ion_instance==0,'fine boundary not suppressed')
+""",encoding='utf-8',newline='\n')
+        args=[str(LUA),str(script),str(target),*(str(value) for value in midpoint),str(fine['x_min'])]
+        result=subprocess.run(args,cwd=self.root,capture_output=True,text=True,timeout=30,check=False)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        rows=[json.loads(line.split(' ',2)[2]) for line in result.stdout.splitlines()
+              if line.startswith('TRACE: instance_adjust_observation ')]
+        self.assertEqual([(row['candidate_instance'],row['output_instance']) for row in rows],[(5,5),(5,0)])
+        self.assertTrue(all(row['particle_id']==11 for row in rows))
 
 class TrackingProgramImportBoundaryTests(unittest.TestCase):
     def test_cold_canonical_renderer_requires_selected_module_and_helper(self):

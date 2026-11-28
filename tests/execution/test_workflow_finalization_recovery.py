@@ -153,3 +153,60 @@ foreach($case in (Get-Content -LiteralPath $env:WF_REQUEST -Raw|ConvertFrom-Json
                             encoding="utf-8", timeout=40)
                         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
                         self.assertEqual(manifest_path.read_bytes(), original)
+
+
+class StoppedSourceRecoveryTests(unittest.TestCase):
+    def test_checkpoint_requires_stopped_receipt_and_ready_pinned_ledger_range(self):
+        from unittest.mock import patch
+        from msplatform.backends.simion.native_completion import retention_api
+        from msplatform.execution import run_capacity_lifecycle as lifecycle
+        from msplatform.execution.capacity_ledger import load_capacity_ledger
+        from msplatform.execution.manifest_publication import build_run_manifest
+        from msplatform.execution.retention import file_record
+
+        def write(path, value):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(value), encoding="utf-8")
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "source"
+            root.mkdir()
+            initialize_capacity_ledger(root, objects=[])
+            run = root / "projects/fixture/runs/20261030_010000__test__python__source"
+            run.mkdir(parents=True)
+            config_path = run / "run_config.json"
+            write(config_path, dict(schema_version=1, project="fixture", mode="fixture", run_id=run.name, inputs={},
+                capacity_ledger_lifecycle=dict(schema_version=1, enabled=True,
+                    artifact_root=str(root), light_evidence_budget_bytes=1024)))
+            write(run / "run_manifest.json", build_run_manifest(
+                config_path, "superseded", retention_api=retention_api))
+            record = file_record(run / "run_manifest.json")
+            with patch.object(lifecycle, "_inventory", side_effect=AssertionError("read-only source must not inventory")):
+                self.assertEqual(lifecycle.resolve_consumed_run_capacity_owner(record)["run_directory"], str(run))
+            self.assertNotIn("superseded", lifecycle.TERMINAL_STATUSES)
+            lifecycle.capacity_ledger.record_capacity_object(
+                root, path=run, object_class="rebuildable_payload", bytes_count=0,
+                status="writing", owner="fixture", retention_reason="fixture", review_deadline="2027-01-01",
+                retirement_route="owner_decision_required", recovery_reason="fixture")
+            write(run / "run_manifest.json", build_run_manifest(
+                config_path, "checkpoint", retention_api=retention_api))
+            stopped = lifecycle.seal_checkpoint(
+                root, config_path, owner="fixture", writing_stopped=True,
+                retain_payload=True, retention_reason="fixture stopped source")
+            stopped_path = base / "stopped.json"
+            write(stopped_path, stopped)
+            manifest_record = file_record(run / "run_manifest.json")
+            stopped_record = file_record(stopped_path)
+            with patch.object(lifecycle, "_inventory", side_effect=AssertionError("no source re-inventory")):
+                with self.assertRaisesRegex(ValueError, "explicit stopped payload receipt"):
+                    lifecycle.resolve_consumed_run_capacity_owner(manifest_record)
+                self.assertEqual(lifecycle.resolve_consumed_run_capacity_owner(
+                    manifest_record, stopped_receipt_record=stopped_record)["run_directory"], str(run))
+                ledger = load_capacity_ledger(root)
+                ledger["objects"][0]["pin"] = False
+                ledger["objects"][0].pop("pin_reason", None)
+                write(root / "platform/capacity_ledger.json", ledger)
+                with self.assertRaisesRegex(ValueError, "actual ready pinned owner range"):
+                    lifecycle.resolve_consumed_run_capacity_owner(
+                        manifest_record, stopped_receipt_record=stopped_record)

@@ -26,11 +26,20 @@ class TrackingCollectionTests(unittest.TestCase):
             "status,Fly completed. 1 splats"]
         self.batch = dict(source_row_range=[1, 1], expected_particle_ids=[41], build_metadata={})
 
-    def collect(self, *, provenance=None):
+    def collect(self, *, provenance=None, observation_times=()):
         self.log.write_text("\n".join(self.lines) + "\n", encoding="utf-8")
+        flight = {"pulse": {"mode": "held_off"}}
+        if observation_times:
+            flight["observation_times_us"] = list(observation_times)
         return collection.collect_tracking_logs([self.log], source_rows=self.source,
-            source_provenance=provenance or {}, flight={"pulse": {"mode": "held_off"}},
-            batches=[self.batch])
+            source_provenance=provenance or {}, flight=flight, batches=[self.batch])
+
+    def shared_line(self, *, ion=1, particle_id=41, target=7.5, actual=None):
+        actual = target if actual is None else actual
+        return ("TRACE: native_shared_time "
+            f"ion={ion} particle_id={particle_id} instance=3 candidate_time_us={target:.17g} "
+            f"instrument_time_us={actual:.17g} x_mm=2 y_mm=3 z_mm=4 "
+            "vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3 kinetic_energy_eV=4")
 
     def test_direct_sparse_state_collection_preserves_raw_velocity_and_full_mother(self):
         provenance = dict(schema_version=2, mother_particle_ids=[41, 99],
@@ -70,6 +79,57 @@ class TrackingCollectionTests(unittest.TestCase):
             self.lines[0] = self.lines[0].replace("vx_mm_per_us=1", "vx_mm_per_us=9")
             with self.assertRaisesRegex(ValueError, "actual birth differs"):
                 self.collect()
+
+    def test_shared_time_preserves_actual_clock_and_canonical_census_deterministically(self):
+        self.lines.insert(0, self.shared_line())
+        first = self.collect(observation_times=[7.5])
+        row = first["native_shared_states"][0]
+        self.assertEqual(row["particle_id"], 41)
+        self.assertEqual(row["candidate_time_us"], 7.5)
+        self.assertEqual(row["instrument_time_us"], 7.5)
+        self.assertEqual([row[f"v{axis}_mm_per_us"] for axis in "xyz"], [1., 2., 3.])
+        self.assertEqual(row["kinetic_energy_eV"], 4.)
+        self.assertEqual(first["census"]["census"]["source_release"], 1)
+        self.assertNotIn("pulse_effective_peak", first["census"])
+        self.assertFalse(first["census"]["formal_gate_passed"])
+        self.assertEqual(self.collect(observation_times=[7.5]), first)
+
+    def test_shared_time_allows_only_binary64_serialization_difference(self):
+        actual = 7.5 + 16 * math.ulp(7.5)
+        self.lines.insert(0, self.shared_line(actual=actual))
+        result = self.collect(observation_times=[7.5])
+        row = result["native_shared_states"][0]
+        self.assertEqual(row["candidate_time_us"], 7.5)
+        self.assertEqual(row["instrument_time_us"], actual)
+        self.assertNotEqual(row["candidate_time_us"], row["instrument_time_us"])
+        for line in (self.shared_line(actual=7.5 + 64 * math.ulp(7.5)),
+                     self.shared_line(target=7.5 + math.ulp(7.5))):
+            with self.subTest(line=line):
+                self.lines.insert(0, line)
+                try:
+                    with self.assertRaisesRegex(ValueError, "shared-time"):
+                        self.collect(observation_times=[7.5])
+                finally:
+                    self.lines.pop(0)
+
+    def test_shared_time_rejects_duplicate_unknown_malformed_and_outside_lifetime(self):
+        valid = self.shared_line()
+        cases = {
+            "duplicate": [valid, valid],
+            "unknown_id": [self.shared_line(ion=2)],
+            "wrong_id": [valid.replace("particle_id=41", "particle_id=42")],
+            "nonfinite": [valid.replace("vx_mm_per_us=1", "vx_mm_per_us=nan")],
+            "missing_state": [valid.replace(" vy_mm_per_us=2", "")],
+            "duplicate_field": [valid + " instance=3"],
+            "before_birth": [self.shared_line(target=6.5)],
+            "after_terminal": [self.shared_line(target=8.5)],
+        }
+        for name, extra in cases.items():
+            with self.subTest(case=name):
+                self.lines[:0] = extra
+                with self.assertRaises(ValueError):
+                    self.collect(observation_times=[6.5, 7.5, 8.5])
+                self.lines[:len(extra)] = []
 
     def test_legacy_census_is_same_canonical_module(self):
         from msplatform.backends.simion import tracking_collection as census
