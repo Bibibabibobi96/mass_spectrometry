@@ -1498,7 +1498,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
     def test_bunch_batches_publish_common_whole_batch_checkpoints(self):
         for token in (
             "[string]$BatchContinuationRunPath=''",
-            "msplatform.workflows.prepared_joint.continuation",
+            "msplatform.workflows.mr_design.batch_continuation",
             "simion_whole_unit_replay_plan",
             "continuation requires a sealed whole-batch log and owner exit evidence",
             "-OnProcessCompleted $checkpointAction",

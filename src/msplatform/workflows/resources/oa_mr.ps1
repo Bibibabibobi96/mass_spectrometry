@@ -735,7 +735,7 @@ try{
 
     if(-not[string]::IsNullOrWhiteSpace($BatchContinuationRunPath)){
       $continuationRoot=Join-Path ([string]$package.artifact_run_dir) 'inputs/mrtof_batch_continuation'
-      Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.prepared_joint.continuation',
+      Invoke-ProjectPython -Arguments @('-m','msplatform.workflows.mr_design.batch_continuation',
         '--predecessor-run-dir',$continuationParent,
         '--current-run-config',$runConfig,'--output-dir',$continuationRoot)
       if(Test-Path -LiteralPath (Join-Path $continuationParent '.run_terminal_publication.json')){throw 'Continuation predecessor terminal publication became incomplete.'}

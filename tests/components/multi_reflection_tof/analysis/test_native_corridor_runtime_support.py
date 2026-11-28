@@ -150,7 +150,7 @@ try{
         with TemporaryDirectory(prefix="mrtof-continuation-normal-") as temporary:
             workspace = Path(temporary)
             selected = self.selected_continuation_source(workspace)
-            entry = selected / "src/msplatform/workflows/prepared_joint/continuation.py"
+            entry = selected / "src/msplatform/workflows/mr_design/batch_continuation.py"
             entry.write_text(entry.read_text(encoding="utf-8").replace(
                 "if args.protection_projection:",
                 "if args.protection_projection:\n        print('SELECTED_CONTINUATION_SOURCE', file=__import__('sys').stderr)",
@@ -165,7 +165,7 @@ try{
         with TemporaryDirectory(prefix="mrtof-continuation-exit-") as temporary:
             workspace = Path(temporary)
             selected = workspace / "installed"
-            entry = selected / "msplatform/workflows/prepared_joint/continuation.py"
+            entry = selected / "msplatform/workflows/mr_design/batch_continuation.py"
             entry.parent.mkdir(parents=True)
             for package in (entry.parents[2], entry.parents[1], entry.parent):
                 (package/"__init__.py").write_text("", encoding="utf-8")
@@ -180,7 +180,7 @@ try{
         with TemporaryDirectory(prefix="mrtof-continuation-source-") as temporary:
             workspace = Path(temporary)
             selected = workspace / "frozen"
-            entry = selected / "src/msplatform/workflows/prepared_joint/continuation.py"
+            entry = selected / "src/msplatform/workflows/mr_design/batch_continuation.py"
             entry.parent.mkdir(parents=True)
             for package in (entry.parents[2], entry.parents[1], entry.parent):
                 (package/"__init__.py").write_text("", encoding="utf-8")
@@ -200,7 +200,7 @@ try{
         with TemporaryDirectory(prefix="mrtof-continuation-wrong-source-") as temporary:
             workspace = Path(temporary)
             selected = workspace / "selected"
-            entry = selected / "msplatform/workflows/prepared_joint/continuation.py"
+            entry = selected / "msplatform/workflows/mr_design/batch_continuation.py"
             entry.parent.mkdir(parents=True)
             # Omitting regular-package markers intentionally lets another ordinary
             # installation win discovery; the origin guard must reject it.

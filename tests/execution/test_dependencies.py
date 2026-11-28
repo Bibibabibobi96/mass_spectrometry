@@ -404,7 +404,7 @@ assert not (root / 'src/msplatform/workflows/multipole_ip/prepare.py').exists()
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
             environment = snapshot_environment(snapshot)
             result = subprocess.run([sys.executable,"-B","-s","-m",
-                "msplatform.workflows.prepared_joint.continuation","--help"],
+                "msplatform.workflows.mr_design.batch_continuation","--help"],
                 cwd=snapshot,env=environment,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 

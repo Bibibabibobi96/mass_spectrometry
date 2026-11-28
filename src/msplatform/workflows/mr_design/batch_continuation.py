@@ -499,7 +499,7 @@ def _bound_parent_input(
     return {"path": str(path), "sha256": digest.upper()}
 
 
-def build_prepared_joint_whole_unit_plan(
+def build_joint_whole_unit_plan(
     *, predecessor_run_dir: Path, current_preparation: Path, output_dir: Path, trusted_repo_root: Path | None = None,
 ) -> dict[str, Any]:
     """Build whole-batch replay actions for the measured IP鈫扢R runner.
@@ -649,7 +649,7 @@ def main() -> int:
     parser.add_argument("--current-run-config", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--protection-projection", action="store_true")
-    parser.add_argument("--prepared-joint-current-preparation", type=Path)
+    parser.add_argument("--current-preparation", type=Path)
     parser.add_argument("--trusted-repo-root", type=Path)
     args = parser.parse_args()
     if args.protection_projection:
@@ -657,12 +657,12 @@ def main() -> int:
         return 0
     if args.current_run_config is None or args.output_dir is None:
         parser.error("--current-run-config and --output-dir are required for replay planning")
-    if args.prepared_joint_current_preparation is None:
+    if args.current_preparation is None:
         result = build_continuation_plan(predecessor_run_dir=args.predecessor_run_dir,
                                          current_run_config=args.current_run_config, output_dir=args.output_dir)
     else:
-        result = build_prepared_joint_whole_unit_plan(predecessor_run_dir=args.predecessor_run_dir,
-            current_preparation=args.prepared_joint_current_preparation, output_dir=args.output_dir,
+        result = build_joint_whole_unit_plan(predecessor_run_dir=args.predecessor_run_dir,
+            current_preparation=args.current_preparation, output_dir=args.output_dir,
             trusted_repo_root=args.trusted_repo_root)
     completed = result["completed_particle_count"] if "completed_particle_count" in result else result["reusable_unit_count"]
     replay = result["replay_particle_count"] if "replay_particle_count" in result else result["replay_unit_count"]

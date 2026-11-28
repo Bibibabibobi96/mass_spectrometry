@@ -11,10 +11,10 @@ import unittest.mock
 
 from msplatform.io.file_identity import file_sha256
 from msplatform.contracts.machine_contracts import ContractError
-from msplatform.workflows.prepared_joint.continuation import (
+from msplatform.workflows.mr_design.batch_continuation import (
     REQUIRED_INPUT_ROLES,
     build_continuation_plan,
-    build_prepared_joint_whole_unit_plan,
+    build_joint_whole_unit_plan,
     continuation_protection_projection,
 )
 from msplatform.execution.retention import file_record
@@ -50,7 +50,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertIn(str(exit_fact), projection["files"])
             self.assertEqual(len(projection["manifests"]), 3)
             cli = subprocess.run([sys.executable, "-m",
-                "msplatform.workflows.prepared_joint.continuation",
+                "msplatform.workflows.mr_design.batch_continuation",
                 "--predecessor-run-dir", str(third), "--protection-projection"],
                 cwd=Path(__file__).resolve().parents[4], capture_output=True, text=True, timeout=30)
             self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
@@ -191,7 +191,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             parent, current = self._prepared_joint_fixture(root, second_complete=False)
-            plan = build_prepared_joint_whole_unit_plan(
+            plan = build_joint_whole_unit_plan(
                 predecessor_run_dir=parent,
                 current_preparation=current,
                 output_dir=root / "recovery",
@@ -224,7 +224,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                                        for record in manifest["outputs"]]
                 manifest_path.write_text(json.dumps(manifest))
                 with self.assertRaisesRegex(ContractError, "(formal recovery|formal provisional|batch plan does not cover|batch interval differs)"):
-                    build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+                    build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
                                                         output_dir=root / "recovery")
 
     def test_prepared_replans_formal_batch_from_sealed_observation(self) -> None:
@@ -252,7 +252,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                                        for record in manifest["outputs"]]
             manifest["outputs"].append(file_record(usage))
             manifest_path.write_text(json.dumps(manifest))
-            recovered = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+            recovered = build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
                                                             output_dir=root / "recovery")
             self.assertEqual([item["action"] for item in recovered["batches"]], ["reuse", "replay"])
             self.assertEqual(recovered["batches"][0]["particle_id_max"], 1)
@@ -264,14 +264,14 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             manifest["outputs"] = [file_record(usage) if entry["path"] == str(usage.resolve()) else entry
                                    for entry in manifest["outputs"]]
             manifest_path.write_text(json.dumps(manifest))
-            recovered = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+            recovered = build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
                                                             output_dir=root / "legacy_observation")
             legacy = json.loads(Path(recovered["dispatch_plan"]["path"]).read_text())
             self.assertTrue(legacy["estimation"]["recovered_missing_observation"])
             usage.unlink()
             manifest["outputs"] = [entry for entry in manifest["outputs"] if entry["path"] != str(usage.resolve())]
             manifest_path.write_text(json.dumps(manifest))
-            recovered = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+            recovered = build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
                                                             output_dir=root / "no_observation")
             self.assertEqual([item["action"] for item in recovered["batches"]], ["reuse", "replay"])
             fallback = json.loads(Path(recovered["dispatch_plan"]["path"]).read_text())
@@ -301,7 +301,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                 manifest['outputs']=[file_record(path) if record['path']==str(path.resolve()) else record
                                      for record in manifest['outputs']]
             manifest_path.write_text(json.dumps(manifest))
-            recovered=build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,current_preparation=current,
+            recovered=build_joint_whole_unit_plan(predecessor_run_dir=parent,current_preparation=current,
                                                            output_dir=root/'recovery')
             self.assertEqual([unit['action'] for unit in recovered['batches']],['reuse','replay'])
             self.assertEqual(json.loads(Path(recovered['dispatch_plan']['path']).read_text()),committed)
@@ -311,7 +311,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                                  for record in manifest['outputs']]
             manifest_path.write_text(json.dumps(manifest))
             with self.assertRaisesRegex(ContractError,'provisional dispatch'):
-                build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,current_preparation=current,
+                build_joint_whole_unit_plan(predecessor_run_dir=parent,current_preparation=current,
                                                      output_dir=root/'rejected')
 
     def test_owner_exit_missing_or_nonzero_replays_only_that_complete_batch(self) -> None:
@@ -330,7 +330,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                         self._exit(parent, 1, code=7)
                     plan = (build_continuation_plan(predecessor_run_dir=parent, current_run_config=current,
                                                     output_dir=root / "recovery") if kind == "oa" else
-                            build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+                            build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
                                                                  output_dir=root / "recovery"))
                     self.assertEqual(plan["batches"][0]["action"], "replay")
                     if kind == "prepared":
@@ -371,8 +371,8 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             manifest["outputs"] = [record for record in manifest["outputs"] if not record["path"].endswith("owner_exit.json")]
             manifest["outputs"].append(file_record(usage))
             manifest_path.write_text(json.dumps(manifest))
-            from msplatform.workflows.prepared_joint import continuation as mrtof_batch_continuation
-            frozen_module = root / "snapshot/src/msplatform/workflows/prepared_joint/continuation.py"
+            from msplatform.workflows.mr_design import batch_continuation as mrtof_batch_continuation
+            frozen_module = root / "snapshot/src/msplatform/workflows/mr_design/batch_continuation.py"
             frozen_module.parent.mkdir(parents=True)
             frozen_module.write_bytes(Path(mrtof_batch_continuation.__file__).read_bytes())
             spec = importlib.util.spec_from_file_location("frozen_batch_continuation", frozen_module)
@@ -384,14 +384,14 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             self.assertEqual(snapshot._legacy_prepared_success(manifest_path, 2,
                 trusted_repo_root=Path(mrtof_batch_continuation.__file__).resolve().parents[4]), usage)
             self.assertIsNone(snapshot._legacy_prepared_success(manifest_path, 2, trusted_repo_root=root))
-            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
+            plan = build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current,
                 output_dir=root / "legacy", trusted_repo_root=trusted_root)
             self.assertEqual(plan["replay_unit_count"], 0)
             self.assertEqual(plan["batches"][0]["exit_evidence_kind"], "legacy_aggregate_success")
             self.assertEqual(plan["batches"][0]["exit_evidence_manifest"], str(manifest_path.resolve()))
             lookup.reset_mock()
             lookup.side_effect = subprocess.CalledProcessError(128, ["git", "show"])
-            unavailable = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,
+            unavailable = build_joint_whole_unit_plan(predecessor_run_dir=parent,
                 current_preparation=current, output_dir=root / "unavailable_history",
                 trusted_repo_root=trusted_root)
             self.assertEqual(unavailable["replay_unit_count"], 2)
@@ -401,36 +401,15 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             owner.write_bytes(owner.read_bytes() + b"\n# different version\n")
             manifest["inputs"]["prepared_joint_integrations_workflows_prepared_joint_execute_ps1"] = file_record(owner)
             manifest_path.write_text(json.dumps(manifest))
-            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,
+            plan = build_joint_whole_unit_plan(predecessor_run_dir=parent,
                 current_preparation=current, output_dir=root / "unknown_owner",
                 trusted_repo_root=trusted_root)
             self.assertEqual(plan["replay_unit_count"], 2)
             self.assertTrue(lookup.called)
             manifest["status"] = "failed"
             manifest_path.write_text(json.dumps(manifest))
-            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "failed")
+            plan = build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "failed")
             self.assertEqual(plan["replay_unit_count"], 2)
-
-    def test_continuation_waveform_is_resolved_through_sealed_trial_and_rejects_damage(self) -> None:
-        from msplatform.workflows.prepared_joint.trial import _continuation_waveforms
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            waveform = root / "waveforms.lua"
-            waveform.write_text("return {}\n")
-            trial = root / "trial.json"
-            trial.write_text(json.dumps({"voltage_waveforms": file_record(waveform)}))
-            config = root / "run_config.json"
-            config.write_text(json.dumps({"project": "instrument_assembly", "mode": "prepared_joint",
-                                          "inputs": {"prepared_joint_trial": str(trial)}}))
-            manifest = root / "run_manifest.json"
-            manifest.write_text(json.dumps({"run_config": file_record(config),
-                                            "inputs": {"prepared_joint_trial": file_record(trial)}}))
-            resolved, provenance = _continuation_waveforms(manifest)
-            self.assertEqual(resolved, waveform.resolve())
-            self.assertEqual(provenance["manifest"], str(manifest.resolve()))
-            waveform.write_text("changed\n")
-            with self.assertRaises((ValueError, AssertionError)):
-                _continuation_waveforms(manifest)
 
     def test_peak_upgrade_reuses_fly_only_with_verified_contracts_and_unchanged_flight(self) -> None:
         from msplatform.analysis.peak_metrics import AnalysisSettings
@@ -458,7 +437,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             manifest["outputs"] = [file_record(parent_trial) if entry["path"] == str(parent_trial.resolve()) else entry
                                    for entry in manifest["outputs"]]
             manifest_path.write_text(json.dumps(manifest))
-            plan = build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "ok")
+            plan = build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "ok")
             self.assertEqual(plan["replay_unit_count"], 0)
             self.assertEqual(plan["analysis_contract_change"]["excluded_analysis_field"], "peak_analysis")
             invalid_peak = dict(peak)
@@ -468,16 +447,16 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             value["trajectory_contract"] = file_record(current_contract)
             current.write_text(json.dumps(value))
             with self.assertRaisesRegex(ContractError, "peak analysis contract is invalid"):
-                build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "clock")
+                build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "clock")
             current_contract.write_text(json.dumps({"peak_analysis": peak, "flight": {"step": 2}}))
             value = json.loads(current.read_text())
             value["trajectory_contract"] = file_record(current_contract)
             current.write_text(json.dumps(value))
             with self.assertRaisesRegex(ContractError, "scientific identity differs"):
-                build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "bad")
+                build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "bad")
             current_contract.write_text('{}')
             with self.assertRaisesRegex(ContractError, "trajectory contract is invalid"):
-                build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "tampered")
+                build_joint_whole_unit_plan(predecessor_run_dir=parent, current_preparation=current, output_dir=root / "tampered")
 
     def test_prepared_joint_rejects_scientific_input_drift_before_reuse(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -487,7 +466,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             changed["field_binding"] = {"sha256": "d" * 64}
             current.write_text(json.dumps(changed) + "\n", encoding="utf-8")
             with self.assertRaisesRegex(ContractError, "frozen scientific identity differs"):
-                build_prepared_joint_whole_unit_plan(
+                build_joint_whole_unit_plan(
                     predecessor_run_dir=parent,
                     current_preparation=current,
                     output_dir=root / "recovery",
@@ -502,7 +481,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             del config["inputs"]["simion_repository_dispatch_plan"]
             config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
             with self.assertRaisesRegex(ContractError, "lacks frozen input: simion_repository_dispatch_plan"):
-                build_prepared_joint_whole_unit_plan(
+                build_joint_whole_unit_plan(
                     predecessor_run_dir=parent,
                     current_preparation=current,
                     output_dir=root / "recovery",
@@ -521,14 +500,14 @@ class MrtofBatchContinuationTests(unittest.TestCase):
                         value[role]["sha256"] = "0" * 64
                     current.write_text(json.dumps(value))
                     with self.assertRaisesRegex(ContractError, "scientific identity"):
-                        build_prepared_joint_whole_unit_plan(predecessor_run_dir=parent,
+                        build_joint_whole_unit_plan(predecessor_run_dir=parent,
                             current_preparation=current, output_dir=root / "recovery")
 
     def test_prepared_joint_recovery_carries_manifest_bound_reuse_into_the_next_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             parent, current = self._prepared_joint_fixture(root, second_complete=False)
-            first_plan = build_prepared_joint_whole_unit_plan(
+            first_plan = build_joint_whole_unit_plan(
                 predecessor_run_dir=parent,
                 current_preparation=current,
                 output_dir=root / "b_inputs",
@@ -597,7 +576,7 @@ class MrtofBatchContinuationTests(unittest.TestCase):
             next_preparation = root / "next/prepared_joint_trial.json"
             next_preparation.parent.mkdir(parents=True)
             next_preparation.write_bytes(current.read_bytes())
-            next_plan = build_prepared_joint_whole_unit_plan(
+            next_plan = build_joint_whole_unit_plan(
                 predecessor_run_dir=recovered,
                 current_preparation=next_preparation,
                 output_dir=root / "c_inputs",

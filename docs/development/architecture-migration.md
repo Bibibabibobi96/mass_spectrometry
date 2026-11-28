@@ -350,6 +350,12 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `06514b6c`。CLOC 2.10 `a2a979b2→06514b6c` PASS：total、production、tests 的 code 均为0净变化，unclassified=0；逐语言与过滤口径在外部 `workpoint-06514b6c-cloc.log`。
 
+### C2 MR 整批恢复适配器退出 Prepared（WORKTREE）
+
+旧 `prepared_joint.continuation` 归 `workflows.mr_design.batch_continuation`，继续组合公共 whole-unit planner、原生完成解析与来源保护；并非 checkpoint 重建器的重复实现。公共函数改为 `build_joint_whole_unit_plan`，CLI 参数改为 `--current-preparation`，不留旧别名。真实 OA–MR、runtime support、测试和冻结路径同步，历史 `mode=prepared_joint`、角色和 manifest 证据仍按原版本只读识别。
+
+首轮41父测试出现2 ERROR／2个既有 SIMION_EXE skip：一个为遗漏的包级导入，另一个仍调用随旧飞行退役的 `_continuation_waveforms`。前者修正；后者删除，因为当前 `test_prepared_joint_rejects_program_source_and_waveform_drift...` 已对 waveform 等角色分别执行缺失与 SHA 漂移负例，未减少现行覆盖。最终40父测试38通过／2既有显式原生 skip（23.754s），OA–MR 52父测试全PASS（128.651s），冻结导入定向1 PASS。日志为 `prepared-batch-continuation-r2.log`、`prepared-batch-continuation-oa-mr.log`、`prepared-batch-continuation-freeze.log`。Ruff/diff PASS，无商业原生执行。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |
