@@ -12,10 +12,10 @@ import unittest
 from unittest.mock import patch
 
 from msplatform.backends.simion.mrtof_batch_flight import merge_measured_event_logs
-from msplatform.workflows.prepared_joint.trial import compare_trajectory_representation
+from msplatform.analysis.recorded_joint_trial import compare_trajectory_representation
 
 
-class PreparedJointBatchTests(unittest.TestCase):
+class RecordedJointBatchTests(unittest.TestCase):
 
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is unavailable")
@@ -37,11 +37,11 @@ $function=$tree.FindAll({param($node) $node -is [System.Management.Automation.La
 if($function.Count-ne1){throw 'launcher invoker not unique'}
 . ([scriptblock]::Create($function[0].Extent.Text))
 $script:pythonRoot=[string]$frozen.execution_root;$script:preparedPackage=$null
-$module='msplatform.workflows.prepared_joint.trial'
+$module='msplatform.analysis.recorded_joint_trial'
 $help=@('-m',$module,'--help')
 $good=@(Invoke-ProjectPython -Arguments $help -FrozenPackage $frozen)-join "`n"
 if($good-notmatch 'usage:'){throw 'real selected module did not return help'}
-$identity=@($frozen.identities|Where-Object {$_.source_repo_path-ceq 'src/msplatform/workflows/prepared_joint/trial.py'})
+$identity=@($frozen.identities|Where-Object {$_.source_repo_path-ceq 'src/msplatform/analysis/recorded_joint_trial.py'})
 if($identity.Count-ne1){throw 'selected source identity missing'}
 $target=[string]$identity[0].snapshot_path;$original=[IO.File]::ReadAllBytes($target)
 try{

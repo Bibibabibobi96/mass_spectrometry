@@ -441,20 +441,20 @@ class PreparedJointExecuteTests(unittest.TestCase):
     def test_scientific_event_receipt_reaches_actual_centroid_analysis_cli(self):
         import contextlib
         import io
-        from msplatform.workflows.prepared_joint import trial as prepared_joint_trial
+        from msplatform.analysis import recorded_joint_trial
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             receipt = root / "merge.json"
             arguments = ["analyze-probe", "--preparation", str(root / "preparation.json"),
                          "--log", str(root / "native.log"), "--output", str(root / "diagnostics"),
                          "--scientific-event-receipt", str(receipt)]
-            with patch.object(prepared_joint_trial, "analyze_centroid_probe") as actual_analysis, \
+            with patch.object(recorded_joint_trial, "analyze_centroid_probe") as actual_analysis, \
                     patch.object(sys, "argv", ["trial", *arguments]), contextlib.redirect_stdout(io.StringIO()):
-                prepared_joint_trial.main()
+                recorded_joint_trial.main()
                 self.assertEqual(actual_analysis.call_args.kwargs["scientific_event_receipt"], receipt)
                 actual_analysis.side_effect = RuntimeError("ORIGINAL_CLI_ANALYSIS_FAILURE")
                 with self.assertRaisesRegex(RuntimeError, "ORIGINAL_CLI_ANALYSIS_FAILURE"):
-                    prepared_joint_trial.main()
+                    recorded_joint_trial.main()
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_retired_flight_parameters_cannot_start_and_workpoint_selects_oa(self):
@@ -550,7 +550,7 @@ if($ast.ParamBlock.Parameters.Name.VariablePath.UserPath-contains'PreparedJointW
 
     def test_equivalence_reads_exact_old_or_new_identity_without_execution_fallback(self):
         from msplatform.execution.retention import file_record
-        from msplatform.workflows.prepared_joint.trial import freeze_equivalence_reference
+        from msplatform.analysis.recorded_joint_trial import freeze_equivalence_reference
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             prior = root / "prior"

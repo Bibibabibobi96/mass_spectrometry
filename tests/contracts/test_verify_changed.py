@@ -2575,7 +2575,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
             'test_joint_mirror_stripe_l0',
             'test_mirror_exact_k_operating_point',
             'test_mirror_l0_l1_runner',
-            'test_prepared_joint_trial',
+            'test_recorded_joint_trial',
             'test_prism_analytic',
             'test_prism_mirror_transport',
             'test_prism_runner_contract_matrix',
@@ -2653,7 +2653,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
             'test_mirror_exact_k_operating_point',
             'test_mirror_l0_l1_runner',
             'test_native_candidate_condition_runner',
-            'test_prepared_joint_trial',
+            'test_recorded_joint_trial',
             'test_prism_runner_contract_matrix',
             'test_simion_candidate_reference',
             'test_static_field_binding',
@@ -2685,7 +2685,7 @@ if(-not(Test-Path -LiteralPath {quote(unrelated)})){{throw 'Unrelated folder del
         self.assertCountEqual(modules, [
             "tests.components.multi_reflection_tof.analysis." + name
             for name in ("test_static_field_binding", "test_native_memory_consumer_crop",
-                         "test_prepared_joint_trial", "test_native_static_field_provider_runner")])
+                         "test_recorded_joint_trial", "test_native_static_field_provider_runner")])
         self.assertEqual(len(modules), len(set(modules)))
         self.assertTrue(any(row["name"].startswith("machine_contracts")
                             for row in request["stages"]))

@@ -1153,7 +1153,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
                 'test_joint_mirror_stripe_l0',
                 'test_mirror_exact_k_operating_point',
                 'test_mirror_l0_l1_runner',
-                'test_prepared_joint_trial',
+                'test_recorded_joint_trial',
                 'test_prism_analytic',
                 'test_prism_mirror_transport',
                 'test_prism_runner_contract_matrix',
@@ -1201,7 +1201,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             'test_joint_mirror_stripe_l0', 'test_managed_analysis_runner_contracts',
             'test_measured_component_source', 'test_mirror_exact_k_operating_point',
             'test_mirror_l0_l1_runner', 'test_native_candidate_condition_runner',
-            'test_prepared_joint_trial', 'test_prism_runner_contract_matrix',
+            'test_recorded_joint_trial', 'test_prism_runner_contract_matrix',
             'test_simion_candidate_reference', 'test_static_field_binding',
             'test_static_workpoint_iteration', 'test_two_prism_simion_trial',
         ]
@@ -1217,7 +1217,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             'joint_flight_preparation': [
                 'test_ip_prism_distance_study',
                 'test_joint_flight_preparation',
-                'test_prepared_joint_trial',
+                'test_recorded_joint_trial',
             ],
             'mirror_exact_k_operating_point': [
                 'test_dual_stripe_l0_math', 'test_fixed_grid_mirror_stripe_handoff',
@@ -1239,7 +1239,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             'two_prism_simion_trial': [
                 'test_downstream_fixed_grid_workpoint',
                 'test_mr_provider_trial_transport',
-                'test_prepared_joint_trial',
+                'test_recorded_joint_trial',
                 'test_static_field_binding',
                 'test_static_workpoint_iteration',
                 'test_two_prism_simion_trial',
@@ -1286,7 +1286,7 @@ ConvertTo-Json -InputObject $results -Depth 16 -Compress
             'test_mirror_exact_k_operating_point',
             'test_mirror_l0_l1_runner',
             'test_native_candidate_condition_runner',
-            'test_prepared_joint_trial',
+            'test_recorded_joint_trial',
             'test_prism_runner_contract_matrix',
             'test_simion_candidate_reference',
             'test_static_field_binding',
@@ -1556,7 +1556,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
             stages = {row["name"]: row for row in json.loads(
                 request.read_text(encoding="utf-8-sig"))["stages"] if row["selected"]}
             parameters = stages["multi_reflection_tof_static"]["command"]["parameters"]
-            self.assertIn("tests.components.multi_reflection_tof.analysis.test_prepared_joint_trial",
+            self.assertIn("tests.components.multi_reflection_tof.analysis.test_recorded_joint_trial",
                           parameters["ChangedTestModules"])
             self.assertIn("tests.components.multi_reflection_tof.analysis.test_joint_flight_preparation",
                           parameters["ChangedTestModules"])
@@ -1581,7 +1581,7 @@ $results|ConvertTo-Json -Depth 8 -Compress
                           for parameter in ("SelectedTestModules", "ChangedTestModules")
                           for module in stage["command"].get("parameters", {}).get(parameter, [])]
                     self.assertIn(
-                        "tests.components.multi_reflection_tof.analysis.test_prepared_joint_trial",
+                        "tests.components.multi_reflection_tof.analysis.test_recorded_joint_trial",
                         mr)
                     integration = set()
                     for name, stage in stages.items():
@@ -2667,11 +2667,11 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
         stage = "multi_reflection_tof_static"
         adapter = "src/msplatform/backends/simion/resources/scalar_field_adapter.lua"
         lookup = "src/msplatform/backends/simion/resources.py"
-        prepared = "src/msplatform/workflows/prepared_joint/trial.py"
+        prepared = "src/msplatform/analysis/recorded_joint_trial.py"
         provider = "src/msplatform/backends/simion/resources/run_native_static_field_provider.ps1"
         consumers = [MR + "/analysis/" + name + ".py" for name in (
             "test_static_field_binding", "test_native_memory_consumer_crop",
-            "test_prepared_joint_trial", "test_native_static_field_provider_runner")]
+            "test_recorded_joint_trial", "test_native_static_field_provider_runner")]
         cases = [
             dict(stage=stage, paths=[adapter], modules=consumers),
             dict(stage=stage, paths=[lookup], modules=consumers),

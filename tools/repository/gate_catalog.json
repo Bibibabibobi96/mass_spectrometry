@@ -4398,13 +4398,13 @@
           "test_native_static_geometry": 0.004547,
           "test_native_system_runtime": 2.533654,
           "test_prepare_accelerator_interface": 1.099021,
-          "test_prepared_joint_trial": 10.104926,
           "test_prism_analytic": 0.003441,
           "test_prism_l0": 0.027882,
           "test_prism_mirror_transport": 0.893439,
           "test_prism_runner_contract_matrix": 0.008995,
           "test_prism_shield_exit_extension": 71.991556,
           "test_recorded_joint_diagnostics": 53.779094,
+          "test_recorded_joint_trial": 10.104926,
           "test_resolved_cad_export": 1.303717,
           "test_scientific_event_io": 12.745246,
           "test_simion_candidate_reference": 208.008099,
@@ -4504,7 +4504,7 @@
               }
             ],
             "modules": [
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py"
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4531,7 +4531,7 @@
               "tests/components/multi_reflection_tof/analysis/test_measured_component_source.py",
               "tests/components/multi_reflection_tof/analysis/test_measured_component_analysis.py",
               "tests/components/multi_reflection_tof/analysis/test_recorded_joint_diagnostics.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py",
               "tests/components/multi_reflection_tof/analysis/test_ion_processor_handoff.py",
               "tests/assembly/multi_reflection_tof/analysis/test_ion_processor_assembly.py",
               "tests/components/multi_reflection_tof/analysis/test_measured_runtime_adapter.py",
@@ -4547,7 +4547,7 @@
               }
             ],
             "modules": [
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py",
               "tests/components/multi_reflection_tof/analysis/test_joint_flight_preparation.py"
             ],
             "dependency_profile": "locked"
@@ -4685,7 +4685,7 @@
             "modules": [
               "tests/components/multi_reflection_tof/analysis/test_static_field_binding.py",
               "tests/components/multi_reflection_tof/analysis/test_native_memory_consumer_crop.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py",
               "tests/components/multi_reflection_tof/analysis/test_native_static_field_provider_runner.py"
             ],
             "dependency_profile": "locked"
@@ -4693,12 +4693,12 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/prepared_joint/trial.py",
+                "exact": "src/msplatform/analysis/recorded_joint_trial.py",
                 "reason": "prepared_joint_scalar_freezer_changed"
               }
             ],
             "modules": [
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py"
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4782,7 +4782,7 @@
               "tests/components/multi_reflection_tof/analysis/test_joint_mirror_stripe_l0.py",
               "tests/components/multi_reflection_tof/analysis/test_mirror_exact_k_operating_point.py",
               "tests/components/multi_reflection_tof/analysis/test_mirror_l0_l1_runner.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py",
               "tests/components/multi_reflection_tof/analysis/test_prism_analytic.py",
               "tests/components/multi_reflection_tof/analysis/test_prism_mirror_transport.py",
               "tests/components/multi_reflection_tof/analysis/test_prism_runner_contract_matrix.py",
@@ -4852,7 +4852,7 @@
             "modules": [
               "tests/components/multi_reflection_tof/analysis/test_ip_prism_distance_study.py",
               "tests/components/multi_reflection_tof/analysis/test_joint_flight_preparation.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py"
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py"
             ],
             "dependency_profile": "locked"
           },
@@ -4879,7 +4879,7 @@
             ],
             "modules": [
               "tests/components/multi_reflection_tof/analysis/test_downstream_fixed_grid_workpoint.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py",
               "tests/components/multi_reflection_tof/analysis/test_static_field_binding.py",
               "tests/components/multi_reflection_tof/analysis/test_static_workpoint_iteration.py",
               "tests/components/multi_reflection_tof/analysis/test_two_prism_simion_trial.py",
@@ -4920,7 +4920,7 @@
               "tests/components/multi_reflection_tof/analysis/test_mirror_exact_k_operating_point.py",
               "tests/components/multi_reflection_tof/analysis/test_mirror_l0_l1_runner.py",
               "tests/components/multi_reflection_tof/analysis/test_native_candidate_condition_runner.py",
-              "tests/components/multi_reflection_tof/analysis/test_prepared_joint_trial.py",
+              "tests/components/multi_reflection_tof/analysis/test_recorded_joint_trial.py",
               "tests/components/multi_reflection_tof/analysis/test_prism_runner_contract_matrix.py",
               "tests/components/multi_reflection_tof/analysis/test_simion_candidate_reference.py",
               "tests/components/multi_reflection_tof/analysis/test_static_field_binding.py",
