@@ -432,13 +432,17 @@ total 代码变化为 JSON -69、PowerShell -170、Python -354；production 为 
 
 已提交并普通 push `d5f6821ca8e8ee2ed4fbbffb4d31f09ee6e54117`。CLOC 2.10 `1b365703→d5f6821c` PASS：total 与 production 均 files/blank/comment 不变、code +7，tests 全项不变，unclassified=0；逐语言和过滤口径在 `mr-provider-binding-d5f6821c-cloc.log`。
 
-### C2 SFI 旧包初次整合与覆盖复审（WORKTREE，未闭合）
+### C2 SFI 旧包初次整合与覆盖复审（候选，未闭合）
 
 Agent 1 的独立提交 `e96ddc4954353bff231e24f42a2604bd199af896` 删除旧 `workflows/single_reflection_flight` 的 `__init__`、prepare、collect、continuation、runtime，无别名或转发；主线普通 cherry-pick 为 `6b61442c58ffb4fb23df289e43c4141ab8b7d086`。源／clock 和 release 由公共 Recipe／particle_release 承接，实际 Program／tracking／结果归现有 backend／results。保留历史 schema、科学 ID 和只读证据。
 
 Agent 1 的保留目录 discovery 为117/117 PASS（34.969s），0 skip。主 Agent 将通用 dependency freezer 用例改到现有 Assembly consumer，以当前 backend 冻结导入、容量 lease 和缺模块负例替换旧 SFI producer 探针；完整 `tests.execution.test_dependencies` 20/20 PASS（177.016s），0 skip，日志 `sfi-integrated-dependencies.log`。门禁删除已不存在的模块、计时和旧路由，并加入当前 tracking／`test_single_reflection_iob_verifier.py`；现行 INTEGRATION 改用公共 Recipe／tracing，旧数字明确只属历史。
 
 独立 Agent 2 复审结论为 **request changes**：旧 producer 专属准备／固定分段测试可退役，新 IOB 的20项迁移有效；但仍有当前 `tracking_program` observer、`fields.py` 输入矩阵、真实 Lua field verifier、shared-time parser 和容量恢复负例被误删，外部 installed/platform 消费者亦待迁移。因此暂停 orphan production 删除，由 Agent 1 补回并迁移覆盖，Agent 3 处理外部消费者。当前不得把局部117项、依赖20项或旧测试数字称为 SFI／CA19 完成。未运行商业 native 或双发行最终验收。
+
+路由／依赖整合已提交并普通 push `0455d0fe2bf34b7f1645a178dad6bc52a99e1627`。CLOC 2.10 `912c4a49→0455d0fe` PASS：total files 2397不变、blank -1、comment -43、code -130；production files 1410不变、blank +1、comment不变、code -111；tests files 987不变、blank -2、comment -43、code -19；unclassified=0。逐语言与过滤口径见 `sfi-routing-0455d0fe-cloc.log`。
+
+另发现工作区顶层 `common/`、`projects/`、`integrations/` 是 Git 未跟踪的忽略残留，共1860个文件；其中1858个为 `__pycache__/pyc`，两个非缓存文件已在外部 `retired-root-noncache/` 保存字节、SHA-256和来源清单。common IOB 与当前包资源逐字节相同，projects 的 processed GEM 无消费者，integrations 无非缓存文件。三棵物理旧根已删除，路径检查全部 ABSENT；这属于工作树清理，不伪造 Git 删除记录。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
