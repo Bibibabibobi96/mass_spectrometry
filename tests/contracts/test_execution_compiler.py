@@ -220,8 +220,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         assemblies = [row for row in view if row["owner_kind"] == "assembly"]
         self.assertEqual([row["owner_id"] for row in assemblies], ["instrument_assembly"])
         self.assertNotIn("instrument_assembly", projects)
-        self.assertEqual({row["workflow_id"] for row in assemblies[0]["profiles"]},
-                         {"oa_mr_flight"})
+        self.assertEqual({row["workflow_id"] for row in assemblies[0]["profiles"]}, set())
         with self.assertRaisesRegex(ValueError, "Unknown capability owner"):
             query_capabilities(load_json(self.registry), owner="missing")
 
@@ -240,10 +239,6 @@ class ExecutionCompilerTests(unittest.TestCase):
             step = profile["steps"][0]
             target = python_registered if step["shell"] == "python" else registered
             target[str(REPO_ROOT/step["entrypoint"])] = (step["arguments"], project)
-        assemblies = load_json(REPO_ROOT/"src/msplatform/workflows/config/assembly_registry.json")
-        workflow = next(item for item in assemblies["assemblies"][0]["workflows"]
-                        if item["workflow_id"] == "oa_mr_flight")
-        registered[str(REPO_ROOT/workflow["entrypoint"])] = (workflow["arguments"], "oa_mr_flight")
         for path, (arguments, project) in python_registered.items():
             with self.subTest(entrypoint=path):
                 spec = importlib.util.spec_from_file_location("registration_" + project, path)
@@ -356,35 +351,23 @@ ConvertTo-Json -InputObject $rows -Depth 4 -Compress
             directory.mkdir()
             (directory/"run_manifest.json").write_text("{}", encoding="utf-8")
             bindings[key] = str(directory)
-        ready = compile_assembly_execution("instrument_assembly", "oa_mr_flight", self.run_id, bindings)
-        self.assertEqual(ready["status"], "EXECUTION_READY", ready["blockers"])
-        arguments = ready["commands"][0]["arguments"]
-        for option, expected in (
-            ("-AcceleratorComponentContractPath", str(contract)),
-            ("-AcceleratorGeometryProfileId", bindings["accelerator_geometry_profile_id"]),
-            ("-RepoRoot", str(REPO_ROOT)),
-            ("-PythonExe", str(Path(sys.executable).resolve())),
-        ):
-            self.assertEqual(arguments[arguments.index(option) + 1], expected)
-        self.assertIn(str(contract.resolve()),
-                      {record["path"] for record in ready["binding_authorities"]})
+        with self.assertRaisesRegex(ValueError, "Unknown Assembly workflow"):
+            compile_assembly_execution("instrument_assembly", "oa_mr_flight", self.run_id, bindings)
+        from msplatform.workflows.oa_mr import store_workflow
+        request = dict(bindings, run_id=self.run_id, repository_root=str(REPO_ROOT),
+                       legacy_artifact_root=str(REPO_ROOT.parent / "artifacts"))
+        request_path = Path(self.binding_directory.name) / "oa_mr_request.json"
+        request_path.write_text(json.dumps(request), encoding="utf-8")
+        validated = store_workflow._request(request_path)
+        self.assertEqual(validated["accelerator_geometry_profile_id"],
+                         "closed_two_zone_compact_mr_axial_r3_gap1_4mm")
         for key in ("accelerator_component_contract_path", "accelerator_geometry_profile_id"):
             with self.subTest(missing=key):
-                incomplete = dict(bindings)
+                incomplete = dict(request)
                 incomplete.pop(key)
-                result = compile_assembly_execution("instrument_assembly", "oa_mr_flight",
-                                                    self.run_id, incomplete)
-                self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
-                self.assertIn(key, " ".join(result["blockers"]))
-                self.assertFalse(result["safe_to_execute"])
-        missing_source = dict(bindings)
-        missing_source["accelerator_component_contract_path"] = str(
-            Path(self.binding_directory.name)/"missing-contract.json")
-        result = compile_assembly_execution("instrument_assembly", "oa_mr_flight",
-                                            self.run_id, missing_source)
-        self.assertEqual(result["status"], "NEEDS_RUNTIME_INPUTS")
-        self.assertIn("accelerator_component_contract_path: file is missing",
-                      " ".join(result["blockers"]))
+                request_path.write_text(json.dumps(incomplete), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, key):
+                    store_workflow._request(request_path)
 
     def test_assembly_optional_bindings_use_existing_authority_and_owner(self):
         from tools.repository.compile_execution_plan import compile_assembly_execution, parse_bindings

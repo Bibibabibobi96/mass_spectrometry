@@ -62,7 +62,10 @@ if(($requiredDiagnosticCount -eq 0 -and $CohortParticleCount -notin @(100,1000))
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__mrtof-native-corridor-bunch-screening'}
 
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
+. (Join-Path $packageRoot 'execution/resources/workspace_paths.ps1')
 . (Join-Path $packageRoot 'backends/simion/resources/native_corridor_runtime_support.ps1')
+$pathContext=Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactWorkspaceRoot -Python $python
+$hostPolicyPath=Join-Path $packageRoot 'execution/resources/host_resource_policy.json'
 
 function Get-VerifiedManifestOutput {
   param([Parameter(Mandatory)][string]$ManifestPath,[Parameter(Mandatory)][string]$Name)
@@ -272,7 +275,7 @@ $workpointManifest=Join-Path $workpointRun 'run_manifest.json'
 $bankManifest=if($staticFieldMode){$null}else{Join-Path $bankRun 'run_manifest.json'}
 $sourceRun=Split-Path -Parent (Split-Path -Parent $sourceReceipt)
 $sourceManifest=Join-Path $sourceRun 'run_manifest.json'
-$trialRunner=Join-Path $packageRoot 'workflows/resources/oa_mr.ps1'
+$trialRunner='msplatform.workflows.oa_mr.store_workflow'
 $artifactProjectRoot=Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind component -OwnerId $projectId -Python $python
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProjectRoot `
   -RunId $RunId -Project $projectId -Mode 'native_corridor_candidate_bunch_screening' `
@@ -412,7 +415,7 @@ try{
   $cohortArguments=@{
     GeometryReviewRunPath=[string]$problem.geometry;MirrorRunPath=[string]$problem.mirror;StripeRunPath=[string]$problem.stripe
     NativeSystemRuntimeBundlePath=$nativeSystemRuntimeBundlePath
-    NativeCorridorBankRunPath=$bankRun;CapacityWorkflowSession=$capacitySession
+    NativeCorridorBankRunPath=$bankRun
     BunchSourceReceiptPath=$sourceReceipt;BunchParticleIdMin=1;BunchParticleIdMax=$CohortParticleCount;ContractPath=$workpointContract
     RetainGuiWorkbench=$true
     Stripe1VoltageV=$voltages[0];Stripe2VoltageV=$voltages[1];Prism1VoltageV=$voltages[2];Prism2VoltageV=$voltages[3]
@@ -451,11 +454,38 @@ try{
     Open-NativeCorridorRuntimeCheckpoint -Session $nativeRuntimeSession -CapacityWorkflowSession $capacitySession `
       -BankGenerationDirectory $bank.generation_directory -CacheKey $bank.cache_key -GenerationSha256 $bank.generation_sha256 `
       -Python $python -RepoRoot $repoRoot -SimionExe $runtimeSimion
-    $cohortArguments.NativeCorridorRuntimeSession=$nativeRuntimeSession
+    $cohortArguments.NativeRuntimeCheckpoint=$checkpoint
     }
     $failureStage="cohort_n$CohortParticleCount"
-    & $trialRunner @cohortArguments
-    $cohortRun=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind assembly -OwnerId instrument_assembly -Python $python) "runs/$cohortRunId";$cohortManifest=Join-Path $cohortRun 'run_manifest.json'
+    $optionMap=[ordered]@{
+      AcceleratorComponentContractPath='accelerator_component_contract_path';AcceleratorGeometryProfileId='accelerator_geometry_profile_id'
+      GeometryReviewRunPath='geometry_review_run_path';MirrorRunPath='mirror_run_path';StripeRunPath='stripe_run_path'
+      AcceleratorProviderReceiptPath='accelerator_provider_receipt_path';CompositionPlanPath='composition_plan_path';LocalScopePath='local_scope_path'
+      Prism1VoltageV='prism1_voltage_v';Prism2VoltageV='prism2_voltage_v';Stripe1VoltageV='stripe1_voltage_v';Stripe2VoltageV='stripe2_voltage_v'
+      NativeCorridorBankRunPath='native_corridor_bank_run_path';NativeSystemRuntimeBundlePath='native_system_runtime_bundle_path';FieldBindingPath='field_binding_path'
+      MirrorVoltageVariationPath='mirror_voltage_variation_path';ContractPath='contract_path';BunchSourceReceiptPath='bunch_source_receipt_path'
+      BatchContinuationRunPath='batch_continuation_run_path';BunchParticleIdMin='bunch_particle_id_min';BunchParticleIdMax='bunch_particle_id_max'
+      TrajectoryProfileId='trajectory_profile_id';TrajectoryStepScale='trajectory_step_scale';AcceleratorSourceYOffsetMm='accelerator_source_y_offset_mm'
+      NativeRuntimeCheckpoint='native_runtime_checkpoint';RetainGuiWorkbench='retain_gui_workbench'
+    }
+    $request=[ordered]@{run_id=$cohortRunId;repository_root=$workspaceRoot;legacy_artifact_root=$artifactWorkspaceRoot}
+    foreach($entry in $optionMap.GetEnumerator()){
+      if(-not$cohortArguments.Contains($entry.Key)){continue}
+      $value=$cohortArguments[$entry.Key]
+      if($null-eq$value-or($value-is[string]-and[string]::IsNullOrWhiteSpace($value))){continue}
+      $request[$entry.Value]=$value
+    }
+    $requestPath=Join-Path $package.input_dir ($cohortRunId+'_oa_mr_request.json')
+    $transportPath=Join-Path $package.result_dir ($cohortRunId+'_oa_mr_store_result.json')
+    Write-RunJson -Path $requestPath -Depth 100 -Value $request
+    $runtimeSimion=if($SimionExe){$SimionExe}else{Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
+    & $python -I -B -m $trialRunner run --request $requestPath --output $transportPath `
+      --workspace $workspaceRoot --python-exe $python --powershell-exe (Get-Command pwsh).Source --simion-exe $runtimeSimion `
+      --host-state-path $pathContext.host_resource_state_path --policy-path $hostPolicyPath --execution-root $pathContext.execution_root `
+      --artifact-root (Join-Path $artifactWorkspaceRoot 'store') | Out-Host
+    if($LASTEXITCODE-ne0){throw "OA-MR Store cohort failed: $cohortRunId"}
+    $storeResult=Get-Content -LiteralPath $transportPath -Raw|ConvertFrom-Json -Depth 30
+    $cohortRun=[string]$storeResult.run_directory;$cohortManifest=[string]$storeResult.manifest.path
   }
   Assert-VerifiedManifest -ManifestPath $cohortManifest -Status 'success' -Mode 'oa_mr' -Owner instrument_assembly -ReadOnlyFlightEvidence:($null-ne$initialCohortRun)
   $cohortGate=Get-VerifiedManifestOutput -ManifestPath $cohortManifest -Name 'bunch_collection_gate.json'

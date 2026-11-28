@@ -74,7 +74,7 @@ $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path 
 $frozenPrismControllerPolicyPath=''
 $recoveryPolicySource=if($LocalModelRecoveryPolicyPath){(Resolve-Path -LiteralPath $LocalModelRecoveryPolicyPath).Path}else{Join-Path $projectRoot 'config/local_model_recovery_policy.json'}
 if($PrismControllerPolicyPath){$PrismControllerPolicyPath=(Resolve-Path -LiteralPath $PrismControllerPolicyPath).Path}
-$trialRunner = Join-Path $packageRoot 'workflows/resources/oa_mr.ps1'
+$trialRunner = 'Invoke-OaMrStoreTrial'
 $auditRunner = Join-Path $packageRoot 'workflows/resources/run_downstream_fixed_grid_workpoint.ps1'
 $bunchScreeningRunner = Join-Path $packageRoot 'workflows/resources/run_native_corridor_bunch_screening.ps1'
 $artifactRoot = Resolve-RunArtifactRoot -ArtifactRoot $artifactWorkspaceRoot -OwnerKind component -OwnerId $project -Python $python
@@ -347,7 +347,7 @@ function New-CenterTrialArguments {
     StripeRunPath=$StripeRunPath
     Prism1VoltageV=$prisms[0];Prism2VoltageV=$prisms[1]
     TrajectoryStepScale=$TrajectoryStepScale;AcceleratorSourceYOffsetMm=$AcceleratorSourceYOffsetMm
-    RunId=$ChildRunId;PythonExe=$python;RepoRoot=$repoRoot;CapacityWorkflowSession=$capacitySession
+    RunId=$ChildRunId
   }
   if($Voltages){$arguments.Stripe1VoltageV=$Voltages[0];$arguments.Stripe2VoltageV=$Voltages[1]}
   if(Get-Variable -Name contract -Scope Script -ErrorAction SilentlyContinue){$arguments.ContractPath=$script:contract}
@@ -362,7 +362,7 @@ function New-CenterTrialArguments {
   }else{
     $arguments.NativeCorridorBankRunPath=$NativeCorridorBankRunPath
     $arguments.NativeSystemRuntimeBundlePath=$NativeSystemRuntimeBundlePath
-    $arguments.NativeCorridorRuntimeSession=$nativeRuntimeSession
+    $arguments.NativeRuntimeCheckpoint=$nativeRuntimeSession.checkpoint_path
     if(Get-Variable -Name resourceLease -Scope Script -ErrorAction SilentlyContinue){$arguments.InheritedHostResourceLease=$script:resourceLease}
   }
   if ($SimionExe) { $arguments.SimionExe = $SimionExe }
@@ -403,6 +403,7 @@ function Assert-ResponseFieldResumeDeclaration {
 
 function Invoke-CenterTrial {
   param([Parameter(Mandatory)][Collections.IDictionary]$Arguments,$StagedPending,$Bootstrap,[string]$BootstrapPath='')
+  $script:lastOaMrResult=$null
   if($staticFieldMode){
     # Same source mesh and absolute mirror target throughout this P/S family.
     $request=$fieldProviderRequest|ConvertTo-Json -Depth 100|ConvertFrom-Json -AsHashtable
@@ -446,7 +447,7 @@ if ref['operation']=='refine':
     assert not any(k in r for k in ('response_basis_paths','response_axis','te1_reference_path','consumer_view_source_path','reuse_source_levels')), 'Retained direct request contains response/reuse/view instructions'
     cfg=m.with_name('run_config.json')
     assert json.loads(cfg.read_text(encoding='utf-8-sig'))['parameters']['operation']=='refine', 'Retained direct provider operation differs'
-old_trial=m.parent.parent/ref['child_run_id']/'run_manifest.json'
+old_trial=Path(sys.argv[4])
 if old_trial.exists():
     old=json.loads(old_trial.read_text(encoding='utf-8-sig'))
     assert sys.argv[3]=='prepared' and old.get('run_id')==ref['child_run_id'] and old.get('status') in ('failed','interrupted'), 'Retained provider already has a successful or incompatible trial result'
@@ -463,7 +464,7 @@ print(json.dumps(str(p)))
 '@
       $retainedBinding=& {
         $consumer='legacy'
-        $value=((& $python -I -B -c $retainedCode ($request|ConvertTo-Json -Depth 100 -Compress) ($StagedPending.provider_reference|ConvertTo-Json -Depth 100 -Compress) $consumer)-join"`n")
+        $value=((& $python -I -B -c $retainedCode ($request|ConvertTo-Json -Depth 100 -Compress) ($StagedPending.provider_reference|ConvertTo-Json -Depth 100 -Compress) $consumer ([string]$StagedPending.child_manifest))-join"`n")
         if($LASTEXITCODE-ne0){throw 'Retained pending provider validation failed.'}
         return ($value|ConvertFrom-Json)
       }
@@ -472,7 +473,6 @@ print(json.dumps(str(p)))
       $Arguments.FieldBindingPath=[string]$retainedBinding
       $renewal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedPaths @((Split-Path -Parent $StagedPending.provider_reference.provider_manifest))
       $script:capacitySession=$renewal.session
-      $Arguments.CapacityWorkflowSession=$script:capacitySession
     }elseif($sameSourceField){
       # All other voltages/geometry remain the validated binding authority.
       $Arguments.FieldBindingPath=[string]$fieldProviderRequest.source_binding_path
@@ -533,10 +533,51 @@ print(json.dumps(str(p)))
       $renewal=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $repoRoot -Session $capacitySession -ProtectedPaths @($providerRun)
       $script:capacitySession=$renewal.session
     }
-    $Arguments.CapacityWorkflowSession=$script:capacitySession
     }
   }
-  & $trialRunner @Arguments
+function Invoke-OaMrStoreTrial {
+  param([Parameter(Mandatory)][Collections.IDictionary]$Arguments)
+  $optionMap=[ordered]@{
+    AcceleratorComponentContractPath='accelerator_component_contract_path';AcceleratorGeometryProfileId='accelerator_geometry_profile_id'
+    GeometryReviewRunPath='geometry_review_run_path';MirrorRunPath='mirror_run_path';StripeRunPath='stripe_run_path'
+    AcceleratorProviderReceiptPath='accelerator_provider_receipt_path';CompositionPlanPath='composition_plan_path';LocalScopePath='local_scope_path'
+    Prism1VoltageV='prism1_voltage_v';Prism2VoltageV='prism2_voltage_v';Stripe1VoltageV='stripe1_voltage_v';Stripe2VoltageV='stripe2_voltage_v'
+    NativeCorridorBankRunPath='native_corridor_bank_run_path';NativeSystemRuntimeBundlePath='native_system_runtime_bundle_path';FieldBindingPath='field_binding_path'
+    PulseAcceleratorUntilInitialExit='pulse_accelerator_until_initial_exit';AcceleratorSafeExitOnly='accelerator_safe_exit_only';AcceleratorPulseSchedulePath='accelerator_pulse_schedule_path'
+    MirrorVoltageVariationPath='mirror_voltage_variation_path';ContractPath='contract_path';BunchSourceReceiptPath='bunch_source_receipt_path'
+    BatchContinuationRunPath='batch_continuation_run_path';BunchParticleIdMin='bunch_particle_id_min';BunchParticleIdMax='bunch_particle_id_max'
+    TrajectoryProfileId='trajectory_profile_id';TrajectoryStepScale='trajectory_step_scale';AcceleratorSourceYOffsetMm='accelerator_source_y_offset_mm'
+    AcceleratorYAnchorMm='accelerator_y_anchor_mm';NativeRuntimeCheckpoint='native_runtime_checkpoint';InheritedHostResourceLease='inherited_host_resource_lease';RetainGuiWorkbench='retain_gui_workbench'
+  }
+  $request=[ordered]@{run_id=[string]$Arguments.RunId;repository_root=$repoRoot;legacy_artifact_root=$artifactWorkspaceRoot}
+  foreach($entry in $optionMap.GetEnumerator()){
+    if(-not$Arguments.Contains($entry.Key)){continue}
+    $value=$Arguments[$entry.Key]
+    if($null-eq$value-or($value-is[string]-and[string]::IsNullOrWhiteSpace($value))){continue}
+    $request[$entry.Value]=$value
+  }
+  $requestPath=Join-Path $package.input_dir ([string]$Arguments.RunId+'_oa_mr_request.json')
+  $transportPath=Join-Path $package.result_dir ([string]$Arguments.RunId+'_oa_mr_store_result.json')
+  Write-RunJson -Path $requestPath -Depth 100 -Value $request
+  $runtimeSimion=if($SimionExe){$SimionExe}else{Join-Path $env:ProgramFiles 'SIMION-2020/simion.exe'}
+  & $python -I -B -m msplatform.workflows.oa_mr.store_workflow run --request $requestPath --output $transportPath `
+    --workspace $workspaceRoot --python-exe $python --powershell-exe (Get-Command pwsh).Source --simion-exe $runtimeSimion `
+    --host-state-path $hostContext.host_state_path --policy-path $hostContext.policy_path --execution-root $pathContext.execution_root `
+    --artifact-root (Join-Path $artifactWorkspaceRoot 'store') | Out-Host
+  if($LASTEXITCODE-ne0){
+    if(Test-Path -LiteralPath $transportPath -PathType Leaf){$script:lastOaMrResult=Get-Content -LiteralPath $transportPath -Raw|ConvertFrom-Json -Depth 30}
+    throw "OA-MR Store workflow failed: $($Arguments.RunId)"
+  }
+  $script:lastOaMrResult=Get-Content -LiteralPath $transportPath -Raw|ConvertFrom-Json -Depth 30
+  if([string]$script:lastOaMrResult.run_id-ne[string]$Arguments.RunId){throw 'OA-MR Store result run identity differs.'}
+}
+& $trialRunner @Arguments
+if($null-ne$StagedPending){
+  $StagedPending.child_manifest=[string]$script:lastOaMrResult.manifest.path
+  if($null-ne$Bootstrap-and-not[string]::IsNullOrWhiteSpace($BootstrapPath)){
+    Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
+  }
+}
 }
 
 function Find-ContinuationTransportSeed {
@@ -551,7 +592,7 @@ function Find-ContinuationTransportSeed {
     $arguments=New-CenterTrialArguments -PrismVoltages $prisms -ChildRunId $childRunId
     if($index-eq0-and$RetainBaselineGuiWorkbench){$arguments.RetainGuiWorkbench=$true}
     Invoke-CenterTrial -Arguments $arguments | Out-Host
-    $manifest=Join-Path $trialArtifactRoot "runs\$childRunId\run_manifest.json"
+    $manifest=[string]$script:lastOaMrResult.manifest.path
     $materialization=Get-ManifestOutputPath -ManifestPath $manifest -FileName 'two_prism_trial_materialization.json'
     $receipt=Get-Content -LiteralPath $materialization -Raw|ConvertFrom-Json
     $voltages=@(@($receipt.stripe_biases_v)+@($receipt.prism_voltages_v)|ForEach-Object{[double]$_})
@@ -659,7 +700,7 @@ function Invoke-WorkpointStencil {
         $arguments=New-CenterTrialArguments -Voltages $voltages -ChildRunId $bootstrapId
         if($axis-lt0-and$RetainBaselineGuiWorkbench){$arguments.RetainGuiWorkbench=$true}
         Invoke-CenterTrial -Arguments $arguments | Out-Host
-        $manifest=Join-Path $trialArtifactRoot "runs\$bootstrapId\run_manifest.json"
+        $manifest=[string]$script:lastOaMrResult.manifest.path
       }
       $evidence=Get-WorkpointBootstrapEvidence -Manifest $manifest -Voltages $voltages
       if($recorded.Count){
@@ -1230,7 +1271,7 @@ function Invoke-StagedWorkpointBootstrap {
       if(-not$success){
         if($pending.child_run_id-eq($RunId+('-stage-{0:D3}'-f$state.flight_count))){throw 'Unfinished stage trial requires a new parent RunId.'}
         $pending.child_run_id=$RunId+('-stage-{0:D3}'-f$state.flight_count)
-        $pending.child_manifest=Join-Path $trialArtifactRoot ('runs/'+$pending.child_run_id+'/run_manifest.json')
+        $pending.child_manifest=''
         Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
         $arguments=New-CenterTrialArguments -Voltages ([double[]]$pending.voltages_v) -ChildRunId $pending.child_run_id
         Invoke-CenterTrial -Arguments $arguments -StagedPending $pending -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath | Out-Host
@@ -1288,7 +1329,7 @@ function Invoke-StagedWorkpointBootstrap {
     $childId=$RunId+('-stage-{0:D3}'-f$state.flight_count)
     $script:failureStage='stage_'+$state.stage
     $selectedStep=$planned.selected
-    $state['pending_trial']=[ordered]@{child_run_id=$childId;child_manifest=(Join-Path $trialArtifactRoot "runs/$childId/run_manifest.json");voltages_v=@($voltages);anchor_manifest=$state.anchor_manifest;stage=$state.stage;decision=$decision;selected=$selectedStep}
+    $state['pending_trial']=[ordered]@{child_run_id=$childId;child_manifest='';voltages_v=@($voltages);anchor_manifest=$state.anchor_manifest;stage=$state.stage;decision=$decision;selected=$selectedStep}
     Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
     $arguments=New-CenterTrialArguments -Voltages $voltages -ChildRunId $childId
     Invoke-CenterTrial -Arguments $arguments -StagedPending $state.pending_trial -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath | Out-Host
@@ -1377,7 +1418,7 @@ function Invoke-SLocalModelRecovery {
     try{
       $arguments=New-CenterTrialArguments -Voltages $trial -ChildRunId $probeId
       Invoke-CenterTrial -Arguments $arguments | Out-Host
-      $manifest=Join-Path $trialArtifactRoot "runs\$probeId\run_manifest.json"
+      $manifest=[string]$script:lastOaMrResult.manifest.path
       $evidence=Get-CenterTrialPhysicalEvidence -Manifest $manifest -Voltages $trial
       foreach($key in $evidence.Keys){$probe[$key]=$evidence[$key]}
       $probe.status=if($evidence.passed){'accepted_physical_probe'}else{'rejected_physical_probe'}
@@ -2037,7 +2078,7 @@ try {
     execution='real_single_center_child_flights'
     corridor_field='native_full_corridor_at_0p25_mm'
     field_update='native_fast_adjust'
-    child_runner='src/msplatform/workflows/resources/oa_mr.ps1'
+    child_runner='msplatform.workflows.oa_mr.store_workflow'
     stopping_authority='contract.downstream_fixed_grid_workpoint_profile.automatic_iteration'
   }
   if($staticFieldMode){
@@ -2203,6 +2244,7 @@ try {
     if (-not $resumeThisIteration) {
       try { Invoke-CenterTrial -Arguments $trialArguments }
       catch { $solverError = $_.Exception.Message }
+      if($null-ne$script:lastOaMrResult){$childManifest=[string]$script:lastOaMrResult.manifest.path;$childRunDir=Split-Path -Parent $childManifest}
     }
     if ($solverError) {
       $terminalDecision = [ordered]@{

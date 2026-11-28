@@ -92,12 +92,16 @@ OA–MR freezer no longer selects the project analysis package. The real
 detached-provider fixture exercises those production resources instead of replacing
 their root. Scientific values and run evidence are unchanged; this repairs frozen
 software wiring only and grants no native OA–MR flight or scientific acceptance.
-The sole OA–MR PowerShell launcher is now `msplatform/workflows/resources/oa_mr.ps1`;
-the integration entry and provider duplicate are retired without forwarding. Startup
-resources, the default contract and frozen entry identity all use that package owner;
-explicit scientific inputs, complete-instance scope and native protections are unchanged.
-
-On the `9d5b565a` candidate, the owner-separation regression's extracted `New-RunPackage` block now receives the same four-root `pathContext` shape as the real `Resolve-WorkspacePaths` initialization, and the test double validates that context. Production initialization is unchanged. The formerly failing method passed in 0.649 seconds and the complete OA–MR execute module passed 52 tests in 159.622 seconds. New-run/source-owner separation, argument forwarding, identity checks and foreign-source refusal remain covered; no native solver was launched.
+OA–MR now has its independent Python Store entry `msplatform.workflows.oa_mr.store_workflow`;
+the old registry-to-`oa_mr.ps1` public route is removed without a compatibility shell. The workflow
+combines `standalone_native_store` and `run_managed_stage` once, while the internal PowerShell
+controller retains the OA/MR scientific materialization, Fast Adjust runtime, whole-batch recovery,
+GUI closeout, original source/field/particle identities and segmented-versus-continuous semantics.
+It is not an alias for generic `msplatform run` or a claim that public original-birth tracing supports
+this composition. The 62 direct runner/Store tests, 111 workpoint consumers (one existing skip), 35 bunch-screening,
+25 OA-focus, 50 prism/execution-compiler and two retained finalization checks pass without a commercial solver.
+Ruff, PowerShell parsing, JSON Schema, `git diff --check` and StructureOnly documentation checks also pass;
+installation and native acceptance remain separately bounded.
 
 The former FullJoint, RF–IP continuous and SFI recorded-birth thin PowerShell
 entries selected Python only through their explicit argument or
@@ -2539,7 +2543,7 @@ bootstrap续期也按既有目录递归语义识别已覆盖的后代manifest，
 不再误判扩约或重复登记；新sibling、祖先目录、越界路径和承诺变化仍失败关闭。真实容量函数正反例及两个完整容量模块125项通过，
 另有1项既有条件跳过；这只证明软件保护合同，不代替下方公开链的原生或恢复验收。
 
-[oa_mr入口](../src/msplatform/workflows/resources/oa_mr.ps1)要求冻结`-CompositionPlanPath`及可选`-LocalScopePath`；
+`msplatform.workflows.oa_mr.store_workflow` 的科学请求要求冻结 `composition_plan_path` 及可选 `local_scope_path`；
 当前支持唯一OA轴向出口→MR入口及相对identity rotation，MR可随父装配共同平移／旋转。
 当前提供者为含20电极的完整MR分析器，不再是单入口框。机械1.5 mm接口、源、实际场和直接位姿分别核验。
 OA→MR在实际物化前决定单粒／束源，原生路径投影从公共模块显式导入；每批只追加到当前冻结run config，
@@ -2552,12 +2556,11 @@ prepared_joint 在新CSV单元及已验证批次复用后，把声明的事件�
 此项只接通既有CSV与receipt，不改采样、物理判据或父run；既有原生边界证据范围不扩为新科学资格。
 本次针对CI断口的8项独立软件行为联合通过58.067秒；不据此新增原生Fly或科学资格。
 
-OA→MR owner的异常收尾保留原科学错误，guard、runtime、host、临时目录和别名的独立失败逐项报告，
-不让前一项掩盖主错或跳过其他安全释放。原生根实际等待完成后才记录停写，非零退出仍可具有这一事实；
-观察异常或公共调用未返回完成证据则保持未知，不执行retention、终态发布、活输入清理或撤销容量保护。
-PowerShell退出不代表FileShare句柄继续存在。容量封存还要求终态发布完成、自身容量session已释放，
-自有host token必须由真实release收据确认，继承token不冒充本run已释放；封存失败不改写科学终态。
-相关实际catch/finally故障矩阵与小型原生进程替身测试只验证软件收尾，不构成新的SIMION物理验收。
+OA→MR 内部科学 controller 保留原科学错误及 guard、runtime、host 和临时目录的独立失败报告；
+它不再创建 New-RunPackage、持有旧容量会话或执行 PowerShell 终态发布。Python Store owner 在实际停写后
+组合 retention、manifest、容量及封存，未知 writer 保持保护且不发布。公开恢复分别调用
+`recover_oa_mr_stage` 和 `recover_oa_mr_publication`，只重放原 Store 完成／发布状态，不重跑科学阶段。
+真实 catch/finally 故障矩阵及 Store 成功、失败、篡改和重复恢复测试只验证软件收尾，不构成新的 SIMION 物理验收。
 
 本轮正常FullJoint[复用记录](../../artifacts/projects/instrument_assembly/runs/20261030_014500__sim__simion__ip-mr-joint-9a6ef3c4/summary.json)
 在故意不存在的SIMION路径下完成，actual native=0、完整复用2批，无原生IOB重建；原母群100、转交81、未转交19。

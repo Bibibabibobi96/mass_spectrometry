@@ -80,7 +80,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (
             "Open-NativeCorridorRuntimeCheckpoint -Session $nativeRuntimeSession",
-            "NativeCorridorRuntimeSession=$nativeRuntimeSession",
+            "NativeRuntimeCheckpoint=$checkpoint",
             "NativeSystemRuntimeBundlePath=$nativeSystemRuntimeBundlePath",
             "[string]$InitialCohortRunPath=''",
             "[ValidateSet(3,13,100,1000)][int]$CohortParticleCount=1000",
@@ -178,7 +178,7 @@ class NativeCorridorBunchScreeningRunnerTest(unittest.TestCase):
         self.assertIn("source_cohort.selection.parent_particle_states_sha256", source)
         self.assertIn("$cohortVoltages=@($cohortSummary.stripe_biases_v)+@($cohortSummary.prism_voltages_v)", source)
         self.assertIn("Cohort run does not bind the requested source, workpoint voltages, and static accelerator mode.", source)
-        self.assertLess(source.index("if($null-ne$initialCohortRun)"), source.index("& $trialRunner @cohortArguments"))
+        self.assertLess(source.index("if($null-ne$initialCohortRun)"), source.index("& $python -I -B -m $trialRunner run"))
         self.assertNotIn("New-ShortPaCopy", source)
 
     def test_incomplete_cohort_can_use_common_batch_continuation(self) -> None:

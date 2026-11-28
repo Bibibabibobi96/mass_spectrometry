@@ -421,7 +421,8 @@ function Save-IterationRecoveryState {param($State,$Path)
  $State|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $Path
 }
 function New-CenterTrialArguments {param($Voltages,$ChildRunId)@{voltages=@($Voltages);run_id=$ChildRunId}}
-function Invoke-CenterTrial {param($Arguments)$script:flights+=,$Arguments}
+function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)}
+function Invoke-CenterTrial {param($Arguments)$script:flights+=,$Arguments;$script:lastOaMrResult=@{manifest=@{path='inert'}}}
 function Get-CenterTrialPhysicalEvidence {param($Manifest,$Voltages)@{passed=$true;observation_path='probe-observation.json';materialization_path='probe-materialization.json'}}
 function Write-RunJson {param($Path,$Depth,$Value)$Value|ConvertTo-Json -Depth $Depth|Set-Content -LiteralPath $Path}
 function Invoke-MockRefresh {
@@ -524,7 +525,7 @@ $modelPath=Join-Path $Root 'iteration_local_s_model.json'
                             else:
                                 self.assertEqual(observed['model'], model)
 
-            self.assertEqual(process.returncode, 0, stderr_path.read_text(encoding='utf-8'))
+            self.assertEqual(process.returncode, 0, stderr_path.read_text(encoding='utf-8', errors='replace'))
             self.assertEqual(received, [case[0] for case in expected_cases], 'Missing case rows.')
 
     def test_recovery_round_json_transport_preserves_probe_order_debits_and_terminal_resume(self):
@@ -549,7 +550,8 @@ function Save-IterationRecoveryState {param($State,$Path)
  $State|ConvertTo-Json -Depth 100|Set-Content -LiteralPath $Path
 }
 function New-CenterTrialArguments {param($Voltages,$ChildRunId)@{voltages=$Voltages;run_id=$ChildRunId}}
-function Invoke-CenterTrial {param($Arguments)$script:flights+=,$Arguments}
+function Save-WorkpointBootstrap {param($Bootstrap,$BootstrapPath)}
+function Invoke-CenterTrial {param($Arguments)$script:flights+=,$Arguments;$script:lastOaMrResult=@{manifest=@{path='inert'}}}
 function Get-CenterTrialPhysicalEvidence {param($Manifest,$Voltages)@{passed=$false}}
 $fixture=[Console]::In.ReadToEnd()|ConvertFrom-Json -AsHashtable -Depth 100
 $python=$RealPython;$repoRoot=$RealRepo;$RunId='recovery';$trialArtifactRoot=$Root
@@ -578,7 +580,7 @@ $topology=Get-InterruptedSOnlyTopologyRecoveryDecision -History @{decisions=@()}
                 process = subprocess.run(['pwsh', '-NoProfile', '-File', str(fixture),
                     str(PROJECT.parents[3] / 'src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1'), str(root), sys.executable, str(PROJECT.parents[3])],
                     input=json.dumps(dict(decision=decision, history=history, contract=profile, policy=policy)),
-                    cwd=PROJECT.parents[3], capture_output=True, text=True, encoding='utf-8', timeout=40)
+                    cwd=PROJECT.parents[3], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=40)
                 self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
                 observed = json.loads(process.stdout)
                 self.assertEqual([s['status'] for s in observed['states']], ['retry', 'retry', 'terminal', 'terminal'])
@@ -1040,6 +1042,7 @@ function Invoke-CenterTrial {param($Arguments,$StagedPending,$Bootstrap,$Bootstr
  $script:flights+=,$Arguments
  $dir=New-Item -ItemType Directory (Join-Path $Root ('runs/'+$Arguments.ChildRunId))
  @{run_id=$Arguments.ChildRunId;status='success'}|ConvertTo-Json|Set-Content (Join-Path $dir 'run_manifest.json')
+ $StagedPending.child_manifest=Join-Path $dir 'run_manifest.json'
  @{stripe_biases_v=@($Arguments.Voltages[0],$Arguments.Voltages[1]);prism_voltages_v=@($Arguments.Voltages[2],$Arguments.Voltages[3])}|ConvertTo-Json|Set-Content (Join-Path $dir 'two_prism_trial_materialization.json')
 }
 function Reclaim-StagedComposeProviders {param($State,$Lineage)}
@@ -1945,12 +1948,13 @@ function Invoke-MockProvider {param($RequestPath,$RunDirectory,[switch]$Approved
 function Invoke-MockTrial {
  param($RunId,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$FieldBindingPath,$CapacityWorkflowSession)
  $script:flights+=,@{binding=$FieldBindingPath;voltages=@($Stripe1VoltageV,$Stripe2VoltageV,$Prism1VoltageV,$Prism2VoltageV)}
+ $script:lastOaMrResult=@{manifest=@{path=(Join-Path $Root 'old-trial/run_manifest.json')}}
 }
 $fieldProviderRunner='Invoke-MockProvider';$trialRunner='Invoke-MockTrial'
 $arguments=@{ContractPath='frozen.json';RunId='candidate';Prism1VoltageV=189.;Prism2VoltageV=-190.;Stripe1VoltageV=-28.;Stripe2VoltageV=55.}
 if($fixture.p1_response){$arguments.Prism1VoltageV=191.}
 $failure=$null
-$pending=if($fixture.retained){@{provider_reference=@{operation='compose';provider_manifest=(Join-Path $Root 'old-field/run_manifest.json')}}}else{$null}
+$pending=if($fixture.retained){@{child_manifest=(Join-Path $Root 'old-trial/run_manifest.json');provider_reference=@{operation='compose';provider_manifest=(Join-Path $Root 'old-field/run_manifest.json')}}}else{$null}
 try{Invoke-CenterTrial -Arguments $arguments -StagedPending $pending}catch{$failure=$_.Exception.Message}
 $descriptorPath=Join-Path $Root 'candidate-field_response_binding.json'
 $descriptor=if(Test-Path $descriptorPath){Get-Content $descriptorPath -Raw|ConvertFrom-Json -AsHashtable}else{$null}
@@ -2046,7 +2050,7 @@ $descriptor=if(Test-Path $descriptorPath){Get-Content $descriptorPath -Raw|Conve
                     if scenario == "changed_manifest":
                         selected_ref["provider_manifest_sha256"] = "0" * 64
                     with patch.object(sys, "argv", ["selector", json.dumps(selected_request), json.dumps(selected_ref),
-                                                   'prepared' if scenario.startswith('prepared_') else 'legacy']), \
+                                                   'prepared' if scenario.startswith('prepared_') else 'legacy', str(old_trial)]), \
                             patch.object(fields, "load_binding", side_effect=lambda p, **kw: retained if p == binding_path else baseline), \
                             patch.object(fields, "native_numerics_match", return_value=scenario != "wrong_numerics"), \
                             patch.object(fields, "native_response_operator", side_effect=lambda b, a: b["operator"]), \
@@ -2269,6 +2273,8 @@ function Invoke-CenterTrial {
  $script:flights+=,$Arguments
  $dir=Join-Path $Root ('runs/'+$Arguments.ChildRunId);New-Item -ItemType Directory $dir -Force|Out-Null
  @{status='success';run_id=$Arguments.ChildRunId}|ConvertTo-Json|Set-Content (Join-Path $dir 'run_manifest.json')
+ $StagedPending.child_manifest=Join-Path $dir 'run_manifest.json'
+ Save-WorkpointBootstrap -Bootstrap $Bootstrap -BootstrapPath $BootstrapPath
  $u=@($Arguments.Voltages)
  if($fixture.corrupt_voltage){$u[0]+=1.}
  @{stripe_biases_v=@($u[0],$u[1]);prism_voltages_v=@($u[2],$u[3])}|ConvertTo-Json|Set-Content (Join-Path $dir 'two_prism_trial_materialization.json')
@@ -3105,7 +3111,7 @@ $python=$FixturePython
 $RunId='auto';$RetainBaselineGuiWorkbench=$false;$artifactRoot=$Root;$script:flights=@()
 $trialArtifactRoot=$artifactRoot
 function New-CenterTrialArguments {param($PrismVoltages,$ChildRunId)@{PrismVoltages=$PrismVoltages;ChildRunId=$ChildRunId}}
-function Invoke-MockTrial {param($PrismVoltages,$ChildRunId)$script:flights+=,@($PrismVoltages);$d=Join-Path $artifactRoot ('runs/'+$ChildRunId);New-Item -ItemType Directory -Path $d -Force|Out-Null;@{stripe_biases_v=@(-25.,50.);prism_voltages_v=@($PrismVoltages)}|ConvertTo-Json|Set-Content (Join-Path $d 'm.json')}
+function Invoke-MockTrial {param($PrismVoltages,$ChildRunId)$script:flights+=,@($PrismVoltages);$d=Join-Path $artifactRoot ('runs/'+$ChildRunId);New-Item -ItemType Directory -Path $d -Force|Out-Null;@{stripe_biases_v=@(-25.,50.);prism_voltages_v=@($PrismVoltages)}|ConvertTo-Json|Set-Content (Join-Path $d 'm.json');$script:lastOaMrResult=@{manifest=@{path=(Join-Path $d 'run_manifest.json')}}}
 function Get-ManifestOutputPath {param($ManifestPath,$FileName)Join-Path (Split-Path $ManifestPath) 'm.json'}
 function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages)@{passed=([math]::Abs($Voltages[2]-221.253125)-lt1e-9);reasons=@('incomplete')}}
 $trialRunner='Invoke-MockTrial';$seed=[pscustomobject]@{prism_voltages_v=@(219.0625,-173.75);prism_voltage_bounds_v=@(@(120.,280.),@(-200.,400.))};$profile=[pscustomobject]@{jacobian_relative_step_tiers=[pscustomobject]@{coarse=.01;medium=.0025;fine=.0005}}
@@ -3306,6 +3312,7 @@ function New-FixtureChild {
   param($ChildRunId,$Voltages,[bool]$Valid)
   $dir=Join-Path $artifactRoot ('runs/'+$ChildRunId);New-Item -ItemType Directory -Path $dir -Force|Out-Null
   Write-RunJson (Join-Path $dir 'run_manifest.json') 30 @{status='success';run_id=$ChildRunId}
+  $script:lastOaMrResult=@{manifest=@{path=(Join-Path $dir 'run_manifest.json')}}
   $actual=@($Voltages);if($script:scenario-eq'wrong_voltage'){$actual[0]+=1}
   Write-RunJson (Join-Path $dir 'two_prism_trial_materialization.json') 30 @{stripe_biases_v=@($actual[0],$actual[1]);prism_voltages_v=@($actual[2],$actual[3])}
   $observation=@{status='full_drift_observed';prism_voltages_v=@($actual[2],$actual[3]);termination_diagnostic=@{physical_collision=(-not$Valid)};residuals=@{};static_return_diagnostic=@{status='detector_not_observed';event_contract_ok=$false}}
@@ -3390,7 +3397,7 @@ $python=$FixturePython
 $RunId='reference';$artifactRoot=$Root;$trialArtifactRoot=$Root;$frozenContract='frozen';$capacitySession=@{}
 $script:flights=@();$script:saves=@();$script:lastTier=$true
 function New-CenterTrialArguments {param($Voltages,$ChildRunId)@{Voltages=$Voltages;ChildRunId=$ChildRunId}}
-function Invoke-CenterTrial {param($Arguments)$script:flights+=,@($Arguments.Voltages)}
+function Invoke-CenterTrial {param($Arguments)$script:flights+=,@($Arguments.Voltages);$script:lastOaMrResult=@{manifest=@{path=$Arguments.ChildRunId}}}
 function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages)
   @{passed=(-not$script:lastTier-or$Manifest-like'*-baseline*'-or$Manifest-like'*-tier-3-reverse*');reasons=@();child_manifest=$Manifest;child_manifest_sha256='M';materialization_sha256='A';observation_sha256='B'}
 }
@@ -3447,7 +3454,7 @@ function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages) $script:chec
 function Get-ManifestOutputPath {param($ManifestPath,$FileName) return (Join-Path $Root 'materialization.json')}
 [IO.File]::WriteAllText((Join-Path $Root 'materialization.json'),' {"stripe_biases_v":[1,2],"prism_voltages_v":[3,4]} ')
 function New-CenterTrialArguments {param($Voltages,$ChildRunId) return @{Voltages=$Voltages;ChildRunId=$ChildRunId}}
-function Invoke-MockTrial {param($Voltages,$ChildRunId) $script:flights+=,$ChildRunId}
+function Invoke-MockTrial {param($Voltages,$ChildRunId) $script:flights+=,$ChildRunId;$script:lastOaMrResult=@{manifest=@{path=(Join-Path $artifactRoot ('runs/'+$ChildRunId+'/run_manifest.json'))}}}
 function Invoke-MockAudit {param($BaselineManifest,$Stripe1PerturbationManifest,$Stripe2PerturbationManifest,$Prism1PerturbationManifest,$Prism2PerturbationManifest,$ContractPath,$RunId,$WorkspaceRoot,$ArtifactRoot,$PythonExe,$CapacityWorkflowSession)
   if($BaselineManifest-ne'old-parent-baseline'){throw 'Completed baseline was discarded'}
   $script:audit++
@@ -3613,9 +3620,10 @@ $script:flights=@();$script:audits=0;$script:failAt=0
 function Write-RunJson {param($Path,$Depth,$Value)}
 function Get-WorkpointBootstrapEvidence {param($Manifest,$Voltages) return @{passed=$true;reasons=@();observation_sha256='A';materialization_sha256='B';child_manifest_sha256='C';child_manifest=$Manifest}}
 function Invoke-MockTrial {
-  param($AcceleratorComponentContractPath,$AcceleratorGeometryProfileId,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$NativeSystemRuntimeBundlePath,$TrajectoryStepScale,$AcceleratorSourceYOffsetMm,$RunId,$PythonExe,$CapacityWorkflowSession,$NativeCorridorBankRunPath,$NativeCorridorRuntimeSession,$SimionExe,[switch]$PulseAcceleratorUntilInitialExit,$TrajectoryProfileId,$CompositionPlanPath,$LocalScopePath,$RepoRoot)
-  if($NativeCorridorBankRunPath-ne'native-bank'-or$NativeSystemRuntimeBundlePath-ne'native-system-bundle.json'-or$CapacityWorkflowSession.lease_id-ne'owner'){throw 'Lost field, native-system, or owner binding'}
+  param($AcceleratorComponentContractPath,$AcceleratorGeometryProfileId,$GeometryReviewRunPath,$MirrorRunPath,$StripeRunPath,$AcceleratorProviderReceiptPath,$Prism1VoltageV,$Prism2VoltageV,$Stripe1VoltageV,$Stripe2VoltageV,$NativeSystemRuntimeBundlePath,$TrajectoryStepScale,$AcceleratorSourceYOffsetMm,$RunId,$PythonExe,$CapacityWorkflowSession,$NativeCorridorBankRunPath,$NativeRuntimeCheckpoint,$SimionExe,[switch]$PulseAcceleratorUntilInitialExit,$TrajectoryProfileId,$CompositionPlanPath,$LocalScopePath,$RepoRoot)
+  if($NativeCorridorBankRunPath-ne'native-bank'-or$NativeSystemRuntimeBundlePath-ne'native-system-bundle.json'-or$capacitySession.lease_id-ne'owner'){throw 'Lost field, native-system, or owner binding'}
   $script:flights+=,@($Stripe1VoltageV,$Stripe2VoltageV,$Prism1VoltageV,$Prism2VoltageV)
+  $script:lastOaMrResult=@{manifest=@{path=(Join-Path $artifactRoot ('runs/'+$RunId+'/run_manifest.json'))}}
   if($script:failAt-eq$script:flights.Count){throw 'injected solver failure'}
 }
 function Invoke-MockAudit {

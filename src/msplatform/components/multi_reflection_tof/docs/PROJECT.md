@@ -700,8 +700,8 @@ campaign 在原顺序读取各条件及诊断后，以一次请求投影完整�
 
 ## 活动原生场与消费合同
 
-跨项目飞行从[直属OA→MR入口](../../../../../src/msplatform/workflows/resources/oa_mr.ps1)进入；
-MR专属staged工作点及候选控制仍从[操作说明](SIMION.md)选择。
+跨项目飞行从 `msplatform.workflows.oa_mr.store_workflow` 进入，显式消费 ExecutionContext 与 ArtifactStore；
+科学编排和内部原生 controller 保持本工作流独立组合，不改用通用 tracing。MR专属staged工作点及候选控制仍从[操作说明](SIMION.md)选择。
 场由现有native static provider与`static_field_binding.py`提供，不能另建手工闭合器。
 `static_field_binding.py`是 native／scalar 固定 field-family metadata 投影的唯一 owner；
 `downstream_fixed_grid_workpoint.py`只叠加 canonical centre source 与完整布局的科学语义。

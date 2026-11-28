@@ -162,16 +162,16 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
     def test_downstream_iteration_is_bounded_resumable_and_reuses_one_session(self) -> None:
         source = (RUNNERS / "run_downstream_workpoint_iteration.ps1").read_text(encoding="utf-8-sig")
         for token in (
-            "src/msplatform/workflows/resources/oa_mr.ps1", "NativeCorridorBankRunPath is required",
+            "msplatform.workflows.oa_mr.store_workflow", "NativeCorridorBankRunPath is required",
             "NativeCorridorBankRunPath requires NativeSystemRuntimeBundlePath.",
-            "NativeCorridorRuntimeSession=$nativeRuntimeSession",
+            "NativeRuntimeCheckpoint=$nativeRuntimeSession.checkpoint_path",
             "Stripe1VoltageV=$Voltages[0]", "Prism1VoltageV=$prisms[0]",
             "native_corridor_private_fast_adjust_family__four_instances__n1", "maximumIterations",
             "iteration_lineage.json", "parent_manifest=$previousManifest",
             "child_manifest_sha256", "iteration_{0:D2}_decision.json",
             "__sim__simion__mrtof-downstream-auto-workpoint",
             "$childRunId = '{0}-iter-{1:D2}'", "terminal_reason='solver_failure'",
-            "Enter-ArtifactWorkflowCapacitySession", "CapacityWorkflowSession=$capacitySession",
+            "Enter-ArtifactWorkflowCapacitySession", "-CapacityWorkflowSession $capacitySession",
             "Update-ArtifactWorkflowCapacitySession", "Exit-ArtifactWorkflowCapacitySession",
             "native_corridor_protection_renewal.json", "--cache-protection-renewal",
             "$operatingCacheKey = [string]$cacheBinding.cache_key",
@@ -192,7 +192,7 @@ class PrismRunnerContractMatrixTests(unittest.TestCase):
             "standalone_response_linear_composition__no_refine",
         ):
             self.assertNotIn(token, source, token)
-        argument_binding = source.index("CapacityWorkflowSession=$capacitySession")
+        argument_binding = source.index("NativeRuntimeCheckpoint=$nativeRuntimeSession.checkpoint_path")
         loop = source.index("for ($iteration = $startIteration;")
         self.assertLess(argument_binding, loop)
         native_checkpoint = source.index("Save-NativeWorkflowCheckpoint -Reason", loop)

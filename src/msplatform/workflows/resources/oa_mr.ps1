@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-Run the supported OA-to-MR continuous trajectory assembly.
+Internal OA-to-MR scientific controller for the Python Store workflow.
 .DESCRIPTION
-Explicit provider, geometry and field sources must satisfy the frozen composition
-plan and the declared interface domain. A single Fly does not prove field coupling.
-Input sources, supported scope and complete normal examples: docs/ASSEMBLY.md
-(simulation path selection).
+The Python owner supplies the Store run directories and capacity reservation.
+This controller performs only the established scientific materialization, native
+operations, analysis and evidence observation. Publication and recovery stay
+outside this resource. A single Fly does not prove field coupling.
 #>
-[CmdletBinding(DefaultParameterSetName='Run')]
+[CmdletBinding()]
 param(
   [Parameter(Mandatory,ParameterSetName='Run')][string]$AcceleratorComponentContractPath,
   [Parameter(Mandatory,ParameterSetName='Run')][string]$AcceleratorGeometryProfileId,
@@ -37,14 +37,10 @@ param(
   [double]$TrajectoryStepScale=1.0,
   [double]$AcceleratorSourceYOffsetMm=0.0,
   [Nullable[double]]$AcceleratorYAnchorMm=$null,
-  [pscustomobject]$CapacityWorkflowSession=$null,
-  [pscustomobject]$NativeCorridorRuntimeSession=$null,
   [string]$NativeRuntimeCheckpoint='',
-  [pscustomobject]$InheritedHostResourceLease=$null,
+  [string]$InheritedHostResourceLeaseJson='',
   [switch]$RetainGuiWorkbench,
-  [Parameter(Mandatory,ParameterSetName='Resume')][switch]$ResumeFinalization,
-  [string]$ResultPath='',
-  [string]$RunId='',
+  [Parameter(Mandatory)][string]$RunId,
   [string]$SimionExe='',
   [string]$PythonExe='',
   [string]$RepoRoot=''
@@ -225,34 +221,22 @@ $projectId='instrument_assembly'
 $providerProjectId='multi_reflection_tof'
 $packageRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $packageParent=Split-Path -Parent $packageRoot
-$researchRootExplicit=[bool]$RepoRoot
-$inputRoot=if($RepoRoot){(Resolve-Path -LiteralPath $RepoRoot).Path}else{(Get-Location).Path}
-$sourceRoot=$packageParent
+$inputRoot=(Resolve-Path -LiteralPath $RepoRoot).Path
+$sourceRoot=$inputRoot
 $executionResources=Join-Path $packageRoot 'execution/resources'
 . (Join-Path $executionResources 'require_powershell7.ps1')
 . (Join-Path $executionResources 'workspace_paths.ps1')
 $script:pythonRoot=$packageParent
-$workspaceRoot=if($researchRootExplicit){Split-Path -Parent $inputRoot}else{$inputRoot}
-$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}elseif($env:SIMULATION_PYTHON_EXE){[IO.Path]::GetFullPath($env:SIMULATION_PYTHON_EXE)}else{throw 'Explicit PythonExe or SIMULATION_PYTHON_EXE is required'}
+$python=[IO.Path]::GetFullPath($PythonExe)
 $packageRootText=& $python -I -B -c 'import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);import msplatform;print(Path(msplatform.__file__).resolve().parent)' $packageParent
 if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace([string]$packageRootText)){throw 'Installed msplatform package is unavailable.'}
 $selectedPackageRoot=(Resolve-Path -LiteralPath ([string]$packageRootText).Trim()).Path
 if(-not[string]::Equals($selectedPackageRoot,[IO.Path]::GetFullPath($packageRoot),[StringComparison]::OrdinalIgnoreCase)){throw 'Selected Python msplatform package differs from the entry package.'}
-$pathContext=Resolve-WorkspacePaths -SourceRoot $inputRoot -Python $python
-$artifactRoot=[string]$pathContext.artifact_root
+$artifactRoot=[string]$env:MASS_SPECTROMETRY_OA_MR_LEGACY_ARTIFACT_ROOT
+if(-not[IO.Path]::IsPathFullyQualified($artifactRoot)){throw 'OA-MR requires its explicit legacy artifact discovery root.'}
 $projectArtifacts=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly -OwnerId $projectId -Python $python
-$hostState=[string]$pathContext.host_resource_state_path
-$hostContext=@{workspace=$workspaceRoot;python_executable=$python;host_state_path=$hostState;policy_path=(Join-Path $executionResources 'host_resource_policy.json')}
+$hostContext=$env:MASS_SPECTROMETRY_HOST_CONTEXT_JSON|ConvertFrom-Json -AsHashtable
 . (Join-Path $executionResources 'host_execution_lease.ps1') -HostContext $hostContext
-. (Join-Path $PSScriptRoot 'run_artifact_workflow.ps1') -ResultPath $ResultPath -ResumeFinalization:$ResumeFinalization
-if($ResumeFinalization){
-  if(-not$RunId){throw 'Finalization recovery requires the existing RunId.'}
-  if(-not$ResultPath){$ResultPath=Join-Path $projectArtifacts "scratch/workflow_results/$RunId/result.json"}
-  $result=Invoke-RunArtifactWorkflow -RequestPath (Join-Path $projectArtifacts "runs/$RunId/inputs/execution_request.json") -ResultPath $ResultPath -ResumeFinalization
-  Write-Output $result
-  if($result.status-ne'success'){throw 'OA-MR finalization remains incomplete; inspect Result recovery action.'}
-  return
-}
 $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
 if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
 foreach($value in @($Prism1VoltageV,$Prism2VoltageV)){if([double]::IsNaN($value)-or[double]::IsInfinity($value)){throw 'Prism voltages must be finite'}}
@@ -261,9 +245,6 @@ if(-not[double]::IsFinite($AcceleratorSourceYOffsetMm)){throw 'AcceleratorSource
 if($PulseAcceleratorUntilInitialExit-and-not[string]::IsNullOrWhiteSpace($AcceleratorPulseSchedulePath)){throw 'PulseAcceleratorUntilInitialExit and AcceleratorPulseSchedulePath are mutually exclusive.'}
 $acceleratorPulseRequested=[bool]$PulseAcceleratorUntilInitialExit-or-not[string]::IsNullOrWhiteSpace($AcceleratorPulseSchedulePath)
 if (($null -eq $Stripe1VoltageV) -ne ($null -eq $Stripe2VoltageV)) { throw 'Stripe1VoltageV and Stripe2VoltageV must be supplied together.' }
-if($null-ne$CapacityWorkflowSession-and[string]$CapacityWorkflowSession.status-ne'active'){
-  throw 'Inherited capacity workflow session must be active.'
-}
 foreach($value in @($Stripe1VoltageV,$Stripe2VoltageV)){if($null-ne$value-and([double]::IsNaN($value)-or[double]::IsInfinity($value))){throw 'Stripe voltages must be finite'}}
 $geometryRun=(Resolve-Path -LiteralPath $GeometryReviewRunPath).Path
 $mirrorRun=(Resolve-Path -LiteralPath $MirrorRunPath).Path
@@ -278,11 +259,6 @@ $trajectoryContractInput=if([string]::IsNullOrWhiteSpace($ContractPath)){
   Join-Path $packageRoot 'components\multi_reflection_tof\simion_candidate_two_zone.json'
 }else{(Resolve-Path -LiteralPath $ContractPath).Path}
 $trajectoryRecording=((@(Invoke-ProjectPython -Arguments @('-m','msplatform.contracts.trajectory_recording','--contract',$trajectoryContractInput))-join"`n")|ConvertFrom-Json)
-$trajectoryRetentionClass=if($null-eq$trajectoryRecording){'compact'}else{[string]$trajectoryRecording.retention_class}
-$trajectoryRetentionReason=if($null-eq$trajectoryRecording){''}else{[string]$trajectoryRecording.reason}
-if($null-ne$trajectoryRecording-and$null-ne$CapacityWorkflowSession){
-  throw 'Every-step trajectory retention requires a top-level run owner so its stopped payload can be sealed after releasing its own lease.'
-}
 $bunchSourceReceipt=if([string]::IsNullOrWhiteSpace($BunchSourceReceiptPath)){$null}else{(Resolve-Path -LiteralPath $BunchSourceReceiptPath).Path}
 $bunchSourceContract=$null;$bunchSourceManifest=$null
 $bunchSelectionRequested=$BunchParticleIdMin-ne0-or$BunchParticleIdMax-ne0
@@ -324,7 +300,7 @@ $staticFieldMode='comsol_static_scalar_v'
 $staticFieldRequested=-not[string]::IsNullOrWhiteSpace($FieldBindingPath)
 if($staticFieldRequested){
   if($acceleratorPulseRequested){throw 'Static field binding forbids an OA pulse schedule.'}
-  if($null-ne$NativeCorridorRuntimeSession-or-not[string]::IsNullOrWhiteSpace($NativeRuntimeCheckpoint)){
+  if(-not[string]::IsNullOrWhiteSpace($NativeRuntimeCheckpoint)){
     throw 'Static field binding cannot consume a native adjustable runtime.'
   }
   $FieldBindingPath=(Resolve-Path -LiteralPath $FieldBindingPath).Path
@@ -335,19 +311,12 @@ if($staticFieldRequested){
   if([string]::IsNullOrWhiteSpace($NativeSystemRuntimeBundlePath)){throw 'NativeCorridorBankRunPath requires NativeSystemRuntimeBundlePath.'}
 }
 $nativeCorridorRun=if($staticFieldRequested){$null}else{(Resolve-Path -LiteralPath $NativeCorridorBankRunPath).Path}
-if($null-ne$NativeCorridorRuntimeSession-and-not[string]::IsNullOrWhiteSpace($NativeRuntimeCheckpoint)){
-  throw 'Supply NativeCorridorRuntimeSession or NativeRuntimeCheckpoint, not both.'
-}
 $nativeRuntimeCheckpointPath=if([string]::IsNullOrWhiteSpace($NativeRuntimeCheckpoint)){$null}else{(Resolve-Path -LiteralPath $NativeRuntimeCheckpoint).Path}
 $nativeRuntimeCheckpointOwner=if($null-eq$nativeRuntimeCheckpointPath){$null}else{Split-Path -Parent (Split-Path -Parent $nativeRuntimeCheckpointPath)}
-if($null-ne$NativeCorridorRuntimeSession-and($null-eq$CapacityWorkflowSession-or
-   [string]$NativeCorridorRuntimeSession.lease_id-ne[string]$CapacityWorkflowSession.lease_id)){
-  throw 'Native runtime reuse requires the matching inherited capacity workflow session and native bank.'
+if(-not$staticFieldRequested-and$null-ne$bunchSourceContract-and$null-eq$nativeRuntimeCheckpointPath){
+  throw 'Native N>1 batch dispatch requires a shared native runtime checkpoint.'
 }
-if(-not$staticFieldRequested-and$null-ne$bunchSourceContract-and$null-eq$NativeCorridorRuntimeSession){
-  throw 'Native N>1 batch dispatch requires a matching shared native runtime session.'
-}
-if(-not$staticFieldRequested-and$RetainGuiWorkbench-and$null-eq$NativeCorridorRuntimeSession){
+if(-not$staticFieldRequested-and$RetainGuiWorkbench-and$null-eq$nativeRuntimeCheckpointPath){
   throw 'Retained GUI workbench requires the workflow shared native runtime checkpoint; standalone retention would duplicate the complete PA family.'
 }
 $acceleratorSimion=Join-Path $acceleratorRun 'simion'
@@ -439,21 +408,25 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 . (Join-Path $executionResources 'resource_process_support.ps1')
 . (Join-Path $packageRoot 'backends/simion/resources/short_pa_path_support.ps1')
 . (Join-Path $packageRoot 'execution/resources/dependencies.ps1')
-$package=New-RunPackage -Python $python -RepoRoot $sourceRoot -ArtifactRoot $projectArtifacts `
-  -RunId $RunId -Project $projectId -Mode 'oa_mr' -Software @('SIMION 2020','Python 3.11') `
-  -RetentionContractEnabled -RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason `
-  -CapacityLedgerLifecycleEnabled -AdditionalDirectories @('simion') -UseShortExecutionPath -PathContext $pathContext
+$artifactRun=[IO.Path]::GetFullPath($env:MASS_SPECTROMETRY_RUN_DIRECTORY)
+$executionRun=[IO.Path]::GetFullPath($env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY)
+if((Split-Path -Leaf $artifactRun)-cne$RunId){throw 'OA-MR Store run identity differs.'}
+$package=[pscustomobject]@{artifact_run_dir=$artifactRun;run_dir=$executionRun;input_dir=(Join-Path $artifactRun 'inputs');result_dir=(Join-Path $artifactRun 'results');log_dir=(Join-Path $artifactRun 'logs');summary=(Join-Path $artifactRun 'summary.json');run_config=(Join-Path $artifactRun 'run_config.json');execution_alias=$(if($executionRun-ne$artifactRun){$executionRun}else{$null})}
 $runDir=$package.run_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
+New-Item -ItemType Directory -Path $solverDir -Force|Out-Null
 $artifactSolverDir=Join-Path ([string]$package.artifact_run_dir) 'simion'
 $runConfig=$package.run_config;$summary=$package.summary
+$InheritedHostResourceLease=if($InheritedHostResourceLeaseJson){$InheritedHostResourceLeaseJson|ConvertFrom-Json}else{$null}
 $terminalStatus='interrupted';$failureStage='preflight';$resourceLease=$InheritedHostResourceLease;$ownsHostResourceLease=$null-eq$InheritedHostResourceLease;$hostOutcome='failed';$temporarySolverDir=$null;$temporaryAcceleratorRuntimeSession=$null
 $owner=$null;$ownerOutputs=@();$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new()
-$terminalPublicationClosed=$false;$failureRecord=$null
+$failureRecord=$null
 $closeoutErrors=[Collections.Generic.List[object]]::new()
 # Local fact only: a native call that throws before its completion evidence
 # cannot authorize retention, payload deletion or capacity sealing.
 $writerCompletion=[pscustomobject]@{stopped=$true}
-$capacitySession=$CapacityWorkflowSession;$ownsCapacitySession=$null-eq$CapacityWorkflowSession
+$capacitySession=$env:MASS_SPECTROMETRY_OA_MR_CAPACITY_JSON|ConvertFrom-Json
+if($capacitySession.status-ne'active'){throw 'OA-MR Store capacity reservation is not active.'}
+$NativeCorridorRuntimeSession=$null
 $capacityProtectionRenewalPath=$null
 $guiWorkbenchIob=$null;$guiWorkbenchReceipt=$null
 $guiWorkbenchOutputs=@()
@@ -473,36 +446,18 @@ $guiWorkbenchDirectory=$null
 $staticPaGuards=[Collections.Generic.List[IO.FileStream]]::new()
 $continuationEvidenceGuards=[Collections.Generic.List[IO.FileStream]]::new()
 $continuationParent=$null
-$retainGuiWorkbenchFiles=($null-ne$NativeCorridorRuntimeSession)-or$RetainGuiWorkbench
+$retainGuiWorkbenchFiles=($null-ne$nativeRuntimeCheckpointPath)-or$RetainGuiWorkbench
 try{
   if($BatchContinuationRunPath){$continuationParent=(Resolve-Path -LiteralPath $BatchContinuationRunPath).Path}
-  if($ownsCapacitySession){
-    $failureStage='capacity_startup'
-    $initialProtectedRuns=@($mirrorRun,$stripeRun,$acceleratorRun,$nativeCorridorRun,$nativeBankGeneration,$nativeRuntimeCheckpointOwner,$continuationParent)
-    $initialProtectedRuns=@($initialProtectedRuns|Where-Object{$null-ne$_}|Select-Object -Unique)
-    $initialOutputCommitment=if($null-eq$trajectoryRecording){[int64]26214400}else{[int64]$trajectoryRecording.output_budget_bytes}
-    $capacitySession=Enter-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $sourceRoot `
-      -ArtifactRoot $artifactRoot -RunDirectory $package.artifact_run_dir `
-      -CommittedNewBytes $initialOutputCommitment -ProtectedPaths $initialProtectedRuns `
-      -ProtectedCacheKeys @() -Owner "run-artifact-workflow:${projectId}:$RunId"
-  }
-  if($continuationParent){
-    if(-not$ownsCapacitySession){$capacitySession=(Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $sourceRoot -Session $capacitySession -ProtectedPaths @($continuationParent)).session}
-  }
   $failureStage='freeze_executable_dependencies'
   $dependencyPath=Join-Path $packageRoot 'workflows/config/runtime_dependencies.json'
   $frozen=Freeze-ConsumerDependencies -Python $Python -RepoRoot $sourceRoot -CorePackageRoot $packageRoot -ContractPath $dependencyPath -InputDir (Join-Path $runDir 'inputs') -OwnerId $projectId -ConsumerId oa_mr
   $script:pythonRoot=[string]$frozen.execution_root
-  $entryIdentity=@($frozen.identities|Where-Object{$_.source_repo_path-ceq'src/msplatform/workflows/resources/oa_mr.ps1'})
-  $frozenEntryRecord=if($entryIdentity.Count-eq1){@{path=$entryIdentity[0].snapshot_path;exists=$true;bytes=[long](Get-Item -LiteralPath $entryIdentity[0].snapshot_path).Length;sha256=$entryIdentity[0].sha256}}else{$null}
   if([string]::IsNullOrWhiteSpace($ContractPath)){
     $trajectoryContractInput=Join-Path $script:pythonRoot 'src/msplatform/components/multi_reflection_tof/simion_candidate_two_zone.json'
   }
   $backendSimionRoot=Join-Path $script:pythonRoot 'src/msplatform/backends/simion/resources'
   . (Join-Path $backendSimionRoot 'native_corridor_runtime_support.ps1')
-  if($continuationParent){
-    $capacitySession=Protect-MrtofContinuationEvidence -Parent $continuationParent -Session $capacitySession -Python $python -RepoRoot $script:pythonRoot -Guards $continuationEvidenceGuards
-  }
   $configuration=Get-Content -LiteralPath $runConfig -Raw|ConvertFrom-Json -AsHashtable
   if($configuration.project-ne$projectId-or$configuration.mode-ne'oa_mr'){throw 'OA-MR run owner or mode differs.'}
   $oaComponentContractLocal=Copy-RequiredInput -Source $AcceleratorComponentContractPath -Destination (Join-Path $runDir 'inputs/oa_component_contract.json') -Label 'OA component authority'
@@ -809,41 +764,12 @@ try{
   # All static components stay in their already verified read-only assets.
   # Only a missing native corridor family consumes new run capacity.
   $requiredBytes+=$nativeFamilyPeakBytes
-  $protectedPaths=@($package.artifact_run_dir,$nativeCorridorRun,$nativeBankGeneration)
-  $startupProtectedCacheKeys=@($nativeBankKey)
-  if($staticFieldRequested){
-    $protectedPaths=@($package.artifact_run_dir,$FieldBindingPath)+@($staticFieldBinding.sources.PSObject.Properties|Where-Object{-not($staticFieldMode-eq'native_static_pa'-and$_.Name-eq'surface'-and$null-eq$_.Value)}|ForEach-Object{$_.Value})+@($staticFieldBinding.instances|ForEach-Object{$_.pa_path;$_.manifest})
-    if($staticFieldMode-eq'native_static_pa'){$protectedPaths+=@($staticFieldBinding.manifest)}else{$protectedPaths+=@($staticFieldBinding.export_manifest,$staticFieldBinding.collision_geometry)}
-    if($staticFieldBinding.PSObject.Properties['refinement_windows']){
-      foreach($window in $staticFieldBinding.refinement_windows){
-        $protectedPaths+=@($window.sources.PSObject.Properties|Where-Object{-not($staticFieldMode-eq'native_static_pa'-and$_.Name-eq'surface'-and$null-eq$_.Value)}|ForEach-Object{$_.Value})
-        if($staticFieldMode-eq'native_static_pa'){$protectedPaths+=@($window.manifest)}else{$protectedPaths+=@($window.export_manifest)}
-      }
-    }
-    if($staticFieldBinding.PSObject.Properties['response_terms']){
-      foreach($term in $staticFieldBinding.response_terms){
-        $component=$term.binding
-        $protectedPaths+=@($term.binding_path,$component.export_manifest)+@($component.sources.PSObject.Properties.Value)
-        if($component.PSObject.Properties['refinement_windows']){
-          foreach($window in $component.refinement_windows){
-            $protectedPaths+=@($window.export_manifest)+@($window.sources.PSObject.Properties.Value)
-          }
-        }
-      }
-    }
-    $startupProtectedCacheKeys=@()
-  }
   [int64]$committedNewBytes=[math]::Max($requiredBytes,26214400)
   if($null-ne$trajectoryRecording){$committedNewBytes+=[int64]$trajectoryRecording.output_budget_bytes}
-  $failureStage=$(if($ownsCapacitySession){'capacity_scope_update'}else{'capacity_scope_inheritance'})
-  [int64]$remainingCommitment=[math]::Max([int64]$capacitySession.committed_new_bytes,$committedNewBytes)
-  $sessionUpdate=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $sourceRoot -Session $capacitySession -ProtectedPaths $protectedPaths -ProtectedCacheKeys $startupProtectedCacheKeys -RemainingCommittedNewBytes $remainingCommitment
-  $capacitySession=$sessionUpdate.session
-  $startup=[pscustomobject]@{schema_version=1;role='artifact_workflow_capacity_session_startup';status='active';ownership=$(if($ownsCapacitySession){'owned__child_releases'}else{'inherited__child_must_not_release'});session=$capacitySession;renewal=$sessionUpdate.renewal;admission_gate=$sessionUpdate.admission_gate}
+  $failureStage='store_capacity_binding'
+  $startup=[pscustomobject]@{schema_version=1;role='store_native_stage_capacity_binding';status='active';ownership='standalone_native_store';session=$capacitySession;declared_scientific_bytes=$committedNewBytes}
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
-  $owner=Initialize-RunArtifactPowerShellOwner -Python $python -RepoRoot $sourceRoot -Package $package -CapacitySession $capacitySession `
-    -OwnCapacitySession:$ownsCapacitySession -ResultPath $ResultPath -EntrypointPath (Join-Path $script:pythonRoot 'src/msplatform/workflows/resources/oa_mr.ps1') -EntrypointRecord $frozenEntryRecord `
-    -CommitmentInputPaths @($contract,$startupPath) -Software @('SIMION 2020','Python 3.11')
+  $owner=[pscustomobject]@{result_path=(Join-Path $package.artifact_run_dir 'run_manifest.json')}
   $invokeRuntimeNative={param($ArgumentList,$OperationId) Invoke-SimionStage -Stage $OperationId -Arguments $ArgumentList -ResourceLease $resourceLease -RegisterHostProcess $ownsHostResourceLease}
   if($requiresNativeExecution){
   # IOB/Fly2/Lua companions are small reproducibility inputs, so every shared-
@@ -878,10 +804,8 @@ try{
   }
   $failureStage='renew_native_corridor_protection'
   if(-not$staticFieldRequested){
-  $cacheScopeUpdate=Update-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $sourceRoot -Session $capacitySession -ProtectedCacheKeys @($nativeBankKey) -ProtectedPaths @($nativeBankGeneration)
-  $capacitySession=$cacheScopeUpdate.session
   $capacityProtectionRenewalPath=Join-Path $resultDir 'native_corridor_protection_renewal.json'
-  Write-RunJson -Path $capacityProtectionRenewalPath -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_native_corridor_protection_renewal';status='success';lease_id=$capacitySession.lease_id;lease_owner=$capacitySession.owner;lease_ttl_seconds=$capacitySession.lease_ttl_seconds;cache_key=$nativeBankKey;cache_keys=@($nativeBankKey);generation_directory=$nativeBankGeneration;renewal=$cacheScopeUpdate.renewal})
+  Write-RunJson -Path $capacityProtectionRenewalPath -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_native_corridor_protection_renewal';status='success';lease_id=$capacitySession.lease_id;lease_owner=$capacitySession.owner;cache_key=$nativeBankKey;cache_keys=@($nativeBankKey);generation_directory=$nativeBankGeneration;protection='store_reservation_and_native_payload_guards'})
   }
   # This builder saves the Workbench before Fast Adjust, and the flight entry
   # never saves it.  The static fallback and detector therefore remain clean
@@ -1563,21 +1487,14 @@ return t
       $summaryDocument=Get-Content -LiteralPath $summary -Raw|ConvertFrom-Json -AsHashtable
       $summaryDocument.elapsed_before_finalization_seconds=$runClock.Elapsed.TotalSeconds
       $summaryDocument.phase_timings_seconds=$nativePhaseTimings
-      $ownerResult=Complete-RunArtifactPowerShellOwner -Context $owner -Status $terminalStatus -Summary $summaryDocument -OutputPaths @($ownerOutputs) `
-        -WritersStopped $true -WriterCompletion @{operations=@($nativeOperations|ForEach-Object{$_});resource_releases=@($resourceReleases|ForEach-Object{$_})} -OriginalFailure $failureRecord
-      $terminalPublicationClosed=[bool]$ownerResult.terminal_published
-      if($ownerResult.stage-ne'complete'){throw 'OA-MR finalization is incomplete; use ResumeFinalization.'}
-    }catch{$closeoutErrors.Add(@{stage='public_finalization';error=$_})}
-  }elseif($ownsCapacitySession-and$null-ne$capacitySession){
-    try{$null=Exit-ArtifactWorkflowCapacitySession -Python $python -RepoRoot $sourceRoot -Session $capacitySession}catch{$closeoutErrors.Add(@{stage='capacity_release';error=$_})}
+      $summaryDocument.writer_completion=@{operations=@($nativeOperations|ForEach-Object{$_});resource_releases=@($resourceReleases|ForEach-Object{$_})}
+      Write-RunJson -Path $summary -Depth 100 -Value $summaryDocument
+    }catch{$closeoutErrors.Add(@{stage='science_observation';error=$_})}
   }
-  try{Remove-RunPackageExecutionAlias -Package $package}
-  catch{$closeoutErrors.Add(@{stage='execution_alias';error=$_})}
   }elseif($null-ne$owner){
     try{
       $unknown=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='writer_completion_unknown';failure_stage=$failureStage;recovery_action='inspect_writer_completion'}
-      $null=Complete-RunArtifactPowerShellOwner -Context $owner -Status failed -Summary $unknown -OutputPaths @() -WritersStopped $false `
-        -WriterCompletion @{operations=@();resource_releases=@()} -OriginalFailure $failureRecord
+      Write-RunJson -Path $summary -Depth 30 -Value $unknown
     }catch{$closeoutErrors.Add(@{stage='writer_completion';error=$_})}
   }elseif($null-eq$failureRecord-and$closeoutErrors.Count-eq0){
     try{throw 'OA-MR writer completion is unknown; run paths and capacity protection retained.'}
@@ -1593,7 +1510,7 @@ return t
     $reportedFailure.Exception.Data['oa_mr_closeout_errors']=@($closeoutErrors|ForEach-Object{@{stage=$_.stage;message=$_.error.Exception.Message}})
     foreach($errorRecord in $closeoutErrors){Write-Warning "OA-MR closeout $($errorRecord.stage): $($errorRecord.error.Exception.Message)" -WarningAction Continue}
     if($null-eq$failureRecord){throw $reportedFailure}
-  }elseif($writersStopped-and$terminalPublicationClosed-and$terminalStatus-eq'success'){
-    Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status) RESULT=$($owner.result_path) CAPACITY_FINALIZED=$($ownerResult.capacity_finalized) RECOVERY=$($ownerResult.recovery_action)"
+  }elseif($writersStopped-and$terminalStatus-eq'success'){
+    Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status) RESULT=$($owner.result_path) STORE_STAGE=$artifactRun"
   }
 }

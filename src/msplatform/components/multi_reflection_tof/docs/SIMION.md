@@ -33,7 +33,7 @@ MR拥有分析器设计、匹配目标、场消费合同和P/S控制；跨项目
 |---|---|---|
 | OA／IP接口需求准备 | [接口准备与绑定](../../../../../docs/INTEGRATION.md#oaip接口准备与绑定)、[MR接口准备工作流](../../../../../src/msplatform/workflows/mr_design/accelerator_interface.py) | 显式provider与原始封存MR参考run；通过公共 ExecutionContext／ArtifactStore 只生成需求提案，不启动飞行或接收旧 finalization 恢复参数 |
 | 已封存联合飞行的重新分析或发布恢复 | [历史联合记录](../../../../../docs/INTEGRATION.md#历史-ipmr-记录分析)、`msplatform.workflows.historical_joint_analysis.publish_joint_analysis` | 显式保护原 run 与上游 manifest，冻结合同后由 Store 发布；公共恢复只收尾，不启动出口重释放、新飞行或旧整批续跑。历史结果保留原ID、仪器clock和完整母群 |
-| OA→MR完整飞行 | [OA→MR入口](../../../../../src/msplatform/workflows/resources/oa_mr.ps1)及上述集成状态 | 冻结CompositionPlan及显式局部范围，OA receipt、源与MR科学合同 |
+| OA→MR完整飞行 | `msplatform.workflows.oa_mr.store_workflow` 及上述集成状态 | 显式科学请求、ExecutionContext、ArtifactStore；冻结CompositionPlan及显式局部范围，OA receipt、源与MR科学合同 |
 
 [accelerator_interfaces.json](../config/accelerator_interfaces.json)只声明MR支持的provider选择与依赖，
 [IP依赖](../config/ion_processor_dependency.json)冻结producer代码与源身份；
@@ -435,7 +435,7 @@ GUI 重载及正式资格属于不同验证层，不能互相替代。
 | 任务 | 入口 | 必需输入与输出范围 |
 |---|---|---|
 | OA 组件验收 | [OA提供者入口](../../../workflows/oa_focus_component.py) | 显式使用本项目现有request／release；provider receipt不授予整机资格 |
-| N=1 或 N>1 OA→MR完整飞行 | [直属oa_mr.ps1](../../../../../src/msplatform/workflows/resources/oa_mr.ps1) | 冻结装配plan、几何、镜、Stripe、OA receipt、P1/P2电压及一种场消费输入；资格见集成状态 |
+| N=1 或 N>1 OA→MR完整飞行 | `msplatform.workflows.oa_mr.store_workflow` | 显式科学请求、ExecutionContext、ArtifactStore；冻结装配plan、几何、镜、Stripe、OA receipt、P1/P2电压及一种场消费输入；资格见集成状态 |
 | 束团源发布 | [run_publish_bunch_source.ps1](../../../workflows/resources/run_publish_bunch_source.ps1) | `-SourceDefinitionPath`、`-GeometryContractPath`、`-AcceleratorProviderReceiptPath`；发布 CSV/Fly2/receipt |
 | P/S 四列单步审计 | [run_downstream_fixed_grid_workpoint.ps1](../../../workflows/resources/run_downstream_fixed_grid_workpoint.ps1) | baseline 与四个独立单轴扰动 manifest，输出有界电压提议 |
 | P/S 自动重闭合 | [run_downstream_workpoint_iteration.ps1](../../../workflows/resources/run_downstream_workpoint_iteration.ps1) | 唯一初始工作点、seed 或 continuation；独立 child 飞行及控制器记录 |

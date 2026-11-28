@@ -27,10 +27,13 @@ def selected_python(root, package_root):
 class TwoPrismTrialRunnerTest(unittest.TestCase):
     def test_default_root_uses_selected_installed_package_not_package_ancestors(self):
         source = RUNNER.read_text(encoding="utf-8")
-        self.assertIn("[string]$RepoRoot=''", source)
+        self.assertIn("[Parameter(Mandatory)][string]$RunId", source)
         self.assertIn("$packageRootText=& $python -I -B", source)
-        self.assertIn("else{(Get-Location).Path}", source)
+        self.assertIn("$inputRoot=(Resolve-Path -LiteralPath $RepoRoot).Path", source)
         self.assertNotIn("Join-Path $PSScriptRoot '../../../..'", source)
+        store = (RUNNER.parents[1] / "oa_mr/store_workflow.py").read_text(encoding="utf-8")
+        self.assertIn("standalone_native_store", store)
+        self.assertIn("run_managed_stage", store)
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_oa_mr_transports_profiles_for_actual_fixed_missing_intervals(self):
@@ -666,28 +669,33 @@ foreach($record in @($first,$second)){
             workspace = root / "workspace"
             workspace.mkdir()
             python = selected_python(root, package_root)
+            request = dict(run_id="20261128_120000__test__simion__oa-mr-external",
+                repository_root=str(root / "author"), legacy_artifact_root=str(root / "legacy"),
+                accelerator_component_contract_path=str(root / "oa.json"),
+                accelerator_geometry_profile_id="closed_two_zone_compact_mr_axial_r3_gap1_4mm",
+                geometry_review_run_path=str(root / "geometry"),
+                stripe_run_path=str(root / "stripe"),
+                accelerator_provider_receipt_path=str(root / "provider.json"),
+                composition_plan_path=str(root / "plan.json"),
+                prism1_voltage_v=190.0, prism2_voltage_v=-186.0)
+            request_path = root / "request.json"
+            request_path.write_text(json.dumps(request), encoding="utf-8")
             environment = os.environ.copy()
             environment.pop("PYTHONPATH", None)
             environment.pop("SIMULATION_PYTHON_EXE", None)
             result = subprocess.run([
-                shutil.which("pwsh"), "-NoProfile", "-File",
-                str(package_root / "workflows/resources/oa_mr.ps1"),
-                "-PythonExe", str(python),
-                "-AcceleratorComponentContractPath",
-                str(package_root / "components/orthogonal_accelerator/component_contract.json"),
-                "-AcceleratorGeometryProfileId", "closed_two_zone_compact_mr_axial_r3_gap1_4mm",
-                "-GeometryReviewRunPath", str(root / "unapproved_geometry"),
-                "-MirrorRunPath", str(root / "unapproved_mirror"),
-                "-StripeRunPath", str(root / "unapproved_stripe"),
-                "-AcceleratorProviderReceiptPath", str(root / "unapproved_provider.json"),
-                "-CompositionPlanPath", str(root / "unapproved_composition.json"),
-                "-Prism1VoltageV", "190", "-Prism2VoltageV", "-186",
+                str(python), "-I", "-B", "-m", "msplatform.workflows.oa_mr.store_workflow",
+                "run", "--request", str(request_path), "--output", str(root / "result.json"),
+                "--workspace", str(workspace), "--python-exe", str(python),
+                "--powershell-exe", shutil.which("pwsh"), "--simion-exe", str(root / "simion.exe"),
+                "--host-state-path", str(root / "host.sqlite3"),
+                "--execution-root", str(root / "aliases"), "--artifact-root", str(workspace / "store"),
             ], cwd=workspace, env=environment, capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=60)
             self.assertFalse((workspace / "src").exists())
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("unapproved_geometry", result.stderr)
-            self.assertFalse((workspace / "artifacts").exists())
+            self.assertIn("mirror_run_path", result.stderr)
+            self.assertFalse((workspace / "store/assets/native_stage").exists())
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_new_owner_freezes_and_executes_detached_provider(self):
@@ -858,7 +866,7 @@ try{
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_new_run_owner_and_source_owners_are_separate(self):
         source = RUNNER.read_text(encoding="utf-8")
-        create = source[source.index("$package=New-RunPackage"):source.index("$runDir=$package.run_dir")]
+        create = source[source.index("$artifactRun=[IO.Path]::GetFullPath"):source.index("$runDir=$package.run_dir")]
         identities = "\n".join(line for line in source.splitlines()
                                if line.startswith(("$projectId=", "$providerProjectId=")))
         checks = "\n".join(line.strip().rstrip("`") for line in source.splitlines()
@@ -867,16 +875,12 @@ try{
         # materializer can turn it into a scientifically different source.
         command = r"""
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$python='Check-Source';$sourceRoot='repo';$workspaceRoot='workspace';$artifactRoot='workspace/artifacts';$projectArtifacts=Join-Path $artifactRoot 'assemblies/instrument_assembly';$RunId='fixture'
-$pathContext=@{source_root=[IO.Path]::GetFullPath($sourceRoot);artifact_root=[IO.Path]::GetFullPath($artifactRoot);execution_root=[IO.Path]::GetFullPath((Join-Path $artifactRoot 'platform/execution_aliases'));host_resource_state_path=[IO.Path]::GetFullPath((Join-Path $artifactRoot 'platform/host_resources.sqlite3'))}
-$trajectoryRetentionClass='compact';$trajectoryRetentionReason='fixture'
+$python='Check-Source';$sourceRoot='repo';$RunId='fixture'
+$fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) ('oa-mr-owner-'+[guid]::NewGuid().ToString('N'))
+$env:MASS_SPECTROMETRY_RUN_DIRECTORY=(Join-Path $fixtureRoot 'runs/fixture')
+$env:MASS_SPECTROMETRY_RUN_EXECUTION_DIRECTORY=$env:MASS_SPECTROMETRY_RUN_DIRECTORY
+$env:MASS_SPECTROMETRY_OA_MR_CAPACITY_JSON='{"status":"active","lease_id":"store-reservation"}'
 $bunchSourceManifest='source';$mirrorManifest='source';$stripeManifest='source';$manifest='source';$nativeBankManifest='source'
-function New-RunPackage {
- param($Python,$RepoRoot,$ArtifactRoot,$RunId,$Project,$Mode,$Software,[switch]$RetentionContractEnabled,$RetentionClass,$RetentionReason,[switch]$CapacityLedgerLifecycleEnabled,$AdditionalDirectories,[switch]$UseShortExecutionPath,$PathContext)
- if($Project-ne'instrument_assembly'-or$Mode-ne'oa_mr'-or$ArtifactRoot-notlike'*instrument_assembly'){throw 'Incorrect new run identity'}
- if($null-eq$PathContext-or@($PathContext.Keys).Count-ne4-or$PathContext.source_root-ne[IO.Path]::GetFullPath($sourceRoot)-or$PathContext.artifact_root-ne[IO.Path]::GetFullPath((Join-Path $workspaceRoot 'artifacts'))){throw 'Incorrect frozen workspace context'}
- return @{project=$Project;mode=$Mode}
-}
 function Check-Source {
  $required=$args[[array]::IndexOf($args,'--require-project')+1]
  if($required-ne$script:sourceOwner){throw 'SOURCE_OWNER_REJECTED'}
@@ -890,6 +894,7 @@ try{
 """ + checks + r"""
 }catch{if($_.Exception.Message-ne'SOURCE_OWNER_REJECTED'){throw};$caught=$true}
 if(-not$caught){throw 'Foreign source owner was accepted'}
+if(Test-Path -LiteralPath $fixtureRoot){Remove-Item -LiteralPath $fixtureRoot -Recurse -Force}
 'OWNER_BOUNDARIES_PASS'
 """
         result = subprocess.run(["pwsh", "-NoProfile", "-Command", command],
@@ -1082,7 +1087,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
         end = source.index("  $manifestOutputs=@", start)
         block = source[start:end]
         self.assertGreater(start, source.rindex("Write-RunJson -Path $runConfig -Value $config", 0, start))
-        self.assertLess(end, source.rindex("Complete-RunArtifactPowerShellOwner"))
+        self.assertLess(end, source.rindex("Write-RunJson -Path $summary -Depth 100 -Value $summaryDocument"))
         publication = next(line for line in source.splitlines()
                            if line.strip().startswith("if($null-ne$sourceTimingDiagnostic){$manifestOutputs"))
         with TemporaryDirectory() as directory:
@@ -1231,10 +1236,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
 
     def test_standalone_n1_can_open_one_existing_native_checkpoint(self):
         self.assertIn("[string]$NativeRuntimeCheckpoint=''", self.source)
-        self.assertIn(
-            "Supply NativeCorridorRuntimeSession or NativeRuntimeCheckpoint, not both.",
-            self.source,
-        )
+        self.assertIn("Native N>1 batch dispatch requires a shared native runtime checkpoint.", self.source)
         self.assertIn("directory=[IO.Path]::GetFullPath([string]$checkpoint.directory)", self.source)
         self.assertIn("checkpoint_path=$nativeRuntimeCheckpointPath", self.source)
 
@@ -1255,8 +1257,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
     def test_shared_runtime_retains_small_gui_workbench_under_compact_policy(self):
         for token in (
             "[switch]$RetainGuiWorkbench",
-            "$trajectoryRetentionClass=if($null-eq$trajectoryRecording){'compact'}",
-            "$retainGuiWorkbenchFiles=($null-ne$NativeCorridorRuntimeSession)-or$RetainGuiWorkbench",
+            "$retainGuiWorkbenchFiles=($null-ne$nativeRuntimeCheckpointPath)-or$RetainGuiWorkbench",
             "Join-Path $artifactSolverDir 'gui_workbench'",
             "Retained GUI workbench native checkpoint controller is missing.",
             "PA payloads have already been bound through the runtime and published",
@@ -1268,14 +1269,14 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
         # OA GUI retention must continue to use the compact default instead.
         oa_execution = self.source.split("\nforeach($value in @($Prism1VoltageV,$Prism2VoltageV))", 1)[1]
         self.assertNotIn("-RetentionClass solver_review", oa_execution)
-        self.assertIn("-RetentionClass $trajectoryRetentionClass -RetentionReason $trajectoryRetentionReason", oa_execution)
+        self.assertNotIn("New-RunPackage", oa_execution)
         self.assertIn("if($retainGuiWorkbenchFiles){", self.source)
         self.assertNotIn("Join-Path $temporarySolverDir 'pa_inputs'", self.source)
         self.assertNotIn("simion_pa_links_", self.source)
         self.assertNotIn("iobInputCopyDir", self.source)
         self.assertIn("$privateIobSeed,", self.source)
         self.assertIn(
-            "if(-not$staticFieldRequested-and$RetainGuiWorkbench-and$null-eq$NativeCorridorRuntimeSession)",
+            "if(-not$staticFieldRequested-and$RetainGuiWorkbench-and$null-eq$nativeRuntimeCheckpointPath)",
             self.source,
         )
         self.assertIn(
@@ -1322,7 +1323,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
         command = (
             "foreach($native in @($false,$true)){foreach($staticFieldRequested in @($false,$true)){"
             "foreach($RetainGuiWorkbench in @($false,$true)){"
-            "$NativeCorridorRuntimeSession=if($native){[pscustomobject]@{}}else{$null};"
+            "$nativeRuntimeCheckpointPath=if($native){'checkpoint.json'}else{$null};"
             + assignment
             + ";[int]$retainGuiWorkbenchFiles}}}"
         )
@@ -1366,17 +1367,16 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
         self.assertNotIn("function Copy-IobPaInput", self.source)
         self.assertNotIn("New-ShortPaCopy -Source $sourceDetector", self.source)
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
-    def test_static_capacity_protects_response_layers_and_keeps_plain_default(self):
-        start = self.source.index("  $protectedPaths=@($package.artifact_run_dir,$nativeCorridorRun,$nativeBankGeneration)")
-        end = self.source.index("  $capacitySession=$sessionUpdate.session", start)
-        block = self.source[start:end]
+    def test_store_static_guards_cover_response_layers_without_legacy_capacity(self):
+        from contextlib import ExitStack, nullcontext
+        from unittest.mock import patch
+        from msplatform.workflows.oa_mr import store_workflow
         base = {"export_manifest": "base/manifest.json", "collision_geometry": "collision/geometry.json",
                 "sources": {"scalar_pa": "base/v.pa", "valid_pa": "base/mask.pa"},
                 "instances": [{"pa_path": "collision/collision.pa", "manifest": "collision/manifest.json"}],
                 "refinement_windows": [{"export_manifest": "base/window/manifest.json",
                                         "sources": {"scalar_pa": "base/window/v.pa", "valid_pa": "base/window/mask.pa"}}]}
-        ordinary = {"run", "binding.json", "collision/geometry.json", "collision/collision.pa",
+        ordinary = {"binding.json", "collision/geometry.json", "collision/collision.pa",
                     "collision/manifest.json", "base/manifest.json", "base/v.pa", "base/mask.pa",
                     "base/window/manifest.json", "base/window/v.pa", "base/window/mask.pa"}
         with TemporaryDirectory() as directory:
@@ -1384,16 +1384,13 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                 with self.subTest(combined=combined):
                     binding = json.loads(json.dumps(base))
                     expected = set(ordinary)
-                    mode = "comsol_static_scalar_v"
                     if combined in ("native", "native_no_surface"):
-                        mode = "native_static_pa"
-                        binding = {"mode": mode, "manifest": "base/manifest.json",
+                        binding = {"mode": "native_static_pa", "manifest": "base/manifest.json",
                                    "sources": {"scalar_pa": "base/v.pa", "surface": "base/v.pa-surf"},
                                    "instances": base["instances"],
                                    "refinement_windows": [{"manifest": "base/window/manifest.json",
-                                       "sources": {"scalar_pa": "base/window/v.pa",
-                                                   "surface": "base/window/v.pa-surf"}}]}
-                        expected = {"run", "binding.json", "collision/collision.pa", "collision/manifest.json",
+                                       "sources": {"scalar_pa": "base/window/v.pa", "surface": "base/window/v.pa-surf"}}]}
+                        expected = {"binding.json", "collision/collision.pa", "collision/manifest.json",
                                     "base/manifest.json", "base/v.pa", "base/v.pa-surf",
                                     "base/window/manifest.json", "base/window/v.pa", "base/window/v.pa-surf"}
                         if combined == "native_no_surface":
@@ -1415,25 +1412,26 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
                                              *component["refinement_windows"][0]["sources"].values()})
                     path = Path(directory) / "binding.json"
                     path.write_text(json.dumps(binding), encoding="utf-8")
-                    quoted = "'" + str(path).replace("'", "''") + "'"
-                    command = (
-                        "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest\n"
-                        f"$staticFieldMode='{mode}';$staticFieldRequested=$true;$package=@{{artifact_run_dir='run'}};"
-                        "$FieldBindingPath='binding.json';$nativeCorridorRun=$null;$nativeBankGeneration=$null;"
-                        "$nativeBankKey=$null;$requiredBytes=0;$ownsCapacitySession=$false;$trajectoryRecording=$null;"
-                        "$capacitySession=[pscustomobject]@{committed_new_bytes=0};$python='mock';$sourceRoot='repo'\n"
-                        f"$staticFieldBinding=Get-Content -LiteralPath {quoted} -Raw|ConvertFrom-Json -Depth 100\n"
-                        "function Update-ArtifactWorkflowCapacitySession {param($Python,$RepoRoot,$Session,$ProtectedPaths,$ProtectedCacheKeys,$RemainingCommittedNewBytes)"
-                        " [Console]::WriteLine((@{paths=@($ProtectedPaths);keys=@($ProtectedCacheKeys)}|ConvertTo-Json -Compress));"
-                        " return @{session=$Session}}\n" + block
-                    )
-                    result = subprocess.run(["pwsh", "-NoProfile", "-Command", command],
-                                            cwd=RUNNER.parent, capture_output=True, text=True,
-                                            encoding="utf-8", errors="replace", timeout=30)
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    actual = json.loads(result.stdout)
-                    self.assertEqual(set(actual["paths"]), expected)
-                    self.assertEqual(actual["keys"], [])
+                    for item in expected:
+                        payload = path.parent / item
+                        payload.parent.mkdir(parents=True, exist_ok=True)
+                        payload.write_bytes(b"inert static evidence")
+                    held = []
+                    def absolute(value):
+                        if isinstance(value, dict):
+                            return {key: absolute(item) for key, item in value.items()}
+                        if isinstance(value, list):
+                            return [absolute(item) for item in value]
+                        if isinstance(value, str) and ("/" in value or value == "binding.json"):
+                            return str(path.parent / value)
+                        return value
+                    with patch("msplatform.backends.comsol.static_field_binding.load_binding", return_value=absolute(binding)), \
+                         patch.object(store_workflow, "guarded_file_identity",
+                                      side_effect=lambda item: held.append(item) or nullcontext()):
+                        with ExitStack() as stack:
+                            store_workflow._guard_static_sources(stack, path)
+                    self.assertEqual({Path(item).as_posix() for item in held},
+                                     {(Path(directory) / item).as_posix() for item in expected})
 
     def test_first_batch_observation_keeps_repository_scheduler_contract(self):
         self.assertIn("Invoke-SimionBatchPhase -DispatchPlanPath", self.source)
@@ -1514,7 +1512,7 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
 
     def test_failure_removes_only_disposable_trajectory_cache_before_publication(self):
         catch = self.source.index("}catch{")
-        failed = self.source.index("Complete-RunArtifactPowerShellOwner -Context $owner", catch)
+        failed = self.source.index("Write-RunJson -Path $summary -Depth 100 -Value $summaryDocument", catch)
         cache_cleanup = self.source.index(
             "Get-ChildItem -LiteralPath $temporarySolverDir -File -Filter 'trj*.tmp'",
             catch,
@@ -1527,12 +1525,15 @@ if(-not$caught){throw 'Foreign source owner was accepted'}
         self.assertNotIn("function Publish-OaMrFailureManifest", self.source)
         self.assertNotIn("Apply-RunArtifactRetention", self.source)
         self.assertNotIn("--action','seal-stopped-payload", self.source)
-        self.assertIn("Initialize-RunArtifactPowerShellOwner", self.source)
-        self.assertIn("-OwnCapacitySession:$ownsCapacitySession", self.source)
-        self.assertIn("-WritersStopped $true -WriterCompletion", self.source)
-        self.assertIn("-OriginalFailure $failureRecord", self.source)
+        self.assertNotIn("Initialize-RunArtifactPowerShellOwner", self.source)
+        self.assertNotIn("Complete-RunArtifactPowerShellOwner", self.source)
+        self.assertIn("$summaryDocument.writer_completion", self.source)
+        store = (RUNNER.parents[1] / "oa_mr/store_workflow.py").read_text(encoding="utf-8")
+        self.assertIn("standalone_native_store", store)
+        self.assertIn("recover_managed_native_store_stage", store)
+        self.assertIn("recover_run_publication", store)
         self.assertLess(self.source.index("$release=Exit-HostResourceStage"),
-                        self.source.index("Complete-RunArtifactPowerShellOwner -Context $owner"))
+                        self.source.index("Write-RunJson -Path $summary -Depth 100 -Value $summaryDocument"))
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_closeout_preserves_primary_error_and_isolates_safe_owner_actions(self):
@@ -1555,7 +1556,7 @@ function Invoke-Fixture {
  $ownsCapacitySession=$Owned;$capacitySession=@{status='active'}
  $temporarySolverDir=$null;$temporaryAcceleratorRuntimeSession=@{};$batchRuntimeRoot=[string]$PWD
  $retainGuiWorkbenchFiles=$false;$runConfig=Join-Path $PWD 'README.md';$python='inert';$sourceRoot=[string]$PWD
- $artifactRoot='inert';$projectId='instrument_assembly';$package=@{artifact_run_dir='inert'};$RunId='inert';$resultDir='inert'
+ $artifactRoot='inert';$artifactRun='inert';$projectId='instrument_assembly';$package=@{artifact_run_dir='inert'};$RunId='inert';$resultDir='inert'
  $trajectoryRetentionReason='fixture';$observed=@{status='inert'}
  $runClock=[Diagnostics.Stopwatch]::StartNew();$nativePhaseTimings=[ordered]@{};$runDir='inert';$owner=@{result_path='inert'};$ownerOutputs=@();$nativeOperations=[Collections.Generic.List[object]]::new();$resourceReleases=[Collections.Generic.List[object]]::new();$summary='inert'
  $guard1=[pscustomobject]@{};$guard1|Add-Member ScriptMethod Dispose {
@@ -1564,8 +1565,8 @@ function Invoke-Fixture {
  $guard2=[pscustomobject]@{};$guard2|Add-Member ScriptMethod Dispose {$script:events.Add('guard2')}
  $staticPaGuards=@($guard1,$guard2)
  $continuationEvidenceGuards=@()
- function Write-RunJson {param($Path,$Value) if($Value.status-eq'unknown'){$script:events.Add('unknown_result')}elseif($Value.status-ne'failed'){throw 'bad failure result'}}
- function Get-Content {param($LiteralPath,[switch]$Raw) '{}'}
+ function Write-RunJson {param($Path,$Value,$Depth) if($Value.status-eq'unknown'){$script:events.Add('unknown_result')}elseif($Value.status-ne'failed'){$script:events.Add('observe')}}
+ function Get-Content {param($LiteralPath,[switch]$Raw) '{"status":"success"}'}
  function Get-ChildItem {param($LiteralPath,[switch]$Recurse,[switch]$File) @()}
  function Complete-RunArtifactPowerShellOwner {
   param($Context,$Status,$Summary,$OutputPaths,$WritersStopped,$WriterCompletion,$OriginalFailure)
@@ -1637,7 +1638,7 @@ $rows|ConvertTo-Json -Depth 8 -Compress
                 else:
                     self.assertIn("guard failed", row["error"])
                 if (not row["stopped"] and row["fault"] != "wave_stopped") or row["fault"] == "observation_unknown":
-                    self.assertEqual(calls, ["unknown_result"])
+                    self.assertEqual(calls, ["unknown_result", "observe"])
                     self.assertEqual(row["capacity_status"], "active")
                     continue
                 for expected in ("guard1", "guard2", "runtime"):
@@ -1646,23 +1647,25 @@ $rows|ConvertTo-Json -Depth 8 -Compress
                     self.assertNotIn("host", calls)
                     self.assertNotIn("capacity", calls)
                     self.assertNotIn("seal", calls)
-                    self.assertIn("light", calls)
-                    self.assertIn("alias", calls)
+                    self.assertNotIn("light", calls)
+                    self.assertNotIn("alias", calls)
                     continue
                 self.assertIn("host", calls)
                 if row["fault"] in ("host", "host_retained"):
                     self.assertFalse(set(calls) & {"temp", "capacity", "seal", "alias"})
                     self.assertEqual(row["capacity_status"], "active")
                 else:
-                    for expected in (("temp", "alias") if row["fault"] == "publish" else ("temp", "capacity", "alias")):
-                        self.assertIn(expected, calls)
-                    self.assertEqual("seal" in calls, row["fault"] not in
-                                     ("publish", "capacity", "capacity_unreleased"))
-                if row["fault"] not in ("none", "wave_stopped"):
+                    self.assertIn("temp", calls)
+                    self.assertNotIn("capacity", calls)
+                    self.assertNotIn("alias", calls)
+                    self.assertNotIn("seal", calls)
+                if row["fault"] in ("guard", "runtime", "host", "host_retained", "temp", "multiple"):
                     self.assertTrue(row["secondary"])
+                else:
+                    self.assertFalse(row["secondary"])
                 if row["fault"] == "multiple":
                     self.assertEqual([item["stage"] for item in row["secondary"]],
-                                     ["guard_release", "temporary_directory", "execution_alias"], row["secondary"])
+                                     ["guard_release", "temporary_directory"], row["secondary"])
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_native_stop_fact_requires_actual_wait_even_for_nonzero_exit(self):
@@ -1733,7 +1736,7 @@ if($result.marker-cne'existing-common-owner'){throw 'private native path used'}
         self.assertNotIn("-Stage 'mrtof_postprocess'", self.source)
 
     def test_inherited_host_lease_is_reused_and_not_released_by_child(self):
-        self.assertIn("[pscustomobject]$InheritedHostResourceLease=$null", self.source)
+        self.assertIn("[string]$InheritedHostResourceLeaseJson=''", self.source)
         self.assertIn("$resourceLease=$InheritedHostResourceLease", self.source)
         self.assertIn("$ownsHostResourceLease=$null-eq$InheritedHostResourceLease", self.source)
         self.assertIn("if($ownsHostResourceLease){", self.source)

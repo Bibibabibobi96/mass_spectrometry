@@ -21,7 +21,7 @@ class AssemblyFinalizationRecoveryTests(unittest.TestCase):
         # The common owner owns the full fault cross-product. These are CLI
         # adapters: cover the original entrypoints and each propagation kind
         # without repeating that matrix for each identical owner invocation.
-        cases = (("oa_mr", "publication"), ("paired_accelerator_pulse", "publication"))
+        cases = (("paired_accelerator_pulse", "publication"),)
         # Keep artifact roots and capacity ledgers private while amortizing only
         # preparation-host startup. Each original recovery CLI remains a new process.
         with ExitStack() as stack:
@@ -54,7 +54,6 @@ class AssemblyFinalizationRecoveryTests(unittest.TestCase):
                 config.mkdir()
                 shutil.copyfile(REPO / "config/project_registry.json", config / "project_registry.json")
                 entrypoint = {
-                    "oa_mr": "oa_mr.ps1",
                     "paired_accelerator_pulse": "paired_accelerator_pulse.ps1",
                 }[workflow]
                 cli = facade / "src/msplatform/workflows/resources" / entrypoint

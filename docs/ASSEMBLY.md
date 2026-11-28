@@ -146,8 +146,10 @@ IP → MR 及 RF → IP → MR 的公共路径要求实际匹配的
 自动发现脉冲的公共两阶段按原母群先进行 held-off 采样，再认证占据决策并进行 timed 追踪；
 现有证据限惰性软件，尚未证明该组合的商业原生运行，不能将单次飞行或默认时间视为完成。
 
-OA→MR 的现有独立研究入口仍为 [oa_mr.ps1](../src/msplatform/workflows/resources/oa_mr.ps1)，
-其实际源、范围和场须按该次配置及证据核验；这不代表已完成公共链迁移。
+OA→MR 的独立研究入口是 `msplatform.workflows.oa_mr.store_workflow`。调用方显式提供科学请求、
+ExecutionContext 和 ArtifactStore；Python 只组合一次 `standalone_native_store` 与 `run_managed_stage`，
+内部 controller 保留 Fast Adjust、整批恢复、GUI、源/场/粒子身份和分段／连续语义。它不是通用
+`msplatform run` 的别名，也不把该独立组合声明为公共原出生 tracing 已覆盖的能力。
 
 共同静态场比较使用 [Store 公共 API](INTEGRATION.md#当前-paired-静态场-store-入口)：
 `run_paired_static_comparison(context, artifact_store=..., request_path=..., run_id=..., committed_new_bytes=...)`。
