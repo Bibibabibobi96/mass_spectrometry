@@ -334,11 +334,13 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `428cb06e`。CLOC 2.10 `12b46917→428cb06e` PASS：total、production、tests 的 code 均为0净变化，unclassified=0；完整逐语言 files/blank/comment/code 与过滤口径在外部 `prepared-mr-domain-428cb06e-cloc.log`。
 
-### C2 fixed-grid 工作点归入 MR design（WORKTREE）
+### C2 fixed-grid 工作点归入 MR design（候选）
 
 旧 `prepared_joint.fixed_grid_workpoint` 的固定网格有限3D工作点审计、Jacobian传输与恢复校验归 `workflows.mr_design.fixed_grid_workpoint`；真实 PS/Python/CLI、测试和路由同步，旧模块删除且无别名。算法、工作点、证据和恢复合同未改。
 
 三套件172父测试首轮169通过、2 FAIL／1 ERROR（402.462s）：补齐测试的 `from mr_design import ...`、历史 manifest 的当前 run_config 投影，以及当前 `artifacts/components/multi_reflection_tof/runs` 根后，相关定向均通过。两个 `binding=None` FAIL 在 `d7aeafed` 独立工作树原样复现（2.154s），不是本次迁移引入，保留待后续定位。原生消费者修正后103父测试最终102通过／1既有历史资产 skip（74.039s）；无商业原生执行。日志为 `prepared-fixed-grid-migration.log`、`prepared-fixed-grid-native-consumers-r3.log`、`static-workpoint-base-d7.log`、`fixed-grid-provider-fixture-current-root.log`。Ruff/diff PASS。本项不代替完整同 SHA 验收。
+
+本单元已提交并普通 push `c72226ec`。CLOC 2.10 `e1ae73e4→c72226ec` PASS：total code +7、production +0、tests +7，unclassified=0；完整逐语言与过滤口径在外部 `fixed-grid-c72226ec-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
