@@ -96,13 +96,13 @@ try {
 
   $parseErrors = @()
   $mrRunnerNames = @(
-    'mr_verify.ps1', 'run_native_candidate_condition.ps1', 'run_mirror_l0_l1_candidate.ps1',
+    'mr_verify.ps1', 'native_candidate_condition_action.ps1', 'run_mirror_l0_l1_candidate.ps1',
     'run_downstream_workpoint_iteration.ps1', 'run_native_corridor_bunch_screening.ps1',
     'run_target_operating_point_chain.ps1', 'run_two_prism_segmented_coverage.ps1',
     'run_mirror_fixed_grid_voltage_correction.ps1', 'run_downstream_fixed_grid_workpoint.ps1',
     'run_native_candidate_chain.ps1', 'run_dual_stripe_operating_seed.ps1',
     'run_mirror_exact_k_operating_point.ps1', 'run_two_prism_segmented_continuation.ps1',
-    'run_source_z_energy_timing_diagnostic.ps1', 'run_native_candidate_campaign.ps1',
+    'run_source_z_energy_timing_diagnostic.ps1', 'native_candidate_campaign_action.ps1',
     'run_resolved_cad_export.ps1', 'run_single_center_timestep_convergence.ps1',
     'run_publish_bunch_source.ps1', 'run_ip_prism_distance_study.ps1',
     'run_freeze_bunch_pulse_schedule.ps1'

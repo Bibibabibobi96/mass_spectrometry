@@ -75,11 +75,11 @@ Stripe、中央接地件和棱镜屏蔽由完整实体扣除有限槽，保留�
 
 加速器局部理论、几何、PA 和电压由独立 OA provider 拥有；MR 通过
 [accelerator_dependency.json](../config/accelerator_dependency.json)及
-[OA提供者入口](../../../backends/simion/resources/run_component_focus_workflow.ps1)消费统一
+[OA提供者入口](../../../workflows/oa_focus_component.py)消费统一
 `mrtof_runtime_receipt.json`。出口、grid1、repeller 沿更大的 `+z` 排列，出射沿项目 `-z`。
 组件验收直接调用该入口，显式传入本项目现有的
-`-RequestPath config/accelerator_component_request_n100.json`与
-`-ReleaseSpecPath config/accelerator_component_release_n100.json`（路径相对本项目根或使用绝对路径）。
+`--request-path config/accelerator_component_request_n100.json`与
+`--release-spec-path config/accelerator_component_release_n100.json`（路径相对本项目根或使用绝对路径），并显式提供Store根、workspace及PowerShell路径。
 OA PA 以 `x=0` 为镜像面，只存半域；实例原点必须保留镜像面，重载检查 `3dplanar[x]`。
 
 `-AcceleratorProviderReceiptPath`传OA发布run的`results/mrtof_runtime_receipt.json`，
@@ -434,14 +434,14 @@ GUI 重载及正式资格属于不同验证层，不能互相替代。
 
 | 任务 | 入口 | 必需输入与输出范围 |
 |---|---|---|
-| OA 组件验收 | [OA提供者入口](../../../backends/simion/resources/run_component_focus_workflow.ps1) | 显式使用本项目现有request／release；provider receipt不授予整机资格 |
+| OA 组件验收 | [OA提供者入口](../../../workflows/oa_focus_component.py) | 显式使用本项目现有request／release；provider receipt不授予整机资格 |
 | N=1 或 N>1 OA→MR完整飞行 | [直属oa_mr.ps1](../../../../../src/msplatform/workflows/resources/oa_mr.ps1) | 冻结装配plan、几何、镜、Stripe、OA receipt、P1/P2电压及一种场消费输入；资格见集成状态 |
 | 束团源发布 | [run_publish_bunch_source.ps1](../../../workflows/resources/run_publish_bunch_source.ps1) | `-SourceDefinitionPath`、`-GeometryContractPath`、`-AcceleratorProviderReceiptPath`；发布 CSV/Fly2/receipt |
 | P/S 四列单步审计 | [run_downstream_fixed_grid_workpoint.ps1](../../../workflows/resources/run_downstream_fixed_grid_workpoint.ps1) | baseline 与四个独立单轴扰动 manifest，输出有界电压提议 |
 | P/S 自动重闭合 | [run_downstream_workpoint_iteration.ps1](../../../workflows/resources/run_downstream_workpoint_iteration.ps1) | 唯一初始工作点、seed 或 continuation；独立 child 飞行及控制器记录 |
 | native 束团筛选 | [run_native_corridor_bunch_screening.ps1](../../../workflows/resources/run_native_corridor_bunch_screening.ps1) | 同一 checkpoint、冻结静态 cohort；受控小样本不提供正式峰宽 |
 | native Candidate／TE1 链 | [run_native_candidate_chain.ps1](../../../workflows/resources/run_native_candidate_chain.ps1) | 已接受中心工作点、common 源及相同前缀的 baseline/调焦比较 |
-| K/y campaign | [run_native_candidate_campaign.ps1](../../../workflows/resources/run_native_candidate_campaign.ps1) | [工况表](../config/native_candidate_campaign_k_y_scan.json)；发布统一 comparison |
+| K/y campaign | [`mr_native_condition.py campaign`](../../../workflows/mr_native_condition.py) | [工况表](../config/native_candidate_campaign_k_y_scan.json)；发布统一 comparison |
 | 源 z／能量／末段时序分析 | [run_source_z_energy_timing_diagnostic.ps1](../../../workflows/resources/run_source_z_energy_timing_diagnostic.ps1) | 完整 success flight；只读诊断，无新飞行 |
 | 固定关断时钟冻结 | [run_freeze_bunch_pulse_schedule.ps1](../../../workflows/resources/run_freeze_bunch_pulse_schedule.ps1) | 同源完整静态 pilot，发布 schedule；不证明脉冲已真实执行 |
 

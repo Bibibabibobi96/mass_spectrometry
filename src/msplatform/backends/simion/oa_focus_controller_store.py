@@ -18,6 +18,41 @@ from msplatform.io.file_identity import canonical_json_sha256, file_sha256, guar
 from msplatform.io.manifest_records import file_record, verify_record
 
 
+_FOCUS_MANIFEST = 'focus_manifest.json'
+
+
+def _legacy_cache_key(directory: Path) -> str:
+    science = json.loads((directory/'focus_identity.json').read_text(encoding='utf8'))['identity']
+    return canonical_json_sha256(science)
+
+
+def _write_focus_manifest(directory: Path, key: str, plan: dict) -> dict:
+    """Bind the legacy response-bank view to the Store's immutable asset."""
+    records = [dict(name=name, bytes=(directory/name).stat().st_size,
+                    sha256=file_sha256(directory/name)) for name in expected_files(plan)]
+    value = _focus_manifest_identity(directory, plan, records)
+    write_json_atomic(directory/_FOCUS_MANIFEST, value)
+    return value
+
+
+def _read_focus_manifest(directory: Path, key: str, plan: dict) -> dict:
+    """Read the compact response-bank identity after Store claim verification."""
+    value = json.loads((directory/_FOCUS_MANIFEST).read_text(encoding='utf8'))
+    expected = _focus_manifest_identity(directory, plan, value.get('files'))
+    if value != expected:
+        raise ValueError('focus Store response-bank identity differs')
+    return value
+
+
+def _focus_manifest_identity(directory: Path, plan: dict, records) -> dict:
+    if not isinstance(records, list) or [row.get('name') for row in records if isinstance(row, dict)] != list(expected_files(plan)):
+        raise ValueError('focus Store response-bank inventory differs')
+    cache_key = _legacy_cache_key(directory)
+    identity = json.loads((directory/'focus_identity.json').read_text(encoding='utf8'))['identity']
+    return dict(schema_version=1, role='oa_focus_store_response_bank', cache_key=cache_key, identity=identity,
+        generation_sha256=canonical_json_sha256(dict(cache_key=cache_key, files=records)), files=records)
+
+
 def _run_native(context, *, name, arguments, directory, run_directory, limits, records, marker):
     log = directory/(name+'.stdout.log')
     receipt = run_observed_process(context, executable=context.tools['simion'], arguments=arguments,
@@ -184,6 +219,7 @@ def run_focus_controller(session, *, operation_id: str, plan: dict, resources: d
                 for name in ('focus_verify.process.json','focus_verify.stdout.log'):
                     shutil.copyfile(scratch/name, work/name)
                 (work/'focus_identity.json').write_text(json.dumps({'cache_key':key, 'identity':science},sort_keys=True)+'\n', encoding='utf8')
+                _write_focus_manifest(work, key, plan)
                 scope['account'](work)
                 asset_id, asset_dir = lifetime.enter_context(store.put_asset_claimed('simion_focus_controller', cache_key, work))
             except BaseException:
@@ -191,6 +227,10 @@ def run_focus_controller(session, *, operation_id: str, plan: dict, resources: d
                 raise
         scope['produced'].append(asset_id)
         report.update(cache_key=key, cache_disposition=disposition, asset_id=asset_id, asset_directory=str(asset_dir))
+        if (asset_dir/_FOCUS_MANIFEST).is_file():
+            response_bank = _read_focus_manifest(asset_dir, key, plan)
+            report.update(legacy_cache_key=response_bank['cache_key'],
+                          generation_sha256=response_bank['generation_sha256'])
         write_json_atomic(receipt, report)
         return report
     finally:

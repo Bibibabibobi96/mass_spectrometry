@@ -98,7 +98,7 @@ class SimionSourceTests(unittest.TestCase):
    harness=root/'capture_source.ps1'
    harness.write_text(r"""param($Repo,$Root,$Python)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$source=Join-Path $Repo 'src/msplatform/backends/simion/resources/run_component_focus_flight.ps1'
+$source=Join-Path $Repo 'src/msplatform/backends/simion/resources/component_focus_flight_action.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]$null)
 $calls=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.CommandAst]-and$n.GetCommandName()-eq'Invoke-FocusFrozenPython'-and
  @($n.CommandElements|Where-Object{$_-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Value-eq'msplatform.backends.simion.oa_focus_source'}).Count},$true))
@@ -124,7 +124,7 @@ Invoke-Expression $calls[0].Extent.Text
    self.assertEqual(json.loads((root/'projection_receipt.json').read_text())['particle_count'],100)
    self.assertEqual(fly.read_text(encoding='ascii').count('standard_beam {'),100)
    self.assertEqual(source_states.read_text(encoding='ascii').count(']={t='),100)
-  runner=(project_root.parents[3]/'src/msplatform/backends/simion/resources'/'run_component_focus_flight.ps1').read_text(encoding='utf-8')
+  runner=(project_root.parents[3]/'src/msplatform/backends/simion/resources'/'component_focus_flight_action.ps1').read_text(encoding='utf-8')
   builder=(project_root.parents[3]/'src/msplatform/backends/simion/resources'/'build_component_focus_iob.lua').read_text(encoding='utf-8')
   self.assertIn("component_focus_input.fly2",runner)
   self.assertIn("fly --trajectory-quality $($c.numerics.trajectory_quality) --particles $fly --programs 1 --retain-trajectories 0 $iob",runner)
@@ -141,8 +141,9 @@ Invoke-Expression $calls[0].Extent.Text
   self.assertIn("Flight refuses a controller inside the published cache generation",runner)
   self.assertIn("Private runtime family inventory differs from the provider electrode namespace",runner)
   self.assertIn("published_standalone_responses__shared_private_native_fast_adjust_family",runner)
-  self.assertIn('$failureDetail=$_.Exception.Message;throw',runner)
-  self.assertIn('$reason+=" $failureDetail"',runner)
+  self.assertIn("oa_focus_action_publication",runner)
+  self.assertNotIn('Complete-FailedRun',runner)
+  self.assertNotIn('New-RunPackage',runner)
 
  def test_mr_component_release_uses_local_y_drift_and_not_nominal_negative_z_direction(self):
   repo=Path(__file__).resolve().parents[4]

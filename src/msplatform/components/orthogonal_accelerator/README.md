@@ -35,17 +35,20 @@
 不属于轻量门禁。
 
 组件聚焦合同见[封闭二区 campaign](config/two_zone_component_focus_campaign.json)，自动入口为
-[`../../backends/simion/resources/run_component_focus_workflow.ps1`](../../backends/simion/resources/run_component_focus_workflow.ps1)；
+[`msplatform.workflows.oa_focus_component`](../../workflows/oa_focus_component.py)的`--action workflow`；
+执行profile直接注册该Python CLI，由Store拥有父run、controller cache、native stage、
+预算和终态。既有PA runner及旧cache事务适配已退役；flight、field-contrast和Fast-Adjust科学action保持原源、场、
+完整母群、时钟和硬门。`recover_component_focus_publication`只复用公共停止stage及Store发布恢复。
 `msplatform.workflows.oa_focus_analysis`只消费公共释放凭据和原生日志。
 `msplatform.workflows.oa_focus_store_analysis.run_focus_recipe` 使用公共 Recipe 执行并接续焦点分析；
 `publish_focus_analysis` 可冷读已发布的公共 Store 焦点运行，
 核对原 campaign、组件合同、模型与同次出生群后发布分析；`guard_focus_analysis` 为消费者持权核验该分析及原运行，
 `recover_focus_analysis_publication` 使用 Store 既有发布恢复。
-目前此路径已有惰性软件夹具，真实 SIMION 焦点场和公共运行仍须验证，旧入口尚未退役。
+两条路径均已有惰性软件夹具；真实SIMION焦点场、公共运行和商业native资格不因迁移而获得。
 组件的 `focus_theory`、`focus_result` 和 `focus_voltage_adjustment` 拥有对应理论、SI 结果及有界电压计算。
 `initialize_focus_adjustment` 和 `advance_focus_adjustment` 从受保护的同出生群 Store 分析推进单次数值决策；
 它们返回工作态及下一次 campaign；`publish_focus_adjustment_step` 可将单步决策发布到 Store，
-并用 `recover_focus_adjustment_publication` 恢复中断的发布。它们不启动求解，完整多轮执行仍待迁移。
+并用 `recover_focus_adjustment_publication` 恢复中断的发布。这些纯决策API不启动求解；公共Recipe多轮闭环仍待迁移，既有bounded Fast-Adjust则由上述Store action执行。
 `msplatform.analysis.oa_focus_contrast` 提供四种独立OA场模式的同源对照数学；公共四case运行与Store适配仍在迁移。
 具体工作流、输入冻结与验收边界见[组件工作流与验收](docs/PROJECT.md#组件工作流与验收)。
 

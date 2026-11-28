@@ -41,42 +41,45 @@
         "condition_path",
         "context_path",
         "composition_plan_path",
-        "artifact_root"
+        "artifact_root",
+        "powershell_path"
       ],
       "binding_types": {
         "condition_path": "file",
         "context_path": "file",
         "composition_plan_path": "file",
-        "artifact_root": "directory"
+        "artifact_root": "directory",
+        "powershell_path": "string"
       },
       "steps": [
         {
           "step_id": "native_run",
           "kind": "run",
-          "shell": "powershell",
-          "entrypoint": "src/msplatform/workflows/resources/run_native_candidate_condition.ps1",
+          "shell": "python",
+          "entrypoint": "src/msplatform/workflows/mr_native_condition.py",
           "run_id_template": "{timestamp}__sim__simion__native-condition",
           "arguments": [
-            "-RunId",
+            "condition",
+            "--run-id",
             "{native_run_id}",
-            "-ConditionPath",
+            "--condition-path",
             "{condition_path}",
-            "-ContextPath",
+            "--context-path",
             "{context_path}",
-            "-CompositionPlanPath",
+            "--composition-plan-path",
             "{composition_plan_path}",
-            "-WorkspaceRoot",
-            "{repository_root}",
-            "-ArtifactRoot",
+            "--store-root",
             "{artifact_root}",
-            "-PythonExe",
-            "{python_exe}"
+            "--workspace-root",
+            "{repository_root}",
+            "--powershell-exe",
+            "{powershell_path}"
           ]
         }
       ],
       "limitations": [
-        "Existing explicit-input workflow; the original owner performs scientific preparation and acceptance.",
-        "Plan readiness does not establish native execution or scientific qualification."
+        "ArtifactRoot selects the Store; the frozen condition context must explicitly identify legacy_artifact_root for not-yet-migrated MR scientific children.",
+        "The Store owner performs publication and recovery; plan readiness does not establish native execution or scientific qualification."
       ],
       "purpose": "candidate_condition",
       "action": "run",

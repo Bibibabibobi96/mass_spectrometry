@@ -161,34 +161,33 @@ class ComponentFocusFastAdjustTests(unittest.TestCase):
 
     def test_runner_reuses_existing_pa_and_applies_retention(self) -> None:
         resources = PROJECT.parents[1] / "backends/simion/resources"
-        runner = (resources / "run_component_focus_fast_adjust.ps1").read_text(encoding="utf-8")
+        runner = (resources / "component_focus_fast_adjust_action.ps1").read_text(encoding="utf-8")
         self.assertEqual(runner.count("-Module msplatform.workflows.oa_focus_fast_adjust"), 6)
         self.assertNotIn("Push-Location $repoRoot", runner)
         self.assertEqual(runner.count("'--component-contract',$componentContract"), 6)
-        workflow = (PROJECT.parents[1] / "backends/simion/resources" / "run_component_focus_workflow.ps1").read_text(encoding="utf-8")
-        self.assertIn("run_component_focus_flight.ps1", runner)
+        workflow = (PROJECT.parents[1] / "workflows/oa_focus_component.py").read_text(encoding="utf-8")
+        self.assertIn("msplatform.workflows.oa_focus_component", runner)
         self.assertNotIn("run_component_focus_pa.ps1", runner)
         self.assertNotIn("Gap1VoltageDropBoundsV", runner)
-        self.assertIn("Apply-RunArtifactRetention", runner)
+        self.assertNotIn("New-RunPackage", runner)
+        self.assertNotIn("Apply-RunArtifactRetention", runner)
+        self.assertIn("oa_focus_action_publication", runner)
         self.assertIn("best_campaign.json", runner)
-        self.assertIn("-InitialAnalysisPath $initialAnalysis", workflow)
+        self.assertIn("InitialAnalysisPath=flight_run", workflow)
         self.assertIn("MR runtime receipt is withheld", workflow)
 
     def test_controller_and_contrast_use_installed_resources_and_forward_explicit_roots(self) -> None:
         resources = PROJECT.parents[1] / "backends/simion/resources"
-        for name in ("run_component_focus_fast_adjust.ps1", "run_component_focus_field_contrast.ps1"):
-            with self.subTest(entry=name):
-                source = (resources / name).read_text(encoding="utf-8")
-                self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", source)
-                self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", source)
-                self.assertIn("[string]$PythonExe=''", source)
-                self.assertIn("import msplatform;print(Path(msplatform.__file__).resolve().parent)", source)
-                self.assertIn("$simionResources=Join-Path $packageRoot 'backends/simion/resources'", source)
-                self.assertIn("-WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot -PythonExe $python", source)
-                self.assertNotIn(".venv", source)
-                self.assertNotIn("Join-Path $PSScriptRoot", source)
-                self.assertNotIn("PYTHONPATH", source)
-        controller = (resources / "run_component_focus_fast_adjust.ps1").read_text(encoding="utf-8")
+        profile = json.loads((PROJECT / "config/execution_profiles.json").read_text(encoding="utf-8"))["profiles"][0]
+        self.assertEqual(profile["steps"][0]["shell"], "python")
+        self.assertEqual(profile["steps"][0]["entrypoint"], "src/msplatform/workflows/oa_focus_component.py")
+        self.assertIn("--powershell-exe", profile["steps"][0]["arguments"])
+        for name in ("component_focus_fast_adjust_action.ps1", "component_focus_field_contrast_action.ps1"):
+            source = (resources / name).read_text(encoding="utf-8")
+            self.assertIn("$simionResources=Join-Path $packageRoot 'backends/simion/resources'", source)
+            self.assertIn("--workspace-root $workspaceRoot --store-root $artifactRoot", source)
+            self.assertNotIn("New-RunPackage", source)
+        controller = (resources / "component_focus_fast_adjust_action.ps1").read_text(encoding="utf-8")
         self.assertIn("Initialize-FocusFrozenPython -PackageRoot $packageRoot", controller)
         self.assertIn("& $python -I -B -c", controller)
 

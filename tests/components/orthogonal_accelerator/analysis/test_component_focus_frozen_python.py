@@ -18,7 +18,7 @@ from msplatform.workflows.oa_focus_analysis import analyze
 from msplatform.execution.manifest_publication import build_run_manifest
 
 REPO = Path(__file__).resolve().parents[4]
-ENTRY = REPO / "src/msplatform/backends/simion/resources/run_component_focus_flight.ps1"
+ENTRY = REPO / "src/msplatform/backends/simion/resources/component_focus_flight_action.ps1"
 
 SCRIPT = r'''param($Repo,$Entry,$Root,$Python,$Data,$Mode)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
@@ -89,30 +89,23 @@ def _geometry_profile():
 
 class ComponentFocusEntrypointTests(unittest.TestCase):
     def test_entries_resolve_resources_from_selected_installed_package(self):
-        resources = ENTRY.parent
-        for name in ("run_component_focus_pa.ps1", "run_component_focus_workflow.ps1",
-                     "run_component_focus_flight.ps1"):
-            with self.subTest(entry=name):
-                source = (resources / name).read_text(encoding="utf-8")
-                self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", source)
-                self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", source)
-                self.assertIn("[string]$PythonExe=''", source)
-                self.assertIn("import msplatform;print(Path(msplatform.__file__).resolve().parent)", source)
-                self.assertIn("$executionResources=Join-Path $packageRoot 'execution/resources'", source)
-                self.assertIn("Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactRoot", source)
-                self.assertIn("host_state_path=[string]$pathContext.host_resource_state_path", source)
-                self.assertNotIn("Join-Path $PSScriptRoot '..\\..\\..\\..\\..'", source)
-                self.assertNotIn(".venv", source)
-                self.assertNotIn("PYTHONPATH", source)
+        profile = json.loads((REPO / "src/msplatform/components/orthogonal_accelerator/config/execution_profiles.json").read_text(encoding="utf-8"))["profiles"][0]
+        self.assertEqual(profile["steps"][0]["shell"], "python")
+        self.assertEqual(profile["steps"][0]["entrypoint"], "src/msplatform/workflows/oa_focus_component.py")
+        self.assertIn("--powershell-exe", profile["steps"][0]["arguments"])
+        action = ENTRY.read_text(encoding="utf-8")
+        self.assertIn("$executionResources=Join-Path $packageRoot 'execution/resources'", action)
+        self.assertIn("Resolve-WorkspacePaths -SourceRoot $workspaceRoot -ArtifactRoot $artifactRoot", action)
+        self.assertIn("host_state_path=[string]$pathContext.host_resource_state_path", action)
 
     def test_parent_forwards_explicit_execution_and_output_roots(self):
-        source = (ENTRY.parent / "run_component_focus_workflow.ps1").read_text(encoding="utf-8")
-        for child in ("$paRunner @paArgs", "&$flightRunner -RunId"):
-            self.assertIn(child, source)
-        self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python", source)
-        self.assertIn("-WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot -PythonExe $python", source)
-        self.assertIn("$paRunner=Join-Path $simionResources", source)
-        self.assertIn("$flightRunner=Join-Path $simionResources", source)
+        source = REPO / "src/msplatform/workflows/oa_focus_component.py"
+        owner = source.read_text(encoding="utf-8")
+        self.assertIn("run_focus_controller_campaign", owner)
+        self.assertIn("action='flight'", owner)
+        self.assertIn("WorkspaceRoot=context.workspace", owner)
+        self.assertIn("ArtifactRoot=artifact_store.root", owner)
+        self.assertIn("PythonExe=context.python_executable", owner)
 
     def test_snapshot_helper_audits_only_installed_package_modules(self):
         source = (ENTRY.parent / "focus_python.ps1").read_text(encoding="utf-8")

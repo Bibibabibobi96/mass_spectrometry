@@ -24,7 +24,9 @@ remain in `io`. The former analysis contract/energy modules are retired without 
 source/run identities, missing/tampered-record refusal, historical read-only behavior and scientific outputs are unchanged.
 This ownership repair starts no native solver and grants no new field, flight, GUI or scientific qualification.
 
-The native candidate condition and chain now forward the same verified workspace, artifact root and Python to every child that requires them. The condition reads new OA provider manifests and runtime receipts only through the canonical `components/orthogonal_accelerator` artifact owner, never the retired `projects` root; condition context cannot override execution roots. The chain supplies its frozen composition plan and optional local scope to screening and workpoint children, and selects the provider's explicit COMSOL roots or native `HostContextJson` according to the frozen field request. Real PowerShell fixtures cover the actual child calls, OA component-only publication, required-parameter rejection and tampered native-context refusal before flight. Scientific inputs, thresholds and numerical parameters are unchanged; these software fixtures do not launch SIMION/COMSOL or grant native, GUI or scientific qualification.
+The native candidate condition and chain now forward the same verified workspace, artifact root and Python to every child that requires them. The condition reads new OA provider manifests and runtime receipts through their explicit Store result receipt, never by guessing the retired `projects` root; explicitly reused historical manifests retain their original identity, and condition context cannot override orchestrator arguments. The chain supplies its frozen composition plan and optional local scope to screening and workpoint children, and selects the provider's explicit COMSOL roots or native `HostContextJson` according to the frozen field request. Real PowerShell fixtures cover the actual child calls, OA component-only publication, required-parameter rejection and tampered native-context refusal before flight. Scientific inputs, thresholds and numerical parameters are unchanged; these software fixtures do not launch SIMION/COMSOL or grant native, GUI or scientific qualification.
+
+Native condition and campaign registration now enter `msplatform.workflows.mr_native_condition`. `ArtifactStore`, `standalone_native_store` and `run_managed_stage` own the parent reservation, native stage, terminal publication and public recovery; the PowerShell actions no longer call `New-RunPackage`, old capacity sessions or private manifest/failure writers. The registered `ArtifactRoot` selects the Store. Because the scientific children have not all migrated, the frozen condition context must separately provide an absolute `legacy_artifact_root`; this is an explicit output boundary, not a historical-store fallback. Campaign conditions return manifest-bound result receipts, retain their existing identities and stop new dispatch at the first failed condition. `oa_mr.ps1`, the candidate chain and their shared `run_artifact_*` lifecycle remain unchanged and are not marked historical by this slice. Solver-independent Store/process fixtures passed without commercial native execution; real MR fields, Fly, GUI and scientific qualification remain unexecuted.
 
 Cox--de Boor basis evaluation now shares local recursive subexpressions through a per-call dynamic calculation. A content-keyed cache bounded to 65,536 entries covers the measured 42,542 distinct canonical edge/parameter pairs without unbounded process-global growth. On the unchanged `simion_candidate_two_zone.json`, one local original/dynamic pair took 3.702478/1.559438 seconds; the subsequent cached cold/warm pair took 1.237612/0.187433 seconds. Every version produced the same 50,282-byte canonical resolved-geometry JSON, SHA-256 `05b1adb00d9f1dee678be0119d391f1e3caa11b9899bc2192c17dc543abfae6c` and geometry fingerprint `6b71d29c5af6f9aff5f5ceb644c8046afd1b16980a51f5f3c771476876e89f18`. These are controlled local software measurements, not full-gate timings, changed physics or native qualification.
 
@@ -444,7 +446,7 @@ prepared-joint组件及工作点采集消费接口准备记录时，直接调用
 几何、源与IOB消费同一直接位姿，局部源只变换一次；不从历史focus或实例名称再推导位姿。
 MR几何、网格、源和科学诊断保持提供者局部frame，父装配映射由实例直接位姿表达。
 
-原生候选campaign入口[`run_native_candidate_campaign.ps1`](../../../workflows/resources/run_native_candidate_campaign.ps1)
+原生候选campaign入口[`mr_native_condition.py`](../../../workflows/mr_native_condition.py)的`campaign`子命令
 同样要求显式`CompositionPlanPath`，可选`LocalScopePath`；不按条件、历史run或默认文件猜装配输入。
 两份小型输入经公共校验复制到checkpoint旁的`.d`目录，checkpoint记录源路径、冻结路径、字节数和SHA-256。
 默认condition收到这组冻结路径，再复制到自身`inputs/`并登记到run config；后续已有组装与工作点入口消费
@@ -454,6 +456,7 @@ MR几何、网格、源和科学诊断保持提供者局部frame，父装配映�
 不会递增新attempt或用新输入续接旧条件。缺少装配输入身份的旧checkpoint不能自动补写或追认；需用显式输入
 建立新campaign，保留原记录。完成／中断／重试、精确K的OA provider复用及原有工作点恢复规则继续生效。
 轻量回归运行真实默认condition至输入冻结边界，并在首个物理阶段前停止；这不新增原生飞行或Formal资格。
+当前condition/campaign另由真实Store managed-stage夹具覆盖成功、失败、首错停派、冷读和公共恢复幂等。新OA provider仍沿用相同K作用域和runtime checkpoint身份；新receipt指向实际Store native stage，旧checkpoint只按显式manifest恢复，不搜索新根。
 
 OA→MR旧renderer的`native_system_geometry.resolve_accelerator_iob_origin`显式请求OA component1，
 校验已部署plan3中的原整数电极表；OA当前component3默认保持，混版与未知版本继续拒绝。
@@ -807,7 +810,7 @@ OA→MR 和 prepared joint 共用 MR `Protect-MrtofContinuationEvidence`：沿�
 
 ## 机器能力与解析输入
 
-`native_condition`指向原条件runner，显式消费ConditionPath、ContextPath与CompositionPlanPath，不猜latest资产。`src/msplatform/workflows/mr_design/execution_binding.py`从本次release/context小合同核对实际质量／电荷，物种不匹配不能READY；无结构变体时返回null。Candidate／Formal请求须符合真实支持域，不能静默降级。现公开profile的100／524 Da、+1条件仅表示输入适用范围，不代表科学资格。
+`native_condition`直接注册`msplatform.workflows.mr_native_condition`的Python CLI并由Store owner接管，显式消费ConditionPath、ContextPath与CompositionPlanPath，不猜latest资产；实际执行另需context中的`legacy_artifact_root`隔离未迁移子链输出。`src/msplatform/workflows/mr_design/execution_binding.py`从本次release/context小合同核对实际质量／电荷，物种不匹配不能READY；无结构变体时返回null。Candidate／Formal请求须符合真实支持域，不能静默降级。现公开profile的100／524 Da、+1条件仅表示输入适用范围，不代表科学资格。
 编译结果绑定小定义并持续保护，原owner从同一定义准备／冻结／执行；能力查询不生成GEM、不读大PA。OA几何与IOB pose消费纯几何提供者，新机械exit-origin与合法旧PA frame显式转换；未知frame拒绝，旧plan只读，世界布局不变。查询与执行入口见[公共合同](../../../../../tools/repository/README.md#执行dry-run)，READY不代表科学资格。
 
 ## 安装后的历史联合记录分析

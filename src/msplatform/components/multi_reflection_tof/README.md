@@ -9,6 +9,7 @@
 继续拥有已迁移的跨器件工作流；原生资源分别归 SIMION/COMSOL backend。回归统一位于
 `tests/components/multi_reflection_tof/`，公开软件入口为
 `src/msplatform/workflows/resources/mr_verify.ps1`。不存在旧目录回退或第二 runner。
+原生condition/campaign直接注册`msplatform.workflows.mr_native_condition`的Python CLI，生命周期由其Store API承担；科学action不是公开生命周期入口，未迁移子链也不是另一套物理实现。
 
 返回[仓库导航](../../../../README.md)。
 

@@ -10,7 +10,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from msplatform.io.file_identity import file_sha256
+from msplatform.io.file_identity import canonical_json_sha256, file_sha256
 from msplatform.backends.simion.pa_family_cache import PAFamilyCacheError, validate_pa_family_cache_generation
 from msplatform.backends.simion.standalone_pa_response_set import (
     StandalonePaResponseSetError,
@@ -97,6 +97,42 @@ def _verify_flight_child_source(
             or matches[0].get("bytes") != analysis_record.get("bytes")
             or str(matches[0].get("sha256", "")).lower() != str(analysis_record.get("sha256", "")).lower()):
         raise MrRuntimeReceiptError("selected provider flight analysis is not its manifest output")
+
+
+def _store_response_bank_record(
+    generation: Path, cache_key: str, generation_sha256: str, electrode_count: int, asset_id: str,
+) -> tuple[dict[str, Any], Path]:
+    """Read the legacy response view while holding its exact Store asset."""
+    from msplatform.storage import ArtifactStore
+    store = ArtifactStore(generation.parents[3])
+    with store.claim_verified(asset_id) as claimed:
+        if claimed != generation:
+            raise MrRuntimeReceiptError('provider Store response-bank path differs')
+        manifest_path = generation/'focus_manifest.json'
+        cache = _load_json(manifest_path, 'provider Store response-bank manifest')
+        if (cache.get('role') != 'oa_focus_store_response_bank' or cache.get('cache_key') != cache_key
+                or cache.get('generation_sha256') != generation_sha256
+                or canonical_json_sha256(cache.get('identity')) != cache_key):
+            raise MrRuntimeReceiptError('provider Store response-bank identity differs')
+        expected = {
+            _RAW_NAME,
+            *(f'orthogonal_accelerator_focus.pa{index}' for index in range(electrode_count + 1)),
+            *(f'orthogonal_accelerator_focus.response{index}.pa' for index in range(1, electrode_count + 1)),
+            _RECEIPT_NAME,
+        }
+        if {row.get('name') for row in cache.get('files', []) if isinstance(row, dict)} != expected:
+            raise MrRuntimeReceiptError('provider Store response-bank inventory differs')
+        responses = validate_standalone_pa_response_set(generation, cache, _RECEIPT_NAME,
+            expected_response_ids=range(1, electrode_count+1), inventory_is_verified=True)
+        indexed = {item['name']: item for item in cache['files']}
+        return {
+            'generation_directory': str(generation), 'store_asset_id': asset_id,
+            'raw': indexed[_RAW_NAME], 'receipt_name': _RECEIPT_NAME, 'receipt': indexed[_RECEIPT_NAME],
+            'response_ids': list(range(1, electrode_count+1)),
+            'responses': [dict(response_id=item.response_id, name=item.name,
+                bytes=item.bytes, sha256=item.sha256) for item in responses],
+            'published_native_members_opened': False,
+        }, manifest_path
 
 
 def _response_bank_record(
@@ -276,9 +312,17 @@ def project(*, workflow_receipt_path: Path, pa_result_path: Path,
         raise MrRuntimeReceiptError("provider plan electrode count differs from its profile layout")
     if not isinstance(voltages, list) or len(voltages) != electrode_count:
         raise MrRuntimeReceiptError("provider campaign voltage count differs from its profile layout")
-    response_bank, cache_manifest = _response_bank_record(generation, cache_key, electrode_count)
+    store_asset_id = result.get('store_asset_id')
+    if store_asset_id is not None:
+        if not isinstance(store_asset_id, str) or not store_asset_id:
+            raise MrRuntimeReceiptError('provider Store asset identity is invalid')
+        response_bank, cache_manifest = _store_response_bank_record(
+            generation, cache_key, generation_sha256, electrode_count, store_asset_id)
+    else:
+        response_bank, cache_manifest = _response_bank_record(generation, cache_key, electrode_count)
     private_runtime = _private_runtime_record(result, cache_key, generation_sha256, electrode_count)
-    if generation.name != generation_sha256:
+    expected_generation_name = store_asset_id if store_asset_id is not None else generation_sha256
+    if generation.name != expected_generation_name:
         raise MrRuntimeReceiptError("published provider cache generation differs from PA result")
     try:
         endpoint = [float(value) for value in voltages[1:4]]
@@ -369,17 +413,23 @@ def _owner_run_directory(output_path: Path) -> Path:
     config_path, manifest_path = run_dir / "run_config.json", run_dir / "run_manifest.json"
     config = _load_json(config_path, "owner run config")
     manifest = _load_json(manifest_path, "owner run manifest")
+    capacity_path = run_dir/'logs/capacity_session.json'
+    capacity = _load_json(capacity_path, 'owner Store capacity session') if capacity_path.is_file() else {}
+    store_owned = (config.get('capacity_ledger_lifecycle', {}).get('enabled') is False
+        and capacity.get('role') == 'store_native_stage_capacity' and capacity.get('status') == 'active'
+        and capacity.get('artifact_root') == config.get('paths', {}).get('artifact_root'))
+    legacy_owned = config.get('capacity_ledger_lifecycle', {}).get('enabled') is True
     if (config.get("schema_version") != 2 or config.get("project") != "orthogonal_accelerator"
             or config.get("mode") != "component_focus_workflow"
             or not isinstance(config.get("run_id"), str)
-            or not config.get("capacity_ledger_lifecycle", {}).get("enabled")
+            or not (legacy_owned or store_owned)
             or not isinstance(config.get("artifact_retention"), dict)):
         raise MrRuntimeReceiptError("MR runtime receipt owner lacks the required lifecycle envelope")
     record = manifest.get("run_config")
     if (manifest.get("role") != "simulation_run_manifest" or manifest.get("status") != "checkpoint"
             or manifest.get("project") != config["project"] or manifest.get("mode") != config["mode"]
             or not isinstance(record, dict) or _record_path(record, run_dir) != config_path.resolve()
-            or not _record_matches(config_path, record)):
+            or (legacy_owned and not _record_matches(config_path, record))):
         raise MrRuntimeReceiptError("MR runtime receipt owner manifest is not an active matching lifecycle checkpoint")
     if output.exists():
         raise MrRuntimeReceiptError("MR runtime receipt already exists; immutable owner output cannot be replaced")

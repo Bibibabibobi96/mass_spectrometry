@@ -12,9 +12,13 @@ param(
   [string]$ConditionReuseMapPath='',
   [string]$CampaignStamp='',
   [Parameter(Mandatory)][string]$PythonExe,
+  [Parameter(Mandatory)][string]$StoreRoot,
+  [Parameter(Mandatory)][string]$PackagePath,
+  [string]$StagePolicyPath='',
   [string]$SimionExe=''
 )
 
+# Store-stage scientific action, not a public run/lifecycle entrypoint.
 # This controller intentionally knows nothing about MR-TOF physics.  The
 # condition runner owns the complete theory -> P/S -> N=100 chain and accepts:
 #   -ConditionPath <JSON> -ContextPath <JSON> -RunId <managed run id>
@@ -29,10 +33,11 @@ if($LASTEXITCODE-ne0){throw 'Installed msplatform package is unavailable.'};$pac
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $artifactRuns=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $project -Python $python) 'runs'
 $campaign=(Resolve-Path -LiteralPath $CampaignPath).Path
-$conditionRunner=if($ConditionRunnerPath){
+$customConditionRunner=-not[string]::IsNullOrWhiteSpace($ConditionRunnerPath)
+$conditionRunner=if($customConditionRunner){
   (Resolve-Path -LiteralPath $ConditionRunnerPath).Path
 }else{
-  Join-Path $packageRoot 'workflows/resources/run_native_candidate_condition.ps1'
+  Join-Path $packageRoot 'workflows/mr_native_condition.py'
 }
 $conditionContext=(Resolve-Path -LiteralPath $ConditionContextPath).Path
 $compositionPlan=(Resolve-Path -LiteralPath $CompositionPlanPath).Path
@@ -43,6 +48,8 @@ $initialProviderReuseMap=if($InitialProviderReuseMapPath){(Resolve-Path -Literal
 $conditionReuseMap=if($ConditionReuseMapPath){(Resolve-Path -LiteralPath $ConditionReuseMapPath).Path}else{$null}
 if(-not(Test-Path -LiteralPath $conditionRunner -PathType Leaf)){throw 'ConditionRunnerPath must be a file.'}
 if(-not(Test-Path -LiteralPath $conditionContext -PathType Leaf)){throw 'ConditionContextPath must be a file.'}
+$package=Get-Content -LiteralPath $PackagePath -Raw -Encoding UTF8|ConvertFrom-Json
+$storeRoot=(Resolve-Path -LiteralPath $StoreRoot).Path
 $checkpoint=[IO.Path]::GetFullPath($CheckpointPath)
 $checkpointParent=Split-Path -Parent $checkpoint
 $supportRoot=Join-Path $checkpointParent (([IO.Path]::GetFileNameWithoutExtension($checkpoint))+'.d')
@@ -483,6 +490,21 @@ function New-CampaignComparison {
   return ($output-join"`n")|ConvertFrom-Json -AsHashtable -Depth 100
 }
 
+function Invoke-SelectedConditionRunner {
+  param([Parameter(Mandatory)]$Arguments)
+  if($customConditionRunner){
+    & $conditionRunner @Arguments|Out-Host
+    return
+  }
+  $cli=@('-I','-B','-m','msplatform.workflows.mr_native_condition','condition')
+  foreach($entry in $Arguments.GetEnumerator()){
+    if($entry.Key-eq'PythonExe'){continue}
+    $name=([string]$entry.Key)-creplace'([A-Z]+)([A-Z][a-z])','$1-$2'-creplace'([a-z0-9])([A-Z])','$1-$2'
+    $cli+=@('--'+$name.ToLowerInvariant(),[string]$entry.Value)
+  }
+  & $python @cli|Out-Host
+}
+
 $requested=@(Read-ConditionList -Path $campaign)
 $runnerIdentity=Get-RunnerIdentity -Path $conditionRunner
 if(Test-Path -LiteralPath $checkpoint -PathType Leaf){
@@ -681,7 +703,9 @@ for($index=0;$index-lt$conditionCount;$index++){
   $condition.attempt_count=$attempt;$condition.run_manifest=$null;$condition.workflow_outcome=$null
   Write-Checkpoint -Value $state
 
-  $arguments=@{ConditionPath=[string]$condition.condition_path;ContextPath=$conditionContext;RunId=$runId;WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python}
+  $conditionReceipt=Join-Path $supportRoot ('condition_result_{0:D3}_{1:D3}.json'-f([int]$condition.ordinal,$attempt))
+  $arguments=@{ConditionPath=[string]$condition.condition_path;ContextPath=$conditionContext;RunId=$runId;WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python;StoreRoot=$storeRoot;ResultPath=$conditionReceipt}
+  if($StagePolicyPath){$arguments.StagePolicyPath=$StagePolicyPath}
   $arguments.CompositionPlanPath=[string]$state.composition_plan.path
   if($null-ne$state.local_scope){$arguments.LocalScopePath=[string]$state.local_scope.path}
   if(-not[string]::IsNullOrWhiteSpace([string]$state.accelerator_runtime_checkpoint)){
@@ -714,10 +738,14 @@ for($index=0;$index-lt$conditionCount;$index++){
   }
   if($SimionExe){$arguments.SimionExe=$SimionExe}
   $invocationError=$null
-  try{& $conditionRunner @arguments|Out-Host}catch{$invocationError=$_.Exception}
+  try{Invoke-SelectedConditionRunner -Arguments $arguments}catch{$invocationError=$_.Exception}
 
-  $runPath=Join-Path $artifactRuns $runId
-  $manifestPath=Join-Path $runPath 'run_manifest.json'
+  if(-not(Test-Path -LiteralPath $conditionReceipt -PathType Leaf)){
+    if($null-ne$invocationError){throw $invocationError}
+    throw "Condition runner did not publish its explicit Store result receipt: $conditionReceipt"
+  }
+  $conditionResult=Get-Content -LiteralPath $conditionReceipt -Raw -Encoding UTF8|ConvertFrom-Json
+  $manifestPath=[string]$conditionResult.manifest.path
   if(-not(Test-Path -LiteralPath $manifestPath -PathType Leaf)){
     if($null-ne$invocationError){throw $invocationError}
     throw "Condition runner did not publish a run manifest: $manifestPath"

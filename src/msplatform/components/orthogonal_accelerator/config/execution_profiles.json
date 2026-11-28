@@ -37,38 +37,42 @@
       "required_bindings": [
         "component_request_path",
         "release_spec_path",
-        "artifact_root"
+        "artifact_root",
+        "powershell_path"
       ],
       "binding_types": {
         "component_request_path": "file",
         "release_spec_path": "file",
-        "artifact_root": "directory"
+        "artifact_root": "directory",
+        "powershell_path": "string"
       },
       "steps": [
         {
           "step_id": "native_run",
           "kind": "run",
-          "shell": "powershell",
-          "entrypoint": "src/msplatform/backends/simion/resources/run_component_focus_workflow.ps1",
+          "shell": "python",
+          "entrypoint": "src/msplatform/workflows/oa_focus_component.py",
           "run_id_template": "{timestamp}__sim__simion__component-focus",
           "arguments": [
-            "-RunId",
+            "--action",
+            "workflow",
+            "--run-id",
             "{native_run_id}",
-            "-RequestPath",
+            "--request-path",
             "{component_request_path}",
-            "-ReleaseSpecPath",
+            "--release-spec-path",
             "{release_spec_path}",
-            "-WorkspaceRoot",
-            "{repository_root}",
-            "-ArtifactRoot",
+            "--store-root",
             "{artifact_root}",
-            "-PythonExe",
-            "{python_exe}"
+            "--workspace-root",
+            "{repository_root}",
+            "--powershell-exe",
+            "{powershell_path}"
           ]
         }
       ],
       "limitations": [
-        "Existing explicit-input workflow; the original owner performs scientific preparation and acceptance.",
+        "The Store owner manages the complete focus workflow; ArtifactRoot names its managed root.",
         "Plan readiness does not establish native execution or scientific qualification."
       ],
       "purpose": "component_focus",

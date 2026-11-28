@@ -130,11 +130,11 @@ class ExecutionCompilerTests(unittest.TestCase):
                 ("orthogonal_accelerator", "orthogonal_pulsed_accelerators", "orthogonal_acceleration",
                  "component_focus", "first_time_focus_distance", "two_zone",
                  dict(component_request_path=str(source/"accelerator_component_request_n100.json"), release_spec_path=str(release),
-                      artifact_root=str(artifact))),
+                      artifact_root=str(artifact), powershell_path=str(Path(shutil.which("pwsh")).resolve()))),
                 ("multi_reflection_tof", "tof_mass_analyzers", "mass_analysis",
                  "native_condition", "detection_fraction", None,
                  dict(condition_path=str(condition), context_path=str(context), composition_plan_path=str(small),
-                      artifact_root=str(artifact))),
+                      artifact_root=str(artifact), powershell_path=str(Path(shutil.which("pwsh")).resolve()))),
             ):
                 with self.subTest(owner=owner):
                     request = self.approved_functional_rf_request()
@@ -148,9 +148,9 @@ class ExecutionCompilerTests(unittest.TestCase):
                     ready = self.compile_request(request, bindings)
                     self.assertEqual(ready["status"], "EXECUTION_READY", ready["blockers"])
                     arguments = ready["commands"][0]["arguments"]
-                    for option, expected in (("-WorkspaceRoot", str(REPO_ROOT)),
-                                             ("-ArtifactRoot", str(artifact)),
-                                             ("-PythonExe", str(Path(sys.executable).resolve()))):
+                    for option, expected in (("--workspace-root", str(REPO_ROOT)),
+                                             ("--store-root", str(artifact)),
+                                             ("--powershell-exe", str(Path(shutil.which("pwsh")).resolve()))):
                         self.assertEqual(arguments[arguments.index(option) + 1], expected)
                     without_artifact = dict(bindings)
                     without_artifact.pop("artifact_root")
@@ -215,7 +215,7 @@ class ExecutionCompilerTests(unittest.TestCase):
         self.assertEqual(len(projects), 8)
         self.assertEqual(projects["apertured_tube_electron_impact_ion_source"]["execution_support"], "no_registered_physical_entry")
         self.assertEqual(projects["orthogonal_accelerator"]["profiles"][0]["required_bindings"],
-                         ["component_request_path", "release_spec_path", "artifact_root"])
+                         ["component_request_path", "release_spec_path", "artifact_root", "powershell_path"])
         self.assertEqual(projects["multi_reflection_tof"]["profiles"][0]["profile_id"], "native_condition")
         assemblies = [row for row in view if row["owner_kind"] == "assembly"]
         self.assertEqual([row["owner_id"] for row in assemblies], ["instrument_assembly"])
@@ -226,7 +226,10 @@ class ExecutionCompilerTests(unittest.TestCase):
             query_capabilities(load_json(self.registry), owner="missing")
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
-    def test_native_registrations_match_actual_mandatory_powershell_parameters(self):
+    def test_native_registrations_match_actual_entrypoint_parameters(self):
+        import argparse
+        import importlib.util
+        python_registered = {}
         registered = {}
         for project, profile_id in (
             ("multi_reflection_tof", "native_condition"),
@@ -235,11 +238,28 @@ class ExecutionCompilerTests(unittest.TestCase):
             document = load_json(resolve_project_root(project)/"config/execution_profiles.json")
             profile = next(item for item in document["profiles"] if item["profile_id"] == profile_id)
             step = profile["steps"][0]
-            registered[str(REPO_ROOT/step["entrypoint"])] = step["arguments"]
+            target = python_registered if step["shell"] == "python" else registered
+            target[str(REPO_ROOT/step["entrypoint"])] = (step["arguments"], project)
         assemblies = load_json(REPO_ROOT/"src/msplatform/workflows/config/assembly_registry.json")
         workflow = next(item for item in assemblies["assemblies"][0]["workflows"]
                         if item["workflow_id"] == "oa_mr_flight")
-        registered[str(REPO_ROOT/workflow["entrypoint"])] = workflow["arguments"]
+        registered[str(REPO_ROOT/workflow["entrypoint"])] = (workflow["arguments"], "oa_mr_flight")
+        for path, (arguments, project) in python_registered.items():
+            with self.subTest(entrypoint=path):
+                spec = importlib.util.spec_from_file_location("registration_" + project, path)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                parser = module._parser()
+                if project == "multi_reflection_tof":
+                    subparsers = next(action for action in parser._actions
+                                      if isinstance(action, argparse._SubParsersAction))
+                    parser = subparsers.choices["condition"]
+                options = {option for action in parser._actions for option in action.option_strings}
+                required = {option for action in parser._actions for option in action.option_strings if action.required}
+                declared = {value for value in arguments if value.startswith("--")}
+                self.assertLessEqual(declared, options)
+                self.assertLessEqual(required, declared)
+                self.assertIn("--powershell-exe", declared)
         script = r"""
 $rows=@(foreach($path in $args){
   $command=Get-Command -Name $path -ErrorAction Stop
@@ -263,7 +283,7 @@ ConvertTo-Json -InputObject $rows -Depth 4 -Compress
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         metadata = {row["path"]: row for row in json.loads(completed.stdout)}
         self.assertEqual(set(metadata), set(registered))
-        for path, arguments in registered.items():
+        for path, (arguments, _) in registered.items():
             with self.subTest(entrypoint=path):
                 declared = {value[1:] for value in arguments if value.startswith("-")}
                 self.assertLessEqual(declared, set(metadata[path]["parameters"]))

@@ -5,8 +5,10 @@ its existing workflow is `msplatform.workflows.oa_focus_fast_adjust`. The curren
 uses `msplatform.workflows.oa_focus_store_analysis` for cold SI analysis and bounded decision steps.
 The original numerical theory and bounded update now reside in the OA component, and a guarded
 original-birth packet is available to continuous consumers. Software-only Store tests and an inert
-public owner run cover this path; native scientific validation, complete multi-round adjustment,
-field contrast and retirement of the legacy runners remain open.
+public owner run cover this path; native scientific validation and the public-Recipe multi-round
+adjustment loop remain open. The legacy closed-focus runners have now moved to the Store-owned
+`oa_focus_component` chain; their field contrast and bounded Fast-Adjust science remain in the
+existing actions, with no commercial native execution or new qualification implied by the migration.
 Current analyzer and controller-state records use protocol revision 2. Their
 validated profile-content SHA is a scientific authority bound at initialization and
 checked when consuming state or analysis. Revision-1 historical files are retained
@@ -19,6 +21,17 @@ frozen Python transport. Raw events, original release/clock identities, full coh
 unknown/not-reached distinction, hard energy gates and bounded correction policy
 are preserved. MR energy-reference evaluation uses the gaps of its actual frozen
 provider plan, not a checkout profile. This source migration is not native qualification.
+
+The component-focus execution profile now directly registers the
+`msplatform.workflows.oa_focus_component` Python CLI; the former public PowerShell shells are removed. The existing `oa_focus_controller` Store implementation owns the
+PA response asset and controlled private runtime; managed PowerShell actions retain the original flight,
+four-field contrast and bounded Fast-Adjust calls but no longer create legacy packages, capacity sessions or
+terminal manifests. Parent/child run modes, receipt filenames, original release and birth identities, complete
+cohort gates and MR energy/source-offset projection are preserved. Store claims and managed writer closure
+cover source use and resource release; interrupted work uses `recover_managed_native_store_stage` and
+`recover_run_publication`, not a project-specific recovery state machine. Real inert tests cover cache miss/hit,
+legacy runtime materialization, parent success, Fast-Adjust exhaustion, Store-source tampering and manifest-bound
+MR projection. No SIMION commercial process, new native result or GUI/scientific qualification was run.
 
 # 正交脉冲加速器项目状态
 
@@ -204,8 +217,8 @@ regression is separate from native occupancy and field qualification.
 真实 FLY2/Lua 文本和来源/输出字节身份；campaign 或 provider 不一致仍拒绝。
 该文件六项测试通过，仅证明软件投影与身份保持，不替代下述 N100 原生组件验收。
 
-`src/msplatform/backends/simion/resources/run_component_focus_workflow.ps1`消费窄器件request与公共ion-release spec，先冻结
-profile、campaign和plan，再复用既有PA cache runner与flight runner，发布绑定两个子manifest的父receipt。
+`src/msplatform/workflows/oa_focus_component.py --action workflow`消费窄器件request与公共ion-release spec，
+由`oa_focus_component`冻结profile、campaign和plan，依次调用现有Store controller与flight action，并发布绑定子manifest的父receipt。
 源速度、能量和粒子状态只进入flight，不进入PA几何身份；不复制另一套释放器或响应库。
 
 封闭二区组件合同要求完整N100按负z方向穿过声明焦面，保留全粒子终态和事件身份；
@@ -279,14 +292,13 @@ N100全部穿过出口；后续私有runtime恢复及K=25.5、23.5工况也各�
 原9环及仅减薄框的负结果、15环演进、准确数值、run与SHA见[收口前证据](../../../../../docs/history/projects/orthogonal_accelerator/20261026__assembly-documentation-consolidation.md)。
 “十五环仍待首次N100”的旧步骤已被这些证据接替，不再作为当前下一步。
 
-PA发布沿[公共缓存事务](../../../../../docs/SIMION_BACKEND.md#pa-缓存与工作点)。现有cache HIT及显式
-runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未全覆盖；不能由HIT推定中断恢复完成。
-旧私有缓存根是否可退役取决于实际消费者、GUI及公共owner记录。
+新PA发布沿Store的`claim_key`／`put_asset_claimed`和受控runtime物化，不再进入旧PA-family事务或容量session。
+科学cache key保留原几何、网格、builder及响应库身份，Store另绑定实际导出／验证资源和完整不可变文件清单。
+显式旧runtime checkpoint仍须匹配该身份；未发布或失联stage由公共Store恢复规则处理，不能由HIT推定原生中断恢复。
 
-组件PA的构建、standalone导出及原生验证共用同一SIMION资源租约，验证退出后才释放并进入缓存发布。
-验证非零退出同样先结束该租约，再由原入口记录失败；不增加进程包装或改动物理参数。
-小型软件夹具执行真实PowerShell分支和显式原生替身，校验成功／非零分支的准入、释放及发布顺序；
-该回归不新增原生场或组件聚焦资格。
+组件PA构建、standalone导出及原生验证由managed host/process owner观察，确认writer退出后才seal和发布。
+验证非零退出保留失败并阻断后续消费，不改变原生物理参数。真实惰性进程夹具覆盖成功、失败、cache HIT、
+私有runtime及资源释放；这些结果不新增原生场或组件聚焦资格。既有旧cache/run继续按原manifest只读消费或由其owner管理。
 
 ## 统一组装迁移任务
 
@@ -311,13 +323,14 @@ runtime checkpoint复用已经使用，但未发布事务的跨run重入仍未�
 2. 对实际声明补齐真实场、完整源穿越、空间／时间离散证据；解析与迁移样例不能代替。
 3. 完成各变体GUI重开、CAD交付与资产身份后，再申请相应资格。
 4. 完成提供者几何／驱动在实际消费者中的冻结对照；整机结论只写所属PROJECT或INTEGRATION。
-5. 沿[统一恢复规则](../../../../../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)补齐未发布PA事务重入：
-   新run显式绑定原owner，中断构建、待验证及待发布阶段均可恢复，不重复已完成响应且不改写旧证据。
+5. 历史旧PA事务仅按原合同只读核验或交原owner处置；新focus stage使用公共Store恢复，不为旧run补造新身份。
+   需要消费旧中断资产时仍沿[统一恢复规则](../../../../../docs/DEVELOPMENT_STANDARDS.md#昂贵阶段复用与中断恢复)显式绑定原owner，
+   不重复已完成响应且不改写旧证据。
 
 ## 产物
 
-独立器件新运行归`artifacts/components/orthogonal_accelerator/`；focus运行器和PA cache分别使用公共component与platform路径解析器。既有OA/MR run、冻结包与Formal资产
-保持原owner及身份。
+新focus运行由显式`ArtifactRoot`选择独立Store根，父run、native stage、cache和runtime由同一Store合同管理。
+既有`artifacts/components/orthogonal_accelerator/`、OA/MR run、冻结包与Formal资产保持原owner及身份，不被新Store接管。
 
 ## 机器能力与解析输入
 

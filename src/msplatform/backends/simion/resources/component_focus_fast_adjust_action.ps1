@@ -1,5 +1,6 @@
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory)][string]$PackagePath,
     [Parameter(Mandatory)][string]$RunId,
     [Parameter(Mandatory)][string]$RootRunId,
     [Parameter(Mandatory)][string]$PABuildRunPath,
@@ -13,6 +14,7 @@ param(
     [ValidateRange(4,20)][int]$MaximumTrials=7,
     [string]$SimionExe=''
 )
+# Store-stage scientific action, not a public run/lifecycle entrypoint.
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $workspaceRoot=(Resolve-Path -LiteralPath $WorkspaceRoot).Path;$artifactRoot=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArtifactRoot)
@@ -32,12 +34,11 @@ foreach($item in @($python,$SimionExe,$CampaignPath,$ReleaseSpecPath)){if(-not(T
 $family=(Resolve-Path -LiteralPath $PABuildRunPath).Path
 & $python -I -B -c 'from msplatform.execution.manifest_verification import main; from msplatform.backends.simion.native_completion import retention_api; main(retention_api=retention_api)' (Join-Path $family 'run_manifest.json') --require-status success --require-project orthogonal_accelerator --require-mode component_focus_pa_build
 if($LASTEXITCODE-ne0){throw 'Fast-Adjust controller requires a verified published provider PA build run'}
-$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot ($componentArtifactRoot) -RunId $RunId -Project orthogonal_accelerator -Mode component_focus_fast_adjust -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass solver_review -RetentionReason 'Bounded provider-owned component voltage search using one existing published native Fast-Adjust PA family.' -AdditionalDirectories @('simion') -UseShortExecutionPath -CapacityLedgerLifecycleEnabled
-$done=$false;$failureDetail='';$stage='freeze_inputs'
+$package=Get-Content -LiteralPath $PackagePath -Raw -Encoding UTF8|ConvertFrom-Json
+$stage='freeze_inputs'
 try {
     $campaign=Copy-VerifiedRunInput (Resolve-Path -LiteralPath $CampaignPath).Path (Join-Path $package.input_dir 'campaign.json')
     $release=Copy-VerifiedRunInput (Resolve-Path -LiteralPath $ReleaseSpecPath).Path (Join-Path $package.input_dir 'release_spec.json')
-    $flightRunner=Join-Path $simionResources 'run_component_focus_flight.ps1'
     $state=Join-Path $package.result_dir 'fast_adjust_controller_state.json'
     $focusPython=Initialize-FocusFrozenPython -PackageRoot $packageRoot -RunConfig $package.run_config -Python $python -CampaignPath $campaign -InputNames @('campaign.json','release_spec.json')
     $componentContract=Join-Path $focusPython.code_root 'src/msplatform/components/orthogonal_accelerator/component_contract.json'
@@ -54,15 +55,16 @@ try {
         $candidate=Join-Path $package.result_dir ("candidate_campaign_{0}.json" -f $index)
         $stage="derive_candidate_$index";Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module msplatform.workflows.oa_focus_fast_adjust -Arguments @('--component-contract',$componentContract,'--campaign',$campaign,'--state',$state,'--candidate-campaign',$candidate);if($LASTEXITCODE-ne0){throw 'Fast-Adjust candidate derivation failed'}
         $childRunId="$RootRunId`__fast-adjust-trial$index`__r$('{0:d2}' -f ($index + 2))"
-        $stage="flight_$index";&$flightRunner -RunId $childRunId -PABuildRunPath $family -RuntimeControllerPath $RuntimeControllerPath -CampaignPath $candidate -ReleaseSpecPath $release -WorkspaceRoot $workspaceRoot -ArtifactRoot $artifactRoot -PythonExe $python -SimionExe $SimionExe
+        $stage="flight_$index";$childReceipt=Join-Path $package.input_dir "fast-adjust-result-$index.json";&$python -I -B -m msplatform.workflows.oa_focus_component --action flight --run-id $childRunId --pa-build-run-path $family --runtime-controller-path $RuntimeControllerPath --campaign-path $candidate --release-spec-path $release --workspace-root $workspaceRoot --store-root $artifactRoot --receipt-path $childReceipt --powershell-exe (Get-Process -Id $PID).Path --simion-exe $SimionExe
         if($LASTEXITCODE-ne0){throw 'Fast-Adjust trial flight failed'}
-        $childRun=Join-Path $componentArtifactRoot (Join-Path 'runs' $childRunId)
-        $childManifest=Join-Path $childRun 'run_manifest.json';$analysis=Join-Path $childRun 'results\focus_analysis.json'
+        $childResult=Get-Content -LiteralPath $childReceipt -Raw -Encoding UTF8|ConvertFrom-Json
+        $childRun=Split-Path -Parent ([string]$childResult.manifest.path)
+        $childManifest=[string]$childResult.manifest.path;$analysis=Join-Path $childRun 'results\focus_analysis.json'
         foreach($required in @($childManifest,$analysis)){if(-not(Test-Path -LiteralPath $required -PathType Leaf)){throw "Fast-Adjust trial output is missing: $required"}}
         $stage="record_trial_$index";Invoke-FocusFrozenPython -Python $python -CodeRoot $focusPython.code_root -OriginsPath $focusPython.origins_path -Module msplatform.workflows.oa_focus_fast_adjust -Arguments @('--component-contract',$componentContract,'--campaign',$campaign,'--state',$state,'--analysis',$analysis);if($LASTEXITCODE-ne0){throw 'Fast-Adjust trial analysis recording failed'}
         $analysisValue=Get-Content -Raw -LiteralPath $analysis|ConvertFrom-Json -Depth 16
         $record=@((Get-Content -Raw -LiteralPath $state|ConvertFrom-Json -Depth 16).records)[-1]
-        $trials+=@([ordered]@{index=$index;run_id=$childRunId;kind=[string]$record.kind;parameters=$record.parameters;maximum_normalized_residual=[double]$record.maximum_normalized_residual;score=[double]$record.score;candidate_campaign_sha256=(Get-FileHash $candidate -Algorithm SHA256).Hash;manifest_sha256=(Get-FileHash $childManifest -Algorithm SHA256).Hash;analysis_sha256=(Get-FileHash $analysis -Algorithm SHA256).Hash;peak_to_peak_t_ns=[double]$analysisValue.focus_metrics.peak_to_peak_t_ns;status=[string]$analysisValue.status})
+        $trials+=@([ordered]@{index=$index;run_id=$childRunId;run_directory=$childRun;kind=[string]$record.kind;parameters=$record.parameters;maximum_normalized_residual=[double]$record.maximum_normalized_residual;score=[double]$record.score;candidate_campaign_sha256=(Get-FileHash $candidate -Algorithm SHA256).Hash;manifest_sha256=(Get-FileHash $childManifest -Algorithm SHA256).Hash;analysis_sha256=(Get-FileHash $analysis -Algorithm SHA256).Hash;peak_to_peak_t_ns=[double]$analysisValue.focus_metrics.peak_to_peak_t_ns;status=[string]$analysisValue.status})
     }
     $final=Get-Content -Raw -LiteralPath $state|ConvertFrom-Json -Depth 16
     if([string]$final.status-notin@('accepted','exhausted')){throw 'Fast-Adjust controller did not reach a terminal bounded state'}
@@ -84,9 +86,6 @@ try {
     $summary=[ordered]@{schema_version=1;role='orthogonal_accelerator_component_focus_fast_adjust';status=[string]$final.status;qualification='candidate_prototype_numeric_component_focus_only';trial_count=$trials.Count;receipt_sha256=(Get-FileHash $receipt -Algorithm SHA256).Hash};Write-RunJson -Path $package.summary -Depth 16 -Value $summary
     $outputs=@($package.summary,$state,$receipt,$bestCampaign,$focusPython.origins_path)+@(Get-ChildItem -LiteralPath $package.result_dir -Filter 'candidate_campaign_*.json' -File|ForEach-Object{$_.FullName})
     if($selectedCampaign){$outputs+=@($selectedCampaign)}
-    $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-    $outputs+=@($retention)
-    Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
-    $done=$true
-}catch{$failureDetail=$_.Exception.Message;throw
-}finally{if(-not$done){$reason="Fast-Adjust controller failed at $stage.";if(-not[string]::IsNullOrWhiteSpace($failureDetail)){$reason+=" $failureDetail"};Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Summary $package.summary -SummaryRole orthogonal_accelerator_component_focus_fast_adjust -Reason $reason -Software @('SIMION 2020','Python 3.11') -Status failed};Remove-RunPackageExecutionAlias -Package $package}
+    Write-RunJson -Path (Join-Path $package.result_dir 'action_publication.json') -Depth 8 -Value ([ordered]@{schema_version=1;role='oa_focus_action_publication';outputs=$outputs})
+}catch{throw
+}

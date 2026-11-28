@@ -16,12 +16,14 @@ param(
   [string]$WorkpointResumeInitialManifest='',
   [string]$WorkpointResumeParentCheckpoint='',
   [string]$WorkpointResumeSuccessfulChildManifest='',
-  [string]$PythonExe='',
+  [Parameter(Mandatory)][string]$PythonExe,
+  [Parameter(Mandatory)][string]$StoreRoot,
+  [Parameter(Mandatory)][string]$PackagePath,
   [string]$SimionExe=''
 )
 
-# Thin single-condition orchestration.  Physics and resource scheduling remain
-# in the existing Stripe, SIMION, coverage, continuation, N=1, and Candidate runners.
+# Store-stage scientific action, not a public run/lifecycle entrypoint.
+# Physics stays in the existing Stripe, SIMION, coverage, continuation, N=1, and Candidate runners.
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $project='multi_reflection_tof'
@@ -44,7 +46,7 @@ if($localScopeSource-and-not(Test-Path -LiteralPath $localScopeSource -PathType 
 . (Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1')
 $artifactProject=Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId $project -Python $python
 $artifactRuns=Join-Path $artifactProject 'runs'
-$oaArtifactRuns=Join-Path (Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind component -OwnerId orthogonal_accelerator -Python $python) 'runs'
+$storeRoot=(Resolve-Path -LiteralPath $StoreRoot).Path
 
 function Resolve-ContextPath {
   param([Parameter(Mandatory)][string]$Value)
@@ -183,9 +185,7 @@ function Complete-PhysicalConditionWarning {
     provider_exit_energy_acceptance=$Provider.exit_energy_acceptance
     child_run_manifests=$ChildRunManifests
   })
-  $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $Package.run_config
-  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $Package.run_config -Status success `
-    -Software @('SIMION 2020','Python 3.11') -Outputs @($Package.summary,$retention)
+
 }
 
 function Assert-ProviderAuthority {
@@ -308,11 +308,8 @@ if([string]::IsNullOrWhiteSpace($oaGeometryProfileId)-or$oaGeometryProfileId-ne$
   throw 'Current condition construction requires an explicit OA geometry profile ID.'
 }
 
-$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactProject `
-  -RunId $RunId -Project $project -Mode 'native_candidate_single_condition' `
-  -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
-  -CapacityLedgerLifecycleEnabled
-$terminalized=$false;$failureStage='freeze_inputs'
+$package=Get-Content -LiteralPath $PackagePath -Raw -Encoding UTF8|ConvertFrom-Json
+$failureStage='freeze_inputs'
 try{
   $frozenCondition=Copy-VerifiedRunInput -Source $conditionSource -Destination (Join-Path $package.input_dir 'condition.json')
   $frozenContext=Copy-VerifiedRunInput -Source $contextSource -Destination (Join-Path $package.input_dir 'context.json')
@@ -381,12 +378,17 @@ try{
     $acceleratorReceipt=(Resolve-Path -LiteralPath ([string]$reuse.runtime_receipt)).Path
   }else{
     $providerId=$stamp+'__sim__simion__mrtof-condition-oa-provider'
-    $providerArgs=@{RunId=$providerId;RequestPath=$frozenOaRequest;ReleaseSpecPath=$releaseSpec;WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python}
-    if($AcceleratorRuntimeCheckpoint){$providerArgs.RuntimeCheckpointPath=(Resolve-Path -LiteralPath $AcceleratorRuntimeCheckpoint).Path}
-    if($SimionExe){$providerArgs.SimionExe=$SimionExe}
-    & (Join-Path $simionResources 'run_component_focus_workflow.ps1') @providerArgs|Out-Host
-    $providerRun=Join-Path $oaArtifactRuns $providerId
-    $providerManifest=Join-Path $providerRun 'run_manifest.json'
+    $providerResultPath=Join-Path $package.input_dir 'oa_provider_result.json'
+    $providerArgv=@('-I','-B','-m','msplatform.workflows.oa_focus_component','--action','workflow',
+      '--run-id',$providerId,'--request-path',$frozenOaRequest,'--release-spec-path',$releaseSpec,
+      '--workspace-root',$workspaceRoot,'--store-root',$storeRoot,'--receipt-path',$providerResultPath,
+      '--powershell-exe',(Get-Process -Id $PID).Path)
+    if($AcceleratorRuntimeCheckpoint){$providerArgv+=@('--runtime-checkpoint-path',$AcceleratorRuntimeCheckpoint)}
+    if($SimionExe){$providerArgv+=@('--simion-exe',$SimionExe)}
+    & $python @providerArgv|Out-Host
+    $providerResult=Get-Content -LiteralPath $providerResultPath -Raw -Encoding UTF8|ConvertFrom-Json
+    $providerRun=(Resolve-Path -LiteralPath ([string]$providerResult.run_directory)).Path
+    $providerManifest=(Resolve-Path -LiteralPath ([string]$providerResult.manifest.path)).Path
     $acceleratorReceipt=Join-Path $providerRun 'results\mrtof_runtime_receipt.json'
   }
   $provider=Assert-ProviderAuthority -ManifestPath $providerManifest -ReceiptPath $acceleratorReceipt `
@@ -497,7 +499,6 @@ try{
       -Provider $provider -ProviderManifest $providerManifest -ProviderReceipt $acceleratorReceipt `
       -SlowEnergy $slowEnergy -SourceYOffset $sourceYOffset -K $k -AcceleratorY $acceleratorY `
       -ChildRunManifests ([ordered]@{stripe=$stripeManifest;accelerator_safe_exit=$safeExitManifest;coverage=$coverageManifest;continuation=$continuationManifest})
-    $terminalized=$true
     return
   }
 
@@ -573,8 +574,7 @@ try{
           -Provider $provider -ProviderManifest $providerManifest -ProviderReceipt $acceleratorReceipt `
           -SlowEnergy $slowEnergy -SourceYOffset $sourceYOffset -K $k -AcceleratorY $acceleratorY `
           -ChildRunManifests ([ordered]@{stripe=$stripeManifest;accelerator_safe_exit=$safeExitManifest;coverage=$coverageManifest;continuation=$continuationManifest;workpoint=$workpointManifest})
-        $terminalized=$true
-        return
+            return
       }
         throw 'N=1 iteration did not publish a qualified physical workpoint.'
       }
@@ -614,23 +614,10 @@ try{
     coverage_run_manifest=$coverageManifest;continuation_run_manifest=$continuationManifest
     workpoint_run_manifest=$workpointManifest;candidate_run_manifest=$candidateManifest
   })
-  $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success `
-    -Software @('SIMION 2020','Python 3.11') -Outputs @($package.summary,$retention)
-  $terminalized=$true
 }catch{
-  if(-not$terminalized){
-    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Summary $package.summary `
-      -SummaryRole 'mrtof_native_candidate_single_condition_summary' -Reason $_.Exception.Message `
-      -Software @('SIMION 2020','Python 3.11') -Status failed -FailureStage $failureStage
-    $terminalized=$true
-  }
+  Write-RunJson -Path $package.summary -Depth 20 -Value ([ordered]@{
+    schema_version=1;role='mrtof_native_candidate_single_condition_summary';status='failed'
+    failure_stage=$failureStage;reason=$_.Exception.Message
+  })
   throw
-}finally{
-  if(-not$terminalized-and(Test-Path -LiteralPath $package.run_config -PathType Leaf)){
-    Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Summary $package.summary `
-      -SummaryRole 'mrtof_native_candidate_single_condition_summary' `
-      -Reason 'Single-condition workflow stopped before terminal publication.' `
-      -Software @('SIMION 2020','Python 3.11') -Status interrupted -FailureStage $failureStage
-  }
 }

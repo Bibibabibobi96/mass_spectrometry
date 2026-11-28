@@ -1,15 +1,20 @@
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 RUNNER = (
     Path(__file__).resolve().parents[4]
-    / "src/msplatform/workflows/resources/run_native_candidate_condition.ps1"
+    / "src/msplatform/workflows/resources/native_candidate_condition_action.ps1"
 )
+PROFILE = RUNNER.parents[2] / "components/multi_reflection_tof/config/execution_profiles.json"
+STORE_OWNER = RUNNER.parents[1] / "mr_native_condition.py"
 CONTINUATION_RUNNER = RUNNER.with_name("run_two_prism_segmented_continuation.ps1")
 OA_RELEASE = RUNNER.parents[4] / "src/msplatform/components/multi_reflection_tof/config" / "accelerator_component_release_n100.json"
 
@@ -22,7 +27,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
     def test_physical_stages_delegate_to_existing_runners_in_order(self) -> None:
         stages = [
             "run_dual_stripe_operating_seed.ps1",
-            "run_component_focus_workflow.ps1",
+            "msplatform.workflows.oa_focus_component",
             "oa_mr.ps1",
             "run_two_prism_segmented_coverage.ps1",
             "run_two_prism_segmented_continuation.ps1",
@@ -32,7 +37,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         positions = [self.source.index(stage) for stage in stages]
         self.assertEqual(positions, sorted(positions))
         self.assertIn("FixedGridRunManifest=$fixedMirrorManifest", self.source)
-        self.assertIn("ReleaseSpecPath=$releaseSpec", self.source)
+        self.assertIn("'--release-spec-path',$releaseSpec", self.source)
         self.assertIn("AcceleratorSafeExitOnly=$true", self.source)
         self.assertNotIn("ContinuationRunManifest=$context", self.source)
 
@@ -220,7 +225,9 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         )
         self.assertIn("workpoint_incomplete_downstream_blocked", self.source)
         self.assertIn("$workpointSummary.external_interruption-eq$false", self.source)
-        self.assertIn("Complete-FailedRun", self.source)
+        self.assertIn("failure_stage=$failureStage", self.source)
+        self.assertNotIn("Complete-FailedRun", self.source)
+        self.assertIn("run_managed_stage", STORE_OWNER.read_text(encoding="utf-8"))
 
     def test_existing_native_runtime_checkpoint_is_reused_without_pa_materialization(self) -> None:
         self.assertIn("native_runtime_checkpoint_path", self.source)
@@ -231,7 +238,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
     def test_accelerator_runtime_checkpoint_is_passed_only_to_new_provider(self) -> None:
         self.assertIn("[string]$AcceleratorRuntimeCheckpoint=''", self.source)
         self.assertIn(
-            'if($AcceleratorRuntimeCheckpoint){$providerArgs.RuntimeCheckpointPath=',
+            "if($AcceleratorRuntimeCheckpoint){$providerArgv+=@('--runtime-checkpoint-path',$AcceleratorRuntimeCheckpoint)}",
             self.source,
         )
 
@@ -247,7 +254,7 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
         self.assertIn("import msplatform;print(Path(msplatform.__file__).resolve().parent)", self.source)
         self.assertIn("$workflowResources=Join-Path $packageRoot 'workflows/resources'", self.source)
         self.assertIn("$simionResources=Join-Path $packageRoot 'backends/simion/resources'", self.source)
-        self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python", self.source)
+        self.assertIn("'--workspace-root',$workspaceRoot,'--store-root',$storeRoot", self.source)
         for name in ("stripeArgs", "safeExitArgs", "coverageArgs", "continuationArgs",
                      "workpointArgs", "candidateArgs"):
             self.assertIn(f"${name}.PythonExe=$python", self.source)
@@ -256,13 +263,27 @@ class NativeCandidateConditionRunnerTests(unittest.TestCase):
             self.assertIn(f"${name}.ArtifactRoot=$artifactRoot", self.source)
         self.assertIn("RepoRoot=$workspaceRoot", self.source)
         self.assertIn("CompositionPlanPath=$CompositionPlanPath;LocalScopePath=$LocalScopePath", self.source)
-        self.assertIn("OwnerId orthogonal_accelerator", self.source)
+        self.assertIn("'--store-root',$storeRoot", self.source)
+        self.assertIn("oa_provider_result.json", self.source)
         self.assertNotIn("projects\\orthogonal_accelerator", self.source)
         self.assertIn("Resolve-RunArtifactRoot -ArtifactRoot $artifactRoot -OwnerKind assembly", self.source)
         self.assertIn("& $python -I -B -m msplatform.workflows.oa_mr.native_system_runtime", self.source)
         self.assertNotIn(".venv", self.source)
         self.assertNotIn("Join-Path $PSScriptRoot", self.source)
         self.assertNotIn("PYTHONPATH", self.source)
+
+    def test_profile_registers_store_python_cli_directly(self) -> None:
+        profile = json.loads(PROFILE.read_text(encoding="utf-8"))["profiles"][0]
+        step = profile["steps"][0]
+        owner = STORE_OWNER.read_text(encoding="utf-8")
+        self.assertEqual(step["shell"], "python")
+        self.assertEqual(step["entrypoint"], "src/msplatform/workflows/mr_native_condition.py")
+        self.assertIn("condition", step["arguments"])
+        self.assertIn("--store-root", step["arguments"])
+        self.assertIn("--powershell-exe", step["arguments"])
+        self.assertIn("standalone_native_store", owner)
+        self.assertIn("recover_managed_native_store_stage", owner)
+        self.assertIn("recover_run_publication", owner)
 
     def test_continuation_runner_supports_auto_and_legacy_explicit_selection(self) -> None:
         continuation = CONTINUATION_RUNNER.read_text(encoding="utf-8-sig")
@@ -283,8 +304,9 @@ class NativeCandidateConditionPreparationTests(unittest.TestCase):
                 repo = root / "repo"
                 analysis = repo / "src/msplatform/workflows/resources"
                 analysis.mkdir(parents=True)
-                for name in ("run_native_candidate_campaign.ps1", RUNNER.name):
-                    shutil.copyfile(RUNNER.with_name(name), analysis / name)
+                shutil.copyfile(RUNNER.with_name("native_candidate_campaign_action.ps1"),
+                                analysis / "native_candidate_campaign_action.ps1")
+                shutil.copyfile(RUNNER, analysis / RUNNER.name)
                 support = repo / "src" / "msplatform" / "execution" / "resources" / "run_artifact_support.ps1"
                 support.parent.mkdir(parents=True)
                 real_support = RUNNER.parents[4] / "src" / "msplatform" / "execution" / "resources" / support.name
@@ -330,12 +352,22 @@ function Complete-FailedRun {
                 )
                 condition_entry = analysis / "condition_entry.ps1"
                 condition_entry.write_text(
-                    "param($ConditionPath,$ContextPath,$RunId,$CompositionPlanPath,$LocalScopePath='',$WorkspaceRoot,$ArtifactRoot,$PythonExe)\n"
+                    "param($ConditionPath,$ContextPath,$RunId,$CompositionPlanPath,$LocalScopePath='',$WorkspaceRoot,$ArtifactRoot,$PythonExe,$StoreRoot,$ResultPath)\n"
                     f"$arguments=@{{ConditionPath=$ConditionPath;ContextPath=$ContextPath;RunId=$RunId;"
                     f"CompositionPlanPath=$CompositionPlanPath;WorkspaceRoot='{repo.as_posix()}';"
-                    f"ArtifactRoot='{(root / 'artifacts').as_posix()}';PythonExe='{selected_python.as_posix()}'}}\n"
+                    f"ArtifactRoot='{(root / 'artifacts').as_posix()}';PythonExe='{selected_python.as_posix()}';StoreRoot=$StoreRoot}}\n"
                     "if($LocalScopePath){$arguments.LocalScopePath=$LocalScopePath}\n"
-                    f"& (Join-Path $PSScriptRoot '{RUNNER.name}') @arguments\n",
+                    "$run=Join-Path $ArtifactRoot \"components/multi_reflection_tof/runs/$RunId\";$inputs=Join-Path $run 'inputs'\n"
+                    "New-Item -ItemType Directory -Path $inputs -Force|Out-Null\n"
+                    "$config=Join-Path $run 'run_config.json';$summary=Join-Path $run 'summary.json'\n"
+                    "@{run_id=$RunId}|ConvertTo-Json|Set-Content -LiteralPath $config;@{status='checkpoint'}|ConvertTo-Json|Set-Content -LiteralPath $summary\n"
+                    "$package=Join-Path $inputs 'package.json';@{run_dir=$run;input_dir=$inputs;run_config=$config;summary=$summary}|ConvertTo-Json|Set-Content -LiteralPath $package\n"
+                    "$arguments.PackagePath=$package\n"
+                    "try{"
+                    f"& (Join-Path $PSScriptRoot '{RUNNER.name}') @arguments"
+                    "}catch{"
+                    "@{run_id=$RunId;project='multi_reflection_tof';mode='native_candidate_single_condition';status='failed'}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $run 'run_manifest.json');"
+                    "@{manifest=@{path=(Join-Path $run 'run_manifest.json')}}|ConvertTo-Json|Set-Content -LiteralPath $ResultPath;throw}\n",
                     encoding="utf-8",
                 )
                 campaign = root / "campaign.json"
@@ -363,8 +395,12 @@ function Complete-FailedRun {
                 plan.write_bytes(b'{"fixture": "explicit parent plan"}\n')
                 scope.write_bytes(b'{"fixture": "explicit local scope"}\n')
                 checkpoint = root / "checkpoint.json"
+                campaign_package = root / "campaign_package.json"
+                campaign_package.write_text("{}", encoding="utf-8")
+                (root / "store").mkdir()
                 command = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
-                    str(analysis / "run_native_candidate_campaign.ps1"),
+                    str(analysis / "native_candidate_campaign_action.ps1"),
+                    "-StoreRoot", str(root / "store"), "-PackagePath", str(campaign_package),
                     "-CampaignPath", str(campaign), "-CheckpointPath", str(checkpoint),
                     "-ConditionContextPath", str(context), "-CompositionPlanPath", str(plan),
                     "-ConditionRunnerPath", str(condition_entry),
@@ -477,27 +513,40 @@ New-Item -ItemType Directory -Path $run -Force|Out-Null
                     },
                 },
             }
-            (provider_resources / "run_component_focus_workflow.ps1").write_text(
-                "param([Parameter(Mandatory)]$RunId,[Parameter(Mandatory)]$RequestPath,"
-                "[Parameter(Mandatory)]$ReleaseSpecPath,[Parameter(Mandatory)]$WorkspaceRoot,"
-                "[Parameter(Mandatory)]$ArtifactRoot,[Parameter(Mandatory)]$PythonExe)\n"
-                "$run=Join-Path $ArtifactRoot \"components/orthogonal_accelerator/runs/$RunId\"\n"
-                "New-Item -ItemType Directory -Path (Join-Path $run 'results') -Force|Out-Null\n"
-                "@{project='orthogonal_accelerator';mode='component_focus_workflow';status='success';run_id=$RunId}|"
-                "ConvertTo-Json|Set-Content -LiteralPath (Join-Path $run 'run_manifest.json')\n"
-                "$receipt=ConvertFrom-Json -AsHashtable @'\n" + json.dumps(receipt) + "\n'@\n"
-                "$receipt|ConvertTo-Json -Depth 20|Set-Content -LiteralPath (Join-Path $run 'results/mrtof_runtime_receipt.json')\n"
-                "@{workspace=$WorkspaceRoot;artifact=$ArtifactRoot;python=$PythonExe}|ConvertTo-Json|"
-                "Set-Content -LiteralPath (Join-Path $run 'transport.json')\n",
+            provider_driver = root / "provider_driver.py"
+            provider_driver.write_text(
+                "import json,sys\nfrom pathlib import Path\n"
+                f"root=Path({str(root)!r});repo=Path({str(repo)!r});run_inputs=root/'artifacts/components/multi_reflection_tof/runs/20261125_000000__analysis__python__condition/inputs'\n"
+                "args=sys.argv[1:]\n"
+                "if '-c' in args:\n"
+                "    if run_inputs.is_dir(): (run_inputs/'native_system_runtime_bundle.json').write_text('{}')\n"
+                "    print((repo/'src/msplatform').as_posix());raise SystemExit(0)\n"
+                "if 'msplatform.workflows.oa_mr.native_system_runtime' in args:\n"
+                "    output=Path(args[args.index('--bundle-output')+1]);output.write_text('{}');raise SystemExit(0)\n"
+                "assert 'msplatform.workflows.oa_focus_component' in args\n"
+                "def option(name): return args[args.index(name)+1]\n"
+                "run=root/'artifacts/components/orthogonal_accelerator/runs'/option('--run-id')\n"
+                "(run/'results').mkdir(parents=True)\n"
+                "(run/'run_manifest.json').write_text(json.dumps({'project':'orthogonal_accelerator','mode':'component_focus_workflow','status':'success','run_id':option('--run-id')}),encoding='utf8')\n"
+                f"(run/'results/mrtof_runtime_receipt.json').write_text(json.dumps({receipt!r}),encoding='utf8')\n"
+                "(run/'transport.json').write_text(json.dumps({'workspace':option('--workspace-root'),'store':option('--store-root'),'powershell':option('--powershell-exe')}),encoding='utf8')\n"
+                "(Path(option('--receipt-path'))).write_text(json.dumps({'run_directory':str(run),'manifest':{'path':str(run/'run_manifest.json')}}),encoding='utf8')\n",
                 encoding="utf-8",
             )
             run_id = "20261125_000000__analysis__python__condition"
-            run_inputs = root / "artifacts/components/multi_reflection_tof/runs" / run_id / "inputs"
+            run = root / "artifacts/components/multi_reflection_tof/runs" / run_id
+            run_inputs = run / "inputs"
+            run_inputs.mkdir(parents=True)
+            run_config = run / "run_config.json"
+            run_config.write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
+            (run / "summary.json").write_text('{"status":"checkpoint"}', encoding="utf-8")
+            package = run_inputs / "package.json"
+            package.write_text(json.dumps({"run_dir": str(run), "input_dir": str(run_inputs),
+                "run_config": str(run_config), "summary": str(run / "summary.json")}), encoding="utf-8")
+            (root / "store").mkdir()
             selected_python = root / "selected_python.cmd"
             selected_python.write_text(
-                "@echo off\r\n"
-                f"if exist \"{run_inputs}\" echo {{}}>\"{run_inputs / 'native_system_runtime_bundle.json'}\"\r\n"
-                f"echo {(repo / 'src/msplatform').as_posix()}\r\n",
+                f"@echo off\r\n\"{sys.executable}\" \"{provider_driver}\" %*\r\nexit /b %errorlevel%\r\n",
                 encoding="utf-8",
             )
             contract = root / "contract.json"
@@ -549,7 +598,8 @@ New-Item -ItemType Directory -Path $run -Force|Out-Null
                 ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(condition_runner),
                  "-ConditionPath", str(condition), "-ContextPath", str(context), "-RunId", run_id,
                  "-WorkspaceRoot", str(repo), "-ArtifactRoot", str(root / "artifacts"),
-                 "-PythonExe", str(selected_python), "-CompositionPlanPath", str(plan)],
+                 "-PythonExe", str(selected_python), "-CompositionPlanPath", str(plan),
+                 "-StoreRoot", str(root / "store"), "-PackagePath", str(package)],
                 cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
                 timeout=60, check=False,
             )
@@ -563,9 +613,112 @@ New-Item -ItemType Directory -Path $run -Force|Out-Null
             self.assertTrue((provider_run / "run_manifest.json").is_file())
             transport = json.loads((provider_run / "transport.json").read_text(encoding="utf-8-sig"))
             self.assertEqual(transport, {
-                "workspace": str(repo), "artifact": str(root / "artifacts"), "python": str(selected_python),
+                "workspace": str(repo), "store": str(root / "store"),
+                "powershell": str(Path(shutil.which("pwsh")).resolve()),
             })
             self.assertFalse((root / "artifacts/projects").exists())
+
+
+class NativeConditionStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from dataclasses import replace
+        from msplatform.execution.run_session import RunSession
+        from msplatform.storage import ArtifactStore
+        from tests.contracts.test_execution_runtime import NormalOwnerTests
+
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        helper = NormalOwnerTests()
+        context = helper._context(self.root)
+        capacity = self.root / "capacity.json"
+        capacity.write_text(json.dumps(helper._policy()), encoding="utf-8")
+        stage = dict(limits=dict(wall_clock_seconds=120, transient_run_directory_bytes=16*1024**2,
+            process_tree_working_set_bytes=1024**3, minimum_system_available_memory_bytes=1,
+            compact_final_retained_bytes=16*1024**2, automatic_retry_count=0),
+            artifact_retention=dict(policy_version=1, **{"class": "compact"}))
+        policy = self.root / "stages.json"
+        policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy",
+            stages={"mr_native_condition": stage})), encoding="utf-8")
+        self.context = replace(context, capacity_policy_path=capacity, stage_policy_path=policy,
+            tools={"simion": Path(sys.executable)})
+        self.store = ArtifactStore(self.root / "store")
+        self.condition = self.root / "condition.json"
+        self.condition.write_text(json.dumps({"schema_version": 1,
+            "role": "mrtof_native_candidate_campaign_condition", "K": 25.5, "accelerator_y": -55.0}), encoding="utf-8")
+        self.context_path = self.root / "context.json"
+        self.context_path.write_text(json.dumps({"schema_version": 2,
+            "role": "mrtof_native_candidate_condition_context"}), encoding="utf-8")
+        self.plan = self.root / "plan.json"
+        self.plan.write_text('{"fixture":"plan"}', encoding="utf-8")
+        self.original_process = RunSession.run_process
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def invoke(self, run_id: str, *, failed: bool = False, receipt: Path | None = None):
+        from msplatform.workflows.mr_native_condition import run_native_condition
+
+        def transport(session, operation_id, **kwargs):
+            status = "failed" if failed else "success"
+            summary = dict(schema_version=1, role="mrtof_native_candidate_single_condition_summary",
+                status=status, workflow_outcome=None if failed else "within_tolerance", K=25.5,
+                accelerator_y_mm=-55.0)
+            if failed:
+                summary.update(failure_stage="fixed_grid_stripe_seed", reason="INERT_FIRST_PHYSICAL_STAGE")
+            code = "import json,pathlib,sys;pathlib.Path(sys.argv[1]).write_text(json.dumps(" + repr(summary) + "),encoding='utf8');sys.exit(" + ("7" if failed else "0") + ")"
+            kwargs.update(executable=Path(sys.executable), arguments=["-c", code, str(session.artifact_run_dir/"summary.json")])
+            return self.original_process(session, operation_id, **kwargs)
+
+        environment = dict(MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN="",
+            MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID="", MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE="")
+        with patch.dict(os.environ, environment), patch(
+                "msplatform.execution.run_session.RunSession.run_process", new=transport):
+            return run_native_condition(self.context, artifact_store=self.store,
+                condition_path=self.condition, context_path=self.context_path, composition_plan_path=self.plan,
+                run_id=run_id, artifact_root=self.root/"legacy", receipt_path=receipt)
+
+    def test_store_success_cold_read_and_public_recovery(self) -> None:
+        from msplatform.workflows.mr_native_condition import recover_native_condition_publication
+        result = self.invoke("20261128_010000__test__python__store-condition")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(self.store.run_status(result["store_run_id"])["execution_status"], "succeeded")
+        self.assertTrue(self.store.inspect_run(result["store_run_id"]).is_dir())
+        before = Path(result["manifest"]["path"]).read_bytes()
+        recovery = recover_native_condition_publication(store=self.store,
+            store_run_id=result["store_run_id"], context=self.context)
+        self.assertFalse(recovery["run_recovered"])
+        self.assertEqual(Path(result["manifest"]["path"]).read_bytes(), before)
+
+    def test_store_failure_preserves_stage_and_result_receipt(self) -> None:
+        receipt = self.root / "condition-result.json"
+        result = self.invoke("20261128_010001__test__python__store-condition-failure", failed=True, receipt=receipt)
+        self.assertEqual(result["status"], "failed")
+        summary = json.loads(Path(result["run_directory"], "summary.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(summary["failure_stage"], "fixed_grid_stripe_seed")
+        published = json.loads(receipt.read_text(encoding="utf-8-sig"))
+        self.assertTrue(Path(published["manifest"]["path"]).is_file())
+        self.assertEqual(self.store.run_status(result["store_run_id"])["execution_status"], "failed")
+
+    def test_python_cli_requires_legacy_root_before_store_registration(self) -> None:
+        result = subprocess.run([sys.executable, "-m", "msplatform.workflows.mr_native_condition", "condition",
+            "--condition-path", str(self.condition), "--context-path", str(self.context_path),
+            "--composition-plan-path", str(self.plan), "--run-id", "20261128_010003__test__python__store-condition-legacy",
+            "--workspace-root", str(self.root), "--store-root", str(self.store.root),
+            "--powershell-exe", shutil.which("pwsh")], cwd=self.root,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("legacy_artifact_root", result.stdout + result.stderr)
+        with self.store._db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM runs").fetchone()[0], 0)
+
+    def test_missing_plan_is_rejected_before_store_registration(self) -> None:
+        from msplatform.workflows.mr_native_condition import run_native_condition
+        with self.assertRaises(FileNotFoundError):
+            run_native_condition(self.context, artifact_store=self.store, condition_path=self.condition,
+                context_path=self.context_path, composition_plan_path=self.root/"missing.json",
+                run_id="20261128_010002__test__python__store-condition-missing", artifact_root=self.root/"legacy")
+        with self.store._db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM runs").fetchone()[0], 0)
 
 
 if __name__ == "__main__":

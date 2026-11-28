@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "role": "execution_stage_policy",
+  "stages": {
+    "mr_native_condition": {
+      "limits": {
+        "wall_clock_seconds": 86400,
+        "transient_run_directory_bytes": 268435456,
+        "process_tree_working_set_bytes": 4294967296,
+        "minimum_system_available_memory_bytes": 1073741824,
+        "compact_final_retained_bytes": 268435456,
+        "automatic_retry_count": 0
+      },
+      "artifact_retention": {
+        "policy_version": 1,
+        "class": "compact"
+      }
+    },
+    "mr_native_campaign": {
+      "limits": {
+        "wall_clock_seconds": 86400,
+        "transient_run_directory_bytes": 268435456,
+        "process_tree_working_set_bytes": 4294967296,
+        "minimum_system_available_memory_bytes": 1073741824,
+        "compact_final_retained_bytes": 268435456,
+        "automatic_retry_count": 0
+      },
+      "artifact_retention": {
+        "policy_version": 1,
+        "class": "compact"
+      }
+    }
+  }
+}

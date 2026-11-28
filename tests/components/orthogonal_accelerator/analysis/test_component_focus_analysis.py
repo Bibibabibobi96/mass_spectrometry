@@ -285,7 +285,7 @@ $repoRoot=REPO
 $simionResources=Join-Path $repoRoot 'src/msplatform/backends/simion/resources'
 $solver=DESTINATION
 . (Join-Path $repoRoot 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$source=Join-Path $repoRoot 'src/msplatform/backends/simion/resources/run_component_focus_flight.ps1'
+$source=Join-Path $repoRoot 'src/msplatform/backends/simion/resources/component_focus_flight_action.ps1'
 $tokens=$null;$errors=$null
 $tree=[System.Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Runner parse failed'}
@@ -336,7 +336,7 @@ Invoke-Expression $copies[0].Extent.Text | Out-Null
         harness = self.root / "summary_and_analysis.ps1"
         harness.write_text(r"""param($Repo,$Root,$Python,$Events,$Receipt,$Campaign)
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-$source=Join-Path $Repo 'src/msplatform/backends/simion/resources/run_component_focus_flight.ps1'
+$source=Join-Path $Repo 'src/msplatform/backends/simion/resources/component_focus_flight_action.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$null,[ref]$null)
 $tables=@($ast.FindAll({param($n)$n-is[Management.Automation.Language.HashtableAst]-and
  @($n.KeyValuePairs|Where-Object{$_.Item1-is[Management.Automation.Language.StringConstantExpressionAst]-and$_.Item1.Value-eq'pa_build_run_manifest_sha256'}).Count},$true))
@@ -350,6 +350,7 @@ $summary=Join-Path $Root 'summary.json';$analysis=Join-Path $Root 'analysis.json
 $releaseReceipt=$Receipt;$runCampaign=$Campaign
 $focusPython=@{code_root=(Join-Path $Root 'frozen code');origins_path=(Join-Path $Root 'origins.json')}
 $analysisResult=@{status='candidate_incomplete'};$result=@{cache_key='fixture-key';generation_sha256='fixture-generation'}
+$cacheManifest=Join-Path $generation 'cache_manifest.json';$storeAssetId=''
 $script:hashes=[Collections.Generic.List[string]]::new()
 function Get-FileHash {param($Path,$Algorithm)
  if($Path-notin@((Join-Path $family 'run_manifest.json'),(Join-Path $generation 'cache_manifest.json'))){throw 'Unexpected payload hash'}
@@ -368,7 +369,7 @@ finally {$guard.Dispose()}
 """, encoding="utf-8")
         result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness), str(repo),
             str(self.root), sys.executable, str(events), str(self.receipt), str(self.campaign)],
-            cwd=self.root, capture_output=True, text=True, encoding="utf-8", timeout=30)
+            cwd=self.root, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         observed = json.loads(result.stdout)
         self.assertCountEqual(observed["hashes"], [str(parent_manifest), str(cache_manifest)])

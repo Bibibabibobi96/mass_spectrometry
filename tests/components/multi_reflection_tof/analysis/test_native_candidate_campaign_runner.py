@@ -10,8 +10,10 @@ import unittest
 
 RUNNER = (
     Path(__file__).resolve().parents[4]
-    / "src/msplatform/workflows/resources/run_native_candidate_campaign.ps1"
+    / "src/msplatform/workflows/resources/native_candidate_campaign_action.ps1"
 )
+PROFILE = RUNNER.parents[2] / "components/multi_reflection_tof/config/execution_profiles.json"
+STORE_OWNER = RUNNER.parents[1] / "mr_native_condition.py"
 CAMPAIGN = RUNNER.parents[4] / "src/msplatform/components/multi_reflection_tof/config" / "native_candidate_campaign_k_y_scan.json"
 
 
@@ -20,20 +22,29 @@ class NativeCandidateCampaignRunnerTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = RUNNER.read_text(encoding="utf-8-sig")
 
+    def test_registered_python_owner_and_public_recovery(self) -> None:
+        profile = json.loads(PROFILE.read_text(encoding="utf-8"))["profiles"][0]
+        owner = STORE_OWNER.read_text(encoding="utf-8")
+        self.assertEqual(profile["steps"][0]["shell"], "python")
+        self.assertEqual(profile["steps"][0]["entrypoint"], "src/msplatform/workflows/mr_native_condition.py")
+        self.assertIn("run_managed_stage", owner)
+        self.assertIn("recover_run_publication", owner)
+
     def test_campaign_delegates_one_complete_condition_without_physics(self) -> None:
         self.assertIn("[string]$ConditionRunnerPath=''", self.source)
         self.assertIn("[Parameter(Mandatory)][string]$ConditionContextPath", self.source)
         self.assertIn("ConditionRunnerPath must be a file.", self.source)
-        self.assertIn("run_native_candidate_condition.ps1", self.source)
+        self.assertIn("msplatform.workflows.mr_native_condition", self.source)
         self.assertIn("[Parameter(Mandatory)][string]$WorkspaceRoot", self.source)
         self.assertIn("[Parameter(Mandatory)][string]$ArtifactRoot", self.source)
         self.assertIn("[Parameter(Mandatory)][string]$PythonExe", self.source)
-        self.assertIn("Join-Path $packageRoot 'workflows/resources/run_native_candidate_condition.ps1'", self.source)
+        self.assertIn("Join-Path $packageRoot 'workflows/mr_native_condition.py'", self.source)
+        self.assertIn("Invoke-SelectedConditionRunner", self.source)
         self.assertIn("Join-Path $packageRoot 'execution/resources/run_artifact_support.ps1'", self.source)
         self.assertNotIn("PYTHONPATH", self.source)
         self.assertNotIn("SIMULATION_PYTHON_EXE", self.source)
         self.assertIn("WorkspaceRoot=$workspaceRoot;ArtifactRoot=$artifactRoot;PythonExe=$python", self.source)
-        self.assertIn("& $conditionRunner @arguments|Out-Host", self.source)
+        self.assertIn("& $conditionRunner @Arguments|Out-Host", self.source)
         self.assertNotIn("run_target_operating_point_chain.ps1", self.source)
         self.assertNotIn("run_two_prism_segmented_coverage.ps1", self.source)
         self.assertNotIn("run_native_candidate_chain.ps1", self.source)
@@ -161,13 +172,14 @@ class NativeCandidateCampaignBehaviorTests(unittest.TestCase):
   [string]$WorkpointResumeInitialManifest='',
   [string]$WorkpointResumeParentCheckpoint='',
   [string]$WorkpointResumeSuccessfulChildManifest='',
+  [string]$StoreRoot='', [string]$ResultPath='', [string]$StagePolicyPath='',
   [string]$PythonExe='', [string]$SimionExe='')
 $condition=Get-Content -LiteralPath $ConditionPath -Raw|ConvertFrom-Json
 $context=Get-Content -LiteralPath $ContextPath -Raw|ConvertFrom-Json
 $attempt=1
 if(Test-Path -LiteralPath $context.counter_path){$attempt=1+[int](Get-Content -LiteralPath $context.counter_path -Raw)}
 Set-Content -LiteralPath $context.counter_path -Value $attempt -Encoding UTF8
-$status=if($context.behavior-eq'interrupted_then_success'-and$attempt-eq1){'interrupted'}else{'success'}
+$status=if($context.behavior-eq'failed'){'failed'}elseif($context.behavior-eq'interrupted_then_success'-and$attempt-eq1){'interrupted'}else{'success'}
 $outcome=if(($context.behavior-eq'warning_then_success'-and$attempt-eq1)-or$context.behavior-eq'upstream_warning'){'warning_physical_nonqualification__continue_parameter_scan'}else{'within_tolerance'}
 $project=if($context.behavior-eq'wrong_manifest'){'wrong_project'}else{'multi_reflection_tof'}
 $run=Join-Path $context.artifact_runs $RunId
@@ -208,6 +220,7 @@ if($status-eq'success'){
   }
   $summary|ConvertTo-Json -Depth 5|Set-Content -LiteralPath (Join-Path $run 'summary.json') -Encoding UTF8
 }
+[ordered]@{run_id=$RunId;run_directory=$run;manifest=[ordered]@{path=(Join-Path $run 'run_manifest.json')}}|ConvertTo-Json -Depth 4|Set-Content -LiteralPath $ResultPath -Encoding UTF8
 """,
             encoding="utf-8",
         )
@@ -216,6 +229,9 @@ if($status-eq'success'){
             json.dumps([{"K": 25.5, "accelerator_y": -55.0}]), encoding="utf-8"
         )
         self.checkpoint = self.root / "checkpoint.json"
+        self.package = self.root / "campaign_package.json"
+        self.package.write_text("{}", encoding="utf-8")
+        (self.root / "store").mkdir()
         self.plan = self.root / "composition_plan.json"
         self.plan.write_text('{"fixture": "plan"}', encoding="utf-8")
         self.scope = self.root / "local_scope.json"
@@ -233,6 +249,7 @@ if($status-eq'success'){
                     "behavior": behavior,
                     "counter_path": str(self.root / f"{name}.counter"),
                     "provider_counter_path": str(self.root / f"{name}.provider_counter"),
+                    "legacy_artifact_root": str(self.root / "artifacts"),
                 }
             ),
             encoding="utf-8",
@@ -255,6 +272,10 @@ if($status-eq'success'){
                 "-NonInteractive",
                 "-File",
                 str(self.runner),
+                "-StoreRoot",
+                str(self.root / "store"),
+                "-PackagePath",
+                str(self.package),
                 "-PythonExe",
                 sys.executable,
                 "-WorkspaceRoot",
@@ -807,6 +828,21 @@ if($status-eq'success'){
             "warning_physical_nonqualification__continue_parameter_scan",
         )
 
+    def test_first_failed_condition_stops_all_later_dispatch(self) -> None:
+        self.campaign.write_text(json.dumps([
+            {"K": 25.5, "accelerator_y": -55.0},
+            {"K": 24.5, "accelerator_y": -55.0},
+        ]), encoding="utf-8")
+        context = self.write_context("context.json", "failed")
+        result = self.invoke(context)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status failed", result.stdout + result.stderr)
+        state = json.loads(self.checkpoint.read_text(encoding="utf-8-sig"))
+        self.assertEqual(state["conditions"][0]["terminal_state"], "failed")
+        self.assertEqual(state["conditions"][1]["terminal_state"], "pending")
+        self.assertEqual(state["conditions"][1]["attempt_count"], 0)
+        self.assertEqual((self.root / "context.json.counter").read_text(encoding="utf-8-sig").strip(), "1")
+
     def test_comparison_projects_complete_candidate_metrics_and_best(self) -> None:
         context = self.write_context("context.json", "complete_candidate")
         result = self.invoke(context)
@@ -914,6 +950,56 @@ if($status-eq'success'){
             {"baseline_passed": None, "focused_passed": None, "satisfied": None},
         )
         self.assertIsNone(comparison["selection"]["best_qualified_condition"])
+
+    def invoke_store_campaign(self, behavior: str) -> dict:
+        from dataclasses import replace
+        from msplatform.storage import ArtifactStore
+        from msplatform.workflows.mr_native_condition import run_native_campaign
+        from tests.contracts.test_execution_runtime import NormalOwnerTests
+
+        helper = NormalOwnerTests()
+        context = helper._context(self.root)
+        capacity = self.root / "capacity.json"
+        capacity.write_text(json.dumps(helper._policy()), encoding="utf-8")
+        stage = dict(limits=dict(wall_clock_seconds=120, transient_run_directory_bytes=16*1024**2,
+            process_tree_working_set_bytes=1024**3, minimum_system_available_memory_bytes=1,
+            compact_final_retained_bytes=16*1024**2, automatic_retry_count=0),
+            artifact_retention=dict(policy_version=1, **{"class": "compact"}))
+        policy = self.root / "stages.json"
+        policy.write_text(json.dumps(dict(schema_version=1, role="execution_stage_policy",
+            stages={"mr_native_campaign": stage})), encoding="utf-8")
+        context = replace(context, capacity_policy_path=capacity, stage_policy_path=policy)
+        context.workspace.mkdir(parents=True, exist_ok=True)
+        scientific_context = self.write_context("store_context.json", behavior)
+        return run_native_campaign(context, artifact_store=ArtifactStore(self.root/"store"),
+            campaign_path=self.campaign, checkpoint_path=self.checkpoint,
+            condition_context_path=scientific_context, composition_plan_path=self.plan,
+            artifact_root=self.root/"store", condition_runner_path=self.fake_runner,
+            campaign_stamp="20260924_010000")
+
+    def test_store_campaign_publishes_ordered_success(self) -> None:
+        from msplatform.storage import ArtifactStore
+        result = self.invoke_store_campaign("success")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["store_run_path"] is not None, True)
+        self.assertEqual(json.loads(Path(result["run_directory"], "summary.json").read_text(encoding="utf-8-sig"))["campaign_status"], "success")
+        store = ArtifactStore(self.root/"store")
+        self.assertEqual(store.run_status(result["store_run_id"])["execution_status"], "succeeded")
+        with store._db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM reservations").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM native_bindings WHERE state='active'").fetchone()[0], 0)
+
+    def test_store_campaign_first_failure_stops_later_conditions(self) -> None:
+        self.campaign.write_text(json.dumps([
+            {"K": 25.5, "accelerator_y": -55.0},
+            {"K": 24.5, "accelerator_y": -55.0},
+        ]), encoding="utf-8")
+        result = self.invoke_store_campaign("failed")
+        self.assertEqual(result["status"], "failed")
+        state = json.loads(self.checkpoint.read_text(encoding="utf-8-sig"))
+        self.assertEqual(state["conditions"][0]["terminal_state"], "failed")
+        self.assertEqual(state["conditions"][1]["attempt_count"], 0)
+        self.assertEqual((self.root / "store_context.json.counter").read_text(encoding="utf-8-sig").strip(), "1")
 
     def test_campaign_carries_provider_runtime_checkpoint_between_conditions(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")

@@ -93,6 +93,20 @@ class StoreFocusControllerTests(unittest.TestCase):
             self.assertEqual((run/'inputs/campaign.json').read_bytes(),before)
             self.assertEqual(campaign.read_bytes(),before)
             self.assertEqual(ArtifactStore(root/'store').inspect_run(result['store_run_id']),Path(result['store_run_path']))
+            with patch.dict(os.environ,env), patch.object(RunSession,'run_process',new=transport), \
+                 patch('msplatform.backends.simion.oa_focus_plan.derive',return_value=plan):
+                legacy = run_focus_controller_campaign(context, artifact_store=store, campaign_path=campaign,
+                    mesh_mm_per_gu=[1.,1.,1.], run_id='20261127_130101__test__python__focus-legacy-store',
+                    committed_new_bytes=16*1024*1024, legacy_pa_output=True)
+            legacy_run = Path(legacy['run_directory'])
+            pa_result = json.loads((legacy_run/'results/component_focus_pa_result.json').read_text(encoding='utf8'))
+            self.assertEqual(pa_result['disposition'],'hit')
+            self.assertEqual(pa_result['store_asset_id'],summary['asset_id'])
+            checkpoint = json.loads((legacy_run/'results/accelerator_runtime_checkpoint.json').read_text(encoding='utf8'))
+            self.assertEqual(checkpoint['cache_key'],pa_result['cache_key'])
+            self.assertEqual(len(checkpoint['members']),5)
+            self.assertTrue(all((Path(checkpoint['directory'])/row['name']).is_file() for row in checkpoint['members']))
+            self.assertEqual(json.loads((legacy_run/'run_manifest.json').read_text(encoding='utf8'))['mode'],'component_focus_pa_build')
 
     def test_family_miss_hit_and_missing_rebuild_with_native_evidence(self):
         with tempfile.TemporaryDirectory(prefix='store-focus-') as directory:
