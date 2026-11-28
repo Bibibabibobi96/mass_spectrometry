@@ -84,6 +84,7 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             self.assertEqual(summary["status"], "success", summary)
             self.assertGreaterEqual(summary["completed_confirmations"], 1)
             self.assertFalse(summary["global_maximum_proved"])
+            self.assertNotIn("formal_gate_passed", summary)
             self.assertTrue((result / "results/all_theory_equations.csv").is_file())
             selected = load_json(result / "results/screened_designs.json")
             self.assertEqual(len(selected["2.8"]), 1)

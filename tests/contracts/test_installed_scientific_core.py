@@ -5866,7 +5866,7 @@ def main():
             assert run==workspace/'artifacts/components'/project/'runs'/identity
             result,owner_completion=assert_owner(run,identity)
             config=json.loads((run/'run_config.json').read_text(encoding='utf-8'))
-            assert config['run_instance']['seed']==seed and config['formal_gate_passed'] is False
+            assert config['run_instance']['seed']==seed and 'formal_gate_passed' not in config
             assert config['parameters']['scientific_role']==configs[selected]['role']
             scientific_request=json.loads((run/'inputs/scientific_request.json').read_text(encoding='utf-8'))
             assert scientific_request['schema_version']==1 and scientific_request['role']=='oa_tof_design_scientific_request'
@@ -5911,7 +5911,7 @@ def main():
             assert scientific['result']['summary']['status']=='success'
             summary=json.loads((run/'summary.json').read_text(encoding='utf-8'))
             assert summary['status']=='success'
-            if name!='slope':assert summary['formal_gate_passed'] is False
+            if name!='slope':assert 'formal_gate_passed' not in summary
             if name in ('basic','resume'):
                 assert summary['completed_cases']==summary['planned_cases']==4
                 assert summary['reused_cases']==(4 if name=='resume' else 0)

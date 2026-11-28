@@ -222,8 +222,8 @@ class IdealAcceptanceCandidateTests(unittest.TestCase):
         reference = manifest["inputs"]["ideal_acceptance_reference_source"]
         self.assertEqual(record_path(reference, base_dir=run), self.reference)
         verify_record("published frozen reference", reference, base_dir=run)
-        self.assertFalse(summary["formal_gate_passed"])
-        self.assertFalse(manifest["formal_eligible"])
+        self.assertNotIn("formal_gate_passed", summary)
+        self.assertNotIn("formal_eligible", manifest)
         self.assertEqual(before, {p: p.read_bytes() for p in before})
         with self.assertRaises(FileExistsError):
             compiler.publish_ideal_acceptance_300mm_candidate(

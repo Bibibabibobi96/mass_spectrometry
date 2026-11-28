@@ -622,7 +622,7 @@ def _run_comparison_cases(config: dict[str, Any], *, seed: int, run_dir: Path,
                "stages": stages, "completed_cases": len(records), "planned_cases": len(plan), "reused_cases": reused,
                "failure_stage": stage if error else None, "failure_reason": error,
                "failure_case_id": current_case if error else None,
-               "elapsed_s": time.perf_counter() - started, "formal_gate_passed": False,
+               "elapsed_s": time.perf_counter() - started,
                "next_action": "inspect stage conclusions" if status == "success" else "inspect failure.log; fix inputs/code if needed; resume unchanged cases only into a new run"}
     _write_report(run_dir, records, summary)
     external = {"legacy_case_csv_" + record["case"]["case_id"]: record["particles"]
@@ -795,7 +795,7 @@ def _run_action(session: Any, *, requested: dict[str, Path], original: dict[str,
                 if name not in {"entrypoint", "ideal_source_comparison_plot"}},
             numerical_identity=identity, run_instance=dict(seed=seed,
                 resume_from=None if resume_from is None else str(resume_from)),
-            claim_scope=config["scope"], formal_gate_passed=False,
+            claim_scope=config["scope"],
             execution_source_sha256=dict(stage_policy=policy_record["sha256"]),
             selected_scientific_sources={name: dict(source_path=str(requested[name]),
                 frozen_record=frozen[name]) for name in requested})
@@ -876,7 +876,7 @@ def _execute_role(config_path: Path, *, input_root: Path, context: Any, seed: in
     stage, policy_record = read_stage_policy(context, config["role"])
     run_managed_stage(context, descriptor=dict(project=PROJECT_ID, mode=config["role"],
         software=["Python solver-free OA-TOF design"]), run_id=run_id,
-        payload=dict(formal_gate_passed=False, claim_scope=config["scope"],
+        payload=dict(claim_scope=config["scope"],
             scientific_role=config["role"], numerical_identity=identity,
             requested_input_paths={name: str(path) for name, path in requested.items()}),
         committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],

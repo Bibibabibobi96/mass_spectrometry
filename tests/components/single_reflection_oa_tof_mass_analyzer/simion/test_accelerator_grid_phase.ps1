@@ -170,7 +170,7 @@ $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -En
 & $pythonExe -m msplatform.workflows.oa_tof_design.analyze_accelerator_grid_phase $manifestPath --output $resultDir
 if ($LASTEXITCODE -ne 0) { throw "Grid-phase Python analysis failed with exit code $LASTEXITCODE" }
 $runConfig = Join-Path $runDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='accelerator_grid_phase';project_root=$projectRoot;inputs=[ordered]@{formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob');resolved_geometry='config/resolved_geometry.json'};formal_gate_passed=$false;ideal_grid_model='simion_one_row_zero_width_native_transmission'} |
+[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='accelerator_grid_phase';project_root=$projectRoot;inputs=[ordered]@{formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob');resolved_geometry='config/resolved_geometry.json'};ideal_grid_model='simion_one_row_zero_width_native_transmission'} |
   ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $summaryPath = Join-Path $runDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_accelerator_grid_phase_summary';status='success';case_count=$manifestCases.Count;results='results'} |

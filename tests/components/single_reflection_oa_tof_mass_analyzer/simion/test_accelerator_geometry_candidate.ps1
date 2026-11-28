@@ -170,7 +170,7 @@ try {
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $resultDir 'manifest.json') -Encoding UTF8
 
 $runConfig = Join-Path $runDir 'run_config.json'
-[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='accelerator_geometry_candidate';project_root=$projectRoot;inputs=[ordered]@{candidate_contract=$contractPath;resolved_geometry=$baselinePath;formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob')};formal_gate_passed=$false;particles=100} |
+[ordered]@{schema_version=1;run_id=$RunId;project='single_reflection_oa_tof_mass_analyzer';mode='accelerator_geometry_candidate';project_root=$projectRoot;inputs=[ordered]@{candidate_contract=$contractPath;resolved_geometry=$baselinePath;formal_iob=(Join-Path $formalDir 'oatof_ideal_grounded.iob')};particles=100} |
   ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 $runSummary = Join-Path $runDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_accelerator_geometry_candidate_summary';status='success';particles=100;results='results/manifest.json'} |

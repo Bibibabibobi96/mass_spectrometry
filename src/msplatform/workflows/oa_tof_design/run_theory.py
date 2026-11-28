@@ -34,7 +34,6 @@ def _publish_run_artifacts(
         "mode": "three_zone_ideal_theory",
         "project_root": str(PROJECT_ROOT),
         "inputs": {"campaign": str(campaign_path)},
-        "formal_gate_passed": False,
     }
     summary = {
         "schema_version": 1,
@@ -43,7 +42,6 @@ def _publish_run_artifacts(
         "run_id": output_dir.name,
         "stage_id": receipt["stage_id"],
         "conclusion": report["scientific_assessment"],
-        "formal_gate_passed": False,
     }
     run_config_path.write_text(
         json.dumps(run_config, indent=2) + "\n", encoding="utf-8"

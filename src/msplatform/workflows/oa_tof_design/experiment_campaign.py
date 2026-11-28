@@ -557,7 +557,6 @@ def _publish_campaign_manifest(
     )
     manifest = load_json(pending)
     manifest["lifecycle_state"] = lifecycle_state
-    manifest["promotion_authorized"] = False
     _write_json(pending, manifest)
     os.replace(pending, manifest_path)
 
@@ -614,7 +613,6 @@ def execute_campaign(
             "class": "compact",
             "reason": None,
         },
-        "formal_gate_passed": False,
         "campaign_sha256": sha256(frozen_table),
         "started_at_utc": _utc_now(),
     }

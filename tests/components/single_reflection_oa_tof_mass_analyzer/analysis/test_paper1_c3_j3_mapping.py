@@ -94,8 +94,8 @@ class Paper1C3J3MappingTests(unittest.TestCase):
         self.assertEqual((run / schema_relative).read_bytes(), schema_source.read_bytes())
         self.assertEqual(schema_record["bytes"], schema_source.stat().st_size)
         self.assertEqual(schema_record["sha256"], file_sha256(schema_source))
-        self.assertFalse(manifest["formal_eligible"])
-        self.assertFalse(summary["formal_gate_passed"])
+        self.assertNotIn("formal_eligible", manifest)
+        self.assertNotIn("formal_gate_passed", summary)
         self.assertEqual(summary["qualification"], "CANDIDATE_ONLY")
         self.assertEqual(set(summary["candidates"]), {"-2", "-1", "0", "1", "2"})
         family_path = run / summary["physical_family"]["path"]

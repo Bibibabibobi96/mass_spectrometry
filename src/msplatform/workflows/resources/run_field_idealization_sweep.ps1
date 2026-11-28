@@ -195,7 +195,7 @@ foreach ($case in $configuration.cases) {
 $summaryCsv = Join-Path $OutputDir 'sweep_summary.csv'
 $rows | Export-Csv -LiteralPath $summaryCsv -NoTypeInformation -Encoding UTF8
 $summary = [ordered]@{
-  schema_version=1; status='success'; formal_eligible=$false; particle_count=$N
+  schema_version=1; status='success'; particle_count=$N
   purpose='method feasibility, not precision agreement'; cases=$rows
   capability_boundary='SIMION validates composable regional Ez interventions only; current PA topology does not expose independent global Ex/Ey.'
 }

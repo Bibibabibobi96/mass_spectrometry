@@ -433,7 +433,6 @@ def _publish_manifest(
         or manifest.get("status") != "success"
         or manifest.get("project") != PROJECT_ID
         or manifest.get("mode") != PUBLISH_MODE
-        or manifest.get("formal_eligible") is not False
     ):
         raise RuntimeError("T5 Candidate manifest identity differs")
     records = [manifest["run_config"], *manifest["inputs"].values(), *manifest["outputs"]]
@@ -543,7 +542,6 @@ def publish_t5_simion_candidate(
                     "compiler_mode": candidate["compiler_mode"],
                     "qualification": candidate["qualification"],
                 },
-                "formal_gate_passed": False,
             },
         )
         _write_exclusive_json(
@@ -560,7 +558,6 @@ def publish_t5_simion_candidate(
                     "bytes": candidate_path.stat().st_size,
                     "sha256": file_sha256(candidate_path),
                 },
-                "formal_gate_passed": False,
             },
         )
         _publish_manifest(

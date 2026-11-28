@@ -451,7 +451,6 @@ def _publish_manifest(
         or manifest.get("status") != "success"
         or manifest.get("project") != PROJECT_ID
         or manifest.get("mode") != PUBLISH_MODE
-        or manifest.get("formal_eligible") is not False
     ):
         raise RuntimeError("ideal-acceptance Candidate manifest identity differs")
     records = [manifest["run_config"], *manifest["inputs"].values(), *manifest["outputs"]]
@@ -562,7 +561,6 @@ def publish_ideal_acceptance_300mm_candidate(
                     "selected_design_id": candidate["ideal_acceptance_evidence"]["selected_design_id"],
                     "total_length_mm": total_length_mm, **({"axial_grid_z_mm": axial_grid_z_mm} if axial_grid_z_mm is not None else {}),
                 },
-                "formal_gate_passed": False,
             },
         )
         _write_exclusive_json(
@@ -579,7 +577,6 @@ def publish_ideal_acceptance_300mm_candidate(
                     "sha256": file_sha256(candidate_path),
                 },
                 "claim_limit": candidate["claim_limit"],
-                "formal_gate_passed": False,
             },
         )
         _publish_manifest(

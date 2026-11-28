@@ -68,7 +68,6 @@ def _publish_manifest(*, run_dir: Path, run_config: Path, outputs: Sequence[Path
         or manifest.get("status") != "success"
         or manifest.get("project") != PROJECT_ID
         or manifest.get("mode") != PUBLISH_MODE
-        or manifest.get("formal_eligible") is not False
     ):
         raise RuntimeError("C3-J3 Candidate manifest identity differs")
     records = [manifest["run_config"], *manifest["inputs"].values(), *manifest["outputs"]]
@@ -162,7 +161,6 @@ def publish_c3_j3_candidates(
                 **{name: relative(path) for name, path in code_sources.items()},
             },
             "parameters": {"source_id": source_id, "scales_h": list(SCALES), "qualification": "CANDIDATE_ONLY"},
-            "formal_gate_passed": False,
         })
         _write_exclusive_json(summary_path, {
             "schema_version": 1, "role": "oatof_paper1_c3_j3_candidate_summary", "status": "success",
@@ -170,7 +168,6 @@ def publish_c3_j3_candidates(
             "physical_family": {"path": f"results/{family_path.name}", "bytes": family_path.stat().st_size, "sha256": file_sha256(family_path)},
             "candidates": {scale: {"path": str(path.relative_to(staging)).replace("\\", "/"), "bytes": path.stat().st_size, "sha256": file_sha256(path)} for scale, path in candidates.items()},
             "claim_limit": "Frozen C3-J3 Candidate inputs only; no PA, SIMION, derivative, peak-width, transmission, or Formal result.",
-            "formal_gate_passed": False,
         })
         _publish_manifest(run_dir=staging, run_config=run_config_path, outputs=(family_path, *candidates.values(), summary_path))
         staging.rename(run_dir)

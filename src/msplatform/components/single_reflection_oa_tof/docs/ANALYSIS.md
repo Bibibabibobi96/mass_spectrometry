@@ -73,7 +73,7 @@ T5三区理论结果沿用`three_zone_t5_simion_candidate.py`唯一CLI进入后�
 `--run-dir artifacts/components/single_reflection_oa_tof_mass_analyzer/runs/<candidate-run>`，并同时传入
 `--campaign`和`--t5-receipt`；发布器排他、原子地产生
 `results/three_zone_t5_simion_candidate_resolved.json`、`run_config.json`、`summary.json`和
-`run_manifest.json`，固定`formal_gate_passed=false`。持久化身份路径为workspace或run-relative，
+`run_manifest.json`，记录实际成功状态与文件身份，不写总等级字段。持久化身份路径为workspace或run-relative，
 resolved Candidate只属于`artifacts/`且不得提交Git。原有`--output`仅保留单文件编译兼容性。
 
 跨项目finite-interval布局只能把四个物理相空间量、源宽和一级长度作为request传给项目公共
@@ -94,8 +94,8 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 ../workflows/design_candidate/run_candidate.py
 ```
 
-生产seed必须来自`run_config.run_instance.particle_source_seed`。success固定表示
-`candidate_accepted_not_promoted`和`formal_eligible=false`；晋升由独立Formal事务完成。
+生产seed必须来自`run_config.run_instance.particle_source_seed`。success的`candidate_decision`只表示结构合同接受；
+manifest不写总等级或晋升授权字段，晋升由独立Formal事务完成。
 
 阶段复用由既有stage context绑定实际合同、生成器、求解参数及`candidate_stage_execution.py`；完整入口仍冻结作来源。日志／收尾修改不使无关科学阶段失效，真实执行实现变化仍拒绝。旧阶段只在现有具名迁移器取得充分冻结证据时于新run派生，不改父receipt或用当前默认追认，范围见[已知旧Candidate阶段](../docs/PROJECT.md#已知旧-candidate-阶段的派生复用)。
 

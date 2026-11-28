@@ -715,7 +715,6 @@ def prepare_candidate_run(
         "promotion": {
             "included": False,
             "automatic": False,
-            "safe_to_promote": False,
             "required_separate_decision": True,
         },
         "limitations": [
@@ -750,8 +749,6 @@ def prepare_candidate_run(
         "inputs": {key: value["path"] for key, value in workflow_plan["candidate_inputs"].items()},
         "input_sha256": {key: value["sha256"] for key, value in workflow_plan["candidate_inputs"].items()},
         **({"campaign_binding": campaign_binding} if campaign_binding is not None else {}),
-        "formal_gate_passed": False,
-        "promotion_authorized": False,
     }
     (planning_root / "run_config.template.json").write_text(
         json.dumps(run_config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

@@ -317,7 +317,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
                 ".run_terminal_publication.lock",
             },
         )
-        self.assertFalse(summary["formal_gate_passed"])
+        self.assertNotIn("formal_gate_passed", summary)
         self.assertEqual(summary["candidate"]["sha256"], file_sha256(candidate_path))
         candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
         for record in (
@@ -327,7 +327,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         ):
             self.assertFalse(Path(record["path"]).is_absolute())
         run_config = json.loads((run_dir / "run_config.json").read_text(encoding="utf-8"))
-        self.assertFalse(run_config["formal_gate_passed"])
+        self.assertNotIn("formal_gate_passed", run_config)
         self.assertNotIn("project_root", run_config)
         self.assertTrue(
             all(not Path(value).is_absolute() for value in run_config["inputs"].values())
@@ -354,7 +354,7 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
             *manifest["outputs"],
         ]
         self.assertTrue(all(not Path(record["path"]).is_absolute() for record in records))
-        self.assertFalse(manifest["formal_eligible"])
+        self.assertNotIn("formal_eligible", manifest)
         frozen_schema = expected_code_inputs["candidate_output_schema"]
         self.assertEqual(frozen_schema.read_bytes(), candidate_compiler.OUTPUT_SCHEMA_SOURCE.read_bytes())
         self.assertEqual(run_config["inputs"]["candidate_output_schema"],

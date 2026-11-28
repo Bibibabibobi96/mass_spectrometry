@@ -47,6 +47,7 @@ class HistoricalFieldDiagnosticTests(unittest.TestCase):
             self.assertEqual(blocked, [True])
             run = ArtifactStore(root/'new-store').inspect_run(result['store_run_id'])
             summary = json.loads((run/'summary.json').read_text(encoding='utf8'))
+            self.assertNotIn('formal_eligible', summary)
             self.assertEqual([(x['case_id'], x['detected']) for x in summary['cases']], [('actual', 1), ('ideal', 0)])
             self.assertIsNone(summary['cases'][1]['mean_tof_us'])
             self.assertIsNone(summary['cases'][1]['tof_std_ns'])

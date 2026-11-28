@@ -161,7 +161,7 @@ if ($Level -eq 'Candidate') {
       else { $env:OATOF_CONTRACT_PATH = $oldContractPath }
     }
     $runConfig = Join-Path $runDir 'run_config.json'
-    [ordered]@{schema_version=1;run_id=$runId;project='single_reflection_oa_tof_mass_analyzer';mode='comsol_candidate_sync_gate';project_root=$projectRoot;inputs=[ordered]@{candidate_model=$candidateModel};formal_gate_passed=$false} |
+    [ordered]@{schema_version=1;run_id=$runId;project='single_reflection_oa_tof_mass_analyzer';mode='comsol_candidate_sync_gate';project_root=$projectRoot;inputs=[ordered]@{candidate_model=$candidateModel}} |
       ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $runConfig -Encoding UTF8
     $summary = Join-Path $runDir 'summary.json'
     [ordered]@{schema_version=1;role='oa_tof_comsol_candidate_gate_summary';status='success'} |
@@ -232,7 +232,7 @@ elseif ($Level -eq 'Formal') {
     else { $env:OATOF_CONTRACT_PATH = $oldContractPath }
   }
   $formalRunConfig = Join-Path $formalRunDir 'run_config.json'
-  [ordered]@{schema_version=1;run_id=$formalRunId;project='single_reflection_oa_tof_mass_analyzer';mode='comsol_formal_sync_gate';project_root=$projectRoot;inputs=[ordered]@{formal_model=$formalModel};formal_gate_passed=$true} |
+  [ordered]@{schema_version=1;run_id=$formalRunId;project='single_reflection_oa_tof_mass_analyzer';mode='comsol_formal_sync_gate';project_root=$projectRoot;inputs=[ordered]@{formal_model=$formalModel}} |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $formalRunConfig -Encoding UTF8
   $formalSummary = Join-Path $formalRunDir 'summary.json'
   [ordered]@{schema_version=1;role='oa_tof_comsol_formal_gate_summary';status='success'} |

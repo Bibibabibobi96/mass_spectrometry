@@ -226,7 +226,6 @@ $runInputs = if ($AnalyzeOnly) {
 } else { @{formal_simion_runtime_receipt=$runtimeReceipt} }
 $finalConfig = Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
 $finalConfig.inputs = $runInputs
-$finalConfig.formal_gate_passed = $false
 $finalConfig.analysis_only = [bool]$AnalyzeOnly
 $finalConfig.particles = $N
 $finalConfig.seed = $Seed

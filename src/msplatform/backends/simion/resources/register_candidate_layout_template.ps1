@@ -90,7 +90,6 @@ $runConfig = [ordered]@{
     source_iob = (Get-FileHash -LiteralPath $sourceIob -Algorithm SHA256).Hash
     source_con = (Get-FileHash -LiteralPath $sourceCon -Algorithm SHA256).Hash
   }
-  formal_gate_passed = $false
   template_role = 'oa_tof_candidate_simion_layout_template'
   source_is_user_created_nonformal_layout = $true
 }

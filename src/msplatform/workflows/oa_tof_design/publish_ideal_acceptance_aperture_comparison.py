@@ -129,8 +129,7 @@ def _publish_manifest(*, run_dir: Path, run_config: Path, outputs: tuple[Path, .
     )
     manifest = _load_json(pending, "pending run manifest")
     if (manifest.get("role") != "simulation_run_manifest" or manifest.get("status") != "success" or
-            manifest.get("project") != PROJECT_ID or manifest.get("mode") != PUBLISH_MODE or
-            manifest.get("formal_eligible") is not False):
+            manifest.get("project") != PROJECT_ID or manifest.get("mode") != PUBLISH_MODE):
         raise RuntimeError("aperture comparison manifest identity differs")
     published_run_id = manifest.get("run_id")
     if not isinstance(published_run_id, str):
@@ -216,14 +215,12 @@ def publish_aperture_comparison(
             "run_id": run_dir.name, "project": PROJECT_ID, "mode": PUBLISH_MODE,
             "inputs": {name: relative(path) for name, path in inputs.items()},
             "parameters": {"comparison_mode": mode, "axial_width_threshold_mm": threshold_mm},
-            "formal_gate_passed": False,
             "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None},
         })
         _write_exclusive_json(summary_path, {
             "schema_version": 1, "role": "ideal_acceptance_300mm_aperture_comparison_summary",
             "status": "success", "run_id": run_dir.name, "qualification": result.get("qualification"),
             "comparison": {"path": f"results/{result_name}", "sha256": _sha256(result_path), "bytes": result_path.stat().st_size},
-            "formal_gate_passed": False,
         })
         _publish_manifest(run_dir=staging, run_config=config_path, outputs=(result_path, summary_path))
         if run_dir.exists():

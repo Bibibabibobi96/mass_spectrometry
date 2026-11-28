@@ -604,7 +604,7 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
             manifest = json.loads(
                 (run_dir / "run_manifest.json").read_text(encoding="utf-8")
             )
-            self.assertFalse(manifest["formal_eligible"])
+            self.assertNotIn("formal_eligible", manifest)
             self.assertEqual(
                 {Path(item["path"]).name for item in manifest["outputs"]},
                 {
@@ -617,7 +617,7 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
             summary = json.loads(
                 (run_dir / "summary.json").read_text(encoding="utf-8")
             )
-            self.assertFalse(summary["formal_gate_passed"])
+            self.assertNotIn("formal_gate_passed", summary)
 
 
 if __name__ == "__main__":

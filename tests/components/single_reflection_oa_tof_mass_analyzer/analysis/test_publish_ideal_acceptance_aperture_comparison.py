@@ -135,7 +135,7 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
         self.assertEqual(summary["qualification"], "DETECTOR_BLIND_SOURCE_ONLY")
         self.assertEqual(len(manifest["inputs"]), 17)
         self.assertTrue(result_exists)
-        self.assertFalse(manifest["formal_eligible"])
+        self.assertNotIn("formal_eligible", manifest)
 
     def test_publishes_full_flight_and_binds_child_manifests(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

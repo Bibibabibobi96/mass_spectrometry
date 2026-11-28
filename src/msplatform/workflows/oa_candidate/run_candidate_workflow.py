@@ -288,7 +288,6 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
             "scope": stage["acceptance_scope"],
             "performance_claim_allowed": bool(stage["performance_claim_allowed"]),
             "formal_modified": False,
-            "promotion_authorized": False,
             "shared_particle_table_sha256": sha256(comsol_ion),
             "simion_transport_particles": 100,
             "simion_transport_evidence_only": True,
@@ -1264,7 +1263,7 @@ def execute_prepared_run(
             # No stage result is invented when preparation itself failed.
             summary = {"schema_version": 1, "role": "oa_tof_candidate_run_summary", "status": "failed",
                        "failure_stage": "preparation", "candidate_decision": "no_candidate_decision",
-                       "promotion_authorized": False, "performance_claim_allowed": False, "stages": []}
+                       "performance_claim_allowed": False, "stages": []}
     summary = dict(summary, run_id=run_root.name)
     if load_json(run_root / "run_manifest.json").get("lifecycle_state") == "provisional":
         refresh_candidate_provisional_manifest(run_root, checkpoint=True)
@@ -1282,7 +1281,7 @@ def execute_prepared_run(
         "status": summary["status"], "summary": summary,
         "output_paths": [str(path) for path in outputs], "required_output_paths": [str(path) for path in required],
         "retention_preserve_paths": [],
-        "manifest_extra_fields": {"lifecycle_state": "terminal", "promotion_authorized": False,
+        "manifest_extra_fields": {"lifecycle_state": "terminal",
                                   "execution_source_closure": load_json(run_config_path).get("execution_source_closure", {})},
         "writer_completion": writer_completion, "exception": exception,
     })

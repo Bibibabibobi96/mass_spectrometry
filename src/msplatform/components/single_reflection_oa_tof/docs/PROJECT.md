@@ -24,6 +24,8 @@ The OA MATLAB builders and candidate task now resolve only their installed/froze
 
 Final scoped migration checks passed the registry, Ruff, PowerShell parsing, documentation structure, real verifier preflight/selected modules, 128 integration tests (one skip), 52 paired static/pulse tests, 46 focused gate/compiler tests, and the Candidate design, workflow, causal, postprocess, and legacy-reuse scopes. Candidate workflow was verified in two 41-test slices with focused reruns of four repaired slice-2 cases before acceptance; earlier failed and timed-out attempts are not treated as passes. No commercial solver, full Repository, or final integration verification was run. Wheel inspection was not available in the reused environment because `bdist_wheel` was absent; no dependency was installed.
 
+Current OA run configs, summaries and manifests do not write or read total-grade eligibility or promotion-authorization fields. Actual execution status, lifecycle state, structural/scientific outcomes and source identities remain independent; existing historical bytes and explicitly versioned readers are unchanged.
+
 The Candidate source closure now names only the canonical host lease and process
 resources, replacing the two retired `common` PowerShell adapters. Its nine real
 host/freezer entrypoint regressions passed in 28.144 seconds, including bound

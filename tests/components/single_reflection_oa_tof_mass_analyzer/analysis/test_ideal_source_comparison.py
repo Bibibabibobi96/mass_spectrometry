@@ -106,6 +106,7 @@ class IdealSourceComparisonTests(unittest.TestCase):
                     context=context, seed=73, run_id="20260827_210003__analysis__python__slope-test")
             summary = json.loads((result / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["status"], "success", summary)
+            self.assertNotIn("formal_gate_passed", summary)
             self.assertEqual([row["source_slope_m_per_s_per_mm"] for row in summary["groups"]],
                              config["source_slopes_m_per_s_per_mm"])
             self.assertTrue(all(row["completed_replicates"] == 1 for row in summary["groups"]))

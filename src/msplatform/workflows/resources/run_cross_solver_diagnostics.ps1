@@ -301,7 +301,6 @@ $runConfig = Join-Path $runDir 'run_config.json'
     axis_analysis=$axisAnalysis;trajectory_analysis=$trajectoryAnalysis;vector_analysis=$vectorAnalysis
   }
   parameters=[ordered]@{particle_ids=@(18,52,97);solver_rerun=$false}
-  formal_gate_passed=$false;promotion_authorized=$false
 } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 
 $outputs = @(

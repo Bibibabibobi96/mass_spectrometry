@@ -3,6 +3,5 @@
   "role": "ideal_source_comparison_mode",
   "mode": "ideal_source_comparison",
   "experiment_contract": "config/experiments/ideal_source_comparison.json",
-  "purpose": "Automatically compare synthetic residuals and source widths in exact ideal axial fields",
-  "formal_eligible": false
+  "purpose": "Automatically compare synthetic residuals and source widths in exact ideal axial fields"
 }

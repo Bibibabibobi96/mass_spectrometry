@@ -70,8 +70,6 @@ def _write_manifest(
     config = load_json(config_path)
     extras = {
         "lifecycle_state": "provisional" if provisional else "terminal",
-        "formal_eligible": False,
-        "promotion_authorized": False,
         "execution_source_closure": config.get("execution_source_closure", {}),
     }
     if "campaign_binding" in config:
@@ -142,8 +140,6 @@ def _summary(status: str, stage_results: list[dict[str, Any]], failure_stage: st
         "failure_stage": failure_stage,
         "stages": stage_results,
         "formal_modified": False,
-        "promotion_authorized": False,
-        "safe_to_promote": False,
         "recorded_at_utc": _utc_now(),
     }
 
@@ -292,8 +288,6 @@ def update_candidate_progress(
         "failure_stage": None,
         "stages": ordered,
         "formal_modified": False,
-        "promotion_authorized": False,
-        "safe_to_promote": False,
         "recorded_at_utc": _utc_now(),
     }
     write_json_atomic(run_root.resolve() / "summary.json", summary)

@@ -166,6 +166,7 @@ class HistoricalMassAnalysisTests(unittest.TestCase):
             completion = json.loads((run/'results/execution_completion.json').read_text(encoding='utf8'))
             self.assertEqual(completion['summary']['solver_native_calls'], 0)
             self.assertEqual(completion['summary']['pa_materializations'], 0)
+            self.assertNotIn('formal_gate_passed', completion['summary'])
             receipt = json.loads((run/'logs/operation_0001.process.json').read_text(encoding='utf8'))
             self.assertEqual(receipt['observation']['exit_code'], 0)
             self.assertEqual(receipt['host_release']['result']['status'], 'released')

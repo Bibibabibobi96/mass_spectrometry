@@ -122,7 +122,6 @@ class ParticleSourcePolicyTests(unittest.TestCase):
                 "project": "single_reflection_oa_tof_mass_analyzer",
                 "mode": "mass_spectrum_candidate",
                 "project_root": str(PROJECT_ROOT),
-                "formal_gate_passed": False,
                 "inputs": {
                     "mode_config": str(frozen_mode),
                     "resolved_geometry": str(frozen_resolved),

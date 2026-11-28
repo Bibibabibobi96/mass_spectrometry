@@ -445,7 +445,7 @@ def _run_theory_cases(config: dict[str, Any], baseline: dict[str, Any], *, seed:
                "largest_verified_population_width_mm": maximum("theoretical_population_pass"),
                "largest_verified_independent_particle_width_mm": maximum("independent_particle_pass"),
                "largest_jointly_verified_width_mm": jointly_verified,
-               "global_maximum_proved": False, "formal_gate_passed": False,
+               "global_maximum_proved": False,
                "scope": config["scope"], "next_action": "inspect verified widths, rejected equations and search boundary before expanding theory family"}
     lines = ["# Theory-first ideal-field acceptance", "", config["scope"], "", f"Execution: {status}; failure: {error}", "",
              "|Design|Width mm|Population R (last grid)|Population convergence|All particle seeds pass|Particle R range|",

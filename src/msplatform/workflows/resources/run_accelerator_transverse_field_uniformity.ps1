@@ -49,7 +49,6 @@ $summary = Join-Path $runDir 'summary.json'
   mode='accelerator_transverse_field_uniformity_reference'; project_root=$repoRoot
   inputs=[ordered]@{task=$task;analysis=$analysis;baseline=$baseline;runner=$runner;formal_model=$formalModel}
   parameters=[ordered]@{solver_rerun=$false;particle_tracking=$false;formal_source_half_width_y_mm=0.5}
-  formal_gate_passed=$false
 } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $runConfig -Encoding UTF8
 [ordered]@{
   schema_version=1;role='oatof_accelerator_transverse_field_uniformity_run_summary'

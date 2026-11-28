@@ -80,7 +80,7 @@ def analyze_recorded_field_sweep(*, source_manifest: Path, artifact_store, budge
                             tof_std_ns=metrics['StdTofNs'], landing_max_mm=metrics['MaxHitRadiusMm'],
                             solve_seconds=None, particle_csv=f'results/{case["id"]}_particles.csv'))
                         account(work)
-                    summary = dict(schema_version=1, status='success', formal_eligible=False,
+                    summary = dict(schema_version=1, status='success',
                         particle_count=count, seed=seed, detector_radius_mm=detector_radius_mm,
                         source_run_id=source.config['run_id'], source_manifest=manifest,
                         purpose='method feasibility, not precision agreement', cases=rows,

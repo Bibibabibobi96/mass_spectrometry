@@ -138,7 +138,7 @@ def _analysis_action(session: RunSession, *, selection: dict[str, Any],
         write_json_atomic(session.run_config, config)
         return dict(status="success", summary=dict(role="oa_tof_candidate_mass_spectrum_analysis",
             analysis_only=True, parent_run_id=selection["run_id"], solver_native_calls=0,
-            pa_materializations=0, formal_gate_passed=False, resolution_claim_allowed=False,
+            pa_materializations=0, resolution_claim_allowed=False,
             native_path_preparation={"calls": 1 if session.package.get("execution_alias") else 0}),
             output_paths=outputs, required_output_paths=outputs,
             retention_preserve_paths=[], manifest_extra_fields={})
@@ -168,7 +168,7 @@ def analyze_recorded_mass_spectrum(context, *, source_manifest: Path, run_id: st
             result = run_managed_stage(context,
                 descriptor=dict(project=PROJECT, mode="mass_spectrum_analysis", software=["Python 3.11"]),
                 run_id=run_id, payload=dict(lifecycle_stage="prepared", analysis_only=True,
-                    parent_run_id=selection["run_id"], formal_gate_passed=False),
+                    parent_run_id=selection["run_id"]),
                 committed_new_bytes=committed_new_bytes,
                 commitment_inputs=[policy_record, manifest_record],
                 retention=stage["artifact_retention"], expected_operation_ids=["python-analysis"],

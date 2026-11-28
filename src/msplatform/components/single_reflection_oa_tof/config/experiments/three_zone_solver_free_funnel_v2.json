@@ -27,8 +27,8 @@
     },
     "peak_metrics": {
       "path": "src/msplatform/analysis/peak_metrics.py",
-      "bytes": 35284,
-      "sha256": "BF22B4B2187F41F2936D56C8C2875297B737BE417883850646DDAB3482933901"
+      "bytes": 43782,
+      "sha256": "70DC378AE93F7B59487088A87F59F381364448FABB9502D655EE25ED1BC25C57"
     },
     "two_zone_theory": {
       "path": "src/msplatform/components/single_reflection_oa_tof/oatof_oaaccelerator_coupling.py",
@@ -82,8 +82,8 @@
     },
     "three_zone_cli": {
       "path": "src/msplatform/workflows/oa_tof_design/run_theory.py",
-      "bytes": 5194,
-      "sha256": "3D6300FEE03FDB5318236E328A40D0C13D081B0F4E281018757BC25D8E3E5C4F"
+      "bytes": 5120,
+      "sha256": "B361E74AF511FD078509BD9683B738458BAB9B7971916BD1D9D4DA67EB22F3C9"
     },
     "accelerator_two_zone_theory": {
       "path": "src/msplatform/components/orthogonal_accelerator/accelerator_time_focus.py",

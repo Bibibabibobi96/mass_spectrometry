@@ -417,6 +417,8 @@ class ExperimentCampaignTests(unittest.TestCase):
                     config["parameters"]["commercial_solver_parallelism"], 1
                 )
                 self.assertEqual(config["parameters"]["automatic_retry_count"], 0)
+                self.assertNotIn("formal_gate_passed", config)
+                self.assertNotIn("promotion_authorized", manifest)
 
     def test_parameter_roles_and_named_profiles_cannot_drift_by_row(self):
         with authorized_campaign_fixture() as (campaign_path, campaign):

@@ -71,7 +71,7 @@ try {
 $runConfig = [ordered]@{
   schema_version=2; role='oa_tof_native_ideal_grid_smoke_run_config'
   run_id=$RunId; project='single_reflection_oa_tof_mass_analyzer'; mode='native_ideal_grid_smoke'
-  project_root=$projectRoot; formal_gate_passed=$false
+  project_root=$projectRoot
   inputs=[ordered]@{baseline='config/baseline.json';resolved_geometry='config/resolved_geometry.json';solver_numerics='config/formal_solver_numerics.json';mode='config/modes/formal.json'}
   output_dir=$artifactOutputFull
   actual_cells_mm=[ordered]@{
