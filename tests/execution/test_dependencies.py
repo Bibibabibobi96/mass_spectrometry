@@ -293,7 +293,7 @@ print('FROZEN_SRC_CORE=PASS')
             inputs = Path(directory) / "inputs"
             freeze = f". '{DEPENDENCIES}'; $null=Freeze-ConsumerDependencies -Python '{sys.executable}' -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}' -InputDir '{inputs}' -OwnerId instrument_assembly -ConsumerId accelerator_interface"
             result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", freeze],
-                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", timeout=120)
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             snapshot = inputs / "runtime_snapshot"
             required_companions = {
@@ -311,7 +311,7 @@ print('FROZEN_SRC_CORE=PASS')
                 {row["source_repo_path"] for row in inventory["dependencies"]}))
             code = '''
 from pathlib import Path
-from msplatform.workflows.accelerator_interface import prepare
+from msplatform.workflows.mr_design import accelerator_interface as prepare
 from msplatform.recipes import native as native_recipe
 from msplatform.workflows.ion_processor import functional
 from msplatform.workflows.ion_processor import preparation

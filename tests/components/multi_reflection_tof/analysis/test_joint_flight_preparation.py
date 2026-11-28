@@ -121,26 +121,9 @@ print('FIVE_ROLE_BUILDER_MOCK=PASS')
                     else:
                         self.assertNotEqual(actual.returncode,0)
 
-    def test_same_second_default_run_ids_are_distinct_across_providers(self):
-        pwsh = shutil.which('pwsh') or 'C:/Program Files/PowerShell/7/pwsh.exe'
-        script = PROJECT.parents[3] / 'src/msplatform/workflows/resources/accelerator_interface.ps1'
-        command = (
-            "$tokens=$null;$errors=$null;"
-            "$a=[Management.Automation.Language.Parser]::ParseFile('" + str(script) + "',[ref]$tokens,[ref]$errors);"
-            "$f=$a.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'New-AcceleratorInterfaceRunId'},$true);"
-            "Invoke-Expression $f.Extent.Text;"
-            "New-AcceleratorInterfaceRunId -Provider orthogonal_accelerator;"
-            "New-AcceleratorInterfaceRunId -Provider ion_processor;"
-            "New-AcceleratorInterfaceRunId -Provider ion_processor"
-        )
-        result = subprocess.run([pwsh, '-NoProfile', '-Command', command], cwd=PROJECT,
-                                capture_output=True,
-                                text=True, timeout=30, check=True)
-        identities = result.stdout.splitlines()
-        self.assertEqual(len(identities), 3)
-        self.assertEqual(len(set(identities)), 3)
-        self.assertRegex(identities[0], r'__analysis__python__accelerator-interface-oa-[0-9a-f]{8}$')
-        self.assertRegex(identities[1], r'__analysis__python__accelerator-interface-ip-[0-9a-f]{8}$')
+    def test_accelerator_interface_has_no_private_powershell_run_id_owner(self):
+        entry = PROJECT.parents[3] / 'src/msplatform/workflows/resources/accelerator_interface.ps1'
+        self.assertFalse(entry.exists())
 
     def test_generated_sidecar_removes_inherited_oa_launch_plane(self):
         lua = shutil.which('lua') or shutil.which('lua5.1') or 'C:/Program Files/SIMION-2020/lua.exe'

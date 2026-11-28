@@ -13,7 +13,7 @@ from msplatform.results.component_exit_history import read_verified_component_ex
 class HistoricalComponentExitTests(unittest.TestCase):
     def test_measured_exit_centroid_source_producer_is_absent(self):
         import importlib.util
-        from msplatform.workflows.accelerator_interface import prepare as interface_prepare
+        from msplatform.workflows.mr_design import accelerator_interface as interface_prepare
         self.assertFalse(hasattr(interface_prepare, "bind_joint_workbench"))
         self.assertFalse(hasattr(interface_prepare, "finalize_interface"))
         from msplatform.analysis import recorded_joint_trial

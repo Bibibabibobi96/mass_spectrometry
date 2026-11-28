@@ -8,9 +8,8 @@ import copy
 
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.retention import file_record
-from msplatform.workflows.accelerator_interface.prepare import (
-    CONFIG, ION_PROCESSOR, load_selection, verified_reference,
-)
+from msplatform.assembly.accelerator_interface import CONFIG, ION_PROCESSOR, load_selection
+from msplatform.results.mr_reference import verified_reference
 from msplatform.workflows.mr_design.execution_contract import validate_execution_contract
 
 
@@ -142,7 +141,7 @@ class InterfacePreparationTests(unittest.TestCase):
     def test_joint_analysis_preflight_binds_source_and_clock_before_field(self):
         from types import SimpleNamespace
         from msplatform.analysis.peak_metrics import AnalysisSettings
-        from msplatform.workflows.accelerator_interface.prepare import preflight_joint_analysis
+        from msplatform.workflows.mr_design.accelerator_interface import preflight_joint_analysis
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             reference, receipt_path, states, selected, timing = [root/name for name in
@@ -170,7 +169,7 @@ class InterfacePreparationTests(unittest.TestCase):
                 'results/ion_processor_exit/component_particle_state.csv': states}
             table = SimpleNamespace(report=dict(clock_epoch_ids=['epoch']),
                 rows=[dict(particle_id=7, instrument_time_us=11.)])
-            with patch('msplatform.workflows.accelerator_interface.prepare.verified_preparation_reference',
+            with patch('msplatform.workflows.mr_design.accelerator_interface.verified_preparation_reference',
                        side_effect=lambda run, relative: paths[relative]), \
                  patch('msplatform.contracts.particle_state.load_component_particle_state_csv', return_value=table):
                 preflight_joint_analysis(root, source, selected)
