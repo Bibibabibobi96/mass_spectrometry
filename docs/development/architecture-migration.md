@@ -560,13 +560,23 @@ Agent 11 的 `9c55486c2fc432c08809ff8e3174ba48bad3b117`／主线 `93e2ba0b` 将 
 
 主线 CLOC 2.10 `396d538e→93e2ba0b` PASS：total／production／tests code +584／+357／+227，files不变，blank +28／+14／+14，comment不变，unclassified=0；详见 `public-store-93e2ba0b-cloc.log`。无完整 Changed／Repository、双安装或 native 验收声明。
 
+### C3 standalone IP Store 接管（主线整合候选）
+
+Agent 12 的 `7894fa04a90b1d7322a2be12bb104a50fd830069`／主线 `718af786` 将 execution profile 切到现有公共 `msplatform.cli ion-processor-native-functional run`，由新 workflow 组合显式 deployment、workspace、`standalone_native_store` 和 `run_managed_stage`。删除旧容量会话、New-RunPackage、Result writer、PowerShell 终态收尾及 `-ResumeFinalization`；`ip_functional.ps1` 只保留 Store stage 实际消费的原生科学资源，不再是独立 owner 或恢复入口。
+
+独立 IP prepare／dispatch／analyze、正式首批观测、动态批次、原ID／时钟／种子仍由原科学实现执行，未改用 RF–IP 或理想 L1。恢复由同一 CLI 的 `recover-stage`／`recover-publication` 分别调用 Store stage 与 parent publication 恢复，不重放 prepare、Refine、Fly 或分析；内外层租约避免重复占用 heavy grant。
+
+作者定向64/64（114.941s）、恢复6/6、execution contract2/2、编译器45/45、路径／workflow恢复7/7；`test_functional` 43 PASS、1个既有 standalone-Lua 条件 skip（158.144s）。覆盖失败停止、健康在途排空、固定批恢复、活writer、篡改／缺件及幂等。主线160项组合回归 PASS／0 skip（380.370s），含显式 Lua 和 TEST host context，日志 `standalone-ip-main.log`。Ruff、JSON、PS parser、CLI help、diff、文档和提交钩子 PASS。Changed 作者轮约750.7s，仍有未属于本切片的 OA／SIMION 迁移夹具失败，不计通过；未启动真实 SIMION。
+
+主线 CLOC 2.10 `ddf01ea9→718af786` PASS：total files +1、code +431，production code +226、tests +205，unclassified=0；逐语言和过滤口径见 `standalone-ip-718af786-cloc.log`。历史资源画像仍只读查询旧科学 ID／路径，不改写封存 manifest 或旧 run。
+
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 
 Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime dependency 无缺失目标；旧名负例和历史 reader 均有效。上述10处 PS 断链已在本工作树修复并复验。其余实际阻塞按真实调用保留如下，不转为文档豁免：
 
 | 优先级 | 当前活路径 | 实际替代与当前责任 |
 |---|---|---|
-| P0 | `execution.owner.run_managed_stage` 仍允许无 Store 并初始化旧 ledger；`artifact_capacity_maintenance`、`run_artifact_support.ps1` 仍调用旧维护／恢复；MR native-condition、standalone IP、OA focus 与 RF profiles 仍有旧 package writer；Wehnelt 已迁至 Store | 现有 `standalone_native_store`、Store 分支、`ArtifactStore.collect/recover_run_publication`；需逐调用迁移后删除旧写入／GC／恢复分支，不新建第二生命周期 |
+| P0 | `execution.owner.run_managed_stage` 仍允许无 Store 并初始化旧 ledger；`artifact_capacity_maintenance`、`run_artifact_support.ps1` 仍调用旧维护／恢复；MR native-condition、OA focus 与 RF profiles 仍有旧 package writer；Wehnelt／standalone IP 已接 Store，主线复验分别在上述单元记录 | 现有 `standalone_native_store`、Store 分支、`ArtifactStore.collect/recover_run_publication`；需逐调用迁移后删除旧写入／GC／恢复分支，不新建第二生命周期 |
 | P1 | 非 OA 总等级 writer／guard 已在 `23a54dbf` 删除；OA 对应字段已在 `a4ee07a8` 删除，主线193个唯一用例已闭合 | 保留旧 manifest 的精确只读验证，不改写历史；完整门禁仍未闭合 |
 | P1 | registry 仍直挂特殊 `oa_mr.ps1`；旧 `accelerator_interface.ps1` 及中央 consumer 已删除 | 科学归 Assembly／MR owner，执行归公共 Store；连续飞行只能走公共原出生 tracing，prepare-only 不冒充飞行 |
 
