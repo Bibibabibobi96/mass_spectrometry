@@ -18,7 +18,7 @@ NATIVE_RESOURCES = frozenset({
     "export_comsol_stationary_field_samples.m", "read_rf_saved_stationary_solution.m",
     "export_assembly_world_scalar_field.m", "sample_scalar_grid_blocks.m",
     "build_and_solve_axisymmetric_gas_flow.m", "run_axisymmetric_gas_flow.m",
-    "build_wehnelt_model.m", "write_wehnelt_build_only_report.m", "phase1_geometry_coil_transverse.m",
+    "build_wehnelt_model.m", "phase1_geometry_coil_transverse.m",
     "phase2_electrostatics_coil_transverse.m", "phase4_thermal_emission_coil_transverse.m",
     "load_wehnelt_contract.m", "apply_wehnelt_contract_parameters.m",
     "wehnelt_contract_parameter_bindings.m", "verify_wehnelt_contract_parameters.m",

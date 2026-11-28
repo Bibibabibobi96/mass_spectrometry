@@ -22,19 +22,31 @@
       "deliverable_outputs": [
         "comsol_model"
       ],
-      "required_bindings": [],
+      "required_bindings": [
+        "workspace",
+        "execution_environment",
+        "environment_profile",
+        "artifact_root"
+      ],
       "steps": [
         {
           "step_id": "commercial_build_only",
           "kind": "run",
-          "shell": "powershell",
-          "entrypoint": "src/msplatform/workflows/resources/wehnelt_build_only.ps1",
-          "run_id_template": "{timestamp}__test__comsol__wehnelt-build-only-smoke",
+          "shell": "python",
+          "entrypoint": "src/msplatform/cli.py",
+          "run_id_template": null,
           "arguments": [
-            "-RunId",
-            "{run_id}",
-            "-ResolvedInputsPath",
-            "{resolved_inputs_path}"
+            "wehnelt-build-only",
+            "--compiled-inputs",
+            "{resolved_inputs_path}",
+            "--execution-environment",
+            "{execution_environment}",
+            "--environment-profile",
+            "{environment_profile}",
+            "--workspace",
+            "{workspace}",
+            "--artifact-root",
+            "{artifact_root}"
           ]
         }
       ],
@@ -43,7 +55,12 @@
         "The low-particle build fixture is explicitly evidence-ineligible.",
         "The functional_reference mode remains unregistered until an N>=100 solver runner, usable-final-state classification, GUI Compute replay, and governed evidence lifecycle exist."
       ],
-      "binding_types": {},
+      "binding_types": {
+        "workspace": "directory",
+        "execution_environment": "file",
+        "environment_profile": "string",
+        "artifact_root": "directory"
+      },
       "fixed_inputs": {
         "baseline": "config/baseline.json",
         "numerical_modes": "config/numerical_modes.json",

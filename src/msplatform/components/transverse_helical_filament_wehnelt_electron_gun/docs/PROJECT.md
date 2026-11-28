@@ -1,12 +1,28 @@
 # 横置螺旋灯丝Wehnelt电子枪当前状态
 
+## C 生命周期切片：build-only 注册链接管 Store（2026-11-28）
+
+`wehnelt_build_only_smoke`现由注册profile直接编译为`python -m msplatform.cli wehnelt-build-only`。
+组合根消费带逐项身份的编译输入，加载显式`ExecutionContext`并构造调用者选择的`ArtifactStore`，随后
+直接调用`msplatform.backends.comsol.build_wehnelt_model`。科学baseline、numerical modes、resolved
+和mode的身份与canonical freshness均在商业启动前复核；真实operation继续由原`model_execution`和
+`run_managed_stage`完成资源冻结、来源保护、native build/cold-verify、成功或失败发布及恢复。
+
+旧`wehnelt_build_only.ps1`、`build_wehnelt_build_only_task.m`和
+`write_wehnelt_build_only_report.m`已退出活动树；不再保留`New-RunPackage`、多次手工checkpoint、
+旧success/failed writer或`ResumeFinalization`旁路。三个科学MATLAB阶段、原MPH文件名、显式电子入口
+数量和build-only不求解边界未改变。新run只进入显式Store，不改写旧组件run或历史资格。
+
+本轮只执行源码、注册、输入正负例及惰性native的Store owner回归，未启动MATLAB/COMSOL，未新增原生、
+GUI、Candidate或Formal资格。共享门禁目录中已删除旧报告资源的精确路由仍需主线统一移除。
+
 ## C1 电子质量单位一致性修正（2026-11-27）
 
 当前唯一质量数据为`electron_mass_codata2022_repository_u_v1`：kg值沿用[NIST CODATA 2022电子质量](https://physics.nist.gov/cgi-bin/cuu/Value?me)的`9.1093837139e-31 kg`，u值由仓库现有`1.66053906660e-27 kg/u`推导为`0.0005485799098091511 u`。此前`0.0005485799090441 u`使用2022 u，与仓库冻结2018质量单位不一致。本轮修正活动baseline/profile及由resolver生成的resolved模型；质量数据version与SHA随输入冻结，baseline/resolved身份改变，旧输入不得误作当前缓存。原科学run/历史数据原字节保留，未重跑COMSOL，未新增热发射或轨迹科学资格。
 
 唯一值由`contracts.particle_physics`加载`physics/data/electron.json`；kg↔u不再各自指定。冻结包由模块的具名数据声明包含JSON，缺件/篡改失败关闭。以下此前所有权迁移的参数不变与逐字相同说明记录当时阶段；不覆盖本轮明确单列的数值修正。
 
-活动实现、科学配置、当前文档和长期测试已迁出 `projects/transverse_helical_filament_wehnelt_electron_gun/`；该旧树不再存在。规范owner为本组件目录，既有COMSOL后端和workflow runner继续承担原生执行，来源固定为`7c272feb442945b2a415e1673a760e66ae098243`。本次仅迁移源码所有权和路径，科学参数、build-only边界、来源哈希、防缺件／篡改、失败释放及资格状态不变。
+活动实现、科学配置、当前文档和长期测试已迁出 `projects/transverse_helical_filament_wehnelt_electron_gun/`；该旧树不再存在。规范owner为本组件目录，来源固定为`7c272feb442945b2a415e1673a760e66ae098243`。该次仅迁移源码所有权和路径；当时的科学参数、build-only边界、来源哈希、防缺件／篡改、失败释放及资格状态不变。当前注册生命周期见上节。
 
 迁移后的公开Static入口通过49个父测试（183条outcome，53秒）和Ruff；真实operation、能力查询及编译输入定向套件通过6个父测试（10条outcome，4秒）。纯MATLAB合同20项通过（15秒），未启动COMSOL或执行求解。五份科学／身份JSON与来源SHA-256逐字一致；完整编译、wheel/sdist和全活动文档仍待其他并行迁移与共享registry／gate收口，不把其共享失败归因于本组件或原生模型。
 
@@ -16,11 +32,6 @@ The project verifier now loads the installed execution lease resource with an ex
 和旧实验见[`../../../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/PROJECT_HISTORY.md`](../../../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/PROJECT_HISTORY.md)；2026-07-28以前的完整runner
 故障与修复时间线冻结在
 [`../../../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/20260728__pre-document-consolidation-project.md`](../../../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/20260728__pre-document-consolidation-project.md)。
-
-The build-only freezer no longer adds the two retired `common` host/process
-adapters. Its canonical package selector supplies those resources exactly once.
-The actual selector and frozen-input/tamper checks passed in 22.383 seconds with
-an explicit HostContext; no MATLAB/COMSOL execution or qualification follows.
 
 Current Wehnelt inputs and run records no longer carry `candidate_evidence_allowed`,
 `formal_performance_claim_allowed` or `formal_gate_passed`. Build-only execution facts, particle-count minima and
@@ -66,7 +77,7 @@ its original frozen-freshness method passed in 18.094 s without changing the dec
 实心阴极与轴向线圈源码已冻结到
 [`../../../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/20260713__pre-transverse-wehnelt-lineages.md`](../../../../../docs/history/projects/transverse_helical_filament_wehnelt_electron_gun/20260713__pre-transverse-wehnelt-lineages.md)。
 
-The registered project build-only task retains its explicit run/contract adapter and delegates its existing phase checks and text report writer to the installed COMSOL MATLAB resource. The project owner and its three MPH outputs and report contract remain unchanged; this ownership change adds no native qualification.
+The former registered PowerShell task and text-report adapter are retired. The current registered CLI and Store-aware owner retain the three MPH outputs and build/cold-verify acceptance without adding native qualification.
 
 ## Installed implementation migration
 
@@ -143,37 +154,26 @@ qualification.
 
 ## 产物边界
 
-新活动产物根为`artifacts/components/transverse_helical_filament_wehnelt_electron_gun/`。当前没有通过
-现行门禁的Formal资产。旧模型、结果与谱系按原manifest身份只读保存在
-该根的`archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/legacy-project-root/`，
-不改写、不追加新run，也不改变原资格和声明边界；
-新运行只进入活动根的`runs/<run_id>/`，三件套与 manifest 遵循[生命周期](../../../../../docs/LIFECYCLE.md)。
+当前没有通过现行门禁的Formal资产。旧模型、结果与谱系按原manifest身份只读保存在
+`artifacts/components/transverse_helical_filament_wehnelt_electron_gun/archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/legacy-project-root/`；
+不改写、不追加新run，也不改变原资格和声明边界。新build-only运行只进入调用者显式选择的
+ArtifactStore，其run布局、来源保护、保留和恢复遵循[生命周期](../../../../../docs/LIFECYCLE.md#新参考链-artifactstore)；
+旧组件根不是新Store的隐式回退。
 
 ## 构建准入与软件验证
 
-2026-11-02，build-only入口随[科学核心实迁](../../../../../docs/REPOSITORY_OPERATIONS.md#科学核心发行与旧入口)
-通过公共源码选择器冻结`src/msplatform`实现及其本地schema，冻结resolver沿公共路径上下文
-消费本次快照的`src`与仓库代码根。行为回归实际执行生产PowerShell冻结片段，逐文件核对
-源码／schema字节，再运行冻结resolver，确认输入集合无新增文件或字节码。
-绑定模块28项与IP上游admission联合45项通过（27.111秒）；加强后的实际冻结片段单项通过（6.216秒）。
-迁移期间缺公共上下文加载及锁旧`Push-Location`字符串的两项失败已修复，原失败事实保留。
-本轮未调用MATLAB、COMSOL或CAD，不改变既有构建资格或新增科学资格。
-当前任务由runner显式接收已核验的frozen resolved合同，生产冻结输入不再包含checkout测试、仓库工具或`pyproject.toml`；
-这些验证材料与生产运行证据分离。
+普通build-only编译结果固定baseline、numerical_modes、resolved_model及build-only mode，经
+`--compiled-inputs`交给真实公共CLI，不再选择当前默认或调用旧runner。适配器验证逐项文件身份并调用
+canonical resolver比较完整resolved；缺件、重复、路径漂移、字节篡改和过期输入均失败关闭。科学输入
+不包含checkout测试、仓库门禁工具或`pyproject.toml`。
 
-build-only 的科学核心冻结由所选 Python 解释器实际导入的 `msplatform` 安装包决定：选择器枚举安装包内
-Python 和生产资源，并要求已注册的 COMSOL MATLAB／launcher 闭包完整；复制时使用返回的安装包绝对来源，
-不再读取 checkout 的 `pyproject.toml` 或以 checkout `src` 补齐。入口按显式 `PythonExe`、
-`SIMULATION_PYTHON_EXE` 的顺序选择解释器，两者均缺失立即拒绝，无 `.venv` 回退。离仓正例核对复制来源
-确实位于独立安装树且可采用与 checkout 不同的资源字节，负例删除所需 MATLAB 资源后选择失败；
-仍沿原公共复制入口记录来源及副本身份，冻结合同、build-only 和失败保护不变。本轮未执行 MATLAB、
-COMSOL 或原生几何验收，不新增商业构建、求解或几何资格。
-
-普通build-only profile及真实runner移除重复整套Static回归。run-local冻结baseline／numerical modes／resolved仍由安装包resolver核对，resolver及其`msplatform`依赖由现有科学核心选择器冻结，summary报告`input_freshness_passed`；输入集合防写、商业构建及证据不合格边界保持。`wehnelt_verify.ps1`继续独立验证软件；构建成功不代表求解或Candidate／Formal资格。
-
-普通build-only编译结果固定baseline、numerical_modes、resolved_model及原build-only mode，经`ResolvedInputsPath`交原runner复制，不再选当前默认。profile的action=build且科学结果未评价；本owner测试只验真实描述符／接线，完整注册表新鲜度归公共owner一次检查。该解析接线不改变原输入防写、商业构建、生命周期或既有不合格边界。
+实际native资源继续由`model_execution`的现有freezer从所选安装包取得，由run owner登记和保护。
+profile的`action=build`且科学结果未评价；`wehnelt_verify.ps1`继续独立验证软件。真实owner回归同时
+覆盖成功产品与原生异常后的failed manifest，证明注册链没有第二发布者；这些惰性native结果不构成
+商业构建、求解、GUI或Candidate／Formal资格。
 
 ## 机器能力与解析输入
 
-build-only profile 传入本次解析输入，原 runner 冻结该输入；普通物理工作流不再默认包含整套 Static。
-能力查询与执行编译见[公共合同](../../../../../tools/repository/README.md#执行dry-run)；READY 仅描述声明条件。
+build-only profile传入本次解析输入，现有Store-aware owner冻结和保护实际执行输入；普通物理工作流
+不默认包含整套Static。能力查询与执行编译见[公共合同](../../../../../tools/repository/README.md#执行dry-run)；
+READY仅描述声明条件，不证明部署、许可、原生构建或科学验收已经通过。

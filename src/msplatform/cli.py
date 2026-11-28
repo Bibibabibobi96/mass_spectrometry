@@ -185,10 +185,36 @@ def _run_rf_filter_research(args, parser):
     return 0
 
 
+def _run_wehnelt_build_only(args) -> int:
+    """Compose the registered Wehnelt inputs, deployment and explicit Store."""
+    from msplatform.backends.comsol.wehnelt_model import (
+        BUILD_ONLY_MODE,
+        build_wehnelt_model,
+        load_compiled_wehnelt_inputs,
+    )
+    from msplatform.execution.context import load_environment
+    from msplatform.storage import ArtifactStore
+
+    baseline, modes, count = load_compiled_wehnelt_inputs(args.compiled_inputs.absolute())
+    context = load_environment(args.execution_environment.absolute(), workspace=args.workspace.absolute(),
+                               profile=args.environment_profile)
+    product = build_wehnelt_model(baseline, modes, mode_id=BUILD_ONLY_MODE,
+                                  evidence_particle_count=count, context=context,
+                                  artifact_store=ArtifactStore(args.artifact_root.absolute()))
+    print(json.dumps(product.reference, ensure_ascii=False, allow_nan=False, indent=2))
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the single installed CLI and its actual capability subcommands."""
     parser = argparse.ArgumentParser(prog="msplatform")
     commands = parser.add_subparsers(dest="command", required=True)
+    wehnelt = commands.add_parser("wehnelt-build-only", help="build and cold-reopen the unsolved Wehnelt model")
+    wehnelt.add_argument("--compiled-inputs", type=Path, required=True)
+    wehnelt.add_argument("--execution-environment", type=Path, required=True)
+    wehnelt.add_argument("--environment-profile", required=True)
+    wehnelt.add_argument("--workspace", type=Path, required=True)
+    wehnelt.add_argument("--artifact-root", type=Path, required=True)
     validate = commands.add_parser("validate", help="resolve SI inputs and check supported capabilities")
     validate.add_argument("recipe")
     validate.add_argument("--artifact-root", help="Store holding explicitly referenced native evidence")
@@ -223,6 +249,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "wehnelt-build-only":
+            return _run_wehnelt_build_only(args)
         if args.command == "rf-stationary":
             return _run_rf_stationary(args)
         if args.command == "rf-filter-research":

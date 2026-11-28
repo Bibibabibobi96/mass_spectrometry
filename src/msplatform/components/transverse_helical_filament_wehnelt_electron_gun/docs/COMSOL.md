@@ -5,8 +5,8 @@
 
 ## 活动入口
 
-- 受治理商业入口：`src/msplatform/workflows/resources/wehnelt_build_only.ps1 -RunId <run_id> -PythonExe <python.exe>`，从仓库根通过 `pwsh -NoProfile -File` 调用；也可由 `SIMULATION_PYTHON_EXE` 选择解释器，两者均缺失时拒绝运行，不回退到 checkout 的 `.venv`。
-- Installed Python operation: `msplatform.backends.comsol.build_wehnelt_model` uses the same managed owner and LiveLink launcher as the EI operation; neither entry adds a second scheduler or publisher.
+- 受治理商业入口：`python -m msplatform.cli wehnelt-build-only --compiled-inputs <bundle> --execution-environment <deployment> --environment-profile <profile> --workspace <directory> --artifact-root <store>`；正常调用由注册 profile 编译这些参数，运行身份由后端 Store 生成。
+- Installed Python operation: `msplatform.backends.comsol.build_wehnelt_model` uses the same managed owner and LiveLink launcher as the EI operation. The CLI supplies the explicit `ExecutionContext` and `ArtifactStore`; neither entry adds a second scheduler or publisher.
 - 几何：[`phase1_geometry_coil_transverse.m`](../../../../../src/msplatform/backends/comsol/matlab/phase1_geometry_coil_transverse.m)
 - 静电：[`phase2_electrostatics_coil_transverse.m`](../../../../../src/msplatform/backends/comsol/matlab/phase2_electrostatics_coil_transverse.m)
 - 热发射CPT：[`phase4_thermal_emission_coil_transverse.m`](../../../../../src/msplatform/backends/comsol/matlab/phase4_thermal_emission_coil_transverse.m)
@@ -14,17 +14,17 @@
 - Run paths: each canonical stage requires `(resolvedContractPath, runDirectory)` from the existing owner; no environment or checkout discovery.
 - Read-only cold verification: [`verify_wehnelt_model.m`](../../../../../src/msplatform/backends/comsol/matlab/verify_wehnelt_model.m) targets only the final unsolved phase4 MPH and never sets parameters, Compute or saves it.
 - 组件门禁：`src/msplatform/workflows/resources/wehnelt_verify.ps1`
-- build-only生产任务：[`build_wehnelt_build_only_task.m`](../../../../../src/msplatform/backends/comsol/matlab/build_wehnelt_build_only_task.m)；the task delegates its phase checks and report writer to `msplatform.backends.comsol/matlab/write_wehnelt_build_only_report.m`
 
 版本与启动见[操作指南](../../../../../docs/OPERATIONS.md)。三阶段脚本不包含COMSOL安装路径或`mphstart`，只能由仓库统一
 LiveLink入口调用。
 
 ## 合同与阶段边界
 
-入口冻结`baseline + numerical mode → resolved`及实际MATLAB源码。三阶段都必须显式接收同一resolved
-路径；缺失、过期或身份不匹配时失败关闭。runner 将已核验的`frozenInputs.resolved_contract`通过
-`MASS_SPECTROMETRY_WEHNELT_RESOLVED_CONTRACT`交给任务，任务不再从checkout位置重新定位合同。
-测试、仓库构建配置与门禁工具不属于生产运行冻结输入，软件验证证据单独保存。
+注册编译器冻结`baseline + numerical modes + resolved + mode`并写入带逐项身份的记录。Python适配器
+复核实际副本的路径、bytes和SHA-256，再沿唯一resolver重算并逐字段比较resolved；缺失、重复、过期、
+越界或身份不匹配均在商业启动前失败关闭。三阶段显式接收managed owner写入的同一resolved路径；
+旧环境变量任务适配器和checkout路径发现已删除。实际MATLAB/launcher资源由现有native source freezer
+从所选安装包冻结并保护，不从checkout补齐。测试、仓库构建配置与门禁工具不属于科学输入。
 
 | 阶段 | 职责 | build-only允许 |
 |---|---|---|
@@ -36,14 +36,16 @@ LiveLink入口调用。
 
 ## 运行证据
 
-`wehnelt_build_only.ps1`是当前唯一注册的商业入口。run目录建立后先写可复核的`interrupted`三件套，
-明确异常才转为`failed`，全部报告判据通过才转为`success`。科学输入、输出、公共COMSOL入口、
-execution profile和manifest机制均冻结并校验SHA；Static gate及其测试不混入商业运行输入。
+`msplatform.cli wehnelt-build-only`是当前唯一注册的商业入口。显式`ArtifactStore`在准入前登记运行，
+现有`run_managed_stage`持有writer锁、捕获入口源码、保存冻结输入和checkpoint，并在真实native writer
+与资源释放证据闭合后发布成功或失败；CLI不再写第二份终态、manifest或恢复记录。启动、原生异常、
+报告不匹配、输出缺失及冷读篡改均失败关闭，失败run不包含`prepared_model`产品。
 
-当前证据与未运行的求解层级见 [PROJECT 的资格状态](PROJECT.md#资格状态)。
-商业 wrapper 的控制台与退出上下文保存为 `logs/commercial_wrapper.log`；失败收尾枚举当时实际存在
-的冻结输入和输出，不能用空 manifest 掩盖中途失败。终态同时记录失败阶段、证据资格以及几何、网格、
-静电和 CPT 构建／求解标志。
+成功产品包含三个原始MPH、build/verify报告及resolved合同；build-only不调用`.runAll`，不执行静电
+或粒子求解。独立冷读必须为第二个native operation，确认解数据为空、Compute为零且源MPH未改写。
+发布中断和失联writer分别沿用Store的`recover_run_publication`／`recover_interrupted_runs`合同；
+本组件没有旧PowerShell `ResumeFinalization`旁路。当前证据与未运行的求解层级见
+[PROJECT 的资格状态](PROJECT.md#资格状态)。
 
 ## GUI与功能验收
 

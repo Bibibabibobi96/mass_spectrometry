@@ -1,57 +1,81 @@
-"""Real frozen-triplet resolver wiring and accurate software/science status."""
+"""Compiled-input identity and freshness checks for the real Python entry."""
 from pathlib import Path
 import json
-import subprocess
-import sys
+import shutil
 import tempfile
 import unittest
+
+from msplatform.backends.comsol.wehnelt_model import (
+    COMPILED_INPUT_PATHS,
+    load_compiled_wehnelt_inputs,
+    resolve_wehnelt_build_request,
+)
+from msplatform.io.manifest_records import file_record
 
 REPO = Path(__file__).resolve().parents[3]
 PROJECT = REPO / "src/msplatform/components/transverse_helical_filament_wehnelt_electron_gun"
 
 
+def write_compiled_inputs(root: Path, *, stale_resolved: bool = False) -> Path:
+    private = root / "compiled"
+    records = []
+    for name, relative in COMPILED_INPUT_PATHS.items():
+        target = private / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(PROJECT / relative, target)
+        if name == "resolved_contract" and stale_resolved:
+            resolved = json.loads(target.read_text(encoding="utf-8"))
+            resolved["role"] = "stale_resolved_contract"
+            target.write_text(json.dumps(resolved), encoding="utf-8")
+        records.append(dict(file_record(target), name=name, relative_path=relative))
+    bundle = root / "resolved_inputs.json"
+    bundle.write_text(json.dumps(dict(
+        schema_version=1,
+        role="compiled_execution_inputs",
+        project_id=PROJECT.name,
+        root=str(private),
+        files=records,
+    )), encoding="utf-8")
+    return bundle
+
+
 class BuildInputAdmissionTests(unittest.TestCase):
-    def test_frozen_triplet_rejection_and_summary_without_full_static(self):
-        source_path = REPO / "src/msplatform/workflows/resources/wehnelt_build_only.ps1"
-        source = source_path.read_text(encoding="utf-8")
-        start = source.index("  $failureStage = 'input_freshness'")
-        end = source.index("  $failureStage = 'frozen_input_validation'", start)
-        block = source[start:end]
-        for stale in (False, True):
-            with self.subTest(stale=stale), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                files = {"baseline": "baseline.json", "numerical_modes": "numerical_modes.json",
-                         "resolved_contract": "resolved_model.json"}
-                for filename in files.values():
-                    (root / filename).write_bytes((PROJECT / "config" / filename).read_bytes())
-                if stale:
-                    resolved_path = root / files["resolved_contract"]
-                    resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
-                    resolved["role"] = "stale_resolved_contract"
-                    resolved_path.write_text(json.dumps(resolved), encoding="utf-8")
-                fixture = root / "admit.ps1"
-                fixture.write_text(r'''param($Repo,$Python,$Root,$Source,$ExpectFailure)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
-. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$snapshotRoot=$Repo;$package=@{python=$Python}
-$frozenInputs=@{baseline=(Join-Path $Root 'baseline.json');numerical_modes=(Join-Path $Root 'numerical_modes.json');resolved_contract=(Join-Path $Root 'resolved_model.json')}
-$downstream=0;$caught=$null
-try{
-''' + block + r'''
- $downstream++
-}catch{$caught=$_.Exception.Message}
-if($ExpectFailure-eq'true'){
- if($caught-cne'Frozen Wehnelt baseline, numerical mode, and resolved contract differ.'-or$downstream-ne0){throw 'Stale triplet did not block build'}
-}elseif($caught-or$downstream-ne1){throw ('Valid triplet rejected: '+$caught)}
-$ast=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
-$node=$ast.Find({param($n)$n-is[Management.Automation.Language.FunctionDefinitionAst]-and$n.Name-eq'New-BuildSummary'},$true)
-Invoke-Expression $node.Extent.Text
-$summary=New-BuildSummary -Status interrupted -Reason fixture -FailureStage $(if($ExpectFailure-eq'true'){'input_freshness'}else{'frozen_input_validation'})
-if($summary.input_freshness_passed-ne($ExpectFailure-ne'true')-or$summary.Contains('static_gate_passed')-or$summary.Contains('candidate_evidence_allowed')-or$summary.Contains('formal_gate_passed')){throw 'Input admission emitted a retired qualification field'}
-'BUILD_INPUT_ADMISSION=PASS'
-''', encoding="utf-8")
-                result = subprocess.run(["pwsh", "-NoProfile", "-File", str(fixture), str(REPO),
-                                         sys.executable, str(root), str(source_path), str(stale).lower()],
-                                        cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("BUILD_INPUT_ADMISSION=PASS", result.stdout)
+    def test_compiled_inputs_match_canonical_resolution(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = write_compiled_inputs(Path(temporary))
+            baseline, modes, count = load_compiled_wehnelt_inputs(bundle)
+            expected = resolve_wehnelt_build_request(
+                baseline, modes, mode_id="build_only_smoke", evidence_particle_count=count,
+            )
+            self.assertEqual(count, 1)
+            self.assertEqual(expected["selected_mode_id"], "build_only_smoke")
+            self.assertEqual(expected["numerical"]["execution_mode"], "build_only")
+
+    def test_stale_resolved_contract_blocks_public_operation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = write_compiled_inputs(Path(temporary), stale_resolved=True)
+            with self.assertRaisesRegex(ValueError, "resolved contract differ"):
+                load_compiled_wehnelt_inputs(bundle)
+
+    def test_changed_compiled_bytes_fail_identity_verification(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = write_compiled_inputs(root)
+            with (root / "compiled/config/baseline.json").open("ab") as stream:
+                stream.write(b" ")
+            with self.assertRaisesRegex(AssertionError, "changed"):
+                load_compiled_wehnelt_inputs(bundle)
+
+    def test_missing_compiled_member_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = write_compiled_inputs(root)
+            document = json.loads(bundle.read_text(encoding="utf-8"))
+            document["files"] = [row for row in document["files"] if row["name"] != "baseline"]
+            bundle.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "baseline"):
+                load_compiled_wehnelt_inputs(bundle)
+
+
+if __name__ == "__main__":
+    unittest.main()

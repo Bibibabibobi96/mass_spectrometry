@@ -13,12 +13,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from msplatform import cli
 from msplatform.backends.comsol import ei_model, model_execution, wehnelt_model
 from msplatform.backends.comsol.resources import native_resource_path
 from msplatform.execution.context import ExecutionContext
 from msplatform.execution.capacity_admission import _capacity_policy
 from msplatform.execution.processes import ProcessExecutionError
 from msplatform.execution.resources import resource_path
+from msplatform.io.manifest_records import file_record
+from msplatform.results.artifacts import open_artifact
+from tests.components.transverse_helical_filament_wehnelt_electron_gun.test_input_admission import write_compiled_inputs
 from tests.contracts.test_support.comsol_model import InertComsolSession, inert_native
 from tests.contracts.test_comsol_wehnelt_model import inputs as wehnelt_inputs
 
@@ -154,6 +158,28 @@ class EiModelTests(unittest.TestCase):
                         host_state_path=root / "host.sqlite3", policy_path=resource_path("host_resource_policy.json"),
                         stage_policy_path=policy)
                     store = ArtifactStore(root / 'model-store')
+                    registered_arguments = None
+                    if action_name == "build_wehnelt_model":
+                        registration = root / "registration"
+                        registration.mkdir()
+                        compiled_inputs = write_compiled_inputs(registration)
+                        deployment = root / "environment.json"
+                        deployment.write_text(json.dumps(dict(
+                            schema_version=1, role="execution_environment",
+                            tools=dict(python=str(sys.executable), powershell=str(context.powershell_executable),
+                                       comsol_launcher=str(context.tools["comsol_launcher"]),
+                                       matlab_root=str(context.tools["matlab_root"])),
+                            policy=dict(host_state_path=str(context.host_state_path),
+                                        policy_path=str(context.policy_path)),
+                            profiles={"local": {"stage_policy_path": str(policy)}},
+                        )), encoding="utf-8")
+                        registered_arguments = [
+                            "--compiled-inputs", str(compiled_inputs),
+                            "--execution-environment", str(deployment),
+                            "--environment-profile", "local",
+                            "--workspace", str(context.workspace),
+                            "--artifact-root", str(store.root),
+                        ]
                     calls = []
                     def observed(_context, **kwargs):
                         calls.append(kwargs)
@@ -169,8 +195,14 @@ class EiModelTests(unittest.TestCase):
                     with patch("msplatform.execution.capacity_admission._capacity_policy", return_value=owner_policy), \
                          patch("msplatform.execution.run_session.run_observed_process", side_effect=observed):
                         if failure:
-                            with self.assertRaisesRegex(ProcessExecutionError, "inert native failure"):
-                                operation(*documents, mode_id="build_only_smoke", context=context, artifact_store=store, **request_options)
+                            if registered_arguments is None:
+                                with self.assertRaisesRegex(ProcessExecutionError, "inert native failure"):
+                                    operation(*documents, mode_id="build_only_smoke", context=context,
+                                              artifact_store=store, **request_options)
+                            else:
+                                with self.assertRaises(SystemExit) as caught:
+                                    cli.main(["wehnelt-build-only", *registered_arguments])
+                                self.assertEqual(caught.exception.code, 2)
                             manifests = list(store.root.glob("assets/native_stage/*/*/runs/*/run_manifest.json"))
                             self.assertEqual(len(manifests), 1)
                             manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
@@ -178,7 +210,16 @@ class EiModelTests(unittest.TestCase):
                             self.assertNotIn("products", manifest)
                             self.assertEqual(len(calls), 1)
                             continue
-                        product = operation(*documents, mode_id="build_only_smoke", context=context, artifact_store=store, **request_options)
+                        if registered_arguments is None:
+                            product = operation(*documents, mode_id="build_only_smoke", context=context,
+                                                artifact_store=store, **request_options)
+                        else:
+                            with patch("builtins.print"):
+                                self.assertEqual(cli.main(["wehnelt-build-only", *registered_arguments]), 0)
+                            manifests = list(store.root.glob("assets/native_stage/*/*/runs/*/run_manifest.json"))
+                            self.assertEqual(len(manifests), 1)
+                            product = open_artifact({"manifest": file_record(manifests[0]), "product_id": "model"},
+                                                    expected_kind="prepared_model")
                     self.assertEqual(product.kind, "prepared_model")
                     self.assertEqual(product.data_path("model").read_bytes(), b"EXPLICIT_INERT_MPH_NOT_A_COMSOL_MODEL")
                     self.assertEqual(len(calls), 2)

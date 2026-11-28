@@ -33,7 +33,7 @@ DOMAIN_IMPORTS = {
     # tracer; execution and workflow dependencies remain forbidden here.
     "tracing": {"tracing", "fields", "physics", "contracts", "analysis", "results"},
     "storage": {"storage"},
-    "cli": {"cli", "recipes", "tracing", "workflows", "results", "storage", "execution", "io"},
+    "cli": {"cli", "recipes", "tracing", "workflows", "backends", "results", "storage", "execution", "io"},
     "__main__": {"cli"},
     "analysis": SCIENTIFIC_DOMAINS | {"gas"},
     "assembly": SCIENTIFIC_DOMAINS | {"components"},

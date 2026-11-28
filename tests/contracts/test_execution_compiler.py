@@ -290,64 +290,27 @@ ConvertTo-Json -InputObject $rows -Depth 4 -Compress
         with self.assertRaisesRegex(ValueError, "Unknown Assembly workflow"):
             compile_assembly_execution("instrument_assembly", "arbitrary_script", self.run_id, {})
 
-    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 required")
     def test_fixed_input_consumers_freeze_compiled_values_instead_of_current_defaults(self):
-        cases = (("dual_cone_tandem_quadrupole", "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1", "sourceFiles"),
-                 ("transverse_helical_filament_wehnelt_electron_gun", "run_build_only_smoke.ps1", "projectFrozenFiles"))
-        for project, relative, variable in cases:
-            with self.subTest(project=project), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                profile = load_json(resolve_project_root(project)/"config/execution_profiles.json")["profiles"][0]
-                relative = next(step["entrypoint"] for step in profile["steps"] if step["kind"] == "run")
-                private = root/"compiled"
-                records = []
-                for name, path in profile["fixed_inputs"].items():
-                    source = private/path
-                    source.parent.mkdir(parents=True, exist_ok=True)
-                    source.write_text('{"value":2}')
-                    from msplatform.io.manifest_records import file_record
-                    records.append(dict(file_record(source), name=name, relative_path=path))
-                bundle = root/"resolved.json"
-                bundle.write_text(json.dumps(dict(role="compiled_execution_inputs", project_id=project, root=str(private), files=records)))
-                if project == "dual_cone_tandem_quadrupole":
-                    from msplatform.backends.comsol.gas_flow import compiled_gas_flow_paths
-                    selected = compiled_gas_flow_paths(bundle)
-                    self.assertEqual(len(selected), len(profile["fixed_inputs"]))
-                    for path in selected:
-                        self.assertEqual(json.loads(path.read_text())["value"], 2)
-                    continue
-                harness = root/"freeze.ps1"
-                harness.write_text(r"""param($Repo,$Entry,$Project,$Root,$Bundle,$Variable)
-Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
-. (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
-$ast=[Management.Automation.Language.Parser]::ParseFile($Entry,[ref]$null,[ref]$null)
-$assignment=$ast.Find({param($n)$n-is[Management.Automation.Language.AssignmentStatementAst]-and$n.Left-is[Management.Automation.Language.VariableExpressionAst]-and$n.Left.VariablePath.UserPath-eq$Variable},$true)
-$selection=$ast.Find({param($n)$n-is[Management.Automation.Language.IfStatementAst]-and$n.Clauses[0].Item1.Extent.Text-eq'$ResolvedInputsPath'},$true)
-$loop=$ast.Find({param($n)$n-is[Management.Automation.Language.ForEachStatementAst]-and$n.Condition.Extent.Text-in@('$sourceFiles.Keys','$projectFrozenFiles.GetEnumerator()')},$true)
-if($null-eq$assignment-or$null-eq$selection-or$null-eq$loop){throw "real prepare selection or freeze boundary missing: entry=$Entry variable=$Variable assignment=$($null-ne$assignment) selection=$($null-ne$selection) loop=$($null-ne$loop)"}
-$projectRoot=Join-Path $Root 'current';$codeRoot=Join-Path $Root 'frozen';$projectId=$Project
-$package=@{input_dir=(Join-Path $Root 'inputs')};$frozen=[ordered]@{};$frozenInputs=[ordered]@{}
-$ResolvedInputsPath=$Bundle;$compiledInputs=$null
-Invoke-Expression $assignment.Extent.Text
-$files=Get-Variable -Name $Variable -ValueOnly
-$scientificInputs=[ordered]@{}
-foreach($name in @('baseline','numerical_modes','resolved_contract','mode')){$scientificInputs[$name]=Join-Path $projectRoot $files[$name]}
-foreach($path in $files.Values){$file=Join-Path $projectRoot $path;New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file)|Out-Null;Set-Content $file '{"value":1}'}
-Invoke-Expression $selection.Extent.Text
-Invoke-Expression $loop.Extent.Text
-$actual=if($Variable-eq'sourceFiles'){$frozen}else{$frozenInputs}
-foreach($record in $compiledInputs.files){
- $value=Get-Content -LiteralPath ([string]$actual[$record.name]) -Raw|ConvertFrom-Json
- if($value.value-ne2){throw "consumer reread its current default: $($record.name)"}
-}
-'COMPILED_CONSUMER_FREEZE=PASS'
-""", encoding="utf-8")
-                result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-File", str(harness), str(REPO_ROOT),
-                    str(REPO_ROOT/relative if relative.startswith("src/") else resolve_project_root(project)/relative),
-                    project, str(root), str(bundle), variable],
-                    cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
-                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
-                self.assertIn("COMPILED_CONSUMER_FREEZE=PASS", result.stdout)
+        project = "dual_cone_tandem_quadrupole"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile = load_json(resolve_project_root(project)/"config/execution_profiles.json")["profiles"][0]
+            private = root/"compiled"
+            records = []
+            for name, path in profile["fixed_inputs"].items():
+                source = private/path
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text('{"value":2}')
+                from msplatform.io.manifest_records import file_record
+                records.append(dict(file_record(source), name=name, relative_path=path))
+            bundle = root/"resolved.json"
+            bundle.write_text(json.dumps(dict(role="compiled_execution_inputs", project_id=project,
+                                               root=str(private), files=records)))
+            from msplatform.backends.comsol.gas_flow import compiled_gas_flow_paths
+            selected = compiled_gas_flow_paths(bundle)
+            self.assertEqual(len(selected), len(profile["fixed_inputs"]))
+            for path in selected:
+                self.assertEqual(json.loads(path.read_text())["value"], 2)
 
     def test_oa_mr_requires_real_accelerator_authority_and_transports_plan_context(self):
         from tools.repository.compile_execution_plan import compile_assembly_execution

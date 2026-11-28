@@ -1617,6 +1617,10 @@ for flag in ('budget', 'run-id', 'source-id', 'workspace', 'python', 'powershell
     rf_parser_args.extend(['--'+flag, 'explicit-fixture'])
 rf_parsed = installed_cli._build_parser().parse_args(rf_parser_args)
 assert rf_parsed.command == 'rf-stationary' and rf_parsed.stationary_command == 'solve-comsol'
+wehnelt_parser_args = ['wehnelt-build-only']
+for flag in ('compiled-inputs', 'execution-environment', 'environment-profile', 'workspace', 'artifact-root'):
+    wehnelt_parser_args.extend(['--'+flag, 'explicit-fixture'])
+assert installed_cli._build_parser().parse_args(wehnelt_parser_args).command == 'wehnelt-build-only'
 from msplatform.backends.comsol.resources import native_resource_directory, native_resource_path, native_resource_text
 import msplatform.backends.comsol as comsol_backend
 matlab_directory = native_resource_directory().resolve()
@@ -1764,26 +1768,10 @@ try:
 finally:
     asm_encoder_held.rename(asm_encoder_path)
 assert asm_encoder_path.read_bytes() == asm_encoder_bytes
-# The Wehnelt task report resource is independently byte-pinned; the shared
-# cold lookup probe denies author trees and checks physical missing-file refusal.
-wehnelt_report_name = 'write_wehnelt_build_only_report.m'
-assert wehnelt_report_name in NATIVE_RESOURCES
-wehnelt_report_path = comsol_resource_path(wehnelt_report_name).resolve()
-assert wehnelt_report_path == matlab_directory/wehnelt_report_name
-wehnelt_report_bytes = wehnelt_report_path.read_bytes()
-assert len(wehnelt_report_bytes)==2563
-assert hashlib.sha256(wehnelt_report_bytes).hexdigest()=='b1f367c0aeec9439a05ee6a67d7433212675cb1822b79f1e3fd5b891e2d88a43'
-wehnelt_report_held = wehnelt_report_path.with_suffix('.m.wehnelt-held')
-assert not wehnelt_report_held.exists(); wehnelt_report_path.rename(wehnelt_report_held)
-try:
-    wehnelt_report_missing = subprocess.run([sys.executable,'-I','-B','-X','utf8','-c',cmesh_child,
-        json.dumps([str(source) for source in blocked_source_roots]),wehnelt_report_name],
-        cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
-    assert wehnelt_report_missing.returncode != 0 and not wehnelt_report_missing.stdout,wehnelt_report_missing.stderr
-    assert wehnelt_report_missing.stderr.splitlines()[-1] == 'FileNotFoundError: installed COMSOL native resource is missing: '+wehnelt_report_name,wehnelt_report_missing.stderr
-finally:
-    wehnelt_report_held.rename(wehnelt_report_path)
-assert wehnelt_report_path.read_bytes()==wehnelt_report_bytes
+# The Store-aware Python owner replaces the retired Wehnelt task/report resources.
+for retired_wehnelt_resource in ('build_wehnelt_build_only_task.m', 'write_wehnelt_build_only_report.m'):
+    assert retired_wehnelt_resource not in NATIVE_RESOURCES
+    assert not (matlab_directory/retired_wehnelt_resource).exists()
 from msplatform.components.multi_reflection_tof.candidate_contract import load_contract
 assert callable(load_contract)
 candidate = candidate_authority({'analyzer_electrode_voltages_v': [0.]*20}, dict(s1=1., s2=2., p1=3., p2=4.))

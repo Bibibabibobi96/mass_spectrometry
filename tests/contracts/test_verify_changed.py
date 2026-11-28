@@ -373,27 +373,6 @@ class ChangedGateContractTests(unittest.TestCase):
                    for value in row['command']['arguments'][2:]]
         self.assertIn('tests.contracts.test_installed_scientific_core', modules)
 
-    def test_installed_wehnelt_report_selects_real_owner_plan(self):
-        path = 'src/msplatform/backends/comsol/matlab/write_wehnelt_build_only_report.m'
-        self.assertTrue((REPO_ROOT / path).is_file())
-        request, _ = self.plan('-ChangedPath', path)
-        selected = [row for row in request['stages'] if row['selected']]
-        contract_rows = [row for row in selected if row['name'] == 'machine_contracts'
-                         or row['name'].startswith('machine_contracts__tests_')]
-        self.assertTrue(contract_rows)
-        self.assert_complete_contract_modules(contract_rows, {
-            'tests.contracts.test_installed_scientific_core', 'tests.contracts.test_comsol_wehnelt_model'})
-        owner = [row for row in selected if row['name'] == 'transverse_helical_filament_wehnelt_electron_gun_static']
-        self.assertEqual(len(owner), 1)
-        command = owner[0]['command']
-        self.assertEqual(command['script'],
-            'src/msplatform/workflows/resources/wehnelt_verify.ps1')
-        self.assertNotIn('SelectedTestModules', command.get('parameters', {}))
-        self.assertNotIn('ChangedTestModules', command.get('parameters', {}))
-        self.assertFalse(any(row['name'].startswith(('rf_multipole_',
-            'apertured_tube_electron_impact_ion_source_static',
-            'single_reflection_oa_tof_mass_analyzer_static')) for row in selected))
-
     def test_published_results_dependencies_select_the_reader_once(self):
         module = 'tests/contracts/test_artifact_reader.py'
         for path in ('src/msplatform/results/__init__.py', 'src/msplatform/results/artifacts.py',
