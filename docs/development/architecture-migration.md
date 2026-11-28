@@ -476,11 +476,11 @@ Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c225
 
 另删除 `backends/simion/simion_component_pa_plan.py` 中未使用的旧 `PROJECT=projects/...` 常量；真实 planner 模块8/8 PASS（0.147s），日志 `simion-component-plan-identity.log`。未改变 PA 身份、尺寸、工作点或缓存语义。
 
-### C4 静态组件 verifier 总等级参数退出（WORKTREE）
+### C4 静态组件 verifier 总等级参数退出（候选）
 
 `ei_verify.ps1`、`wehnelt_verify.ps1`、`dual_cone_verify.ps1` 删除 `-Level Static|Candidate|Formal` 及统一的 Candidate／Formal BLOCKED 尾段；这些选值不再作为当前生产入口存在。实际静态合同、测试、Ruff、旧树拒绝和 host release 保持，输出中的 `LEVEL=Static` 仅表示实际静态检查，不授予 Candidate／Formal。
 
-`tests.contracts.test_project_gate_prevalidation` 新增三组件 `-Level Candidate` 在调用任何项目工作前拒绝且零调用的负例；完整模块6/6 PASS（33.124s），含真实 plain-Lua 子例，日志 `static-gate-level-retirement.log`。未改变模型、粒子数或科学资格，无商业 native。
+`tests.contracts.test_project_gate_prevalidation` 新增三组件 `-Level Candidate` 在调用任何项目工作前拒绝且零调用的负例；完整模块6/6 PASS（33.124s），含真实 plain-Lua 子例，日志 `static-gate-level-retirement.log`。未改变模型、粒子数或科学资格，无商业 native。已提交并普通 push `049ec12071d9895fa81669901985392ebfccd56b`；CLOC 2.10 `c6416f78→049ec120` PASS：total code -6、production -15、tests +9，其余汇总项不变，unclassified=0，逐语言和过滤口径见 `static-gates-049ec120-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
