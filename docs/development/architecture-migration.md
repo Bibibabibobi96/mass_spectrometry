@@ -506,7 +506,15 @@ Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c225
 
 候选 Changed 实跑273.204s 后 FAIL，日志 `assembly-registry-changed.log`：hygiene、text bytes、documentation 和 Assembly01 等已执行范围通过；安装臂首错为本轮环境未传 `SIMION_LUA_EXE`，另有 `test_current_scientific_implementations_have_no_repository_or_host_dependencies` 报告47条 analysis／Assembly／results 反向依赖。完整47条已提取到 `boundary-errors-current.log`；它们属于 Prepared 迁移后的独立架构首错，不能由本单元56项绿灯替代，也不把本轮环境错误写成生产 FAIL。后续分片 BLOCKED 未计通过；修复后须以显式本机 Lua 重跑同一干净候选。
 
-本项不代替完整 Changed／Repository、双安装或 native 验收。
+本项不代替完整 Changed／Repository、双安装或 native 验收。Assembly／文档提交为 `ebb40e8c` 并已普通 push；规范 CLOC 2.10 `9d02767c→ebb40e8c` PASS：total code -126、production -120、tests -6，files／blank／comment 不变，unclassified=0，逐语言和过滤口径见 `assembly-registry-ebb40e8c-cloc.log`。
+
+### C4 非 OA 总等级字段退役（主线整合候选）
+
+Agent 6 的 `0d39f58095f2936d39848420c0864a3f5ff6bec2` 删除公共执行及当前 RF、MR、双锥、EI、Wehnelt producer 对 `formal_gate_passed`、`formal_eligible`、promotion／claim 授权总布尔量的派生、写入和退休前置；保留实际执行、分析、发布、身份、租约和容量状态。EI 的功能 N≥100 改由既有 `execution_mode=full` 与粒子数合同执行，Wehnelt 仍不因此获得性能资格。历史 manifest 原字节和明确版本 reader 保留，未改写旧证据。
+
+作者隔离树321项定向 unittest PASS，其中 MR 有2个既有证据依赖 skip；含真实 PowerShell owner、manifest、retirement、失败恢复、Ruff、PowerShell parser、JSON、文档和 CLOC 2.10。主线以 `23a54dbf` 整合该提交，无冲突。主树首次406用例组合进程在900.233s 硬上限中止，无 FAIL／ERROR 输出；逐用例对账确认前386项均有终态，截断的依赖模块20项另跑 PASS／0 skip（176.578s）。合并同一 SHA 证据为406个唯一用例、404 success、2个既有 MR 证据 skip、0未闭合，见 `nonoa-grades-main-combined-audit.log`、原始 `nonoa-grades-main-integration.log` 和 `nonoa-grades-main-dependencies-r2.log`；不把超时进程写成单命令 PASS。文档 StructureOnly 321文件／0错误。
+
+主线 CLOC 2.10 `ebb40e8c→23a54dbf` PASS：total code -91、production -75、tests -16，files／blank／comment 不变，unclassified=0，逐语言和过滤口径见 `nonoa-grades-23a54dbf-cloc.log`。OA writer／guard 由 Agent 6 在独立后续工作树收口；无商业 native。
 
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 
@@ -515,8 +523,10 @@ Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime depend
 | 优先级 | 当前活路径 | 实际替代与当前责任 |
 |---|---|---|
 | P0 | `execution.owner.run_managed_stage` 仍允许无 Store 并初始化旧 ledger；`artifact_capacity_maintenance`、`run_artifact_support.ps1` 仍调用旧维护／恢复；MR native-condition、standalone IP、Wehnelt、OA focus 与 RF profiles 仍有旧 package writer | 现有 `standalone_native_store`、Store 分支、`ArtifactStore.collect/recover_run_publication`；需逐调用迁移后删除旧写入／GC／恢复分支，不新建第二生命周期 |
-| P1 | 新 `execution.owner`／`manifest_publication` 仍写 `formal_gate_passed`／`formal_eligible`；retirement 仍读总等级；OA focus 和 OA Candidate 仍有 candidate/promotion 状态 | Agent 6 负责公共执行与非 OA 字段，Agent 4 负责 OA；保留旧 manifest 的精确只读验证，不改写历史 |
-| P1 | registry 仍直挂特殊 `oa_mr.ps1`；`accelerator_interface.ps1` 仍拥有 prepare-only 的私有 package/capacity/finalization | 科学归 Assembly／MR owner，执行归公共 Store；连续飞行只能走公共原出生 tracing，prepare-only 不冒充飞行 |
+| P1 | 非 OA 总等级 writer／guard 已在 `23a54dbf` 删除；OA focus 和 OA Candidate 仍有 candidate/promotion 状态 | Agent 6 继续 OA；保留旧 manifest 的精确只读验证，不改写历史 |
+| P1 | registry 仍直挂特殊 `oa_mr.ps1`；旧 `accelerator_interface.ps1` 及中央 consumer 已删除 | 科学归 Assembly／MR owner，执行归公共 Store；连续飞行只能走公共原出生 tracing，prepare-only 不冒充飞行 |
+
+Agent 7 沿实际消费者复核：公开 Python 的 OA source comparison、COMSOL gas/tracing、SIMION split/grounded/dual-cone/operations 仍可裸入旧 ledger；standalone IP、RF profiles、MR native-condition 和 `oa_mr.ps1` 仍有真实科学职责，公共 `msplatform run` 尚未覆盖这些组合，不能标历史或整链删除。退役顺序固定为：仅测试引用的三类专用恢复体→Wehnelt 既有 Store API→公开 Python 无 Store 消费者→特殊 PowerShell 科学链→公共旧回落／通用恢复→旧日常维护／GC。新 `ArtifactStore.collect` 只管理自己的新根，不借迁移清理既有旧研究根。
 
 上述未完成项直接阻止 CA07／CA12／CA13／CA14／CA19 与最终同 SHA 验收。当前分支仍只是中间候选；未运行完整 Repository、双发行或适用真实 native。
 
