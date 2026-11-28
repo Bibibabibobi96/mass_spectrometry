@@ -55,7 +55,7 @@ def _collect_field_observations(preparation: dict, workbench: dict, run: Path, s
     definition = _field_observation_definition(preparation,source,provenance,flight,run)
     spec,geometry = definition if definition is not None else (None,None)
     def expected_context(case):
-        from msplatform.workflows.single_reflection_flight.field_evidence import _field_observation, _frontend_fields
+        from msplatform.backends.simion.field_evidence import _field_observation, _frontend_fields
         from msplatform.backends.simion.frontend import native_frontend_instances
         from msplatform.results.single_reflection_source import instance_design_record
         eligible_ids=case.get('expected_particle_ids',list(source))

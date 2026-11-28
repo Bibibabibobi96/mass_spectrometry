@@ -893,7 +893,7 @@ foreach($scope in @('Owner','Repository')){
         self.assertEqual(selected[-1]["Modules"], ["tests/simion/test_analyze_terminal_plane.py"])
 
     def test_single_reflection_workflow_changes_select_actual_owner_consumers(self) -> None:
-        paths = ('src/msplatform/workflows/single_reflection_flight/frontend_fields.py',
+        paths = ('src/msplatform/backends/simion/frontend_fields.py',
                  'src/msplatform/workflows/pulse_execution.py')
         for path in paths:
             with self.subTest(path=path):

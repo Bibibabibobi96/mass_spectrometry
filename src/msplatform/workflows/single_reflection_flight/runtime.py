@@ -10,7 +10,7 @@ from functools import partial
 from msplatform.execution.retention import classify_file
 from msplatform.results.single_reflection_continuation import _parent as _parent_reader
 _parent = partial(_parent_reader, retention_classifier=classify_file)
-from msplatform.workflows.single_reflection_flight.field_evidence import _field_observation, _frontend_fields
+from msplatform.backends.simion.field_evidence import _field_observation, _frontend_fields
 
 import csv
 import argparse
@@ -34,8 +34,8 @@ from msplatform.results.single_reflection_source import instance_design_record
 from msplatform.backends.simion.frontend import native_frontend_instances
 from msplatform.backends.simion.field_identity import working_point_member_id
 
-from msplatform.workflows.single_reflection_flight.field_evidence import _SLOTS, load_downstream_fields
-from msplatform.workflows.single_reflection_flight.field_evidence import _small_record
+from msplatform.backends.simion.field_evidence import _SLOTS, load_downstream_fields
+from msplatform.backends.simion.field_evidence import _small_record
 from msplatform.workflows.pulse_execution import resolve_phase_flight
 
 _NATIVE_PATH_RESOURCE = "src/msplatform/execution/resources/native_run_path.lua"

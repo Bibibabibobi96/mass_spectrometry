@@ -272,7 +272,7 @@ def source_capacity_projection(*, artifact_root: Path, request_path: Path | None
                     # explicit provenance, never a root inferred from a PA path.
                     payload_records.append(dict(row, path=str(Path(info["generation_directory"]).resolve()/Path(row["path"]).name), cache_key=info["cache_key"]))
         else:
-            from msplatform.workflows.single_reflection_flight.field_evidence import load_downstream_fields
+            from msplatform.backends.simion.field_evidence import load_downstream_fields
             canonical = Path(manifest_record.get("source_path", manifest_record["path"]))
             normalized = dict(manifest_record, path=str(canonical), source_path=str(canonical))
             _, _, guards = load_downstream_fields(record, value["oatof_resolved_record"], normalized)

@@ -4164,7 +4164,7 @@ workflow_schema.rename(hidden_workflow_schema)
 try:
     import subprocess
     failed = subprocess.run([sys.executable,'-I','-c',
-        "import json,sys;from pathlib import Path;from msplatform.workflows.single_reflection_flight.prepare import validate_preparation_request;validate_preparation_request(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')))",
+        "import json,sys;from pathlib import Path;from msplatform.contracts.single_reflection_preparation import validate_preparation_request;validate_preparation_request(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')))",
         fixture['single_reflection_workflow'][0]['request']], cwd=root,capture_output=True,timeout=30)
     failed_output = (failed.stdout+failed.stderr).decode('utf-8',errors='backslashreplace')
     assert failed.returncode != 0 and workflow_schema.name in failed_output, failed_output

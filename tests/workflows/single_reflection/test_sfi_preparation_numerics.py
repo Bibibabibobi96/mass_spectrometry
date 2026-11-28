@@ -8,7 +8,7 @@ from pathlib import Path
 from tests.workflows.single_reflection import test_single_reflection_preparation as fixtures
 from msplatform.examples import load_example
 from msplatform.io.manifest_records import file_record, record_path
-from msplatform.workflows.single_reflection_flight.prepare import validate_preparation_request
+from msplatform.contracts.single_reflection_preparation import validate_preparation_request
 
 
 class PreparationNumericsTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class PreparationNumericsTests(unittest.TestCase):
 
     def test_neutral_provider_is_frozen_unchanged_and_downstream_uses_explicit_numerics(self):
         from msplatform.workflows.single_reflection_flight.prepare import prepare
-        from msplatform.workflows.single_reflection_flight.downstream_fields import plan_downstream_fields
+        from msplatform.backends.simion.downstream_fields import plan_downstream_fields
         provider = self.request['providers']['instances']['oatof']
         path = record_path(provider['resolved_design'], base_dir=self.path.parent)
         neutral = json.loads(path.read_text(encoding='utf-8'))

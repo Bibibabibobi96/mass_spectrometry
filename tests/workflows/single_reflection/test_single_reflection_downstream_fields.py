@@ -16,7 +16,7 @@ from unittest.mock import patch
 from msplatform.execution.retention import file_record
 from tests.workflows.single_reflection.test_single_reflection_preparation import fixture
 from msplatform.workflows.single_reflection_flight.prepare import prepare
-from msplatform.workflows.single_reflection_flight.downstream_fields import _live_run, plan_downstream_fields, preflight_frontend_resources, publish_downstream_fields
+from msplatform.backends.simion.downstream_fields import _live_run, plan_downstream_fields, preflight_frontend_resources, publish_downstream_fields
 
 ROOT = Path(__file__).resolve().parents[3]
 LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")
@@ -207,7 +207,7 @@ class NoRoot(importlib.abc.MetaPathFinder):
  def find_spec(self,fullname,path=None,target=None):
   if fullname.split('.')[0] in {'common','projects','integrations'}:raise AssertionError('root fallback: '+fullname)
 sys.meta_path.insert(0,NoRoot())
-name='msplatform.workflows.single_reflection_flight.downstream_fields'
+name='msplatform.backends.simion.downstream_fields'
 spec=importlib.util.find_spec(name)
 if spec is None:raise ModuleNotFoundError(name)
 assert Path(spec.origin).is_relative_to(root)
@@ -223,14 +223,14 @@ finally:
         planned = json.loads(result.stdout)
         self.assertEqual(len(planned["steps"]), 5)
         self.assertTrue(Path(planned["plan_record"]["path"]).is_file())
-        module = snapshot / "src/msplatform/workflows/single_reflection_flight/downstream_fields.py"
+        module = snapshot / "src/msplatform/backends/simion/downstream_fields.py"
         module.unlink()
         absent = subprocess.run(arguments, cwd=self.root, capture_output=True, text=True, timeout=30)
         self.assertNotEqual(absent.returncode, 0)
         self.assertIn("downstream_fields", absent.stderr)
 
     def test_explicit_frozen_resources_do_not_consult_installed_origin(self):
-        from msplatform.workflows.single_reflection_flight.downstream_fields import _RESOURCES
+        from msplatform.backends.simion.downstream_fields import _RESOURCES
         from msplatform.backends.simion import resources as canonical_resources
 
         snapshot = self.root / "resource_snapshot"
@@ -263,7 +263,7 @@ finally:
 
     @unittest.skipUnless(os.name == "nt", "Windows execution junction semantics")
     def test_frozen_gem_rejects_junction_escape_and_preserves_root_alias(self):
-        from msplatform.workflows.single_reflection_flight.downstream_fields import _RESOURCES
+        from msplatform.backends.simion.downstream_fields import _RESOURCES
         from msplatform.backends.simion.resources import gem_template_path
 
         relative = Path(_RESOURCES["reflectron_gem"])

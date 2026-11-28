@@ -14,7 +14,7 @@ from msplatform.backends.simion.field_identity import (
     working_point_member_id, _member_projection, _domain_inputs, _parent_boundary,
 )
 from msplatform.backends.simion.resources import native_resource_path
-from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
+from msplatform.backends.simion.field_evidence import validate_frozen_generation_metadata
 
 KINDS = ('carrier_off', 'rf_reference', 'pulse_delta')
 AUDIT_NAME = 'frontend_working_fields_audit.json'

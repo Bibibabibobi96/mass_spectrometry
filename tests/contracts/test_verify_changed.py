@@ -103,7 +103,7 @@ class ChangedGateContractTests(unittest.TestCase):
 
     def test_detector_pipeline_preserves_owner_core_routes(self):
         backend = "src/msplatform/backends/simion/"
-        workflow = "src/msplatform/workflows/single_reflection_flight/downstream_fields.py"
+        workflow = "src/msplatform/backends/simion/downstream_fields.py"
         for path in (backend + "downstream.py", backend + "resources/oatof_detector_ground.gem",
                      backend + "resources/build_detector_variant.lua", workflow):
             with self.subTest(path=path):
@@ -1420,7 +1420,7 @@ exit 0
 
 
     def test_field_plan_dependency_uses_actual_selected_consumers_without_duplicates(self):
-        source = 'src/msplatform/workflows/single_reflection_flight/field_plan.py'
+        source = 'src/msplatform/backends/simion/field_plan.py'
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly')
         roots = ('tests/assembly', 'tests/workflows', 'tests/execution')
         full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
@@ -1432,9 +1432,12 @@ exit 0
                     module.rsplit('.', 1)[-1] in ('test_dependencies', 'test_native_path_consumers',
                                                   'test_saved_workbench_replay_policy', 'test_sfi_preparation_numerics')}
         cases = [(('-ChangedPath', source), expected)]
-        for name in ('prepare.py', 'downstream_fields.py', 'request_v11.schema.json'):
+        for parent, name in (
+                ('src/msplatform/workflows/single_reflection_flight/', 'prepare.py'),
+                ('src/msplatform/backends/simion/', 'downstream_fields.py'),
+                ('src/msplatform/contracts/schemas/', 'single_reflection_request_v11.schema.json')):
             selected = expected | ({'tests.workflows.single_reflection.test_single_reflection_recorded_birth_consumer'} if name == 'prepare.py' else set())
-            cases.append((('-ChangedPath', 'src/msplatform/workflows/single_reflection_flight/' + name), selected))
+            cases.append((('-ChangedPath', parent + name), selected))
         path = 'tests/assembly/oa_mr_execute/test_oa_mr_execute.py'
         cases.append((('-ChangedPath', source, path), expected | {path[:-3].replace('/', '.')}))
         retired = 'tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'
@@ -1472,7 +1475,7 @@ exit 0
                 self.assertTrue(all(row['dependency_profile'] == route['dependency_profile'] for row in rows))
 
     def test_field_plan_mapping_keeps_missing_unknown_and_renamed_source_conservative(self):
-        source = 'src/msplatform/workflows/single_reflection_flight/field_plan.py'
+        source = 'src/msplatform/backends/simion/field_plan.py'
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly')
         dependency = next(row for row in route['test_selection']['dependencies']
                           if any(match.get('exact') == source for match in row['matches']))

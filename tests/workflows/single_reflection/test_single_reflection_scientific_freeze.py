@@ -93,7 +93,7 @@ $frozen.execution_root
             for relative in schemas:
                 self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
             for version in ("request_v9.schema.json", "request_v10.schema.json"):
-                relative = "src/msplatform/workflows/single_reflection_flight/" + version
+                relative = "src/msplatform/contracts/schemas/single_reflection_" + version
                 self.assertIn(relative, source_paths)
                 self.assertEqual((snapshot / relative).read_bytes(), (ROOT / relative).read_bytes())
             backend = snapshot / "src/msplatform/backends/simion/tof_electrode_mapping.py"

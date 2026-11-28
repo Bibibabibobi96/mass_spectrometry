@@ -13,13 +13,13 @@ from unittest.mock import patch
 
 from tests.workflows.single_reflection.test_single_reflection_preparation import fixture, release_fixture, rename_author_instances
 from tests.workflows.single_reflection.test_single_reflection_fields import multipole_source
-from msplatform.workflows.single_reflection_flight.field_plan import (
+from msplatform.backends.simion.field_plan import (
     KINDS, bind_parent_fields, build_field_plan, _bound_source_audit,
 )
 from msplatform.backends.simion.field_bank import field_bank
 from msplatform.backends.simion.field_identity import frontend_field_identity
 from msplatform.backends.simion.field_audit import audit_input_identity, write_audit_spec, reusable_audit
-from msplatform.workflows.single_reflection_flight.field_evidence import validate_frozen_generation_metadata
+from msplatform.backends.simion.field_evidence import validate_frozen_generation_metadata
 from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.io.file_identity import file_sha256
 from msplatform.execution.retention import file_record
@@ -432,7 +432,7 @@ class DirectFieldPlanTests(unittest.TestCase):
         from tests.workflows.single_reflection.test_single_reflection_geometry import scientific_inputs, quadrupole_source, candidate_300mm_fixture
         from msplatform.backends.simion.geometry import compile_frontend_geometry
         from msplatform.backends.simion.fields import prepare_field_design, POLICY
-        from msplatform.workflows.single_reflection_flight.field_plan import _check_source_physics
+        from msplatform.backends.simion.field_plan import _check_source_physics
         from msplatform.backends.simion.field_identity import _member_projection, _parent_boundary
         sources = [quadrupole_source(r0=4., dc=1., frequency_hz=1e6, phase_rad=.1),
                    quadrupole_source(r0=4.5, dc=2., frequency_hz=1.1e6, phase_rad=.2)]
@@ -521,7 +521,7 @@ class DirectFieldPlanTests(unittest.TestCase):
     def test_gem_drift_rejected_and_actual_builder_changes_key(self):
         with tempfile.TemporaryDirectory() as directory:
             run, plan = prepared(Path(directory))
-            module = 'msplatform.workflows.single_reflection_flight.field_plan.file_sha256'
+            module = 'msplatform.backends.simion.field_plan.file_sha256'
             def changed_builder(path):
                 return '0'*64 if Path(path).name == 'build_dirichlet_patch_operating_pa.lua' else file_sha256(path)
             with patch(module, side_effect=changed_builder):
@@ -842,7 +842,7 @@ if __name__ == '__main__':
 
 class FrontendProducerProjectionTests(unittest.TestCase):
     def test_canonical_projection_keeps_original_plan_and_source_free_member_authority(self):
-        from msplatform.workflows.single_reflection_flight.frontend_fields import prepare_stage, domain_members
+        from msplatform.backends.simion.frontend_fields import prepare_stage, domain_members
         with tempfile.TemporaryDirectory() as directory:
             run, original = prepared(Path(directory), entrance_refinement=True)
             (run / 'run_config.json').write_text('{}')
@@ -878,7 +878,7 @@ class FrontendProducerProjectionTests(unittest.TestCase):
                 domain_members(stage, 0, [])
 
     def test_actual_manager_selection_is_revalidated_without_second_probe_or_raw_work(self):
-        from msplatform.workflows.single_reflection_flight.frontend_fields import prepare_stage, domain_members, assess_member
+        from msplatform.backends.simion.frontend_fields import prepare_stage, domain_members, assess_member
         from msplatform.backends.simion.field_worker import _selected_cache_probe
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -774,7 +774,7 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
             self.assertEqual(json.loads(planned.stdout)["status"], "FROZEN_DOWNSTREAM_PLAN_PASS")
-            producer_module = snapshot / 'src/msplatform/workflows/single_reflection_flight/frontend_fields.py'
+            producer_module = snapshot / 'src/msplatform/backends/simion/frontend_fields.py'
             original_module = producer_module.read_bytes()
             producer_module.unlink()
             try:
@@ -792,7 +792,7 @@ print(json.dumps(dict(status='FROZEN_DOWNSTREAM_PLAN_PASS',native_executed=False
             resource.unlink()
             refused = subprocess.run([sys.executable, "-B", "-s", "-c",
                 "import json,sys; from pathlib import Path; "
-                "from msplatform.workflows.single_reflection_flight.downstream_fields import plan_downstream_fields; "
+                "from msplatform.backends.simion.downstream_fields import plan_downstream_fields; "
                 "plan_downstream_fields(json.loads(Path(sys.argv[1]).read_text()),Path(sys.argv[2]),snapshot_root=Path.cwd())",
                 str(run / "preparation_for_dependency_test.json"), str(run)],
                 cwd=snapshot, env=environment, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)

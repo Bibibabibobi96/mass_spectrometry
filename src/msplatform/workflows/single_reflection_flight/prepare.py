@@ -14,7 +14,7 @@ from pathlib import Path
 import shutil
 
 from msplatform.io.clock_authority import validate_clock_authority
-from msplatform.contracts.machine_contracts import validate_schema
+from msplatform.contracts.single_reflection_preparation import validate_preparation_request
 from msplatform.contracts.rigid_transform import RigidTransform, relative_transform
 from msplatform.io.manifest_records import record_path, verify_record as _verify_record
 from functools import partial
@@ -38,11 +38,6 @@ from msplatform.analysis.pulse_selection import _capture_bounds
 file_record = partial(_file_record, retention_classifier=classify_file)
 verify_record = partial(_verify_record, retention_classifier=classify_file)
 
-SCHEMA = Path(__file__).with_name("request_v9.schema.json")
-SCHEMA_V10 = Path(__file__).with_name("request_v10.schema.json")
-SCHEMA_V11 = Path(__file__).with_name("request_v11.schema.json")
-SCHEMA_V12 = Path(__file__).with_name("request_v12.schema.json")
-SCHEMA_V13 = Path(__file__).with_name("request_v13.schema.json")
 ROLE = "instrument_assembly_single_reflection_preparation_request"
 FROZEN_NAMES = {
     "validation_contract": "functional_validation.json",
@@ -75,31 +70,6 @@ OUTPUT_NAMES = (
     "frontend_field_design.json",
 )
 GEM_NAMES = {"parent": "frontend.gem", "entrance_refinement": "frontend_entrance_refinement.gem"}
-
-
-def validate_preparation_request(request: dict) -> int:
-    """Validate the declared request version without converting or changing it.
-
-    Version9 retains its original schema; version10 uses canonical group IDs
-    and SIMION integer targets. Version11 takes backend geometry numerics from
-    the request, leaving the canonical component unchanged. Provider coverage and the actual
-    supported native chain are checked later against frozen provider inputs.
-    """
-    if not isinstance(request, dict) or type(request.get("schema_version")) is not int:
-        raise ValueError("preparation request requires an explicit integer schema_version")
-    version = request["schema_version"]
-    if version not in (9, 10, 11, 12, 13):
-        raise ValueError("unsupported preparation request schema_version")
-    validate_schema(request, {9: SCHEMA, 10: SCHEMA_V10, 11: SCHEMA_V11, 12: SCHEMA_V12, 13: SCHEMA_V13}[version])
-    if version in (12, 13):
-        origin = request['source']['instrument_origin_us']
-        if type(origin) not in (int, float) or not math.isfinite(origin):
-            raise ValueError('recorded birth instrument_origin_us must be finite')
-    if version in (10, 11) and any(type(target) is not int
-            for provider in request["providers"]["instances"].values()
-            for target in provider["electrode_bindings"].values()):
-        raise ValueError(f"version{version} native electrode targets must be strict integers")
-    return version
 
 
 def _prepare_recorded_birth_v13(request, request_path: Path, run: Path, frozen_request: Path) -> dict:

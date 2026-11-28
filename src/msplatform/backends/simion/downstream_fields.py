@@ -4,7 +4,7 @@ The managed caller executes each argv through its public resource-budget
 wrapper. This module never spawns SIMION, owns no cache and does not Fly.
 """
 from __future__ import annotations
-from msplatform.workflows.single_reflection_flight.field_evidence import load_downstream_fields
+from msplatform.backends.simion.field_evidence import load_downstream_fields
 
 import argparse
 import json
@@ -170,7 +170,7 @@ def plan_downstream_fields(preparation: dict, run: Path, *, snapshot_root: Path,
     resolved = _read(provider_path)
     if resolved.get("role") != "oa_tof_resolved_contract_do_not_edit":
         raise ValueError("a complete final oaTOF resolved contract is required")
-    from .prepare import validate_preparation_request
+    from msplatform.contracts.single_reflection_preparation import validate_preparation_request
     request_record = preparation['input_records'].get('request')
     request = None
     if request_record is not None:

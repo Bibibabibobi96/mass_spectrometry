@@ -1304,9 +1304,9 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 
 The retired historical owner accepted `-Request -ExecutionBudgetPath` and separate
 limited-stage switches. Its historical author format is documented by
-[request 10](../src/msplatform/workflows/single_reflection_flight/request_v10.schema.json)。新链引用component3／plan5，
+[request 10](../src/msplatform/contracts/schemas/single_reflection_request_v10.schema.json)。新链引用component3／plan5，
 由提供者独立确定实际前端域，再用binding2绑定该域的完整科学组；不以标签顺序定义组或角色。
-明确旧[request 9](../src/msplatform/workflows/single_reflection_flight/request_v9.schema.json)保留其原plan3／native-view读取分支，
+明确旧[request 9](../src/msplatform/contracts/schemas/single_reflection_request_v9.schema.json)保留其原plan3／native-view读取分支，
 没有新后端模块时仍可完成旧协议的软件准备。request引用冻结父plan、逐实例提供者、显式数值域与场来源。
 
 Recorded-birth admission is now available through
@@ -1318,7 +1318,7 @@ recorded pre-pulse verification or native acceptance.
 
 可选原生场观测由已绑定`validation_contract`中的`native_field_observation`显式请求；
 规格校验见[`validate_native_field_observation`](../src/msplatform/backends/simion/tracking_program.py)，
-实际冻结与批次选择见[`field_evidence._field_observation`](../src/msplatform/workflows/single_reflection_flight/field_evidence.py)。
+实际冻结与批次选择见[`field_evidence._field_observation`](../src/msplatform/backends/simion/field_evidence.py)。
 省略时不插入观测；请求时只记录实际查询，不改变源、场控制或积分步。软件测试不代替真实Fly读数与GUI验收。
 
 普通源和`recorded_pre_pulse_state`共用同一装配；未声明`pulse_decision`时消费全部实际timed pre-state，
@@ -1328,7 +1328,7 @@ held-OFF由原科学mode派生场依赖，仅省略恒0脉冲响应；完整carr
 单反射Program由同一编译器输出原生执行文本及仅省略路径运输的`numerical_program`。续跑比较科学数值控制，仍保留完整原生来源：原生文本须由数值文本与父manifest绑定的原helper精确前向生成；core、build spec或非单位pulse的真实数值变化仍拒绝。已退役alias的小控制／审计记录只从producer manifest按原名称、bytes／SHA唯一解析持久路径，不搜索历史目录或读取大PA。原生执行证据的大清单沿现有小JSON运输，不把未完成分析写成成功。
 
 工作流内部采用单向依赖：`census`读取原生日志证据，`pulse`派生阶段控制，`continuation`验证父记录并规划
-完整批复用，`runtime`物化所需批次；Downstream planning and publication validation now use `msplatform.workflows.single_reflection_flight.downstream_fields`; the root execution entry only transports its CLI arguments.各调用保留原母群、
+完整批复用，`runtime`物化所需批次；Downstream planning and publication validation now use `msplatform.backends.simion.downstream_fields`; the root execution entry only transports its CLI arguments.各调用保留原母群、
 源行顺序、时钟和错误判据；元数据准备不读取PA载荷。已有冻结清单覆盖这些模块，隔离快照可独立导入及执行，
 无需新增CLI或恢复状态；这项职责整理不改变科学计算，也不构成性能提升或原生验收声明。
 
@@ -3011,7 +3011,7 @@ uses the canonical installed backend directly, with explicitly selected frozen
 native-path helper bytes; the obsolete root wrapper is retired.
 ### Installed single-reflection field planning
 
-`msplatform.workflows.single_reflection_flight.field_plan.build_field_plan(prepared, executable)`
+`msplatform.backends.simion.field_plan.build_field_plan(prepared, executable)`
 consumes explicit frozen field design, geometry and source receipts, plus the selected
 SIMION executable identity. It locates the two existing installed Lua resources; it
 neither discovers an author checkout nor reads PA payloads, samples particles or
@@ -3117,7 +3117,7 @@ velocity or collision-count claim. No cooled workflow is retained to provide the
 
 ### Single-reflection frontend field producer boundary
 
-`msplatform.workflows.single_reflection_flight.frontend_fields` owns the scientific
+`msplatform.backends.simion.frontend_fields` owns the scientific
 member/domain projection and actual cache selection. It uses the existing SIMION
 field worker, cache manager and audit implementations. The former root
 `single_reflection_flight/field_stage.ps1` implementation is retired; the existing
