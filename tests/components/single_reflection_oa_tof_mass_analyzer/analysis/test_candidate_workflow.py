@@ -1072,17 +1072,17 @@ print('FROZEN_ION_CONSUMER_PASS')
     def test_frozen_path_resolution_does_not_rehash_or_scan(self):
         from msplatform.workflows.oa_candidate import candidate_source_closure as module
         closure = {"schema_version": 2, "role": module.ROLE,
-                   "code_root": str(REPO_ROOT), "sources": [{"source_id": "src/msplatform/workflows/oa_candidate/reference_analysis.py"}]}
+                   "code_root": str(REPO_ROOT), "sources": [{"source_id": "src/msplatform/workflows/oa_candidate/reference_analysis_core.py"}]}
         with mock.patch.object(module, "sha256") as digest, mock.patch.object(Path, "rglob") as scan:
-            self.assertEqual(frozen_source_path(closure, "src/msplatform/workflows/oa_candidate/reference_analysis.py"),
-                             str((PROJECT_ROOT.parents[1] / "workflows/oa_candidate/reference_analysis.py").resolve()))
+            self.assertEqual(frozen_source_path(closure, "src/msplatform/workflows/oa_candidate/reference_analysis_core.py"),
+                             str((PROJECT_ROOT.parents[1] / "workflows/oa_candidate/reference_analysis_core.py").resolve()))
             digest.assert_not_called()
             scan.assert_not_called()
         with self.assertRaisesRegex(ValueError, "undeclared"):
             frozen_source_path(closure, "missing.py")
         closure["sources"] *= 2
         with self.assertRaisesRegex(ValueError, "duplicate"):
-            frozen_source_path(closure, "src/msplatform/workflows/oa_candidate/reference_analysis.py")
+            frozen_source_path(closure, "src/msplatform/workflows/oa_candidate/reference_analysis_core.py")
         closure["sources"] = [{"source_id": "../escape.py"}]
         with self.assertRaisesRegex(ValueError, "invalid candidate source path"):
             frozen_source_path(closure, "../escape.py")

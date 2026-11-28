@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from msplatform.io.file_identity import file_sha256
-from msplatform.workflows.oa_candidate.reference_analysis import (
-    analyze_single,
-)
+from msplatform.workflows.oa_candidate.reference_analysis_core import analyze_single
 
 
 ROLE = "oatof_comsol_detector_events_analysis_request"

@@ -24,7 +24,7 @@ from msplatform.analysis.peak_metrics import (
     compute_paired_tof_delta_source_metrics,
     compute_source_mapping_metrics,
 )
-from msplatform.workflows.oa_candidate.reference_analysis import (
+from msplatform.workflows.oa_candidate.reference_analysis_core import (
     DEFAULT_DETECTOR_CENTER_X_MM,
     analyze_comparison,
     analyze_single,
@@ -36,7 +36,10 @@ from msplatform.results.historical_mass_spectrum import (
     load_mode, read_mass_spectrum_inputs,
 )
 from msplatform.analysis.mass_spectrum import fit_calibration, analyze_mass_spectrum as analyze_mass_tables
-from msplatform.workflows.oa_tof_design.truncation_diagnostics import _common_intersection_masks
+from msplatform.workflows.oa_tof_design.truncation_diagnostics import (
+    _common_intersection_masks,
+    _paired_frames,
+)
 
 
 def _normalized_simion_rows(path):
@@ -242,6 +245,29 @@ class ParticleImportTest(unittest.TestCase):
             source.to_csv(path, index=False)
             with self.assertRaisesRegex(ValueError, "Duplicate particle_id"):
                 read_particle_table(path)
+
+    def test_truncation_reader_preserves_ids_and_rejects_source_drift(self) -> None:
+        columns = [
+            "particle_id", "tof_us", "initial_x_mm", "initial_y_mm",
+            "initial_z_mm", "initial_energy_eV", "detector_x_mm", "detector_y_mm", "Hit",
+        ]
+        rows = [
+            [index, 70.0 + index, 0.0, 0.0, -1.0, 5.0, 0.0, 0.0, True]
+            for index in (1, 2, 3)
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            left, right = root / "left.csv", root / "right.csv"
+            for path in (left, right):
+                pd.DataFrame(rows, columns=columns).to_csv(path, index=False)
+            actual_left, actual_right = _paired_frames(left, right)
+            self.assertEqual(actual_left["particle_id"].tolist(), [1, 2, 3])
+            self.assertEqual(actual_right["particle_id"].tolist(), [1, 2, 3])
+            changed = [list(row) for row in rows]
+            changed[1][5] = 6.0
+            pd.DataFrame(changed, columns=columns).to_csv(right, index=False)
+            with self.assertRaisesRegex(ValueError, "Paired source column differs"):
+                _paired_frames(left, right)
 
     def test_tof_only_human_import_generates_unpaired_ids(self) -> None:
         source = pd.DataFrame({"TOF": [71.9, 72.0, 72.1], "mean": [72.0, None, None]})

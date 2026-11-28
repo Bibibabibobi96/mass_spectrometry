@@ -502,7 +502,7 @@ def candidate_comsol_source_phases(closure: dict[str, Any]) -> dict[str, Any]:
         "oatof_particle_plot_view.m", "oatof_create_result_nodes.m",
         "oatof_validate_candidate_solution.m"))
     analysis_names = tuple(workflow_prefix+name for name in (
-        "analyze_comsol_detector_events.py", "reference_analysis.py", "reference_analysis_core.py"))
+        "analyze_comsol_detector_events.py", "reference_analysis_core.py"))
     analysis_names += tuple(name for name in sources if name.startswith("common/analysis/"))
     analysis_names += tuple(name for name in sources if (
         name == "src/msplatform/__init__.py"

@@ -47,7 +47,6 @@ STAGE_SOURCE_PREFIXES = {
     "comsol_candidate": (
         "src/msplatform/backends/comsol/",
         "src/msplatform/workflows/oa_candidate/analyze_comsol_detector_events.py",
-        "src/msplatform/workflows/oa_candidate/reference_analysis.py",
         "src/msplatform/workflows/oa_candidate/reference_analysis_core.py",
         "src/msplatform/workflows/resources/oatof_lifecycle_preflight.ps1",
         "src/msplatform/workflows/oa_candidate/candidate_stage_execution.py",

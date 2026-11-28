@@ -23,11 +23,19 @@ from msplatform.analysis.peak_metrics import (
 )
 from msplatform.io.file_identity import file_sha256 as _sha256
 from msplatform.results.single_reflection_particle_table import read_particle_table
+from msplatform.workflows.oa_candidate.reference_analysis_core import (
+    DEFAULT_DETECTOR_CENTER_X_MM,
+    DEFAULT_DETECTOR_CENTER_Y_MM,
+)
 
 
 def _paired_frames(left_path: Path, right_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    left, _ = read_particle_table(left_path)
-    right, _ = read_particle_table(right_path)
+    left, _ = read_particle_table(
+        left_path, DEFAULT_DETECTOR_CENTER_X_MM, DEFAULT_DETECTOR_CENTER_Y_MM
+    )
+    right, _ = read_particle_table(
+        right_path, DEFAULT_DETECTOR_CENTER_X_MM, DEFAULT_DETECTOR_CENTER_Y_MM
+    )
     left = left.sort_values("particle_id").reset_index(drop=True)
     right = right.sort_values("particle_id").reset_index(drop=True)
     if not np.array_equal(left["particle_id"], right["particle_id"]):

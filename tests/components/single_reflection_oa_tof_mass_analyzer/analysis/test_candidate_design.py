@@ -10,7 +10,9 @@ import tempfile
 import unittest
 from functools import partial
 from pathlib import Path
+from msplatform import components, examples
 from msplatform.components.single_reflection_oa_tof.design_compilation import EnvelopeReviewRequired
+from msplatform.components.single_reflection_oa_tof.split_projection import project_split_component_requests
 from msplatform.contracts.machine_contracts import load_json, sha256
 from msplatform.workflows.oa_candidate.compile_candidate_design import write_candidate as _write_candidate
 from msplatform.workflows.oa_candidate.prepare_candidate_consumers import prepare as _prepare, verify_routing_coverage
@@ -44,6 +46,23 @@ class CandidateDesignTests(CandidateFixtures, unittest.TestCase):
         self.assertEqual(changes, report["changed_variables"])
         self.assertEqual(derived, report["derived_changes"])
         self.assertEqual((baseline, proposal, request, catalog, envelope), before)
+
+    def test_candidate_rejects_missing_or_different_example_opening_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = load_json(self.candidate_run_inputs(Path(directory))[1])
+        example = examples.load_example("rf_oatof_functional_v1")
+        example_resolved = components.resolve_component(
+            example.component_requests["oatof"]
+        ).resolved_design
+        before = copy.deepcopy(candidate)
+        self.assertNotEqual(candidate["geometry_mm"], example_resolved["geometry_mm"])
+        with self.assertRaisesRegex(ValueError, "explicit mechanical side opening"):
+            project_split_component_requests(candidate)
+        borrowed = copy.deepcopy(candidate)
+        borrowed["mechanical_side_opening"] = example_resolved["mechanical_side_opening"]
+        with self.assertRaisesRegex(ValueError, "topology conflicts"):
+            project_split_component_requests(borrowed)
+        self.assertEqual(candidate, before)
 
     def test_zero_change_reproduces_formal_baseline_and_resolved_physics(self):
         request = self.base_request()
