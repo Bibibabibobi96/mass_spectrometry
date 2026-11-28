@@ -195,14 +195,14 @@ def _basis_original_owner_refs(source):
     return [failed, prepared]
 
 
-def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
+def prepare_split_scalar_world(fields, *, scalar_field_basis, context, artifact_store=None):
     """Publish a verified five-slot collision workbench without Refine or Fly."""
-    from contextlib import ExitStack
+    from contextlib import ExitStack, nullcontext
     from datetime import datetime
     from functools import partial
     from uuid import uuid4
     from msplatform.execution.native_source_guard import guard_native_source
-    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.owner import current_managed_native_store, run_managed_stage, standalone_native_store
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.io.manifest_records import file_record
     from msplatform.io.file_identity import guarded_file_identity
@@ -216,23 +216,33 @@ def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
     runtime = stage.get("runtime", {})
     if set(runtime) - {"simion_allow_asynchronous_io"} or ("simion_allow_asynchronous_io" in runtime and type(runtime["simion_allow_asynchronous_io"]) is not bool):
         raise ValueError("split scalar world runtime accepts only explicit asynchronous IO mode")
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ValueError("split scalar world requires an explicit ArtifactStore or protected parent scope")
+    store = artifact_store if artifact_store is not None else parent["store"]
+    if parent is not None and parent["store"] is not store:
+        raise ValueError("split scalar world must use the parent Store")
     reference = fields.reference if isinstance(fields, OpenedArtifact) else copy.deepcopy(fields)
     root = context.workspace / "artifacts"
+    source_assets = set()
     with ExitStack() as stack:
-        guarded = stack.enter_context(guard_native_source(reference, expected_kind="field_bundle", expected_artifact_root=root))
+        guarded = stack.enter_context(guard_native_source(reference, expected_kind="field_bundle",
+            expected_artifact_root=root, artifact_store=store, asset_ids=source_assets))
         if guarded.metadata.get("ground_representation") != "analytic_zero_on_native_geometry":
             raise ValueError("split scalar world requires derived analytic ground")
         origin_reference = guarded.metadata.get("ground_source_reference")
         if not isinstance(origin_reference, Mapping):
             raise ValueError("split scalar world requires its original ground producer")
-        stack.enter_context(guard_native_source(origin_reference, expected_kind="field_bundle", expected_artifact_root=root))
+        stack.enter_context(guard_native_source(origin_reference, expected_kind="field_bundle",
+            expected_artifact_root=root, artifact_store=store, asset_ids=source_assets))
         # Scalar product and geometry guards precede scalar admission.  Their
         # own referenced solutions are acquired and rechecked immediately after.
         initial = [(scalar_field_basis["geometry_artifact"], "geometry_artifact")]
         initial += [(value, "scalar_field_samples") for value in scalar_field_basis["samples"].values()]
         for ref, kind in initial:
             ref = ref.reference if isinstance(ref, OpenedArtifact) else ref
-            stack.enter_context(guard_native_source(ref, expected_kind=kind, expected_artifact_root=root))
+            stack.enter_context(guard_native_source(ref, expected_kind=kind, expected_artifact_root=root,
+                artifact_store=store, asset_ids=source_assets))
         source, model, binding, carriers = _admit_world(reference, scalar_field_basis)
         request = binding["geometry_execution_request"]
         stack.enter_context(guarded_file_identity(request["path"], expected_bytes=request["bytes"],
@@ -240,7 +250,8 @@ def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
         refs = _basis_references(binding)
         original_owners = {}
         for ref, kind in refs:
-            guarded_ref = stack.enter_context(guard_native_source(ref, expected_kind=kind, expected_artifact_root=root))
+            guarded_ref = stack.enter_context(guard_native_source(ref, expected_kind=kind, expected_artifact_root=root,
+                artifact_store=store, asset_ids=source_assets))
             if kind == 'field_solution':
                 for record in _basis_original_owner_refs(guarded_ref):
                     path = str(Path(record['path']).resolve())
@@ -262,17 +273,22 @@ def prepare_split_scalar_world(fields, *, scalar_field_basis, context):
                    + [dict(manifest_record=ref["manifest"]) for ref, _ in refs]
                    + [dict(manifest_record=record) for record in original_owners.values()])
         action_record = file_record(Path(execute_split_scalar_world.__code__.co_filename).resolve(), "required_evidence")
-        result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
-            run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__world-" + uuid4().hex[:12],
-            payload=dict(action="prepare_split_scalar_world", fields=source.reference,
-                         scalar_field_basis=copy.deepcopy(dict(scalar_field_basis)), stage_policy=stage),
-            committed_new_bytes=stage["limits"]["transient_run_directory_bytes"], commitment_inputs=[policy],
-            retention=stage["artifact_retention"], expected_operation_ids=ids,
-            operation_dependencies={name: [ids[index-1]] for index,name in enumerate(ids) if index},
-            action=partial(execute_split_scalar_world, fields_reference=source.reference,
-                scalar_field_basis=copy.deepcopy(dict(scalar_field_basis)), limits=stage["limits"],
-                allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")), action_record=action_record,
-            source_references=sources, use_short_execution_path=True, completion_api=lambda: native_completion)
+        scope = (standalone_native_store(store, task_key="standalone-split-scalar-world",
+                    budget=stage["limits"]["transient_run_directory_bytes"], required_assets=tuple(sorted(source_assets)))
+                 if parent is None else nullcontext())
+        with scope:
+            result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
+                run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__world-" + uuid4().hex[:12],
+                payload=dict(action="prepare_split_scalar_world", fields=source.reference,
+                             scalar_field_basis=copy.deepcopy(dict(scalar_field_basis)), stage_policy=stage),
+                committed_new_bytes=stage["limits"]["transient_run_directory_bytes"], commitment_inputs=[policy],
+                retention=stage["artifact_retention"], expected_operation_ids=ids,
+                operation_dependencies={name: [ids[index-1]] for index,name in enumerate(ids) if index},
+                action=partial(execute_split_scalar_world, fields_reference=source.reference,
+                    scalar_field_basis=copy.deepcopy(dict(scalar_field_basis)), limits=stage["limits"],
+                    allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")), action_record=action_record,
+                source_references=sources, use_short_execution_path=True, completion_api=lambda: native_completion,
+                artifact_store=store)
         return open_artifact({"manifest": result["manifest"], "product_id": "fields"}, expected_kind="field_bundle")
 
 

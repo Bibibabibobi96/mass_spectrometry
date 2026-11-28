@@ -584,7 +584,23 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                     and stationary_source is None):
                 raise ValueError('COMSOL Store field lacks its source reference')
             borrowed = {}
-            if family_reference is not None:
+            if (family_reference is not None
+                    and product.get('metadata', {}).get('field_representation') == 'producer_owned_dual_cone_fractional_family'):
+                from msplatform.backends.simion.dual_cone_stages import require_fields_product
+                family = stack.enter_context(guard_native_source(family_reference, expected_kind='field_bundle',
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
+                _, producer = require_fields_product(reference)
+                for name, record in producer.data_records.items():
+                    borrowed[Path(producer.data_locations[name]).resolve()] = (
+                        record['bytes'], str(record['sha256']).upper())
+            if family_reference is not None and expected_kind == 'trajectory_result':
+                family = stack.enter_context(guard_native_source(family_reference, expected_kind='field_bundle',
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
+                for name, record in family.data_records.items():
+                    borrowed[Path(family.data_locations[name]).resolve()] = (
+                        record['bytes'], str(record['sha256']).upper())
+            if (family_reference is not None and expected_kind != 'trajectory_result'
+                    and product.get('metadata', {}).get('field_representation') != 'producer_owned_dual_cone_fractional_family'):
                 metadata = product.get('metadata', {})
                 if (expected_kind != 'field_bundle' or metadata.get('backend') != 'simion'
                         or metadata.get('field_representation') not in {

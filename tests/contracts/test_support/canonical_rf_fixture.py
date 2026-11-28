@@ -56,8 +56,10 @@ def sample_fixture(context, budget, retention, obj, members, groups):
     values={(i,g):groups[i][g]['polarity']*groups[i][g]['rf_amplitude_v'] for i,g in keys}
     request=validate_request(projection,dict(group_voltages=[dict(instance_id=i,electrode_group_id=g,voltage_v=values[(i,g)]) for i,g in keys],relative_permittivity=1.,exterior={'kind':'potential','voltage_v':0.},mesh={'global_automatic_level':9,'electrode_hmax_mm':5.},study={'kind':'stationary'}))
     grid=dict(frame_id='world',origin_mm=[-15.,-15.,-5.],pitch_mm=[1.,1.,1.],dimensions=[31,31,176],block_points=4096,study_tag='std1',solution_tag='sol1',dataset_tag='dset1',point_count=31*31*176,maximum_mm=[15.,15.,170.],coordinate_sanity_mm=1e-6)
+    prepared=fixture.publish('canonical-prepared','prepared_model',{'geometry_manifest':geometry['manifest']},
+        {'backend':'comsol','scope':'assembly_electrostatic_unsolved','geometry_source_reference':geometry})
     data={'projection':projection,'request':request,'geometry_validation':{'position_mm':1e-6},'reopen_geometry':{'vacuum_domains':[1]},'reopen_solution':{'solution':SOLUTION},'model':b'inert model, never opened as MPH'}
-    solution=fixture.publish('canonical-solution','field_solution',data,{'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True,'solution':SOLUTION})
+    solution=fixture.publish('canonical-solution','field_solution',data,{'backend':'comsol','scope':'single_stationary_workpoint','field_status':'solved','native_reopen_verified':True,'solution':SOLUTION,'stationary_source':{'reference':prepared,'kind':'prepared_model'}},linked={'prepared_manifest':prepared['manifest']})
     source=open_artifact(solution,expected_kind='field_solution')
     report=dict(status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(source.data_path('model')),vacuum_domains=[1],fem_valid=grid['point_count'],invalid_count=0,solution_readback=SOLUTION,coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'},**grid)
     header=PaHeader(-2,1,10000.,31,31,176,1<<28,1.,1.,1.).pack();count=grid['point_count']

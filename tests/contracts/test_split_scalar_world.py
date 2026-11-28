@@ -196,12 +196,14 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
         context = SimpleNamespace(tools={"simion": __import__("pathlib").Path(sys.executable)},
                                   workspace=self.helper.root, execution_root=self.helper.root / "exec")
         selection = {"geometry_artifact": geometry, "samples": {"off": reference("off"), "on": reference("on")}}
+        from msplatform.storage import ArtifactStore
+        store = ArtifactStore(self.helper.root / "store")
         with patch("msplatform.execution.stage_policy.read_stage_policy", return_value=(stage, {})), \
              patch("msplatform.execution.native_source_guard.guard_native_source", side_effect=lambda *a, **k: nullcontext(source)), \
              patch("msplatform.backends.simion.split_scalar_workbench._admit_world", return_value=(source,self.model,binding,carriers)), \
              patch("msplatform.execution.owner.run_managed_stage", side_effect=RuntimeError("INERT_WORLD_OWNER")) as owner:
             with self.assertRaisesRegex(RuntimeError, "INERT_WORLD_OWNER"):
-                simion.prepare_split_scalar_world(field, scalar_field_basis=selection, context=context)
+                simion.prepare_split_scalar_world(field, scalar_field_basis=selection, context=context, artifact_store=store)
         call = owner.call_args.kwargs
         self.assertEqual(call["expected_operation_ids"], ("background_build", "background_verify", "collision_iob_build", "collision_iob_verify"))
         self.assertEqual(len(call["source_references"]), 7)
@@ -236,7 +238,9 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
         context=SimpleNamespace(tools={'simion':Path(sys.executable)},workspace=self.helper.root,
                                 execution_root=self.helper.root/'exec')
         selection={'geometry_artifact':geometry,'samples':{'off':ref('off'),'on':ref('on')}}
-        stage={'limits':{'transient_run_directory_bytes':1},'artifact_retention':{}}
+        from msplatform.storage import ArtifactStore
+        store=ArtifactStore(self.helper.root/'store')
+        stage={'limits':{'transient_run_directory_bytes':1024},'artifact_retention':{}}
         session=SimpleNamespace(artifact_root=self.helper.root,capacity_session={'status':'active',
             'protected_paths':[str(path) for path in roots],'source_protection_leases':[]})
         def consumed(manifest,**kwargs):
@@ -249,6 +253,9 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
                 _protected_source(session,record,required_paths=[root/'member.dat'])
                 with self.assertRaises(PermissionError):Path(record['path']).write_text('mutate')
             if should_fail[0]: raise RuntimeError('inert owner failure')
+            from msplatform.execution.native_artifact_controls import current_native_artifact_scope
+            work = current_native_artifact_scope()['work_directory']
+            (Path(work) / 'result.json').write_text('{}', encoding='utf8')
             return {'manifest':{'path':'inert'}}
         with patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), \
              patch('msplatform.execution.native_source_guard.guard_native_source',side_effect=lambda *a,**k:nullcontext(source)), \
@@ -258,11 +265,11 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
              patch('msplatform.execution.owner.run_managed_stage',side_effect=run_owner), \
              patch('msplatform.results.artifacts.open_artifact',return_value='inert published'):
             with self.assertRaisesRegex(RuntimeError,'inert owner failure'):
-                simion.prepare_split_scalar_world(field,scalar_field_basis=selection,context=context)
+                simion.prepare_split_scalar_world(field,scalar_field_basis=selection,context=context,artifact_store=store)
             for record in records:
                 with Path(record['path']).open('ab'): pass
             should_fail[0]=False
-            self.assertEqual(simion.prepare_split_scalar_world(field,scalar_field_basis=selection,context=context),
+            self.assertEqual(simion.prepare_split_scalar_world(field,scalar_field_basis=selection,context=context,artifact_store=store),
                              'inert published')
         for record in records:
             with Path(record['path']).open('ab'): pass

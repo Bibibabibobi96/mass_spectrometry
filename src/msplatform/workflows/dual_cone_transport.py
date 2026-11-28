@@ -38,9 +38,13 @@ def run_gas_assisted_transport(
     context,
     placement=None,
     source_to_device=None,
+    artifact_store=None,
 ):
     """Explicit fresh build/Refine/Fly; never infer an input or reopen a cache."""
+    from contextlib import ExitStack, nullcontext
     from msplatform.backends.simion import native_completion
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
 
     request = dict(
         resolved_path=Path(resolved_path),
@@ -73,35 +77,64 @@ def run_gas_assisted_transport(
         raise ValueError("SIMION transport runtime only accepts explicit boolean simion_allow_asynchronous_io")
     # No ordinary run silently inherits the resource budget of gas-flow or RF.
     # The caller supplies this exact action's explicit engineering policy.
-    result = run_managed_stage(
-        context,
-        descriptor=dict(
-            project="dual_cone_tandem_quadrupole",
-            mode="gas_field_driven_simion_transport",
-            software=["SIMION"],
-        ),
-        run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__dualcone-" + uuid4().hex[:12],
-        payload=dict(
-            action="dual_cone_transport",
-            request={name: str(value) if isinstance(value, Path) else value for name, value in request.items()},
-            stage_policy=stage,
-        ),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy],
-        retention=stage["artifact_retention"],
-        expected_operation_ids=tuple(graph["expected_operation_ids"]),
-        operation_dependencies=graph["operation_dependencies"],
-        action=partial(
-            execute_transport,
-            request=request,
-            limits=stage["limits"],
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"),
-        ),
-        action_record=file_record(Path(execute_transport.__code__.co_filename).resolve(), "required_evidence"),
-        source_references=[{"manifest_record": gas.reference["manifest"]}],
-        use_short_execution_path=True,
-        completion_api=lambda: native_completion,
-    )
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ValueError("fresh dual-cone transport requires an explicit ArtifactStore or protected parent scope")
+    store = artifact_store if artifact_store is not None else parent["store"]
+    if parent is not None and parent["store"] is not store:
+        raise ValueError("fresh dual-cone transport must use the parent Store")
+    with ExitStack() as stack:
+        source_assets = set()
+        stack.enter_context(
+            guard_native_source(
+                gas.reference,
+                expected_kind="gas_field",
+                expected_artifact_root=context.workspace / "artifacts",
+                artifact_store=store,
+                asset_ids=source_assets,
+            )
+        )
+        scope = (
+            standalone_native_store(
+                store,
+                task_key="dual-cone-fresh-transport",
+                budget=stage["limits"]["transient_run_directory_bytes"],
+                required_assets=tuple(sorted(source_assets)),
+            )
+            if parent is None
+            else nullcontext()
+        )
+        with scope:
+            result = run_managed_stage(
+                context,
+                descriptor=dict(
+                    project="dual_cone_tandem_quadrupole",
+                    mode="gas_field_driven_simion_transport",
+                    software=["SIMION"],
+                ),
+                run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__dualcone-" + uuid4().hex[:12],
+                payload=dict(
+                    action="dual_cone_transport",
+                    request={name: str(value) if isinstance(value, Path) else value for name, value in request.items()},
+                    stage_policy=stage,
+                ),
+                committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
+                commitment_inputs=[policy],
+                retention=stage["artifact_retention"],
+                expected_operation_ids=tuple(graph["expected_operation_ids"]),
+                operation_dependencies=graph["operation_dependencies"],
+                action=partial(
+                    execute_transport,
+                    request=request,
+                    limits=stage["limits"],
+                    allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"),
+                ),
+                action_record=file_record(Path(execute_transport.__code__.co_filename).resolve(), "required_evidence"),
+                source_references=[{"manifest_record": gas.reference["manifest"]}],
+                use_short_execution_path=True,
+                completion_api=lambda: native_completion,
+                artifact_store=store,
+            )
     return open_artifact(
         {"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result"
     )

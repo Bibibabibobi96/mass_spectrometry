@@ -101,13 +101,15 @@ class SampledFieldExecutionTests(unittest.TestCase):
             from msplatform.backends.simion.ip_mr_tracking_admission import admit_ip_mr_tracking_fields, protect_ip_mr_tracking_fields
             from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
             context=selected['context'];policy=context.stage_policy_path
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(Path(tmp)/'store')
             stage=json.loads(policy.read_text(encoding='utf8'));stage['stages']['export_assembly_world_scalar']={
                 'limits':dict(stage['stages']['track']['limits']),'artifact_retention':dict(selected['retention'])}
             policy.write_text(json.dumps(stage),encoding='utf8')
             selection=copy.deepcopy(selected['scalar_field_basis']);raw_ref=selection['samples']['carrier']
             raw=open_artifact(raw_ref,expected_kind='scalar_field_samples')
             preserved={name:raw.data_path(name).read_bytes() for name in ('field_v','field_valid','report')}
-            derived=derive_world_scalar_support(raw_ref,context=context,publish_prepared_support=True)
+            derived=derive_world_scalar_support(raw_ref,context=context,publish_prepared_support=True,artifact_store=store)
             self.assertEqual(derived.metadata['original_samples_reference'],raw.reference)
             selection['samples']['carrier']=derived.reference
             derived_plan=prepare_ip_mr_field_inputs(selected['model_reference'],scalar_field_basis=selection,
@@ -118,18 +120,16 @@ class SampledFieldExecutionTests(unittest.TestCase):
             def check_derived_field(_operation):
                 view=load_capacity_protection_leases(context.workspace/'artifacts')
                 self.assertTrue(path_is_protected(original_path,view['protected_paths']));lease_checks.append('field')
+            from msplatform.backends.simion import operations
+            solve_policy=copy.deepcopy(stage['stages']['track'])
+            solve_policy['limits']['transient_run_directory_bytes']=5*1024**3
+            solve_policy['limits']['reserved_run_payload_bytes']=5*1024**3
+            stage['stages']['solve_fields']=solve_policy
+            policy.write_text(json.dumps(stage),encoding='utf8')
             with fixture.inert_native_leaf(derived_observed,after_operation=check_derived_field):
-                derived_result=run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='sim',software=[]),
-                    run_id='20261114_000108__test__python__derived-fields',
-                    payload={'action':'solve_fields','model':selected['model_reference']},
-                    committed_new_bytes=16777216,commitment_inputs=[selected['budget']],retention=selected['retention'],
-                    expected_operation_ids=derived_ids,operation_dependencies={name:[derived_ids[i-1]] for i,name in enumerate(derived_ids) if i},
-                    action=partial(execute_ip_mr_sampled_fields,model_reference=selected['model_reference'],
-                        scalar_field_basis=selection,priority_evidence=selected['priority_evidence'],limits=limits),
-                    action_record=file_record(Path(subject.__file__),'required_evidence'),
-                    source_references=derived_plan['source_references'],completion_api=no_particle_batch_completion_api)
+                derived_fields=operations.solve_fields(selected['model_reference'],numerics={},context=context,
+                    scalar_field_basis=dict(selection,collision_priority_evidence=selected['priority_evidence']),artifact_store=store)
             self.assertEqual(derived_observed,list(derived_ids))
-            derived_fields=open_artifact({'manifest':derived_result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
             from msplatform.backends.simion.ip_mr_field_execution import prepare_reused_ip_mr_collisions
             reuse_plan=prepare_reused_ip_mr_collisions(selected['model_reference'],scalar_field_basis=selection,
                 priority_evidence=selected['priority_evidence'],reuse_reference=derived_fields.reference,
@@ -186,7 +186,7 @@ class SampledFieldExecutionTests(unittest.TestCase):
             public_selection=dict(selection,collision_priority_evidence=selected['priority_evidence'])
             with fixture.inert_native_leaf(reuse_operations), patch.object(model_execution,'_protected_source',side_effect=observe_protected_source):
                 reused=operations.solve_fields(selected['model_reference'],numerics={},context=context,
-                    scalar_field_basis=public_selection,reuse_collision_geometry=derived_fields.reference)
+                    scalar_field_basis=public_selection,reuse_collision_geometry=derived_fields.reference,artifact_store=store)
             self.assertEqual(reuse_operations,[]);self.assertTrue(collision_lease)
             reuse_run=reused.manifest_location.parent
             completion=json.loads((reuse_run/'results/execution_completion.json').read_text(encoding='utf-8-sig'))

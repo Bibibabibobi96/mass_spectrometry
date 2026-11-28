@@ -456,6 +456,8 @@ class ManagedTransportTests(unittest.TestCase):
                     document["stages"]["dual_cone_transport"]["runtime"] = runtime
                     stage.write_text(json.dumps(document))
                 context = replace(context, stage_policy_path=stage)
+                from msplatform.storage import ArtifactStore
+                store = ArtifactStore(root / "store")
                 calls = []
 
                 def observed(_context, **kwargs):
@@ -645,6 +647,7 @@ class ManagedTransportTests(unittest.TestCase):
                                 gas_field_reference=reference,
                                 collision_sds_dir=sds,
                                 context=context,
+                                artifact_store=store,
                             )
                         self.assertEqual(len(calls), 4)
                         self.assertFalse(any("fly" in row["arguments"] for row in calls))
@@ -667,6 +670,7 @@ class ManagedTransportTests(unittest.TestCase):
                                 gas_field_reference=reference,
                                 collision_sds_dir=sds,
                                 context=context,
+                                artifact_store=store,
                             )
                         self.assertEqual(calls, [])
                         self.assertEqual(list(context.workspace.glob("artifacts/components/*/runs/20*")), [])
@@ -685,6 +689,7 @@ class ManagedTransportTests(unittest.TestCase):
                                 gas_field_reference=reference,
                                 collision_sds_dir=sds,
                                 context=context,
+                                artifact_store=store,
                             )
                         self.assertEqual(calls, [])
                         self.assertEqual(list(context.workspace.glob("artifacts/components/*/runs/20*")), [])
@@ -702,6 +707,7 @@ class ManagedTransportTests(unittest.TestCase):
                                 gas_field_reference=reference,
                                 collision_sds_dir=sds,
                                 context=context,
+                                artifact_store=store,
                             )
                         self.assertEqual(calls, [])
                         self.assertFalse(
@@ -710,7 +716,7 @@ class ManagedTransportTests(unittest.TestCase):
                                 for note in getattr(caught.exception, "__notes__", [])
                             )
                         )
-                        failed = next(context.workspace.glob("artifacts/components/*/runs/20*/run_manifest.json"))
+                        failed = next(store.root.glob("assets/native_stage/*/*/runs/*/run_manifest.json"))
                         self.assertEqual(json.loads(failed.read_text())["status"], "failed")
                         self.assertEqual(load_capacity_protection_leases(artifact_root)["audit"], [])
                         continue
@@ -726,6 +732,7 @@ class ManagedTransportTests(unittest.TestCase):
                             gas_field_reference=reference,
                             collision_sds_dir=sds,
                             context=context,
+                                artifact_store=store,
                         )
                 self.assertEqual(len(calls), 6)
                 self.assertEqual(product.metadata["execution_count"], 100)

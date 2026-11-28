@@ -156,10 +156,16 @@ class OaMrModelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); path=root/'geometry.json';path.write_text(json.dumps(asdict(self.compiled)),encoding='utf-8')
             source=SimpleNamespace(data_path=lambda key:path,reference={'manifest':{}})
-            context=SimpleNamespace(tools={'simion':Path(__file__).resolve()},execution_root=root)
+            context=SimpleNamespace(tools={'simion':Path(__file__).resolve()},execution_root=root,workspace=root)
             request=dict(oa_groups=copy.deepcopy(self.drive['oa_groups']),mr_authority=copy.deepcopy(self.drive['mr_authority']),pulse=copy.deepcopy(self.drive['pulse']),clock={'phase_reference_instrument_time_us':0.},clock_authority={'example_resource':'instrument_clock_authority_v1.json'})
             stage=dict(limits={'transient_run_directory_bytes':1},artifact_retention={})
-            with patch('msplatform.results.artifacts.open_artifact',side_effect=[source,'OPENED']), patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{}}) as owner:
+            from contextlib import ExitStack, nullcontext
+            from msplatform.execution.owner import managed_native_store
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(root/'store')
+            with ExitStack() as lifetime, managed_native_store(store,task_key='oa-mr-model-fixture',lifetime=lifetime,account=lambda _:None), \
+                 patch('msplatform.execution.native_source_guard.guard_native_source',side_effect=lambda *args,**kwargs:nullcontext()), \
+                 patch('msplatform.results.artifacts.open_artifact',side_effect=[source,'OPENED']), patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{}}) as owner:
                 self.assertEqual(operations.prepare_model({},drive=request,physics=RF_PHYSICS,context=context),'OPENED')
             payload=owner.call_args.kwargs['payload'];self.assertEqual(len(payload['model']['native_drive_rows']),41)
             self.assertEqual(Path(owner.call_args.kwargs['action'].keywords['seed_record']['path']).name,'3_instance_seed.iob')

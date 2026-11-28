@@ -838,3 +838,18 @@ failures. These require the normal public GATE context; no environment success
 is inferred. Scoped Ruff and diff checks passed. No COMSOL or native SIMION solve
 ran; these software results grant no collision, trajectory or scientific
 qualification.
+
+
+### Public native Store caller migration
+
+The COMSOL gas-flow, fresh SIMION transport and four independent dual-cone stages now require an
+explicit `ArtifactStore` or the caller's matching managed parent scope. Source guards and claims cover
+published gas, selected fields and original producers before standalone admission; the existing gas
+CLI selects `<workspace>/store`. Operation graphs, original particle IDs, clocks, native failure
+records and saved-field reuse are unchanged.
+
+The real inert COMSOL Store case passed fresh publication, failed-export model reexport and author
+mutation rejection; the fresh transport module passed 16 tests and the managed-stage contract module
+passed five. These are software lifecycle results with inert processes, not COMSOL/SIMION native,
+collision, trajectory-accuracy or scientific qualification. Native acceptance remains open as recorded
+above.

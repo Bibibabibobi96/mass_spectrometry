@@ -123,10 +123,10 @@ def publish_fixture(context, budget, retention, *, name, kind, data, metadata, i
             )
         for key, record in linked.items():
             session.add_input(key, record)
-            if key == "field_solution_manifest":
+            if key in {"field_solution_manifest", "prepared_manifest"}:
                 records[key] = record
         paths = [Path(record["path"]) for key, record in records.items() if key not in linked]
-        product_id = "solution" if kind == "field_solution" else "product"
+        product_id = {"field_solution": "solution", "prepared_model": "model"}.get(kind, "product")
         return dict(
             status="success",
             summary={"fixture": "inert_test_only"},
@@ -154,7 +154,7 @@ def publish_fixture(context, budget, retention, *, name, kind, data, metadata, i
         action_record=file_record(Path(__file__), "required_evidence"),
         source_references=source_refs,
     )
-    return {"manifest": result["manifest"], "product_id": "solution" if kind == "field_solution" else "product"}
+    return {"manifest": result["manifest"], "product_id": {"field_solution": "solution", "prepared_model": "model"}.get(kind, "product")}
 
 
 def registered_scalar_fixture(context, budget, retention):

@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from contextlib import ExitStack, contextmanager, nullcontext
 from unittest.mock import patch
 
 from msplatform import applications as applications_api, assembly as assembly_api, components as component_api, examples as example_api
@@ -27,6 +28,16 @@ def expert_context(*, workspace, tools, policy):
         host_state_path=policy["host_state_path"],
         policy_path=policy.get("policy_path", resource_path("host_resource_policy.json")),
         execution_root=policy.get("execution_root"), stage_policy_path=policy.get("stage_policy_path"))
+
+
+@contextmanager
+def managed_store_fixture(root):
+    from msplatform.execution.owner import managed_native_store
+    from msplatform.storage import ArtifactStore
+    store = ArtifactStore(Path(root) / 'store')
+    with ExitStack() as lifetime, managed_native_store(
+            store, task_key='platform-api-fixture', lifetime=lifetime, account=lambda path: None):
+        yield store
 
 
 def deployment_fixture(base):
@@ -428,7 +439,10 @@ class PlatformApiTests(unittest.TestCase):
             sentinel = object()
             # Real provider/model/source/clock planning; only owner/publication
             # transport is substituted. This is not a native or full-owner test.
-            with patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
+            with managed_store_fixture(root), \
+                 patch("msplatform.execution.native_source_guard.guard_native_source", side_effect=lambda *args, **kwargs: nullcontext()), \
+                 patch("msplatform.execution.native_source_guard.guard_tracking_recovery", side_effect=lambda *args, **kwargs: nullcontext()), \
+                 patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
                  patch("msplatform.results.artifacts.open_artifact", return_value=sentinel), \
                  patch("subprocess.Popen", side_effect=AssertionError("planning launched a process")):
                 result = simion_api.track(fields, release, propagation=propagation, observations=observations, numerics=numerics, context=context)
@@ -584,7 +598,7 @@ class PlatformApiTests(unittest.TestCase):
             policy=root/'policy.json'; policy.write_text(json.dumps(dict(schema_version=1,role='execution_stage_policy',stages=dict(prepare_model=stage))),encoding='utf8')
             context=expert_context(workspace=root/'workspace',tools=dict(python=Path(sys.executable),powershell=Path(sys.executable),simion=Path(sys.executable)),policy=dict(host_state_path=root/'state.sqlite3',stage_policy_path=policy))
             reference=dict(manifest={'fixture':True},product_id='geometry'); source=SimpleNamespace(reference=reference,data_path=lambda name:path); sentinel=object()
-            with patch('msplatform.results.artifacts.open_artifact',side_effect=[source,sentinel]), patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{'fixture':True}}) as owner:
+            with managed_store_fixture(root), patch('msplatform.execution.native_source_guard.guard_native_source',side_effect=lambda *args,**kwargs:nullcontext()), patch('msplatform.results.artifacts.open_artifact',side_effect=[source,sentinel]), patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{'fixture':True}}) as owner:
                 self.assertIs(simion_api.prepare_model(reference,drive=case.drive,physics=case.physics,context=context),sentinel)
             call=owner.call_args.kwargs; model=require_prepared_model(call['action'].keywords['model'])
             self.assertEqual(call['action'].func,execute_model)
@@ -621,7 +635,9 @@ class PlatformApiTests(unittest.TestCase):
             reference = {'manifest':{'fixture':True},'product_id':'geometry'}
             source = SimpleNamespace(reference=reference,data_path=lambda name:compiled_path)
             sentinel = object()
-            with patch('msplatform.results.artifacts.open_artifact',side_effect=[source,sentinel]), \
+            with managed_store_fixture(root), \
+                 patch('msplatform.execution.native_source_guard.guard_native_source',side_effect=lambda *args,**kwargs:nullcontext()), \
+                 patch('msplatform.results.artifacts.open_artifact',side_effect=[source,sentinel]), \
                  patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{'new':True}}) as owner, \
                  patch('subprocess.Popen',side_effect=AssertionError('no native in dispatch fixture')):
                 self.assertIs(simion_api.prepare_model(reference,drive=drive,physics=RF_PHYSICS,context=context),sentinel)
@@ -729,7 +745,9 @@ class PlatformApiTests(unittest.TestCase):
             sentinel = object()
             # Only publication/transport are substituted. Planning uses the real
             # public example/model; this is not a field or native acceptance.
-            with patch("msplatform.backends.simion.field_closure.load_field_model", return_value=source), \
+            with managed_store_fixture(root), \
+                 patch("msplatform.execution.native_source_guard.guard_native_source", side_effect=lambda *args, **kwargs: nullcontext()), \
+                 patch("msplatform.backends.simion.field_closure.load_field_model", return_value=source), \
                  patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {"fixture": True}}) as owner, \
                  patch("msplatform.results.artifacts.open_artifact", return_value=sentinel) as reader:
                 self.assertIs(simion_api.solve_fields(reference, numerics=numerics, context=context), sentinel)

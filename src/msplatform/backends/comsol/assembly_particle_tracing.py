@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from contextlib import contextmanager
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
@@ -63,6 +64,35 @@ def _require_tools(context: Any) -> None:
         path = context.tools.get(name)
         if path is None or not (path.is_dir() if name == 'matlab_root' else path.is_file()):
             raise ValueError('explicit available COMSOL execution tool required: ' + name)
+
+
+@contextmanager
+def _native_store_scope(context: Any, artifact_store: Any, *, budget: int, sources=(), records=()):
+    from contextlib import ExitStack, nullcontext
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.io.file_identity import guarded_file_identity
+
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ValueError('COMSOL particle tracing requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent['store']
+    if parent is not None and parent['store'] is not store:
+        raise ValueError('COMSOL particle tracing must use the parent Store')
+    with ExitStack() as stack:
+        assets = set()
+        for source in sources:
+            reference = dict(source.reference)
+            reference['manifest'] = dict(reference['manifest'], path=str(source.manifest_location))
+            stack.enter_context(guard_native_source(reference, expected_kind=source.kind,
+                expected_artifact_root=context.workspace / 'artifacts', artifact_store=store, asset_ids=assets))
+        for record in records:
+            stack.enter_context(guarded_file_identity(Path(record['path']), expected_bytes=record['bytes'],
+                expected_sha256=record['sha256']))
+        scope = (standalone_native_store(store, task_key='standalone-comsol-particle', budget=budget,
+                    required_assets=tuple(sorted(assets))) if parent is None else nullcontext())
+        with scope:
+            yield store
 
 
 def _authored_detector_face(assembly: Assembly, projection: Mapping[str, Any], geometry_validation: Any) -> dict | None:
@@ -229,7 +259,7 @@ def _basis_mesh_limit(stage: Mapping[str, Any]) -> int:
 
 
 def prepare_basis_model(model: Mapping[str, Any] | OpenedArtifact, *, on_request: Mapping[str, Any],
-                        context: Any) -> tuple[OpenedArtifact, OpenedArtifact]:
+                        context: Any, artifact_store=None) -> tuple[OpenedArtifact, OpenedArtifact]:
     """Compute and cold-reopen two workpoints in one managed COMSOL model.
 
     Requires the existing unsolved Assembly model and an explicit stage policy;
@@ -260,17 +290,19 @@ def prepare_basis_model(model: Mapping[str, Any] | OpenedArtifact, *, on_request
     _require_tools(context)
     maximum_mesh_elements = _basis_mesh_limit(stage)
     manifest = dict(source.reference['manifest'], path=str(source.manifest_location))
-    result = run_managed_stage(context,
-        descriptor={'project': 'instrument_assembly', 'mode': 'pulse_basis', 'software': ['COMSOL', 'MATLAB']},
-        run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__sim__comsol__pulse-basis-' + uuid4().hex[:12],
-        payload={'action': 'solve_assembly_pulse_basis', 'on_request': on, 'maximum_mesh_elements': maximum_mesh_elements, 'stage_policy': stage},
-        committed_new_bytes=stage['limits']['transient_run_directory_bytes'], commitment_inputs=[authority],
-        retention=stage['artifact_retention'], source_references=[{'manifest_record': manifest}],
-        expected_operation_ids=('solve_pulse_basis', 'reopen_pulse_basis'),
-        operation_dependencies={'reopen_pulse_basis': ['solve_pulse_basis']},
-        action=partial(_execute_basis, source=source, off=off, on=on, projection=projection, maximum_mesh_elements=maximum_mesh_elements, limits=stage['limits']),
-        action_record=file_record(Path(__file__), 'required_evidence'), use_short_execution_path=True,
-        completion_api=no_particle_batch_completion_api)
+    with _native_store_scope(context, artifact_store, budget=stage['limits']['transient_run_directory_bytes'],
+                             sources=(source,)) as store:
+        result = run_managed_stage(context,
+            descriptor={'project': 'instrument_assembly', 'mode': 'pulse_basis', 'software': ['COMSOL', 'MATLAB']},
+            run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__sim__comsol__pulse-basis-' + uuid4().hex[:12],
+            payload={'action': 'solve_assembly_pulse_basis', 'on_request': on, 'maximum_mesh_elements': maximum_mesh_elements, 'stage_policy': stage},
+            committed_new_bytes=stage['limits']['transient_run_directory_bytes'], commitment_inputs=[authority],
+            retention=stage['artifact_retention'], source_references=[{'manifest_record': manifest}],
+            expected_operation_ids=('solve_pulse_basis', 'reopen_pulse_basis'),
+            operation_dependencies={'reopen_pulse_basis': ['solve_pulse_basis']},
+            action=partial(_execute_basis, source=source, off=off, on=on, projection=projection, maximum_mesh_elements=maximum_mesh_elements, limits=stage['limits']),
+            action_record=file_record(Path(__file__), 'required_evidence'), use_short_execution_path=True,
+            completion_api=no_particle_batch_completion_api, artifact_store=store)
     return tuple(open_artifact({'manifest': result['manifest'], 'product_id': name}, expected_kind='field_solution')
                  for name in ('background', 'on'))
 
@@ -382,7 +414,7 @@ def trace_assembly_pulse(assembly: Assembly, background: Mapping[str, Any], on: 
                          pulse_groups: list[dict], drive: Mapping[str, Any], source: Mapping[str, Any],
                          numerics: Mapping[str, Any], observation_times_us: list[float],
                          epoch_record: Mapping[str, Any], position_atol_m: float, velocity_atol_m_s: float,
-                         context: Any) -> OpenedArtifact:
+                         context: Any, artifact_store=None) -> OpenedArtifact:
     """Run a managed COMSOL CPT batch; numerical/native qualification is separate."""
     from datetime import datetime
     from functools import partial
@@ -423,18 +455,20 @@ def trace_assembly_pulse(assembly: Assembly, background: Mapping[str, Any], on: 
         raise ValueError('particle stage does not accept implicit runtime overrides')
     refs = [{'manifest_record': dict(item.reference['manifest'], path=str(item.manifest_location))}
             for item in (background, on)]
-    result = run_managed_stage(context,
-        descriptor={'project': 'instrument_assembly', 'mode': 'comsol_assembly_pulse', 'software': ['COMSOL', 'MATLAB']},
-        run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__sim__comsol__pulse-' + uuid4().hex[:12],
-        payload={'action': 'trace_assembly_particles', 'plan': plan, 'stage_policy': stage},
-        committed_new_bytes=stage['limits']['transient_run_directory_bytes'], commitment_inputs=[authority],
-        retention=stage['artifact_retention'], source_references=refs,
-        expected_operation_ids=('trace_assembly_particles',), operation_dependencies={},
-        action=partial(_execute_particle_trace, background=background, plan=plan, epoch_record=epoch,
-                       epoch_us=float(epoch_us), position_atol_m=position_atol_m,
-                       velocity_atol_m_s=velocity_atol_m_s, limits=stage['limits']),
-        action_record=file_record(Path(__file__), 'required_evidence'), use_short_execution_path=True,
-        completion_api=_comsol_batch_completion_api)
+    with _native_store_scope(context, artifact_store, budget=stage['limits']['transient_run_directory_bytes'],
+                             sources=(background, on), records=(epoch,)) as store:
+        result = run_managed_stage(context,
+            descriptor={'project': 'instrument_assembly', 'mode': 'comsol_assembly_pulse', 'software': ['COMSOL', 'MATLAB']},
+            run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__sim__comsol__pulse-' + uuid4().hex[:12],
+            payload={'action': 'trace_assembly_particles', 'plan': plan, 'stage_policy': stage},
+            committed_new_bytes=stage['limits']['transient_run_directory_bytes'], commitment_inputs=[authority],
+            retention=stage['artifact_retention'], source_references=refs,
+            expected_operation_ids=('trace_assembly_particles',), operation_dependencies={},
+            action=partial(_execute_particle_trace, background=background, plan=plan, epoch_record=epoch,
+                           epoch_us=float(epoch_us), position_atol_m=position_atol_m,
+                           velocity_atol_m_s=velocity_atol_m_s, limits=stage['limits']),
+            action_record=file_record(Path(__file__), 'required_evidence'), use_short_execution_path=True,
+            completion_api=_comsol_batch_completion_api, artifact_store=store)
     return open_artifact({'manifest': result['manifest'], 'product_id': 'trajectory'}, expected_kind='trajectory_result')
 
 
@@ -637,7 +671,8 @@ def _validate_failed_basis_evidence(manifest: Mapping[str, Any], summary: Mappin
         raise ValueError('basis native host release must be confirmed')
 
 
-def recover_basis_model(failed_manifest: Mapping[str, Any], *, context: Any) -> tuple[OpenedArtifact, OpenedArtifact]:
+def recover_basis_model(failed_manifest: Mapping[str, Any], *, context: Any,
+                        artifact_store=None) -> tuple[OpenedArtifact, OpenedArtifact]:
     """Capture stopped unmanifested outputs now, cold-reopen only, and publish both workpoints.
 
     The original failed manifest did not seal these outputs. Their identities
@@ -714,20 +749,23 @@ def recover_basis_model(failed_manifest: Mapping[str, Any], *, context: Any) -> 
             stage, authority = read_stage_policy(context, 'recover_assembly_pulse_basis', required_roles=('solver_native_binary',))
             if stage.get('runtime'):
                 raise ValueError('basis recovery has no runtime overrides')
-        result = run_managed_stage(context,
-            descriptor={'project': 'instrument_assembly', 'mode': 'pulse_basis_recovery', 'software': ['COMSOL', 'MATLAB']},
-            run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__analysis__comsol__basis-recovery-' + uuid4().hex[:12],
-            payload={'action': 'recover_assembly_pulse_basis', 'identity_basis': 'identity_captured_after_failed_python_validation',
-                     'identity_captured_at_utc': captured_at, 'failed_run_id': manifest['run_id'], 'stage_policy': stage},
-            committed_new_bytes=stage['limits']['transient_run_directory_bytes'],
-            commitment_inputs=[authority, failed_manifest, identity_record, report, *(inputs[name] for name in names)],
-            retention=stage['artifact_retention'],
-            source_references=[{'manifest_record': failed_manifest}, {'manifest_record': inputs['prepared_manifest']}],
-            expected_operation_ids=('reopen_pulse_basis',), operation_dependencies={},
-            action=partial(_execute_basis_recovery, source=source, inputs=inputs, model=model, report=report,
-                           computed=computed, limits=stage['limits'], failed_manifest=failed_manifest),
-            action_record=file_record(Path(__file__), 'required_evidence'),
-            use_short_execution_path=True, completion_api=no_particle_batch_completion_api)
+        with _native_store_scope(context, artifact_store, budget=stage['limits']['transient_run_directory_bytes'],
+                                 sources=(source,), records=(failed_manifest, identity_record, report,
+                                 *(inputs[name] for name in names))) as store:
+            result = run_managed_stage(context,
+                descriptor={'project': 'instrument_assembly', 'mode': 'pulse_basis_recovery', 'software': ['COMSOL', 'MATLAB']},
+                run_id=datetime.now().strftime('%Y%m%d_%H%M%S') + '__analysis__comsol__basis-recovery-' + uuid4().hex[:12],
+                payload={'action': 'recover_assembly_pulse_basis', 'identity_basis': 'identity_captured_after_failed_python_validation',
+                         'identity_captured_at_utc': captured_at, 'failed_run_id': manifest['run_id'], 'stage_policy': stage},
+                committed_new_bytes=stage['limits']['transient_run_directory_bytes'],
+                commitment_inputs=[authority, failed_manifest, identity_record, report, *(inputs[name] for name in names)],
+                retention=stage['artifact_retention'],
+                source_references=[{'manifest_record': failed_manifest}, {'manifest_record': inputs['prepared_manifest']}],
+                expected_operation_ids=('reopen_pulse_basis',), operation_dependencies={},
+                action=partial(_execute_basis_recovery, source=source, inputs=inputs, model=model, report=report,
+                               computed=computed, limits=stage['limits'], failed_manifest=failed_manifest),
+                action_record=file_record(Path(__file__), 'required_evidence'),
+                use_short_execution_path=True, completion_api=no_particle_batch_completion_api, artifact_store=store)
         model_guard.assert_matches(model_path, expected_bytes=model['bytes'], expected_sha256=model['sha256'])
         report_guard.assert_matches(report_path, expected_bytes=report['bytes'], expected_sha256=report['sha256'])
         return tuple(open_artifact({'manifest': result['manifest'], 'product_id': name}, expected_kind='field_solution')

@@ -32,13 +32,15 @@ terminal pressure/stabilization, lower-limit rejection and mass-balance checks r
 from pathlib import Path
 from msplatform.execution import load_environment
 from msplatform.backends.comsol import solve_axisymmetric_gas_flow
+from msplatform.storage import ArtifactStore
 
 context = load_environment(Path("deployment/machine.json").absolute(),
                            workspace=Path("study").absolute(), profile="local")
+store = ArtifactStore(Path("study/store").absolute())
 field = solve_axisymmetric_gas_flow(
     Path("inputs/baseline.json").absolute(), Path("inputs/resolved_geometry.json").absolute(),
     Path("inputs/gas_flow_science.json").absolute(), Path("inputs/comsol_solver_numerics.json").absolute(),
-    context=context,
+    Path("inputs/gas_environment.json").absolute(), context=context, artifact_store=store,
 )
 print(field.reference)
 ```
@@ -50,10 +52,12 @@ repository-local Python is searched. Initial native budgets need an explicit ass
 are not resource measurements.
 
 The installed CLI is `python -I -m msplatform.backends.comsol.gas_flow`; use `--help` for its explicit
-scientific/deployment arguments. The registered research profile still transports `RunId` and its four
+scientific/deployment arguments. The registered research profile still transports `RunId` and its five
 frozen scientific definitions. It now requires `deployment_path`, `workspace` and `engineering_profile`
 bindings through the existing execution compiler. Its PowerShell file only invokes the installed CLI;
-it no longer creates another run owner, capacity session or launcher.
+it no longer creates another run owner, capacity session or launcher. The API requires an explicit
+`ArtifactStore` or an existing managed parent Store scope; the CLI uses `<workspace>/store` for that
+same boundary. Resume guards the selected model and writer evidence before standalone admission.
 
 The normal owner freezes selected MATLAB/launcher/execution sources and input bytes, records the actual
 native exit/release facts, and validates the exported field before publishing a `gas_field` product.

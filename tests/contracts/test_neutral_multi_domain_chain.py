@@ -50,7 +50,10 @@ class NeutralMultiDomainChainTests(unittest.TestCase):
         header=PaHeader(-2,1,10000.,*dims,1<<28,*pitch).pack();field=header+struct.pack('<'+str(count)+'d',*([0.]*count));mask=header+struct.pack('<'+str(count)+'d',*([1.]*count))
         calls=[];guards=[]
         with tempfile.TemporaryDirectory(prefix='multi-rf-chain-') as directory,patch.dict(os.environ,{'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN':''}):
-            context,_,_=make_context(Path(directory));policy=json.loads(context.stage_policy_path.read_text(encoding='utf8'))
+            context,_,_=make_context(Path(directory))
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(Path(directory)/'store')
+            policy=json.loads(context.stage_policy_path.read_text(encoding='utf8'))
             for name in ('build_geometry','prepare_model','solve_fields'):policy['stages'][name]=copy.deepcopy(policy['stages']['track'])
             policy['stages']['solve_fields']['limits']['reserved_run_payload_bytes']=20*1024*1024;policy['stages']['solve_fields']['limits']['transient_run_directory_bytes']=20*1024*1024
             context.stage_policy_path.write_text(json.dumps(policy),encoding='utf8')
@@ -64,14 +67,17 @@ class NeutralMultiDomainChainTests(unittest.TestCase):
                         target=session.declare_file(session.result_dir/(name+suffix),'required_evidence');target.write_bytes(value if isinstance(value,bytes) else json.dumps(value,allow_nan=False).encode());records[name]=file_record(session.canonical_path(target),'required_evidence');outputs.append(str(target))
                     for name,record in (linked or {}).items():
                         session.add_input(name,record)
-                        if name=='field_solution_manifest':records[name]=record
-                    product_id='solution' if kind=='field_solution' else 'product'
+                        if name in {'field_solution_manifest','prepared_manifest'}:records[name]=record
+                    product_id={'field_solution':'solution','prepared_model':'model'}.get(kind,'product')
                     return dict(status='success',summary={'fixture':'INERT_ONLY'},output_paths=outputs,required_output_paths=outputs,retention_preserve_paths=[],manifest_extra_fields={'products':{product_id:dict(schema_version=1,kind=kind,status='complete',metadata=metadata,data=records)}})
                 args=helper._arguments(Path(directory),action);args.update(run_id=f'20261116_1200{counter[0]:02d}__analysis__python__fixture',payload=payload,action_record=file_record(Path(__file__),'required_evidence'),completion_api=no_particle_batch_completion_api,source_references=[{'manifest_record':ref['manifest']} for ref in sources]);result=run_managed_stage(context,**args)
-                return open_artifact({'manifest':result['manifest'],'product_id':'solution' if kind=='field_solution' else 'product'},expected_kind=kind)
+                return open_artifact({'manifest':result['manifest'],'product_id':{'field_solution':'solution','prepared_model':'model'}.get(kind,'product')},expected_kind=kind)
             geometry_sample=publish('geometry_artifact',{'projection':projection},dict(backend='comsol',scope='geometry_only',native_reopen_verified=True),payload={'action':'build_comsol_geometry','assembly':snapshot,'projection':projection})
+            prepared=publish('prepared_model',{'geometry_manifest':geometry_sample.reference['manifest']},
+                dict(backend='comsol',scope='assembly_electrostatic_unsolved',geometry_source_reference=geometry_sample.reference),payload={'action':'fixture_model'})
             solution_data={'projection':projection,'request':request,'geometry_validation':{'position_mm':1e-6},'reopen_geometry':{'vacuum_domains':[1]},'reopen_solution':{'solution':SOLUTION},'model':b'inert model'}
-            solution=publish('field_solution',solution_data,dict(backend='comsol',scope='single_stationary_workpoint',field_status='solved',native_reopen_verified=True,solution=SOLUTION),payload={'action':'fixture_stationary'})
+            solution=publish('field_solution',solution_data,dict(backend='comsol',scope='single_stationary_workpoint',field_status='solved',native_reopen_verified=True,solution=SOLUTION,
+                stationary_source={'reference':prepared.reference,'kind':'prepared_model'}),payload={'action':'fixture_stationary'},linked={'prepared_manifest':prepared.reference['manifest']})
             report=dict(status='success',scope='assembly_world_scalar_samples',field_qualification=False,compute_calls=0,filled_conductor_count=0,coordinate_mapping='world_identity',model_path=str(solution.data_path('model')),vacuum_domains=[1],fem_valid=count,invalid_count=0,solution_readback=SOLUTION,coordinate_witness={'status':'insufficient','index':0,'requested_mm':[],'actual_mm':[],'geometry_length_unit':'mm'},**grid)
             sample=publish('scalar_field_samples',dict(projection=projection,grid=grid,request=request,reopen_solution={'solution':SOLUTION},geometry_validation={'position_mm':1e-6},reopen_geometry={'vacuum_domains':[1]},report=report,field_v=field,field_valid=mask),dict(backend='comsol',scope='assembly_world_scalar_samples',field_status='sampled',frame_id='world'),payload={'action':'fixture_scalar'},linked={'field_solution_manifest':solution.reference['manifest'],'field_solution_model':solution.data_records['model']},sources=(solution.reference,))
             selection=dict(geometry_artifact=geometry_sample.reference,operator=operator,samples={'rf':dict(reference=sample.reference,request=request,weights=weights)})
@@ -111,12 +117,12 @@ class NeutralMultiDomainChainTests(unittest.TestCase):
                 return original(session,operation_id,executable=Path(sys.executable),arguments=['-I','-B','-c',code],role='GATE',stage='inert_model',limits=kwargs['limits'],immutable_input_records=immutable_input_records)
             drive=dict(groups=groups,clock={'phase_reference_instrument_time_us':0.},clock_authority={'example_resource':'instrument_clock_authority_v1.json'})
             with patch.object(RunSession,'run_process',new=inert):
-                geometry=operations.build_geometry(compiled,context=context);model=operations.prepare_model(geometry,drive=drive,physics=RF_PHYSICS,context=context)
+                geometry=operations.build_geometry(compiled,context=context,artifact_store=store);model=operations.prepare_model(geometry,drive=drive,physics=RF_PHYSICS,context=context,artifact_store=store)
                 prior=len(calls)
                 with self.assertRaisesRegex(ValueError,'explicit sampled scalar basis'):
-                    operations.solve_fields(model,numerics={},context=context)
+                    operations.solve_fields(model,numerics={},context=context,artifact_store=store)
                 self.assertEqual(len(calls),prior)
-                field_result=operations.solve_fields(model,numerics={},context=context,scalar_field_basis=selection)
+                field_result=operations.solve_fields(model,numerics={},context=context,artifact_store=store,scalar_field_basis=selection)
                 self.assertEqual(field_result.metadata['field_representation'],'neutral_multi_sampled_basis_with_collision_geometry');self.assertEqual(set(field_result.metadata['collision_assets']),{'left','right'})
                 _,_,packet,_,propagation,numerics=rf_tracking_case()
                 document=json.loads(model.data_path('compiled_model').read_text());packet['clock']={k:document['drive']['clock'][k] for k in ('clock_epoch_id','authority_sha256')}
@@ -127,16 +133,16 @@ class NeutralMultiDomainChainTests(unittest.TestCase):
                 outside['mother']['records'][outside['rows'][0]['particle_id']]['position_x_mm']=10000.
                 prior=len(calls)
                 with self.assertRaisesRegex(ValueError,'outside the explicit field domain'):
-                    operations.track(field_result,outside,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context)
+                    operations.track(field_result,outside,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context,artifact_store=store)
                 self.assertEqual(len(calls),prior)
                 mask_path=sample.data_path('field_valid'); original_mask=mask_path.read_bytes(); prior=len(calls)
                 try:
                     mask_path.write_bytes(original_mask+b'tamper')
                     with self.assertRaisesRegex(AssertionError,'byte count changed'):
-                        operations.track(field_result,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context)
+                        operations.track(field_result,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context,artifact_store=store)
                     self.assertEqual(len(calls),prior)
                 finally:mask_path.write_bytes(original_mask)
-                result=operations.track(field_result,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context)
+                result=operations.track(field_result,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context,artifact_store=store)
                 collection=json.loads(result.data_path('collection').read_text());self.assertEqual([r['particle_id'] for r in collection['native_terminals']],[7,91]);self.assertEqual(collection['clock_epoch_id'],packet['clock']['clock_epoch_id'])
                 self.assertEqual(collection['terminal_evidence']['status'],'recorded_v1')
                 self.assertEqual([row['particle_id'] for row in collection['terminal_evidence']['particle_evidence']],[7,91])

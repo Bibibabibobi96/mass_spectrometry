@@ -74,7 +74,10 @@ class CanonicalFreeAssemblyTests(unittest.TestCase):
         groups={name:scientific_multipole_drive(row) for name,row in obj.components_resolved.items()}
         private={'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN':'','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID':'','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE':''}
         with retained_owner_directory() as directory, patch.dict(os.environ,private):
-            context,budget,retention=make_context(Path(directory));policy=json.loads(context.stage_policy_path.read_text(encoding='utf8'))
+            context,budget,retention=make_context(Path(directory))
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(Path(directory)/'store')
+            policy=json.loads(context.stage_policy_path.read_text(encoding='utf8'))
             for name in ('build_geometry','prepare_model','solve_fields'):policy['stages'][name]=copy.deepcopy(policy['stages']['track'])
             policy['stages']['solve_fields']['limits']['reserved_run_payload_bytes']=16777216
             context.stage_policy_path.write_text(json.dumps(policy),encoding='utf8')
@@ -84,9 +87,9 @@ class CanonicalFreeAssemblyTests(unittest.TestCase):
             calls=[];field_guards=[];tracking_guards=[];original=RunSession.run_process
             inert=make_inert(self,compiled,original,calls,field_guards,tracking_guards,[False],[],[],directory,context)
             with patch.object(RunSession,'run_process',new=inert):
-                geometry=operations.build_geometry(compiled,context=context)
-                model=operations.prepare_model(geometry,drive=drive,physics=RF_PHYSICS,context=context)
-                field=operations.solve_fields(model,numerics={},context=context,scalar_field_basis=dict(geometry_artifact=scalar_geometry,operator=operator,samples=samples))
+                geometry=operations.build_geometry(compiled,context=context,artifact_store=store)
+                model=operations.prepare_model(geometry,drive=drive,physics=RF_PHYSICS,context=context,artifact_store=store)
+                field=operations.solve_fields(model,numerics={},context=context,artifact_store=store,scalar_field_basis=dict(geometry_artifact=scalar_geometry,operator=operator,samples=samples))
                 self.assertEqual(field.metadata['field_representation'],'neutral_sampled_basis_with_collision_geometry')
                 _,_,packet,_,propagation,numerics=rf_tracking_case()
                 clock=model.data_path('compiled_model');document=json.loads(clock.read_text(encoding='utf8'))
@@ -95,12 +98,12 @@ class CanonicalFreeAssemblyTests(unittest.TestCase):
                     name=('first','second')[index]
                     for record in (row,packet['mother']['records'][row['particle_id']]):
                         record.update(source_component_id=name,target_component_id=name,frame_id='multipole.cartesian.z_axis.v1',clock_epoch_id=packet['clock']['clock_epoch_id'],position_x_mm=0.,position_y_mm=0.,position_z_mm=10.)
-                trajectory=operations.track(field,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context)
+                trajectory=operations.track(field,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context,artifact_store=store)
                 self.assertEqual(trajectory.metadata['mother_count'],2)
                 collection=json.loads(trajectory.data_path('collection').read_text(encoding='utf8'))
                 self.assertEqual([x['particle_id'] for x in collection['native_terminals']],[7,91])
                 self.assertEqual(collection['original_mother']['mother_records'],list(packet['mother']['records'].values()))
                 bad=copy.deepcopy(packet);bad['rows'][0]['position_x_mm']=1000.;bad['mother']['records'][7]['position_x_mm']=1000.
                 with self.assertRaisesRegex(ValueError,'(?i)(coverage|domain|outside)'):
-                    operations.track(field,bad,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context)
+                    operations.track(field,bad,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context,artifact_store=store)
             self.assertEqual(calls[:5],['geometry_world','build_geometry','verify_geometry','build_model','verify_model'])

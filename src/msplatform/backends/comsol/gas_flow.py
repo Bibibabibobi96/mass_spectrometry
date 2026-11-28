@@ -113,6 +113,7 @@ def solve_axisymmetric_gas_flow(
     context: ExecutionContext,
     resume: Mapping[str, Any] | None = None,
     run_id: str | None = None,
+    artifact_store=None,
 ) -> OpenedArtifact:
     """Build/solve/export, or explicitly reexport a matching published solved model.
 
@@ -129,28 +130,67 @@ def solve_axisymmetric_gas_flow(
     stage, authority = read_stage_policy(context, "solve_gas_flow", required_roles=("solver_native_binary",))
     if stage.get("runtime", {}):
         raise ValueError("Gas flow has no additional runtime overrides")
-    result = run_managed_stage(
-        context,
-        descriptor=dict(project=PROJECT, mode="axisymmetric_gas_flow_screening", software=["COMSOL", "MATLAB"]),
-        run_id=run_id or datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__comsol__gas-flow-" + uuid4().hex[:12],
-        payload=dict(
-            action="solve_gas_flow", request=request, resume=None if parent is None else parent, stage_policy=stage
-        ),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[authority],
-        source_references=(
-            ()
-            if parent is None
-            else [dict(manifest_record=parent["manifest"], protected_paths=[parent["model"]["path"]])]
-        ),
-        retention=stage["artifact_retention"],
-        expected_operation_ids=("solve_gas_flow",),
-        operation_dependencies={},
-        action=partial(_execute, request=request, limits=stage["limits"], parent=parent),
-        action_record=file_record(Path(__file__).resolve(), "required_evidence"),
-        use_short_execution_path=True,
-        completion_api=no_particle_batch_completion_api,
-    )
+    from contextlib import ExitStack, nullcontext
+    from msplatform.execution.native_source_guard import guard_failed_store_evidence, guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.io.file_identity import guarded_file_identity
+
+    store_parent = current_managed_native_store()
+    if artifact_store is None and store_parent is None:
+        raise ValueError("Gas flow requires an explicit ArtifactStore or protected parent scope")
+    store = artifact_store if artifact_store is not None else store_parent["store"]
+    if store_parent is not None and store_parent["store"] is not store:
+        raise ValueError("Gas flow must use the parent Store")
+    with ExitStack() as stack:
+        source_assets = set()
+        if parent is not None:
+            manifest_path = Path(parent["manifest"]["path"]).resolve(strict=True)
+            if manifest_path.is_relative_to(store.root / "assets" / "native_stage"):
+                source_status = json.loads(manifest_path.read_text(encoding="utf-8-sig"))["status"]
+                if source_status in {"failed", "interrupted"}:
+                    stack.enter_context(guard_failed_store_evidence(store, parent["manifest"], parent["model"]))
+                else:
+                    stack.enter_context(guard_native_source(
+                        dict(manifest=parent["manifest"], product_id="gas_field"), expected_kind="gas_field",
+                        expected_artifact_root=context.workspace / "artifacts", artifact_store=store,
+                        asset_ids=source_assets,
+                    ))
+            for record in parent.values():
+                stack.enter_context(guarded_file_identity(Path(record["path"]), expected_bytes=record["bytes"],
+                    expected_sha256=record["sha256"]))
+        scope = (
+            standalone_native_store(
+                store, task_key="standalone-gas-flow:" + (run_id or "new"),
+                budget=stage["limits"]["transient_run_directory_bytes"],
+                required_assets=tuple(sorted(source_assets)),
+            )
+            if store_parent is None
+            else nullcontext()
+        )
+        with scope:
+            result = run_managed_stage(
+                context,
+                descriptor=dict(project=PROJECT, mode="axisymmetric_gas_flow_screening", software=["COMSOL", "MATLAB"]),
+                run_id=run_id or datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__comsol__gas-flow-" + uuid4().hex[:12],
+                payload=dict(
+                    action="solve_gas_flow", request=request, resume=None if parent is None else parent, stage_policy=stage
+                ),
+                committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
+                commitment_inputs=[authority],
+                source_references=(
+                    ()
+                    if parent is None
+                    else [dict(manifest_record=parent["manifest"], protected_paths=[parent["model"]["path"]])]
+                ),
+                retention=stage["artifact_retention"],
+                expected_operation_ids=("solve_gas_flow",),
+                operation_dependencies={},
+                action=partial(_execute, request=request, limits=stage["limits"], parent=parent),
+                action_record=file_record(Path(__file__).resolve(), "required_evidence"),
+                use_short_execution_path=True,
+                completion_api=no_particle_batch_completion_api,
+                artifact_store=store,
+            )
     return read_gas_field({"manifest": result["manifest"], "product_id": "gas_field"}).artifact
 
 
@@ -364,7 +404,9 @@ def main() -> int:
     resume = (
         None if args.resume_reference is None else json.loads(args.resume_reference.read_text(encoding="utf-8-sig"))
     )
-    product = solve_axisymmetric_gas_flow(*paths, context=context, resume=resume, run_id=args.run_id)
+    from msplatform.storage import ArtifactStore
+    store = ArtifactStore(args.workspace.absolute() / "store")
+    product = solve_axisymmetric_gas_flow(*paths, context=context, resume=resume, run_id=args.run_id, artifact_store=store)
     print(json.dumps(product.reference))
     return 0
 

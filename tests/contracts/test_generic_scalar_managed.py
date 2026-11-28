@@ -141,6 +141,8 @@ class GenericScalarManagedTests(unittest.TestCase):
             patch.dict(os.environ, private),
         ):
             context, _, _ = make_context(Path(directory))
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(Path(directory) / "store")
             policy = json.loads(context.stage_policy_path.read_text(encoding="utf8"))
             for name in ("build_geometry", "prepare_model", "solve_fields"):
                 policy["stages"][name] = copy.deepcopy(policy["stages"]["track"])
@@ -162,21 +164,24 @@ class GenericScalarManagedTests(unittest.TestCase):
                         records[name]=file_record(session.canonical_path(target),'required_evidence');outputs.append(str(target))
                     for name,record in (linked or {}).items():
                         session.add_input(name,record)
-                        if name=='field_solution_manifest':records[name]=record
-                    product_id='solution' if kind=='field_solution' else 'product'
+                        if name in {'field_solution_manifest','prepared_manifest'}:records[name]=record
+                    product_id={'field_solution':'solution','prepared_model':'model'}.get(kind,'product')
                     return dict(status='success',summary={'fixture':'INERT_ONLY'},output_paths=outputs,required_output_paths=outputs,retention_preserve_paths=[],manifest_extra_fields={'products':{product_id:dict(schema_version=1,kind=kind,status='complete',metadata=metadata,data=records)}})
                 args=helper._arguments(Path(directory),action)
                 args.update(run_id=f'20261115_1300{counter[0]:02d}__analysis__python__fixture',payload=payload,action_record=file_record(Path(__file__),'required_evidence'),completion_api=no_particle_batch_completion_api,source_references=[{'manifest_record':ref['manifest']} for ref in sources])
                 result=run_managed_stage(context,**args)
-                product_id='solution' if kind=='field_solution' else 'product'
-                return open_artifact({'manifest':result['manifest'],'product_id':product_id},expected_kind=kind)
+                return open_artifact({'manifest':result['manifest'],'product_id':{'field_solution':'solution','prepared_model':'model'}.get(kind,'product')},expected_kind=kind)
             geometry_sample=publish('geometry_artifact',{'projection':case.projection},dict(backend='comsol',scope='geometry_only',native_reopen_verified=True),payload={'action':'build_comsol_geometry','assembly':case.snapshot,'projection':case.projection})
             owned_samples={}
             for name,row in case.samples.items():
                 selected=open_artifact(row['reference'],expected_kind='scalar_field_samples')
                 old_source=open_artifact({'manifest':selected.data_records['field_solution_manifest'],'product_id':'solution'},expected_kind='field_solution')
                 source_data={key:(old_source.data_path(key).read_bytes() if key=='model' else json.loads(old_source.data_path(key).read_text(encoding='utf8'))) for key in old_source.data_records}
-                solution=publish('field_solution',source_data,dict(old_source.metadata),payload={'action':'fixture_stationary'})
+                prepared=publish('prepared_model',{'geometry_manifest':geometry_sample.reference['manifest']},
+                    dict(backend='comsol',scope='assembly_electrostatic_unsolved',geometry_source_reference=geometry_sample.reference),payload={'action':'fixture_model'})
+                solution=publish('field_solution',source_data,dict(old_source.metadata,
+                    stationary_source={'reference':prepared.reference,'kind':'prepared_model'}),payload={'action':'fixture_stationary'},
+                    linked={'prepared_manifest':prepared.reference['manifest']})
                 sample_data={}
                 for key in selected.data_records:
                     if key=='field_solution_manifest':continue
@@ -192,9 +197,9 @@ class GenericScalarManagedTests(unittest.TestCase):
                 "example_resource": "instrument_clock_authority_v1.json"
             }
             with patch.object(RunSession, "run_process", new=inert):
-                geometry = operations.build_geometry(compiled, context=context)
+                geometry = operations.build_geometry(compiled, context=context, artifact_store=store)
                 model = operations.prepare_model(
-                    geometry, drive=drive, physics=RF_PHYSICS, context=context
+                    geometry, drive=drive, physics=RF_PHYSICS, context=context, artifact_store=store
                 )
                 admitted = admit_linear_samples(
                     model_reference=model.reference,
@@ -209,11 +214,11 @@ class GenericScalarManagedTests(unittest.TestCase):
                 case.model = load_field_model(model.reference).model
                 case.model_reference = model.reference
                 case.test_actual_lua_model_and_scalar_adapter()
-                field=operations.solve_fields(model,numerics={},context=context,scalar_field_basis=dict(geometry_artifact=case.geometry,operator=case.operator,samples=case.samples))
+                field=operations.solve_fields(model,numerics={},context=context, artifact_store=store,scalar_field_basis=dict(geometry_artifact=case.geometry,operator=case.operator,samples=case.samples))
                 self.assertEqual(field.metadata['field_representation'],'neutral_sampled_basis_with_collision_geometry')
                 self.assertEqual((field.metadata['refine_calls'],field.metadata['compute_calls'],field.metadata['fly_calls']),(0,0,0))
                 with self.assertRaisesRegex(ValueError, 'static world tracking requires original births'):
-                    operations.track(field,None,propagation={},observations={},numerics={},context=context)
+                    operations.track(field,None,propagation={},observations={},numerics={},context=context, artifact_store=store)
                 sample_paths={str(open_artifact(row['reference'],expected_kind='scalar_field_samples').data_path(key).resolve()) for row in case.samples.values() for key in ('field_v','field_valid','grid')}
                 self.assertEqual(len(field_guards),6)
                 for guarded in field_guards:self.assertTrue(sample_paths <= guarded)
@@ -229,12 +234,12 @@ class GenericScalarManagedTests(unittest.TestCase):
                 missing=dict(case.samples);missing.pop('one')
                 with patch('msplatform.execution.owner.run_managed_stage') as blocked:
                     with self.assertRaisesRegex(ValueError,'span'):
-                        operations.solve_fields(model,numerics={},context=context,scalar_field_basis=dict(geometry_artifact=case.geometry,operator=case.operator,samples=missing))
+                        operations.solve_fields(model,numerics={},context=context, artifact_store=store,scalar_field_basis=dict(geometry_artifact=case.geometry,operator=case.operator,samples=missing))
                     blocked.assert_not_called()
                 from msplatform.execution.processes import ProcessExecutionError
                 fail_verify[0]=True
                 with self.assertRaises(ProcessExecutionError):
-                    operations.solve_fields(model,numerics={},context=context,scalar_field_basis=dict(geometry_artifact=case.geometry,operator=case.operator,samples=case.samples))
+                    operations.solve_fields(model,numerics={},context=context, artifact_store=store,scalar_field_basis=dict(geometry_artifact=case.geometry,operator=case.operator,samples=case.samples))
                 from msplatform.execution.capacity_protection import load_capacity_protection_leases
                 self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'],[])
             self.assertEqual(

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from msplatform.backends.simion.model_execution import _protect_model_geometry
+from msplatform.backends.simion.model_execution import _protect_model_geometry, _protected_source
 from msplatform.execution.manifest_publication import build_run_manifest
 from msplatform.execution.owner import standalone_native_store
 from msplatform.io.manifest_records import file_record
@@ -33,8 +33,11 @@ class ModelStoreProtectionTests(unittest.TestCase):
             with standalone_native_store(store,task_key='model-test',budget=10000) as scope:
                 session=SimpleNamespace(context=SimpleNamespace(workspace=root))
                 _protect_model_geometry(session,geometry,required_paths=[payload])
-                with self.assertRaisesRegex(ValueError,'not bound'):
+                _protected_source(session,geometry.reference['manifest'],required_paths=[payload])
+                with self.assertRaisesRegex(ValueError,'not bound|uniquely bound'):
                     _protect_model_geometry(session,geometry,required_paths=[run/'not-listed.pa0'])
+                with self.assertRaises((ValueError,FileNotFoundError)):
+                    _protected_source(session,geometry.reference['manifest'],required_paths=[run/'not-listed.pa0'])
                 store.collect(10**6)
                 self.assertTrue(payload.exists())
                 work=store.root/store.run_status(scope['parent_run_id'])['work_path']

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import os
+from contextlib import contextmanager
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -34,6 +35,84 @@ def _reject_legacy_composite_execution(geometry: Mapping[str, Any]) -> None:
         raise ContractError('legacy composite OA–TOF is historical read-only; use independent OA + single_reflection_tof')
 
 
+def _artifact_reference(value):
+    from msplatform.results.artifacts import OpenedArtifact
+    if isinstance(value, OpenedArtifact):
+        reference = copy.deepcopy(value.reference)
+        reference['manifest'] = dict(reference['manifest'], path=str(value.manifest_location))
+        return reference
+    return value
+
+
+def _scalar_sources(selection):
+    if not isinstance(selection, Mapping):
+        return []
+    result = []
+    if 'geometry_artifact' in selection:
+        result.append((_artifact_reference(selection['geometry_artifact']), 'geometry_artifact'))
+    samples = selection.get('samples', {})
+    levels = list(samples.values()) if isinstance(samples, Mapping) else []
+    for window in selection.get('refinement_windows', []):
+        if isinstance(window, Mapping) and isinstance(window.get('samples'), Mapping):
+            levels.extend(window['samples'].values())
+    for value in levels:
+        reference = value.get('reference') if isinstance(value, Mapping) and 'reference' in value else value
+        result.append((_artifact_reference(reference), 'scalar_field_samples'))
+    return result
+
+
+def _scalar_binding_sources(binding):
+    if not isinstance(binding, Mapping):
+        return []
+    result = []
+    if 'geometry_reference' in binding:
+        result.append((binding['geometry_reference'], 'geometry_artifact'))
+    bases = binding.get('bases', {})
+    for base in bases.values() if isinstance(bases, Mapping) else ():
+        if not isinstance(base, Mapping):
+            continue
+        for level in (base, *base.get('refinement_windows', [])):
+            if not isinstance(level, Mapping):
+                continue
+            if level.get('reference') is not None:
+                result.append((level['reference'], 'scalar_field_samples'))
+            if level.get('field_solution_reference') is not None:
+                result.append((level['field_solution_reference'], 'field_solution'))
+            if level.get('original_samples_reference') is not None:
+                result.append((level['original_samples_reference'], 'scalar_field_samples'))
+    return result
+
+
+@contextmanager
+def _native_store_scope(context, artifact_store, *, task_key, budget, sources=(), records=(), recovery=None):
+    from contextlib import ExitStack, nullcontext
+    from msplatform.execution.native_source_guard import guard_native_source, guard_tracking_recovery
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
+    from msplatform.io.file_identity import guarded_file_identity
+
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ContractError('SIMION operation requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent['store']
+    if parent is not None and parent['store'] is not store:
+        raise ContractError('SIMION operation must use the parent Store')
+    with ExitStack() as stack:
+        assets = set()
+        for reference, kind in sources:
+            stack.enter_context(guard_native_source(_artifact_reference(reference), expected_kind=kind,
+                expected_artifact_root=context.workspace / 'artifacts', artifact_store=store, asset_ids=assets))
+        for record in records:
+            stack.enter_context(guarded_file_identity(Path(record['path']), expected_bytes=record['bytes'],
+                expected_sha256=record['sha256']))
+        if recovery is not None:
+            stack.enter_context(guard_tracking_recovery(store, recovery,
+                raw_root=context.workspace / 'artifacts', asset_ids=assets))
+        scope = (standalone_native_store(store, task_key=task_key, budget=budget,
+                    required_assets=tuple(sorted(assets))) if parent is None else nullcontext())
+        with scope:
+            yield store
+
+
 def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContext,
                    artifact_store=None) -> OpenedArtifact:
     """Materialize actual unsolved geometry through the one public execution owner.
@@ -56,8 +135,6 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
     if not isinstance(compiled, CompiledSimionGeometry):
         raise ContractError("build_geometry requires compiled SIMION geometry")
     _reject_legacy_composite_execution(compiled.frontend_geometry)
-    if artifact_store is None and current_managed_native_store() is None:
-        raise ContractError("build_geometry requires an ArtifactStore or managed native Store scope")
     if context is None or "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ContractError("build_geometry requires an explicit available SIMION executable")
     stage, authority = read_stage_policy(context, "build_geometry", required_roles=("solver_native_binary",))
@@ -96,6 +173,8 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
                                   "simion_neutral_multi_domain_collision_geometry"} or mirror_oa):
         from . import native_surface_state
         surface_validator = file_record(Path(native_surface_state.__file__).resolve(), "required_evidence")
+    if artifact_store is None and current_managed_native_store() is None:
+        raise ContractError("build_geometry requires an ArtifactStore or managed native Store scope")
     result = run_managed_stage(context, descriptor=dict(project="instrument_assembly", mode="geometry_only", software=["SIMION"]),
         run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__build__simion__geometry-" + uuid4().hex[:12],
         payload=dict(action="build_geometry", compiled_geometry=asdict(snapshot), stage_policy=stage),
@@ -113,7 +192,7 @@ def build_geometry(compiled: CompiledSimionGeometry, *, context: ExecutionContex
 
 
 def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mapping[str, Any],
-                  physics: Mapping[str, Any], context: ExecutionContext) -> OpenedArtifact:
+                  physics: Mapping[str, Any], context: ExecutionContext, artifact_store=None) -> OpenedArtifact:
     """Publish a driven, unsolved model from explicit geometry and clock authority.
 
     Scientific group defaults are expanded from the same providers. The clock
@@ -239,23 +318,26 @@ def prepare_model(geometry: OpenedArtifact | Mapping[str, Any], *, drive: Mappin
     seed = file_record(structural_seed_path(len(compiled.frontend_gems) if independent_component else 4 + int(
         "entrance_refinement" in compiled.frontend_geometry["numerical_domains"])), "required_evidence")
     ids = ("materialize_geometry", "build_model", "verify_model")
-    result = run_managed_stage(context,
-        descriptor=dict(project="instrument_assembly", mode="prepared_model", software=["SIMION"]),
-        run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__build__simion__model-" + uuid4().hex[:12],
-        payload=dict(action="prepare_model", geometry=source.reference, model=model.document,
-                     clock_authority=clock_reference, stage_policy=stage),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy_record, contract_record, epoch_record, *model_provider_sources.values()], retention=stage["artifact_retention"],
-        expected_operation_ids=ids,
-        operation_dependencies={name: [ids[index-1]] for index, name in enumerate(ids) if index},
-        action=partial(execute_model, model=model, geometry_reference=source.reference, seed_record=seed,
-            limits=stage["limits"], clock_authority_reference=clock_reference,
-            materialize_geometry=partial(materialize_payloads, limits=stage["limits"]),
-            materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), provider_source_records=model_provider_sources),
-        action_record=file_record(Path(execute_model.__code__.co_filename).resolve(), "required_evidence"),
-        source_references=[{"manifest_record": source.reference["manifest"]}],
-        use_short_execution_path=True, completion_api=lambda: native_completion)
+    with _native_store_scope(context, artifact_store, task_key='standalone-simion-model',
+            budget=stage['limits']['transient_run_directory_bytes'], sources=((source, 'geometry_artifact'),),
+            records=(contract_record, epoch_record)) as store:
+        result = run_managed_stage(context,
+            descriptor=dict(project="instrument_assembly", mode="prepared_model", software=["SIMION"]),
+            run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__build__simion__model-" + uuid4().hex[:12],
+            payload=dict(action="prepare_model", geometry=source.reference, model=model.document,
+                         clock_authority=clock_reference, stage_policy=stage),
+            committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
+            commitment_inputs=[policy_record, contract_record, epoch_record, *model_provider_sources.values()], retention=stage["artifact_retention"],
+            expected_operation_ids=ids,
+            operation_dependencies={name: [ids[index-1]] for index, name in enumerate(ids) if index},
+            action=partial(execute_model, model=model, geometry_reference=source.reference, seed_record=seed,
+                limits=stage["limits"], clock_authority_reference=clock_reference,
+                materialize_geometry=partial(materialize_payloads, limits=stage["limits"]),
+                materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
+                allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), provider_source_records=model_provider_sources),
+            action_record=file_record(Path(execute_model.__code__.co_filename).resolve(), "required_evidence"),
+            source_references=[{"manifest_record": source.reference["manifest"]}],
+            use_short_execution_path=True, completion_api=lambda: native_completion, artifact_store=store)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "model"}, expected_kind="prepared_model")
 
 
@@ -264,11 +346,13 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
                  reuse_fields: OpenedArtifact | Mapping[str, Any] | None = None,
                  scalar_field_basis: Mapping[str, Any] | None = None,
                  reuse_collision_geometry: OpenedArtifact | Mapping[str, Any] | None = None,
-                 compensated_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
+                 compensated_basis: Mapping[str, Any] | None = None,
+                 artifact_store=None) -> OpenedArtifact:
     """Solve with explicitly guarded, authenticated optional response rebias."""
     if compensated_basis is None:
         return _solve_fields(model, numerics=numerics, context=context, reuse_fields=reuse_fields,
-                             scalar_field_basis=scalar_field_basis, reuse_collision_geometry=reuse_collision_geometry)
+            scalar_field_basis=scalar_field_basis, reuse_collision_geometry=reuse_collision_geometry,
+            artifact_store=artifact_store)
     if (not isinstance(compensated_basis, Mapping) or set(compensated_basis) != {'reference', 'fit', 'regularization'}
             or reuse_fields is not None or scalar_field_basis is not None or reuse_collision_geometry is not None):
         raise ContractError('compensated basis requires an explicit reference, fit and regularization without other reuse')
@@ -276,9 +360,15 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
     from msplatform.execution.native_source_guard import guard_native_source
     from msplatform.execution.owner import current_managed_native_store
     from msplatform.results.artifacts import OpenedArtifact
-    scope = current_managed_native_store()
-    if scope is None:
-        raise ContractError('compensated fields require the managed native Store scope')
+    parent = current_managed_native_store()
+    if parent is None:
+        if artifact_store is None:
+            raise ContractError('compensated fields require an explicit ArtifactStore or managed native Store scope')
+        return _solve_fields(model, numerics=numerics, context=context, compensated_basis=compensated_basis,
+            artifact_store=artifact_store)
+    store = parent['store'] if artifact_store is None else artifact_store
+    if parent['store'] is not store:
+        raise ContractError('compensated fields must use the parent Store')
     reference = model.reference if isinstance(model, OpenedArtifact) else model
     original = compensated_basis['reference']
     if isinstance(original, OpenedArtifact):
@@ -287,10 +377,11 @@ def solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping
     root = context.workspace / 'artifacts'
     with ExitStack() as stack:
         protected_model = stack.enter_context(guard_native_source(reference, expected_kind='prepared_model',
-            expected_artifact_root=root, artifact_store=scope['store']))
+            expected_artifact_root=root, artifact_store=store))
         stack.enter_context(guard_native_source(original, expected_kind='field_bundle',
-            expected_artifact_root=root, artifact_store=scope['store']))
-        return _solve_fields(protected_model, numerics=numerics, context=context, compensated_basis=basis)
+            expected_artifact_root=root, artifact_store=store))
+        return _solve_fields(protected_model, numerics=numerics, context=context, compensated_basis=basis,
+            artifact_store=store)
 
 
 def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mapping[str, Any],
@@ -298,7 +389,8 @@ def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mappin
                   reuse_fields: OpenedArtifact | Mapping[str, Any] | None = None,
                   scalar_field_basis: Mapping[str, Any] | None = None,
                   reuse_collision_geometry: OpenedArtifact | Mapping[str, Any] | None = None,
-                  compensated_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
+                  compensated_basis: Mapping[str, Any] | None = None,
+                  artifact_store=None) -> OpenedArtifact:
     """Explicitly solve an unsolved model, without source sampling or flight.
 
     Optional reuse names one published field product, never a latest lookup.
@@ -371,13 +463,16 @@ def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mappin
             if limits['reserved_run_payload_bytes'] < lower or limits['transient_run_directory_bytes'] < lower:
                 raise ContractError(f'neutral collision output lower bound {lower} bytes exceeds declared reservation or transient limit')
             ids=planned['expected_operation_ids'];relative=[str(path.relative_to(planning_root)) for task in tasks for path in (Path(task['output_path']),Path(task['output_path']).with_suffix('.pa-surf'))]+['simion/collision/background.pa','simion/collision/collision.iob','simion/collision/collision.fly2']
-            result=run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
-                run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
-                payload=dict(action='solve_fields',model=planned['prepared_source'],numerics={},reuse_fields=None,scalar_field_basis=selection,stage_policy=stage),
-                committed_new_bytes=limits['transient_run_directory_bytes'],commitment_inputs=[policy_record],retention=stage['artifact_retention'],
-                expected_operation_ids=ids,operation_dependencies={name:[ids[index-1]] for index,name in enumerate(ids) if index},
-                action=partial(execute_neutral_sampled_fields,model_reference=planned['prepared_source'],selection=selection,limits=limits,allow_asynchronous_io=runtime.get('simion_allow_asynchronous_io')),
-                action_record=file_record(Path(execute_neutral_sampled_fields.__code__.co_filename).resolve(),'required_evidence'),source_references=planned['source_references'],expected_relative_paths=relative,use_short_execution_path=True,completion_api=lambda:native_completion)
+            with _native_store_scope(context, artifact_store, task_key='standalone-neutral-sampled-fields',
+                    budget=limits['transient_run_directory_bytes'],
+                    sources=[(selected_model, 'prepared_model'), *_scalar_sources(selection)]) as store:
+                result=run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
+                    run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
+                    payload=dict(action='solve_fields',model=planned['prepared_source'],numerics={},reuse_fields=None,scalar_field_basis=selection,stage_policy=stage),
+                    committed_new_bytes=limits['transient_run_directory_bytes'],commitment_inputs=[policy_record],retention=stage['artifact_retention'],
+                    expected_operation_ids=ids,operation_dependencies={name:[ids[index-1]] for index,name in enumerate(ids) if index},
+                    action=partial(execute_neutral_sampled_fields,model_reference=planned['prepared_source'],selection=selection,limits=limits,allow_asynchronous_io=runtime.get('simion_allow_asynchronous_io')),
+                    action_record=file_record(Path(execute_neutral_sampled_fields.__code__.co_filename).resolve(),'required_evidence'),source_references=planned['source_references'],expected_relative_paths=relative,use_short_execution_path=True,completion_api=lambda:native_completion,artifact_store=store)
             return artifact_reader.open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
         from msplatform.backends.simion.ip_mr_field_execution import prepare_ip_mr_field_inputs, execute_ip_mr_sampled_fields
         if reuse_fields is not None:
@@ -423,17 +518,21 @@ def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mappin
                 record=item['manifest_record'];key=os.path.normcase(str(Path(record['path']).resolve()))
                 if key in unique and unique[key]['manifest_record']!=record:raise ContractError('conflicting source manifest identity')
                 unique[key]=item
-            result=run_managed_stage(context,
-                descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
-                run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
-                payload=dict(action='solve_fields',model=prepared['prepared_source'],numerics={},reuse_fields=None,
-                    reuse_collision_geometry=reuse_reference,scalar_field_basis=dict(selection,collision_priority_evidence=evidence),stage_policy=stage),
-                committed_new_bytes=stage['limits']['transient_run_directory_bytes'],commitment_inputs=[policy_record],
-                retention=stage['artifact_retention'],expected_operation_ids=(),operation_dependencies={},
-                action=partial(execute_reused_ip_mr_collisions,model_reference=selected_model,scalar_field_basis=selection,
-                    priority_evidence=evidence,reuse_reference=reuse_reference),
-                action_record=file_record(Path(execute_reused_ip_mr_collisions.__code__.co_filename).resolve(),'required_evidence'),
-                source_references=list(unique.values()),use_short_execution_path=True,completion_api=lambda:native_completion)
+            with _native_store_scope(context, artifact_store, task_key='standalone-reused-sampled-fields',
+                    budget=stage['limits']['transient_run_directory_bytes'],
+                    sources=[(selected_model, 'prepared_model'), (reuse_reference, 'field_bundle'), *_scalar_sources(selection)],
+                    records=tuple(evidence.values())) as store:
+                result=run_managed_stage(context,
+                    descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
+                    run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
+                    payload=dict(action='solve_fields',model=prepared['prepared_source'],numerics={},reuse_fields=None,
+                        reuse_collision_geometry=reuse_reference,scalar_field_basis=dict(selection,collision_priority_evidence=evidence),stage_policy=stage),
+                    committed_new_bytes=stage['limits']['transient_run_directory_bytes'],commitment_inputs=[policy_record],
+                    retention=stage['artifact_retention'],expected_operation_ids=(),operation_dependencies={},
+                    action=partial(execute_reused_ip_mr_collisions,model_reference=selected_model,scalar_field_basis=selection,
+                        priority_evidence=evidence,reuse_reference=reuse_reference),
+                    action_record=file_record(Path(execute_reused_ip_mr_collisions.__code__.co_filename).resolve(),'required_evidence'),
+                    source_references=list(unique.values()),use_short_execution_path=True,completion_api=lambda:native_completion,artifact_store=store)
             return artifact_reader.open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
         planning_root=context.execution_root/'sampled-fields-plan'
         prepared=prepare_ip_mr_field_inputs(selected_model,scalar_field_basis=selection,
@@ -459,21 +558,25 @@ def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mappin
         output_paths += [str(Path(path).with_suffix('.pa-surf')) for path in output_paths]
         output_paths += ['simion/collision/background.pa','simion/collision/collision.iob',
                          'simion/collision/collision.fly2']
-        result=run_managed_stage(context,
-            descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
-            run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
-            payload=dict(action='solve_fields',model=prepared['prepared_source'],numerics={},reuse_fields=None,
-                         scalar_field_basis=dict(selection,collision_priority_evidence=evidence),stage_policy=stage),
-            committed_new_bytes=stage['limits']['transient_run_directory_bytes'],
-            commitment_inputs=[policy_record,*evidence.values()],retention=stage['artifact_retention'],
-            expected_operation_ids=ids,
-            operation_dependencies={name:[ids[index-1]] for index,name in enumerate(ids) if index},
-            action=partial(execute_ip_mr_sampled_fields,model_reference=prepared['prepared_source'],
-                scalar_field_basis=selection,priority_evidence=evidence,limits=stage['limits'],
-                allow_asynchronous_io=runtime.get('simion_allow_asynchronous_io')),
-            action_record=file_record(Path(execute_ip_mr_sampled_fields.__code__.co_filename).resolve(),'required_evidence'),
-            source_references=prepared['source_references'],expected_relative_paths=output_paths,
-            use_short_execution_path=True,completion_api=lambda: native_completion)
+        with _native_store_scope(context, artifact_store, task_key='standalone-sampled-fields',
+                budget=stage['limits']['transient_run_directory_bytes'],
+                sources=[(selected_model, 'prepared_model'), *_scalar_sources(selection)],
+                records=tuple(evidence.values())) as store:
+            result=run_managed_stage(context,
+                descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
+                run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__fields-'+uuid4().hex[:12],
+                payload=dict(action='solve_fields',model=prepared['prepared_source'],numerics={},reuse_fields=None,
+                             scalar_field_basis=dict(selection,collision_priority_evidence=evidence),stage_policy=stage),
+                committed_new_bytes=stage['limits']['transient_run_directory_bytes'],
+                commitment_inputs=[policy_record,*evidence.values()],retention=stage['artifact_retention'],
+                expected_operation_ids=ids,
+                operation_dependencies={name:[ids[index-1]] for index,name in enumerate(ids) if index},
+                action=partial(execute_ip_mr_sampled_fields,model_reference=prepared['prepared_source'],
+                    scalar_field_basis=selection,priority_evidence=evidence,limits=stage['limits'],
+                    allow_asynchronous_io=runtime.get('simion_allow_asynchronous_io')),
+                action_record=file_record(Path(execute_ip_mr_sampled_fields.__code__.co_filename).resolve(),'required_evidence'),
+                source_references=prepared['source_references'],expected_relative_paths=output_paths,
+                use_short_execution_path=True,completion_api=lambda: native_completion,artifact_store=store)
         return artifact_reader.open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
     source = load_field_model(model.reference if isinstance(model, OpenedArtifact) else model)
     _reject_legacy_composite_execution(source.model.document['geometry']['frontend_geometry'])
@@ -481,6 +584,7 @@ def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mappin
         raise ContractError('multi-domain fields require their explicit sampled scalar basis')
     selected_numerics = copy.deepcopy(dict(numerics))
     reuse_reference = None
+    extra_sources = []
     references = [{"manifest_record": source.artifact.reference["manifest"]}]
     if reuse_fields is not None:
         reused = artifact_reader.open_artifact(reuse_fields.reference if isinstance(reuse_fields, OpenedArtifact) else reuse_fields,
@@ -501,6 +605,7 @@ def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mappin
         if reused.metadata.get("field_representation") == "producer_owned_static_world_standalone_operating_pa":
             original = reused.metadata.get("operating_producer_reference", reused.reference)
             references.append({"manifest_record": original["manifest"]})
+            extra_sources.append((original, 'field_bundle'))
     if compensated_basis is not None:
         references.append({"manifest_record": compensated_basis["reference"]["manifest"]})
     graph = plan_fields_execution(source.model, numerics=selected_numerics, reuse_fields_reference=reuse_reference,
@@ -513,24 +618,32 @@ def _solve_fields(model: OpenedArtifact | Mapping[str, Any], *, numerics: Mappin
     if frontend.get('role') == 'simion_neutral_world_collision_geometry' or mirror_oa:
         from . import native_surface_state
         surface_validator = file_record(Path(native_surface_state.__file__).resolve(), 'required_evidence')
-    result = run_managed_stage(context,
-        descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
-        run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__fields-" + uuid4().hex[:12],
-        payload=dict(action="solve_fields", model=source.artifact.reference, numerics=selected_numerics,
-                     reuse_fields=reuse_reference, stage_policy=stage,
-                     **({'compensated_basis': compensated_basis} if compensated_basis is not None else {})),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[policy_record, *([surface_validator] if surface_validator else [])], retention=stage["artifact_retention"],
-        expected_operation_ids=tuple(graph["expected_operation_ids"]),
-        operation_dependencies=graph["operation_dependencies"],
-        action=partial(execute_fields, model_reference=source.artifact.reference, numerics=selected_numerics,
-            limits=stage["limits"], materialize_geometry=partial(materialize_payloads, limits=stage["limits"]),
-            materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), reuse_fields_reference=reuse_reference,
-            surface_validator_record=surface_validator,
-            **({'compensated_basis': compensated_basis} if compensated_basis is not None else {})),
-        action_record=file_record(Path(execute_fields.__code__.co_filename).resolve(), "required_evidence"),
-        source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
+    store_sources = [(source.artifact, 'prepared_model'), *extra_sources]
+    if reuse_fields is not None:
+        store_sources.append((reused, 'field_bundle'))
+    if compensated_basis is not None:
+        store_sources.append((compensated_basis['reference'], 'field_bundle'))
+    with _native_store_scope(context, artifact_store, task_key='standalone-simion-fields',
+            budget=stage['limits']['transient_run_directory_bytes'], sources=store_sources) as store:
+        result = run_managed_stage(context,
+            descriptor=dict(project="instrument_assembly", mode="fields_only", software=["SIMION"]),
+            run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__fields-" + uuid4().hex[:12],
+            payload=dict(action="solve_fields", model=source.artifact.reference, numerics=selected_numerics,
+                         reuse_fields=reuse_reference, stage_policy=stage,
+                         **({'compensated_basis': compensated_basis} if compensated_basis is not None else {})),
+            committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
+            commitment_inputs=[policy_record, *([surface_validator] if surface_validator else [])], retention=stage["artifact_retention"],
+            expected_operation_ids=tuple(graph["expected_operation_ids"]),
+            operation_dependencies=graph["operation_dependencies"],
+            action=partial(execute_fields, model_reference=source.artifact.reference, numerics=selected_numerics,
+                limits=stage["limits"], materialize_geometry=partial(materialize_payloads, limits=stage["limits"]),
+                materializer_record=file_record(Path(materialize_payloads.__code__.co_filename).resolve(), "required_evidence"),
+                allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"), reuse_fields_reference=reuse_reference,
+                surface_validator_record=surface_validator,
+                **({'compensated_basis': compensated_basis} if compensated_basis is not None else {})),
+            action_record=file_record(Path(execute_fields.__code__.co_filename).resolve(), "required_evidence"),
+            source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion,
+            artifact_store=store)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "fields"}, expected_kind="field_bundle")
 
 
@@ -566,25 +679,28 @@ def track(fields: OpenedArtifact | Mapping[str, Any],
           unit_size: int | None = None, recovery_reference: Mapping[str, Any] | None = None,
           dispatch_profiles: Sequence[Mapping[str, Any]] = (),
           birth_source_authority: Mapping[str, Any] | None = None, hs1_request: Mapping[str, Any] | None = None,
-          scalar_field_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
+          scalar_field_basis: Mapping[str, Any] | None = None, artifact_store=None) -> OpenedArtifact:
     """Track a complete source while protecting any published discovery pilot."""
     from contextlib import ExitStack
     options = dict(propagation=propagation, observations=observations, numerics=numerics, context=context,
         source_reference=source_reference, unit_size=unit_size, recovery_reference=recovery_reference,
         dispatch_profiles=dispatch_profiles, birth_source_authority=birth_source_authority,
-        hs1_request=hs1_request, scalar_field_basis=scalar_field_basis)
+        hs1_request=hs1_request, scalar_field_basis=scalar_field_basis, artifact_store=artifact_store)
     discovery = observations.get('pulse_discovery') if isinstance(observations, Mapping) else None
     if not isinstance(discovery, Mapping) or discovery.get('phase') != 'selected':
         return _track(fields, particles, **options)
     from msplatform.execution.native_source_guard import guard_native_source
     from msplatform.execution.owner import current_managed_native_store
-    scope = current_managed_native_store()
-    if scope is None:
-        raise ContractError('selected discovery requires a managed native Store scope')
+    parent = current_managed_native_store()
+    if parent is None and artifact_store is None:
+        raise ContractError('selected discovery requires an explicit ArtifactStore or managed native Store scope')
+    store = parent['store'] if parent is not None else artifact_store
+    if parent is not None and parent['store'] is not store:
+        raise ContractError('selected discovery must use the parent Store')
     with ExitStack() as stack:
         stack.enter_context(guard_native_source(discovery.get('pilot'), expected_kind='trajectory_result',
-            expected_artifact_root=context.workspace / 'artifacts', artifact_store=scope['store']))
-        return _track(fields, particles, **options)
+            expected_artifact_root=context.workspace / 'artifacts', artifact_store=store))
+        return _track(fields, particles, **dict(options, artifact_store=store))
 
 
 def _track(fields: OpenedArtifact | Mapping[str, Any],
@@ -595,7 +711,7 @@ def _track(fields: OpenedArtifact | Mapping[str, Any],
           unit_size: int | None = None, recovery_reference: Mapping[str, Any] | None = None,
           dispatch_profiles: Sequence[Mapping[str, Any]] = (),
           birth_source_authority: Mapping[str, Any] | None = None, hs1_request: Mapping[str, Any] | None = None,
-          scalar_field_basis: Mapping[str, Any] | None = None) -> OpenedArtifact:
+          scalar_field_basis: Mapping[str, Any] | None = None, artifact_store=None) -> OpenedArtifact:
     """Publish an explicit fixed-field flight, preserving its original cohort/clock.
 
     A release realization starts at birth; a HandoffResult requires its published
@@ -722,6 +838,7 @@ def _track(fields: OpenedArtifact | Mapping[str, Any],
             graph['scalar_field_basis'] = _resolve_scalar_basis(source, model, graph, scalar_field_basis)
     predecessor = None
     references = [{"manifest_record": source.reference["manifest"]}]
+    store_sources = [(source, 'field_bundle')]
     discovery = observations.get('pulse_discovery')
     if isinstance(discovery, Mapping) and discovery.get('phase') == 'selected':
         references.append({'manifest_record': discovery['pilot']['manifest']})
@@ -767,14 +884,17 @@ def _track(fields: OpenedArtifact | Mapping[str, Any],
     if meta.get('field_representation') in {'producer_owned_rf_fractional_family','producer_owned_oa_fractional_family','producer_owned_rf_ip_fractional_family','producer_owned_static_world_fractional_family'}:
         original=meta.get('family_producer_reference',source.reference)
         references.append({'manifest_record':original['manifest']})
+        store_sources.append((original, 'field_bundle'))
     if meta.get('field_representation') == 'producer_owned_static_world_standalone_operating_pa':
         original = meta.get('operating_producer_reference', source.reference)
         references.append({'manifest_record': original['manifest']})
+        store_sources.append((original, 'field_bundle'))
     if (meta.get('ground_representation') == 'analytic_zero_on_native_geometry'
             and meta.get('field_representation') != 'split_scalar_world_with_collision_geometry'):
         from .grounded_runtime import verified_ground_origin
         original_ground = verified_ground_origin(source)
         references.append({'manifest_record': original_ground.reference['manifest']})
+        store_sources.append((original_ground, 'field_bundle'))
     if meta.get('field_representation') == 'split_scalar_world_with_collision_geometry':
         collision = artifact_reader.open_artifact(meta['collision_source_reference'], expected_kind='field_bundle')
         if (collision.metadata.get('backend') != 'simion'
@@ -782,10 +902,12 @@ def _track(fields: OpenedArtifact | Mapping[str, Any],
                 or collision.metadata.get('model_identity_sha256') != meta.get('model_identity_sha256')):
             raise ContractError('world scalar collision source differs from its original native model')
         references.append({'manifest_record': collision.reference['manifest']})
+        store_sources.append((collision, 'field_bundle'))
         if collision.metadata.get('ground_representation') == 'analytic_zero_on_native_geometry':
             from .grounded_runtime import verified_ground_origin
             original_ground = verified_ground_origin(collision)
             references.append({'manifest_record': original_ground.reference['manifest']})
+            store_sources.append((original_ground, 'field_bundle'))
     if recovery is not None:
         references.append({"manifest_record": recovery})
     if isinstance(packet, HandoffResult):
@@ -812,34 +934,54 @@ def _track(fields: OpenedArtifact | Mapping[str, Any],
         commitment_inputs.append(dict(discovery['pilot']['manifest']))
     if hs1_request is not None:
         commitment_inputs.extend(dict(hs1_request[name]) for name in ('vendor_record', 'environment_record'))
-    result = run_managed_stage(context,
-        descriptor=dict(project="instrument_assembly", mode="tracking", software=["SIMION"]),
-        run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__track-" + uuid4().hex[:12],
-        payload=dict(action="track", fields=source.reference,
-            particles=asdict(packet) if isinstance(packet, HandoffResult) else packet,
-            propagation=copy.deepcopy(dict(propagation)), observations=copy.deepcopy(dict(observations)),
-            numerics=copy.deepcopy(dict(numerics)), source_reference=predecessor.reference if predecessor else None,
-            unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=copy.deepcopy(profiles),
-            **({'scalar_field_basis': graph['scalar_field_basis']} if scalar_field_basis is not None else {}),
-            **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
-            **({'hs1_identity': graph['hs1_identity'], 'hs1_vendor_record': dict(hs1_request['vendor_record']),
-                'hs1_environment_record': dict(hs1_request['environment_record'])} if hs1_request is not None else {}),
-            stage_policy=stage),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=commitment_inputs, retention=stage["artifact_retention"],
-        expected_operation_ids=tuple(graph["expected_operation_ids"]),
-        operation_dependencies=graph["operation_dependencies"],
-        action=partial(execute_tracking, fields_reference=source, particles=packet,
-            propagation=graph["propagation"], observations=graph["observations"], numerics=graph["numerics"],
-            limits=stage["limits"], source_reference=predecessor.reference if predecessor else None,
-            unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=profiles,
-            **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
-            **({'focus_testplane_record': focus_testplane_record} if focus_testplane_record is not None else {}),
-            hs1_request=hs1_request, expected_tracking_applicability=planned_applicability,
-            **({'scalar_field_basis': scalar_field_basis, 'expected_scalar_basis': graph['scalar_field_basis']} if scalar_field_basis is not None else {}),
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
-        action_record=file_record(Path(execute_tracking.__code__.co_filename).resolve(), "required_evidence"),
-        source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion)
+    selected_admission = ip_mr_admission if ip_mr_admission is not None else neutral_admission
+    if selected_admission is not None:
+        store_sources.extend(_scalar_binding_sources(selected_admission['basis']))
+    if ip_mr_admission is not None:
+        store_sources.extend([(ip_mr_admission['prepared_reference'], 'prepared_model'),
+                              (ip_mr_admission['collision_reference'], 'field_bundle')])
+    if isinstance(discovery, Mapping) and discovery.get('phase') == 'selected':
+        store_sources.append((discovery['pilot'], 'trajectory_result'))
+    if predecessor is not None:
+        store_sources.append((predecessor, 'trajectory_result'))
+    store_sources.extend(_scalar_sources(scalar_field_basis))
+    guarded_records = []
+    if birth_authority is not None:
+        guarded_records.extend([birth_authority['manifest'], *birth_authority['records'].values()])
+    if hs1_request is not None:
+        guarded_records.extend([hs1_request['vendor_record'], hs1_request['environment_record']])
+    with _native_store_scope(context, artifact_store, task_key='standalone-simion-track',
+            budget=stage['limits']['transient_run_directory_bytes'], sources=store_sources,
+            records=guarded_records, recovery=recovery) as store:
+        result = run_managed_stage(context,
+            descriptor=dict(project="instrument_assembly", mode="tracking", software=["SIMION"]),
+            run_id=datetime.now().strftime("%Y%m%d_%H%M%S") + "__sim__simion__track-" + uuid4().hex[:12],
+            payload=dict(action="track", fields=source.reference,
+                particles=asdict(packet) if isinstance(packet, HandoffResult) else packet,
+                propagation=copy.deepcopy(dict(propagation)), observations=copy.deepcopy(dict(observations)),
+                numerics=copy.deepcopy(dict(numerics)), source_reference=predecessor.reference if predecessor else None,
+                unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=copy.deepcopy(profiles),
+                **({'scalar_field_basis': graph['scalar_field_basis']} if scalar_field_basis is not None else {}),
+                **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
+                **({'hs1_identity': graph['hs1_identity'], 'hs1_vendor_record': dict(hs1_request['vendor_record']),
+                    'hs1_environment_record': dict(hs1_request['environment_record'])} if hs1_request is not None else {}),
+                stage_policy=stage),
+            committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
+            commitment_inputs=commitment_inputs, retention=stage["artifact_retention"],
+            expected_operation_ids=tuple(graph["expected_operation_ids"]),
+            operation_dependencies=graph["operation_dependencies"],
+            action=partial(execute_tracking, fields_reference=source, particles=packet,
+                propagation=graph["propagation"], observations=graph["observations"], numerics=graph["numerics"],
+                limits=stage["limits"], source_reference=predecessor.reference if predecessor else None,
+                unit_size=unit_size, recovery_reference=recovery, dispatch_profiles=profiles,
+                **({'birth_source_authority': birth_authority} if birth_authority is not None else {}),
+                **({'focus_testplane_record': focus_testplane_record} if focus_testplane_record is not None else {}),
+                hs1_request=hs1_request, expected_tracking_applicability=planned_applicability,
+                **({'scalar_field_basis': scalar_field_basis, 'expected_scalar_basis': graph['scalar_field_basis']} if scalar_field_basis is not None else {}),
+                allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io")),
+            action_record=file_record(Path(execute_tracking.__code__.co_filename).resolve(), "required_evidence"),
+            source_references=references, use_short_execution_path=True, completion_api=lambda: native_completion,
+            artifact_store=store)
     return artifact_reader.open_artifact({"manifest": result["manifest"], "product_id": "trajectory"}, expected_kind="trajectory_result")
 
 

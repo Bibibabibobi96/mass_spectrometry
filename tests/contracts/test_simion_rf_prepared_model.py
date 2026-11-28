@@ -239,10 +239,16 @@ class RfPreparedModelTests(unittest.TestCase):
             path=root/'compiled.json';path.write_text(json.dumps(asdict(compiled)))
             manifest=root/'source-manifest.json';manifest.write_text('INERT_SOURCE_BOUNDARY')
             source=SimpleNamespace(reference=dict(manifest=file_record(manifest,'required_evidence'),product_id='geometry'),data_path=lambda _key:path)
-            context=SimpleNamespace(tools=dict(simion=Path(sys.executable)))
+            context=SimpleNamespace(tools=dict(simion=Path(sys.executable)),workspace=root)
             stage=dict(limits=dict(transient_run_directory_bytes=1),artifact_retention=dict(policy_version=1,**{'class':'solver_review'},reason='inert fixture'))
             drive=dict(clock_authority=dict(example_resource='instrument_clock_authority_v1.json'),clock=dict(phase_reference_instrument_time_us=0.))
-            with patch('msplatform.backends.simion.operations.artifact_reader.open_artifact',return_value=source),patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,file_record(path,'required_evidence'))),patch('msplatform.execution.owner.run_managed_stage',side_effect=RuntimeError('INERT_OWNER_BOUNDARY')) as managed:
+            from contextlib import ExitStack, nullcontext
+            from msplatform.execution.owner import managed_native_store
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(root/'store')
+            with ExitStack() as lifetime, managed_native_store(store,task_key='rf-model-fixture',lifetime=lifetime,account=lambda _:None), \
+                 patch('msplatform.execution.native_source_guard.guard_native_source',side_effect=lambda *args,**kwargs:nullcontext()), \
+                 patch('msplatform.backends.simion.operations.artifact_reader.open_artifact',return_value=source),patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,file_record(path,'required_evidence'))),patch('msplatform.execution.owner.run_managed_stage',side_effect=RuntimeError('INERT_OWNER_BOUNDARY')) as managed:
                 with self.assertRaisesRegex(RuntimeError,'INERT_OWNER_BOUNDARY'):
                     simion.prepare_model(source.reference,drive=drive,physics=model_api.RF_PHYSICS,context=context)
             request=managed.call_args.kwargs

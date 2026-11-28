@@ -137,7 +137,10 @@ explicit resolved geometry, SIMION numerics, ion transport science, gas interfac
 gas science and source-spec paths, a published gas-field reference, the official
 five-file SDS directory, and the existing deployment ExecutionContext. The explicit
 engineering stage policy must define `dual_cone_transport`; no RF or gas-solve
-budget is silently inherited.
+budget is silently inherited. Fresh transport and each independent stage accept an explicit
+`artifact_store`, or reuse the caller's matching managed parent Store scope. Published gas, selected
+fields and their original producers are guarded before a standalone stage is admitted; source IDs,
+clock mappings and the existing operation graph remain unchanged.
 
 This entry composes fresh geometry build, Refine, field audit, IOB build/reopen and
 Fly under one RunSession. Tracking cannot trigger a hidden Refine. The public result

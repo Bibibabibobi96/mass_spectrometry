@@ -158,7 +158,7 @@ class SplitTofSimionTests(unittest.TestCase):
             manifest.write_text("inert", encoding="utf-8")
             source = SimpleNamespace(reference={"manifest": file_record(manifest, "required_evidence"), "product_id": "geometry"},
                                      data_path=lambda _: compiled_path)
-            context = SimpleNamespace(tools={"simion": Path(sys.executable)}, execution_root=root / "execution")
+            context = SimpleNamespace(tools={"simion": Path(sys.executable)}, execution_root=root / "execution", workspace=root)
             stage = {"limits": {"transient_run_directory_bytes": 1}, "artifact_retention": {}}
             with patch("msplatform.execution.stage_policy.read_stage_policy", return_value=(stage, {})), \
                  patch("msplatform.execution.owner.run_managed_stage", return_value={"manifest": {}}) as build_owner, \
@@ -173,7 +173,13 @@ class SplitTofSimionTests(unittest.TestCase):
             authored_drive = {"groups": drive["groups"], "pulse": drive["pulse"],
                               "clock": {"phase_reference_instrument_time_us": 0.},
                               "clock_authority": {"example_resource": "instrument_clock_authority_v1.json"}}
-            with patch("msplatform.backends.simion.operations.artifact_reader.open_artifact", return_value=source), \
+            from contextlib import ExitStack, nullcontext
+            from msplatform.execution.owner import managed_native_store
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(root / "store")
+            with ExitStack() as lifetime, managed_native_store(store, task_key="split-model-fixture", lifetime=lifetime, account=lambda _: None), \
+                 patch("msplatform.execution.native_source_guard.guard_native_source", side_effect=lambda *args, **kwargs: nullcontext()), \
+                 patch("msplatform.backends.simion.operations.artifact_reader.open_artifact", return_value=source), \
                  patch("msplatform.execution.stage_policy.read_stage_policy", return_value=(stage, file_record(manifest, "required_evidence"))), \
                  patch("msplatform.execution.owner.run_managed_stage", side_effect=RuntimeError("INERT_OWNER")) as managed:
                 with self.assertRaisesRegex(RuntimeError, "INERT_OWNER"):
@@ -228,7 +234,9 @@ class SplitTofSimionTests(unittest.TestCase):
             field_numerics = {"frontend_domains": {"parent": {"refine_convergence_v":
                 {"carrier_off": .1, "rf_reference": .1, "pulse_delta": .1}}}, "rf_reference_voltage_v": 100.,
                 "downstream_convergence_v": {"flight_tube": .1, "reflectron": .1, "detector": .1}}
-            with patch("msplatform.backends.simion.field_closure.load_field_model", return_value=SimpleNamespace(model=triple_model, artifact=source)), \
+            with ExitStack() as field_lifetime, managed_native_store(store, task_key="split-fields-fixture", lifetime=field_lifetime, account=lambda _: None), \
+                 patch("msplatform.execution.native_source_guard.guard_native_source", side_effect=lambda *args, **kwargs: nullcontext()), \
+                 patch("msplatform.backends.simion.field_closure.load_field_model", return_value=SimpleNamespace(model=triple_model, artifact=source)), \
                  patch("msplatform.execution.stage_policy.read_stage_policy", return_value=(stage, file_record(manifest, "required_evidence"))), \
                  patch("msplatform.execution.owner.run_managed_stage", side_effect=RuntimeError("INERT_FIELDS_OWNER")) as fields_owner:
                 with self.assertRaisesRegex(RuntimeError, "INERT_FIELDS_OWNER"):

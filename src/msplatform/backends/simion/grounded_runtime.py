@@ -96,8 +96,10 @@ def verified_ground_origin(source):
     return origin
 
 
-def prepare_grounded_runtime_fields(fields, *, context):
+def prepare_grounded_runtime_fields(fields, *, context, artifact_store=None):
     """Publish new zero-ground carriers under the existing managed owner."""
+    from contextlib import nullcontext
+    from msplatform.execution.owner import current_managed_native_store, standalone_native_store
     from . import native_completion
     if context is None or 'simion' not in context.tools or not context.tools['simion'].is_file():
         raise ValueError('analytic ground requires an explicit SIMION executable')
@@ -106,9 +108,17 @@ def prepare_grounded_runtime_fields(fields, *, context):
     if (set(runtime) - {'simion_allow_asynchronous_io'}
             or ('simion_allow_asynchronous_io' in runtime and type(runtime['simion_allow_asynchronous_io']) is not bool)):
         raise ValueError('unsupported analytic ground runtime policy')
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ValueError('analytic ground requires an explicit ArtifactStore or protected parent scope')
+    store = artifact_store if artifact_store is not None else parent['store']
+    if parent is not None and parent['store'] is not store:
+        raise ValueError('analytic ground must use the parent Store')
     reference = fields.reference if isinstance(fields, OpenedArtifact) else copy.deepcopy(fields)
     with ExitStack() as stack:
-        stack.enter_context(guard_native_source(reference, expected_kind='field_bundle', expected_artifact_root=context.workspace/'artifacts'))
+        source_assets = set()
+        stack.enter_context(guard_native_source(reference, expected_kind='field_bundle',
+            expected_artifact_root=context.workspace/'artifacts', artifact_store=store, asset_ids=source_assets))
         source, model, _ = _admit(reference)
         actual_tool = file_record(context.tools['simion'], 'required_evidence')
         tool_identity = source.metadata['downstream_identity']['tool_identity']
@@ -121,16 +131,20 @@ def prepare_grounded_runtime_fields(fields, *, context):
             run_directory=planning, native_path_resource=planning/'inputs/native_sources/native_run_path.lua')
         ids = tuple(row['operation_id'] for row in plan.operations)
         action_record = file_record(Path(execute_grounded_runtime_fields.__code__.co_filename), 'required_evidence')
-        result = run_managed_stage(context, descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
-            run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__ground-'+uuid4().hex[:12],
-            payload=dict(action='prepare_grounded_runtime_fields', fields=source.reference, stage_policy=stage),
-            committed_new_bytes=stage['limits']['transient_run_directory_bytes'],commitment_inputs=[policy],
-            retention=stage['artifact_retention'],expected_operation_ids=ids,
-            operation_dependencies={name:[ids[i-1]] for i,name in enumerate(ids) if i},
-            action=partial(execute_grounded_runtime_fields, fields_reference=source.reference,limits=stage['limits'],
-                allow_asynchronous_io=runtime.get('simion_allow_asynchronous_io')), action_record=action_record,
-            source_references=[dict(manifest_record=reference['manifest'])],use_short_execution_path=True,
-            completion_api=lambda: native_completion)
+        scope = (standalone_native_store(store, task_key='standalone-grounded-fields',
+                    budget=stage['limits']['transient_run_directory_bytes'], required_assets=tuple(sorted(source_assets)))
+                 if parent is None else nullcontext())
+        with scope:
+            result = run_managed_stage(context, descriptor=dict(project='instrument_assembly',mode='fields_only',software=['SIMION']),
+                run_id=datetime.now().strftime('%Y%m%d_%H%M%S')+'__sim__simion__ground-'+uuid4().hex[:12],
+                payload=dict(action='prepare_grounded_runtime_fields', fields=source.reference, stage_policy=stage),
+                committed_new_bytes=stage['limits']['transient_run_directory_bytes'],commitment_inputs=[policy],
+                retention=stage['artifact_retention'],expected_operation_ids=ids,
+                operation_dependencies={name:[ids[i-1]] for i,name in enumerate(ids) if i},
+                action=partial(execute_grounded_runtime_fields, fields_reference=source.reference,limits=stage['limits'],
+                    allow_asynchronous_io=runtime.get('simion_allow_asynchronous_io')), action_record=action_record,
+                source_references=[dict(manifest_record=reference['manifest'])],use_short_execution_path=True,
+                completion_api=lambda: native_completion, artifact_store=store)
         return open_artifact({'manifest':result['manifest'],'product_id':'fields'},expected_kind='field_bundle')
 
 

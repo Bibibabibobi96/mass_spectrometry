@@ -17,7 +17,6 @@ from msplatform.backends.simion import operations
 from msplatform.backends.simion.model import RF_PHYSICS
 from msplatform.backends.simion.native_plans import plan_geometry_build
 from msplatform.backends.simion.resources import structural_seed_path
-from msplatform.execution.capacity_protection import _lease_path
 from msplatform.execution.processes import ProcessExecutionError
 from msplatform.execution.run_session import RunSession
 from msplatform.io.manifest_records import file_record
@@ -140,11 +139,14 @@ class StaticWorldManagedTests(unittest.TestCase):
         with retained_on_failure() as directory, patch.dict(os.environ,private):
             os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']=str(Path(directory)/'private-host.sqlite3')
             context,_,_=make_context(Path(directory));policy=json.loads(context.stage_policy_path.read_text(encoding='utf-8'))
+            from msplatform.execution.owner import standalone_native_store
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(Path(directory)/'store')
             for name in ('build_geometry','prepare_model','solve_fields'):
                 policy['stages'][name]=copy.deepcopy(policy['stages']['track'])
             policy['stages']['solve_fields']['limits']['reserved_run_payload_bytes']=1048576
             context.stage_policy_path.write_text(json.dumps(policy),encoding='utf-8')
-            with patch.object(RunSession,'run_process',new=inert_process):
+            with standalone_native_store(store,task_key='static-world-public-chain',budget=1024**3), patch.object(RunSession,'run_process',new=inert_process):
                 bad=copy.deepcopy(compiled);bad.frontend_geometry['source_snapshot']['components_source']['first']['width_mm']=9
                 with patch('msplatform.execution.owner.run_managed_stage') as blocked:
                     with self.assertRaises(ValueError):operations.build_geometry(bad,context=context)
@@ -205,29 +207,24 @@ class StaticWorldManagedTests(unittest.TestCase):
                 fail_refine[0]=True
                 with self.assertRaisesRegex(ProcessExecutionError, '7'):operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context)
             self.assertEqual(calls.count('refine_world'),2)
-            runs=context.workspace/'artifacts/assemblies/instrument_assembly/runs'
-            manifests=[json.loads(path.read_text(encoding='utf-8')) for path in runs.glob('*/run_manifest.json')]
+            paths=list(store.root.glob('assets/native_stage/*/*/runs/*/run_manifest.json'))
+            manifests=[json.loads(path.read_text(encoding='utf-8')) for path in paths]
             failed=[row for row in manifests if row.get('status')=='failed']
             self.assertEqual(len(failed),1);self.assertFalse(failed[0].get('products'))
-            failed_dir=runs/failed[0]['run_id'];completion=json.loads((failed_dir/'results/execution_completion.json').read_text(encoding='utf-8'))
+            failed_dir=paths[manifests.index(failed[0])].parent;completion=json.loads((failed_dir/'results/execution_completion.json').read_text(encoding='utf-8'))
             self.assertEqual(completion['status'],'failed')
             ops=completion['writer_completion']['operations']
             self.assertEqual([row['operation_id'] for row in ops],['materialize_geometry','refine_world'])
             self.assertTrue(ops[-1]['observation']['exit_confirmed']);self.assertEqual(ops[-1]['observation']['returncode'],7)
             self.assertIn('INERT_REFINE_FAILURE',(failed_dir/'logs/operation_0002.stdout.log').read_text(encoding='utf-8'))
             self.assertTrue((failed_dir/'simion/fields/world/world.pa#').is_file())
-            failed_result_path=context.workspace/'artifacts/assemblies/instrument_assembly/scratch/workflow_results'/failed_dir.name/'result.json'
-            failed_result=json.loads(failed_result_path.read_text(encoding='utf-8'));failed_capacity=failed_result['capacity_session']
-            self.assertEqual(failed_result['status'],'failed');self.assertEqual(failed_capacity['status'],'released')
-            self.assertIn(model.manifest_location.parent.resolve(),{Path(path).resolve() for path in failed_capacity['protected_paths']})
+            failed_request=json.loads((failed_dir/'inputs/execution_request.json').read_text(encoding='utf-8'))
+            self.assertIn(model.reference['manifest'],[row['manifest_record'] for row in failed_request['capacity']['source_references']])
             self.assertEqual(protected,{path:Path(path).read_bytes() for path in protected})
-            self.assertFalse(_lease_path(Path(failed_capacity['artifact_root']),failed_capacity['lease_id']).exists())
-            for source_lease in failed_capacity.get('source_protection_leases',[]):
-                self.assertFalse(_lease_path(Path(source_lease['artifact_root']),source_lease['lease_id']).exists())
+            with store._db() as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM native_bindings WHERE state='active'").fetchone()[0],0)
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM claims').fetchone()[0],0)
             for artifact,source in ((geometry,None),(model,geometry),(field,model),(reused,field),(trajectory,reused)):
-                result_path=context.workspace/'artifacts/assemblies/instrument_assembly/scratch/workflow_results'/artifact.manifest_location.parent.name/'result.json'
-                result=json.loads(result_path.read_text(encoding='utf-8'));capacity=result['capacity_session']
-                self.assertEqual(capacity['status'],'released');self.assertFalse(_lease_path(Path(capacity['artifact_root']),capacity['lease_id']).exists())
-                if source is not None:self.assertIn(source.manifest_location.parent.resolve(),{Path(path).resolve() for path in capacity['protected_paths']})
-                for source_lease in capacity.get('source_protection_leases',[]):
-                    self.assertFalse(_lease_path(Path(source_lease['artifact_root']),source_lease['lease_id']).exists())
+                request=json.loads((artifact.manifest_location.parent/'inputs/execution_request.json').read_text(encoding='utf-8'))
+                if source is not None:
+                    self.assertIn(source.reference['manifest'],[row['manifest_record'] for row in request['capacity']['source_references']])

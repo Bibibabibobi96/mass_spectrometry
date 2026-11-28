@@ -54,6 +54,8 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
 
     def _recovery(self, field, packet, propagation, numerics, context, refs, expected_paths, inert, actual_single, directory):
         root = Path(directory)
+        from msplatform.storage import ArtifactStore
+        store = ArtifactStore(root / 'store')
         copied = root / 'recovery_ps'
         copied.mkdir()
         for name in ('batch_process_owner.ps1', 'simion_dispatch_support.ps1', 'resource_process_support.ps1', 'host_execution_lease.ps1', 'payload_file_support.ps1'):
@@ -154,7 +156,8 @@ class NeutralSampledRecoveryTests(unittest.TestCase):
         before = set(run_root.iterdir())
         def track(recovery=None):
             return operations.track(field, packet, propagation=propagation, observations=dict(plane_observations=[]),
-                                    numerics=numerics, context=context, unit_size=1, recovery_reference=recovery)
+                                    numerics=numerics, context=context, unit_size=1, recovery_reference=recovery,
+                                    artifact_store=store)
         with patch.object(RunSession, 'run_process', new=single), patch.object(RunSession, 'run_process_group', new=group), \
              patch('msplatform.execution.simion_dispatch.plan_simion_dispatch', side_effect=dispatch), \
              patch('msplatform.execution.processes.resource_path', side_effect=lambda name: copied/name if name == 'batch_process_owner.ps1' else real_resource(name)):

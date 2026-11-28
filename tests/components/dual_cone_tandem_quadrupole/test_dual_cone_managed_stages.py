@@ -33,24 +33,28 @@ class ManagedIndependentStagesTests(unittest.TestCase):
 
             def build_geometry(**arguments):
                 context = arguments.pop("context")
-                return run_to(plan_to(target="geometry", request={"geometry": arguments}), context=context)
+                arguments.pop("artifact_store", None)
+                return run_target(plan_to(target="geometry", request={"geometry": arguments}), context=context)
 
             def prepare_model(reference, **arguments):
                 context = arguments.pop("context")
-                return run_to(plan_to(target="model", request={"model": arguments},
+                arguments.pop("artifact_store", None)
+                return run_target(plan_to(target="model", request={"model": arguments},
                     available={"geometry": reference}), context=context)
 
             def solve_fields(reference, **arguments):
                 context = arguments.pop("context")
+                arguments.pop("artifact_store", None)
                 prior = arguments.pop("reuse_fields_reference", None)
                 available = {"model": reference}
                 if prior is not None:
                     available["fields"] = prior
-                return run_to(plan_to(target="fields", request={"fields": arguments}, available=available), context=context)
+                return run_target(plan_to(target="fields", request={"fields": arguments}, available=available), context=context)
 
             def track_fields(reference, **arguments):
                 context = arguments.pop("context")
-                return run_to(plan_to(target="trajectory", request={"trajectory": arguments},
+                arguments.pop("artifact_store", None)
+                return run_target(plan_to(target="trajectory", request={"trajectory": arguments},
                     available={"fields": reference}), context=context)
         from msplatform.execution.capacity_ledger import initialize_capacity_ledger
         from msplatform.execution.capacity_protection import load_capacity_protection_leases
@@ -95,6 +99,16 @@ class ManagedIndependentStagesTests(unittest.TestCase):
             artifacts = context.workspace / "artifacts"
             artifacts.mkdir(parents=True)
             initialize_capacity_ledger(artifacts, objects=[])
+            from msplatform.execution.owner import standalone_native_store
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(root / "store")
+
+            def run_target(plan, **kwargs):
+                if not plan["stages"]:
+                    return run_to(plan, **kwargs)
+                with standalone_native_store(store, task_key="dual-cone-target-test", budget=1024**3):
+                    return run_to(plan, **kwargs)
+
             calls = []
 
             def observed(_context, **kwargs):
@@ -200,7 +214,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 clockrows[key] = file_record(path, "required_evidence")
             clockrows["data_root"] = str(clockroot)
             with patch("msplatform.execution.run_session.run_observed_process", side_effect=observed):
-                geometry = build_geometry(resolved=values["resolved"], numerics=numerics, context=context, placement=placement)
+                geometry = build_geometry(resolved=values["resolved"], numerics=numerics, context=context, placement=placement, artifact_store=store)
                 self.assertEqual(geometry.metadata["sampled_particles"], 0)
                 self.assertEqual(
                     geometry.data_path("zero_particle_format_control").read_text(), "particles{coordinates=0,}\n"
@@ -212,6 +226,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     physics=RF_PHYSICS,
                     clock_authority_reference=clockrows,
                     context=context,
+                    artifact_store=store,
                 )
                 self.assertEqual(model.metadata["field_status"], "not_solved")
                 import copy
@@ -220,9 +235,9 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 with patch('msplatform.execution.owner.run_managed_stage',
                            side_effect=RuntimeError('INERT_OWNER_WOULD_HAVE_LAUNCHED')) as invalid_owner:
                     with self.assertRaisesRegex(ValueError,'field numerics cannot redefine'):
-                        solve_fields(model,numerics=inconsistent,context=context)
+                        solve_fields(model,numerics=inconsistent,context=context,artifact_store=store)
                     invalid_owner.assert_not_called()
-                fields = solve_fields(model, numerics=numerics, context=context)
+                fields = solve_fields(model, numerics=numerics, context=context, artifact_store=store)
             self.assertEqual(len(calls), 9)
             self.assertFalse(any("fly" in args for args in calls))
             self.assertEqual(sum("refine_rf_field_family.lua" in " ".join(args) for args in calls), 1)
@@ -245,8 +260,9 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     physics=RF_PHYSICS,
                     clock_authority_reference=clockrows,
                     context=context,
+                    artifact_store=store,
                 )
-                reused = solve_fields(changed_model, numerics=numerics, context=context, reuse_fields_reference=fields)
+                reused = solve_fields(changed_model, numerics=numerics, context=context, reuse_fields_reference=fields, artifact_store=store)
             self.assertEqual(len(calls), 13)
             self.assertEqual(reused.metadata["refine_calls"], 0)
             self.assertIs(reused.metadata["fields_reused"], True)
@@ -283,6 +299,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     collision_sds_dir=sds,
                     source_to_device=source_registration,
                     context=context,
+                    artifact_store=store,
                 )
             if targeted:
                 full_request = dict(
@@ -308,7 +325,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 mutable_source.write_text(json.dumps(changed_spec))
                 with patch("msplatform.execution.owner.run_managed_stage") as no_changed_owner:
                     with self.assertRaisesRegex(ValueError, "authority changed"):
-                        run_to(selected_plan, context=context)
+                        run_target(selected_plan, context=context)
                     no_changed_owner.assert_not_called()
                 rebound = plan_to(target="fields", request={"model": full_request["model"], "fields": full_request["fields"]},
                                   available={"geometry": geometry, "fields": fields})
@@ -317,7 +334,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 with patch("msplatform.execution.owner.run_managed_stage") as no_owner:
                     existing = plan_to(target="trajectory", available={"trajectory": trajectory})
                     self.assertEqual(existing["stages"], [])
-                    self.assertEqual(run_to(existing).reference, trajectory.reference)
+                    self.assertEqual(run_target(existing).reference, trajectory.reference)
                     with self.assertRaisesRegex(ValueError, "new scientific request"):
                         plan_to(target="trajectory", request={"trajectory": {"source_spec_path": "changed"}},
                                 available={"trajectory": trajectory})
@@ -325,7 +342,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     tampered = copy.deepcopy(existing)
                     tampered["stages"] = ["trajectory"]
                     with self.assertRaisesRegex(ValueError, "modified"):
-                        run_to(tampered)
+                        run_target(tampered)
                     no_owner.assert_not_called()
                 self.assertEqual(len(calls), before)
             self.assertEqual(len(calls), 16)
@@ -369,6 +386,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                     collision_sds_dir=sds,
                     source_to_device=source_registration,
                     context=context,
+                    artifact_store=store,
                 )
             self.assertEqual(len(calls), 19)
             self.assertEqual(sum("refine_rf_field_family.lua" in " ".join(args) for args in calls), 1)
@@ -400,7 +418,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                 try:
                     with patch("msplatform.execution.run_session.run_observed_process", side_effect=observed), patch.object(
                             target_workflow, "solve_fields", side_effect=capture_fresh_fields):
-                        fresh_target = run_to(full_plan, context=context)
+                        fresh_target = run_target(full_plan, context=context)
                 finally:
                     original_family_paths = previous_family_paths
                 self.assertEqual(len(calls) - before, 12)
@@ -440,6 +458,8 @@ class ManagedIndependentStagesTests(unittest.TestCase):
         for scenario in ("missing", "unknown_writer", "tampered"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
+                from msplatform.storage import ArtifactStore
+                store = ArtifactStore(root / "store")
                 reference, _ = fields_fixture(
                     root, unknown=scenario == "unknown_writer", missing="response_22" if scenario == "missing" else None
                 )
@@ -457,6 +477,7 @@ class ManagedIndependentStagesTests(unittest.TestCase):
                             interface_path=root / "absent-interface.json",
                             collision_sds_dir=root / "absent-sds",
                             context=None,
+                            artifact_store=store,
                         )
                     owner.assert_not_called()
 

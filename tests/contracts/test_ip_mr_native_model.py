@@ -108,12 +108,18 @@ class IpMrNativeModelTests(unittest.TestCase):
                 root=Path(directory);path=root/'geometry.json'
                 path.write_text(json.dumps(asdict(fixture.compiled)),encoding='utf8')
                 source=SimpleNamespace(data_path=lambda key:path,reference={'manifest':{}})
-                context=SimpleNamespace(tools={'simion':Path(__file__).resolve()},execution_root=root)
+                context=SimpleNamespace(tools={'simion':Path(__file__).resolve()},execution_root=root,workspace=root)
                 request={key:copy.deepcopy(value) for key,value in fixture.drive.items() if key!='clock'}
                 request['clock']={'phase_reference_instrument_time_us':0.}
                 request['clock_authority']={'example_resource':'instrument_clock_authority_v1.json'}
                 stage=dict(limits={'transient_run_directory_bytes':1},artifact_retention={})
-                with patch('msplatform.results.artifacts.open_artifact',side_effect=[source,'OPENED']), \
+                from contextlib import ExitStack, nullcontext
+                from msplatform.execution.owner import managed_native_store
+                from msplatform.storage import ArtifactStore
+                store = ArtifactStore(root/'store')
+                with ExitStack() as lifetime, managed_native_store(store,task_key='ip-mr-model-fixture',lifetime=lifetime,account=lambda _:None), \
+                     patch('msplatform.execution.native_source_guard.guard_native_source',side_effect=lambda *args,**kwargs:nullcontext()), \
+                     patch('msplatform.results.artifacts.open_artifact',side_effect=[source,'OPENED']), \
                      patch('msplatform.execution.stage_policy.read_stage_policy',return_value=(stage,{})), \
                      patch('msplatform.execution.owner.run_managed_stage',return_value={'manifest':{}}) as owner:
                     self.assertEqual(operations.prepare_model({},drive=request,physics=RF_IP_PHYSICS,context=context),'OPENED')

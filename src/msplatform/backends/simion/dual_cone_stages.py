@@ -616,12 +616,14 @@ def _payload(value):
     return value
 
 
-def _run(context, action, ids, implementation, arguments, sources, kind):
+def _run(context, action, ids, implementation, arguments, sources, kind, artifact_store=None):
+    from contextlib import ExitStack, nullcontext
     from datetime import datetime
     from functools import partial
     from uuid import uuid4
     from msplatform.backends.simion import native_completion
-    from msplatform.execution.owner import run_managed_stage
+    from msplatform.execution.native_source_guard import guard_native_source
+    from msplatform.execution.owner import current_managed_native_store, run_managed_stage, standalone_native_store
     from msplatform.execution.stage_policy import read_stage_policy
     from msplatform.io.manifest_records import file_record
 
@@ -633,39 +635,69 @@ def _run(context, action, ids, implementation, arguments, sources, kind):
         raise ValueError("SIMION stage runtime only accepts explicit boolean simion_allow_asynchronous_io")
     if "simion" not in context.tools or not context.tools["simion"].is_file():
         raise ValueError("stage requires an explicit available SIMION executable")
-    sources = list({str(source.manifest_location): source for source in sources}.values())
-    result = run_managed_stage(
-        context,
-        descriptor=dict(project="dual_cone_tandem_quadrupole", mode=action, software=["SIMION"]),
-        run_id=datetime.now().strftime("%Y%m%d_%H%M%S")
-        + "__sim__simion__"
-        + action.replace("_", "-")
-        + "-"
-        + uuid4().hex[:12],
-        payload=dict(action=action, stage_policy=stage, request=_payload(arguments)),
-        committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
-        commitment_inputs=[authority],
-        retention=stage["artifact_retention"],
-        expected_operation_ids=tuple(ids),
-        operation_dependencies={name: [ids[i - 1]] for i, name in enumerate(ids) if i},
-        action=partial(
-            implementation,
-            **arguments,
-            limits=stage["limits"],
-            allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"),
-        ),
-        action_record=file_record(Path(implementation.__code__.co_filename), "required_evidence"),
-        source_references=[dict(manifest_record=source.reference["manifest"]) for source in sources],
-        use_short_execution_path=True,
-        completion_api=lambda: native_completion,
-    )
+    parent = current_managed_native_store()
+    if artifact_store is None and parent is None:
+        raise ValueError("SIMION stage requires an explicit ArtifactStore or protected parent scope")
+    store = artifact_store if artifact_store is not None else parent["store"]
+    if parent is not None and parent["store"] is not store:
+        raise ValueError("SIMION stage must use the parent Store")
+    with ExitStack() as stack:
+        sources = list({str(source.manifest_location): source for source in sources}.values())
+        source_assets = set()
+        for source in sources:
+            stack.enter_context(
+                guard_native_source(
+                    source.reference,
+                    expected_kind=source.kind,
+                    expected_artifact_root=context.workspace / "artifacts",
+                    artifact_store=store,
+                    asset_ids=source_assets,
+                )
+            )
+        scope = (
+            standalone_native_store(
+                store,
+                task_key="dual-cone:" + action,
+                budget=stage["limits"]["transient_run_directory_bytes"],
+                required_assets=tuple(sorted(source_assets)),
+            )
+            if parent is None
+            else nullcontext()
+        )
+        with scope:
+            result = run_managed_stage(
+                context,
+                descriptor=dict(project="dual_cone_tandem_quadrupole", mode=action, software=["SIMION"]),
+                run_id=datetime.now().strftime("%Y%m%d_%H%M%S")
+                + "__sim__simion__"
+                + action.replace("_", "-")
+                + "-"
+                + uuid4().hex[:12],
+                payload=dict(action=action, stage_policy=stage, request=_payload(arguments)),
+                committed_new_bytes=stage["limits"]["transient_run_directory_bytes"],
+                commitment_inputs=[authority],
+                retention=stage["artifact_retention"],
+                expected_operation_ids=tuple(ids),
+                operation_dependencies={name: [ids[i - 1]] for i, name in enumerate(ids) if i},
+                action=partial(
+                    implementation,
+                    **arguments,
+                    limits=stage["limits"],
+                    allow_asynchronous_io=runtime.get("simion_allow_asynchronous_io"),
+                ),
+                action_record=file_record(Path(implementation.__code__.co_filename), "required_evidence"),
+                source_references=[dict(manifest_record=source.reference["manifest"]) for source in sources],
+                use_short_execution_path=True,
+                completion_api=lambda: native_completion,
+                artifact_store=store,
+            )
     return open_artifact(
         dict(manifest=result["manifest"], product_id="trajectory" if kind == "trajectory_result" else "stage"),
         expected_kind=kind,
     )
 
 
-def build_geometry(*, resolved, numerics, context, placement=None):
+def build_geometry(*, resolved, numerics, context, placement=None, artifact_store=None):
     """Build/save/reopen zero-source unsolved geometry; no gas/source/Refine."""
     from .dual_cone_stage_execution import execute_geometry
 
@@ -678,11 +710,15 @@ def build_geometry(*, resolved, numerics, context, placement=None):
         dict(plan=plan),
         [],
         "geometry_artifact",
+        artifact_store=artifact_store,
     )
     return require_geometry_product(result)
 
 
-def prepare_model(geometry_reference, *, electric_field, clock, physics, clock_authority_reference, context, placement=None):
+def prepare_model(
+    geometry_reference, *, electric_field, clock, physics, clock_authority_reference, context, placement=None,
+    artifact_store=None,
+):
     """Bind drive to an independently materialized raw geometry; no particles."""
     from .dual_cone_stage_execution import execute_model
 
@@ -701,11 +737,12 @@ def prepare_model(geometry_reference, *, electric_field, clock, physics, clock_a
         dict(source=source, model=plan["projection"], clock_reference=clock_authority_reference),
         [source],
         "prepared_model",
+        artifact_store=artifact_store,
     )
     return require_model_product(result)
 
 
-def solve_fields(model_reference, *, numerics, context, reuse_fields_reference=None):
+def solve_fields(model_reference, *, numerics, context, reuse_fields_reference=None, artifact_store=None):
     """Copy only unsolved raw geometry, then Refine/audit an independent family."""
     from .dual_cone_stage_execution import execute_fields
 
@@ -732,6 +769,7 @@ def solve_fields(model_reference, *, numerics, context, reuse_fields_reference=N
         dict(source=source, model=model, numerics=numerics, reuse_source=reuse_source, reuse_producer=reuse_producer),
         [source] + ([] if reuse_source is None else [reuse_source, reuse_producer]),
         "field_bundle",
+        artifact_store=artifact_store,
     )
     return require_fields_product(result)[0]
 
@@ -752,6 +790,7 @@ def track_fields(
     expected_gas_environment=None,
     expected_sds_records=None,
     frozen_environment_bytes=None,
+    artifact_store=None,
 ):
     """Prepare the selected source/gas and Fly original published fields directly."""
     from msplatform.backends.simion.dual_cone_stages import plan_saved_field_fly
@@ -817,4 +856,5 @@ def track_fields(
         dict(fields=fields, producer=producer, plan=plan, request=request, model=model),
         [fields, producer, gas],
         "trajectory_result",
+        artifact_store=artifact_store,
     )

@@ -176,11 +176,18 @@ class TrackingExecutionPlanTests(unittest.TestCase):
                 frame_id=self.case.release['release_spec']['frame_id'], source_component_id='multipole',
                 species_id='explicit', species_kind='ion', relative_weights=None, instrument_origin_us=0., expected_particle_ids=ids)
             session = Session()
+            from contextlib import ExitStack, nullcontext
+            from msplatform.execution.owner import managed_native_store
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(root / 'store')
+            session.context.workspace = root
             limits = {'transient_run_directory_bytes': 1}
             stage = {'limits': limits, 'artifact_retention': {}}
             # Inert routing fixture: native managed-ground authentication is covered separately.
             inert_origin=actual_open_artifact(fields.metadata['ground_source_reference'],expected_kind='field_bundle')
-            with patch('msplatform.backends.simion.grounded_runtime.verified_ground_origin',return_value=inert_origin), \
+            with ExitStack() as lifetime, managed_native_store(store, task_key='recorded-birth-fixture', lifetime=lifetime, account=lambda _: None), \
+                 patch('msplatform.execution.native_source_guard.guard_native_source', side_effect=lambda *args, **kwargs: nullcontext()), \
+                 patch('msplatform.backends.simion.grounded_runtime.verified_ground_origin',return_value=inert_origin), \
                  patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
                  patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest': {}}) as owner, \
                  patch('msplatform.results.artifacts.open_artifact', return_value='published'):
@@ -674,10 +681,17 @@ class PublicObservationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             fields, Session, _ = tracking_action_fixture(self.case, Path(directory))
             session = Session()
+            from contextlib import ExitStack, nullcontext
+            from msplatform.execution.owner import managed_native_store
+            from msplatform.storage import ArtifactStore
+            store = ArtifactStore(Path(directory) / 'store')
+            session.context.workspace = Path(directory)
             stage = {'limits': {'transient_run_directory_bytes': 1}, 'artifact_retention': {}}
             # Inert routing fixture: native managed-ground authentication is covered separately.
             inert_origin=actual_open_artifact(fields.metadata['ground_source_reference'],expected_kind='field_bundle')
-            with patch('msplatform.backends.simion.grounded_runtime.verified_ground_origin',return_value=inert_origin), \
+            with ExitStack() as lifetime, managed_native_store(store, task_key='public-observation-fixture', lifetime=lifetime, account=lambda _: None), \
+                 patch('msplatform.execution.native_source_guard.guard_native_source', side_effect=lambda *args, **kwargs: nullcontext()), \
+                 patch('msplatform.backends.simion.grounded_runtime.verified_ground_origin',return_value=inert_origin), \
                  patch('msplatform.execution.stage_policy.read_stage_policy', return_value=(stage, {})), \
                  patch('msplatform.execution.owner.run_managed_stage', return_value={'manifest': {}}) as owner, \
                  patch('msplatform.results.artifacts.open_artifact', return_value='published'):

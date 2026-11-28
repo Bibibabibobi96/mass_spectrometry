@@ -41,15 +41,18 @@ class ManagedEmptyGeometryTests(unittest.TestCase):
    else:raise AssertionError('unexpected native leaf '+operation_id)
    return original(session,operation_id,executable=Path(sys.executable),arguments=['-I','-B','-c',code],role='GATE',stage='inert_geometry_model',limits=kwargs['limits'],immutable_input_records=immutable_input_records)
   with tempfile.TemporaryDirectory(prefix='empty-surface-owner-') as d,patch.dict(os.environ,{'MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN':''}):
-   context,_,_=make_context(Path(d));policy=json.loads(context.stage_policy_path.read_text(encoding='utf8'))
+   context,_,_=make_context(Path(d))
+   from msplatform.storage import ArtifactStore
+   store = ArtifactStore(Path(d)/'store')
+   policy=json.loads(context.stage_policy_path.read_text(encoding='utf8'))
    for name in ('build_geometry','prepare_model'):policy['stages'][name]=copy.deepcopy(policy['stages']['track'])
    context.stage_policy_path.write_text(json.dumps(policy),encoding='utf8')
    with patch.object(RunSession,'run_process',new=inert):
-    geometry=operations.build_geometry(compiled,context=context)
+    geometry=operations.build_geometry(compiled,context=context,artifact_store=store)
     empty=next(iter(compiled.frontend_gems));asset=geometry.metadata['native_assets'][empty]
     self.assertIn('surface_state',asset);self.assertNotIn('fractional_surface',asset)
     state=json.loads(geometry.data_path(asset['surface_state']).read_text());self.assertEqual(state['mode'],'empty')
-    model=operations.prepare_model(geometry,drive=drive,physics=RF_IP_PHYSICS,context=context)
+    model=operations.prepare_model(geometry,drive=drive,physics=RF_IP_PHYSICS,context=context,artifact_store=store)
     owned=model.metadata['native_assets'][empty];self.assertIn('surface_state',owned);self.assertNotIn('fractional_surface',owned)
     for record in model.data_records.values():verify_record('managed synthetic model record',record)
     self.assertEqual(calls[-2:],['build_model','verify_model'])

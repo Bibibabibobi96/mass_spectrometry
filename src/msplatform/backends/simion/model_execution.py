@@ -62,6 +62,36 @@ def _clock_reference(document: dict, reference: Mapping[str, Any]) -> Path:
 
 
 def _protected_source(session: RunSession, manifest: Mapping[str, Any], *, required_paths=()) -> None:
+    from msplatform.execution.owner import current_managed_native_store
+    store_scope = current_managed_native_store()
+    if store_scope is not None:
+        from msplatform.io.file_identity import guarded_file_identity
+        from msplatform.io.manifest_records import record_path, require_completed_terminal_publication
+
+        store = store_scope['store']
+        verify_record('managed source manifest', dict(manifest))
+        manifest_path = Path(manifest['path']).resolve(strict=True)
+        require_completed_terminal_publication(manifest_path)
+        if manifest_path.is_relative_to(store.root / 'assets' / 'native_stage'):
+            parts = manifest_path.relative_to(store.root).parts
+            if len(parts) < 6:
+                raise ValueError('managed Store source identity differs')
+            store_scope['lifetime'].enter_context(store.claim_verified(parts[3]))
+        store_scope['lifetime'].enter_context(guarded_file_identity(manifest_path,
+            expected_bytes=manifest['bytes'], expected_sha256=manifest['sha256']))
+        document = json.loads(manifest_path.read_text(encoding='utf-8-sig'))
+        bound = [*document.get('inputs', {}).values(), *document.get('outputs', [])]
+        for required in map(Path, required_paths):
+            selected = required.resolve(strict=True)
+            records = [record for record in bound if isinstance(record, Mapping)
+                       and record_path(record, base_dir=manifest_path.parent).resolve() == selected]
+            if len(records) != 1:
+                raise ValueError('managed source member is not uniquely bound by its manifest')
+            record = records[0]
+            verify_record('managed source member', record, base_dir=manifest_path.parent)
+            store_scope['lifetime'].enter_context(guarded_file_identity(selected,
+                expected_bytes=record['bytes'], expected_sha256=record['sha256']))
+        return
     source = resolve_consumed_run_capacity_owner(dict(manifest), consumer_artifact_root=session.artifact_root)
     capacity = session.capacity_session
     if capacity.get('status') != 'active':

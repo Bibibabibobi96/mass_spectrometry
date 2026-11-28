@@ -364,6 +364,29 @@ class GasFlowCapabilityTests(unittest.TestCase):
         rejected = capabilities(dict(schema_version=1, operation="solve_axisymmetric_gas_flow", arguments=arguments))
         self.assertEqual(rejected["contract_status"], "rejected")
 
+    def test_existing_cli_uses_workspace_store(self):
+        import sys
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            captured = {}
+
+            def publish(*args, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(reference={})
+
+            arguments = ["gas-flow"]
+            arguments += [item for name in ("baseline", "geometry", "science", "numerics", "environment")
+                          for item in ("--" + name, str(root / (name + ".json")))]
+            arguments += ["--deployment", str(root / "machine.json"), "--workspace", str(root / "study"),
+                          "--engineering-profile", "local"]
+            with patch("msplatform.execution.context.load_environment", return_value=SimpleNamespace()), \
+                 patch.object(gas_flow, "solve_axisymmetric_gas_flow", side_effect=publish), \
+                 patch.object(sys, "argv", arguments):
+                self.assertEqual(gas_flow.main(), 0)
+            self.assertEqual(captured["artifact_store"].root, (root / "study/store").resolve())
+
 
 class GasFlowOwnerTests(unittest.TestCase):
     @patch.dict(os.environ, {"MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN": ""})
@@ -421,6 +444,8 @@ class GasFlowOwnerTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 context = replace(context, stage_policy_path=policy)
+                from msplatform.storage import ArtifactStore
+                store = ArtifactStore(root / "store")
                 calls = []
 
                 def observed(_context, **kwargs):
@@ -485,14 +510,39 @@ class GasFlowOwnerTests(unittest.TestCase):
                     )
                     return receipt
 
+                from msplatform.execution.processes import run_observed_process as actual_observed
+
+                def store_observed(_context, **kwargs):
+                    original_arguments = kwargs["arguments"]
+                    child_error = None
+                    try:
+                        actual_receipt = actual_observed(
+                            _context,
+                            **dict(
+                                kwargs,
+                                executable=Path(sys.executable),
+                                arguments=["-I", "-B", "-c", "import sys;sys.exit(" + str(7 if failure else 0) + ")"],
+                            ),
+                        )
+                    except ProcessExecutionError as error:
+                        child_error = error
+                    try:
+                        observed(_context, **dict(kwargs, arguments=original_arguments))
+                    except ProcessExecutionError:
+                        if child_error is None:
+                            raise
+                    if child_error is not None:
+                        raise ProcessExecutionError("inert export failed after MPH save", child_error.receipt) from child_error
+                    return actual_receipt
+
                 with (
-                    patch("msplatform.execution.run_session.run_observed_process", side_effect=observed),
+                    patch("msplatform.execution.run_session.run_observed_process", side_effect=store_observed),
                 ):
                     if failure:
                         with self.assertRaisesRegex(ProcessExecutionError, "inert export failed after MPH save"):
-                            gas_flow.solve_axisymmetric_gas_flow(*paths, context=context)
+                            gas_flow.solve_axisymmetric_gas_flow(*paths, context=context, artifact_store=store)
                     else:
-                        product = gas_flow.solve_axisymmetric_gas_flow(*paths, context=context)
+                        product = gas_flow.solve_axisymmetric_gas_flow(*paths, context=context, artifact_store=store)
                         self.assertEqual(product.kind, "gas_field")
                         self.assertNotIn("model", product.data_locations)
                         self.assertEqual(product.metadata["scientific_qualification"], "not_granted")
@@ -512,7 +562,9 @@ class GasFlowOwnerTests(unittest.TestCase):
                                 "dual_cone_axisymmetric_gas_flow_science_contract",
                             )
                 self.assertEqual(len(calls), 1)
-                location = next(context.workspace.glob("artifacts/components/*/runs/*/run_manifest.json"))
+                locations = list(store.root.glob("assets/native_stage/*/*/runs/*/run_manifest.json"))
+                self.assertEqual(len(locations), 1)
+                location = locations[0]
                 manifest = json.loads(location.read_text(encoding="utf-8"))
                 self.assertEqual(manifest["status"], "failed" if failure else "success")
                 if failure:
@@ -533,9 +585,9 @@ class GasFlowOwnerTests(unittest.TestCase):
                     original_model = Path(model["path"]).read_bytes()
                     failure = False
                     with (
-                        patch("msplatform.execution.run_session.run_observed_process", side_effect=observed),
+                        patch("msplatform.execution.run_session.run_observed_process", side_effect=store_observed),
                     ):
-                        reexported = gas_flow.solve_axisymmetric_gas_flow(*paths, context=context, resume=reference)
+                        reexported = gas_flow.solve_axisymmetric_gas_flow(*paths, context=context, resume=reference, artifact_store=store)
                     self.assertEqual(reexported.kind, "gas_field")
                     self.assertTrue(reexported.metadata["resumed"])
                     self.assertEqual(Path(model["path"]).read_bytes(), original_model)
@@ -543,6 +595,9 @@ class GasFlowOwnerTests(unittest.TestCase):
                     self.assertIn(model, guards)
                     self.assertEqual(len(calls), 2)
                     captured = json.loads(
-                        (reexported.manifest_location.parent / "logs/capacity_session.json").read_text(encoding="utf-8")
+                        (reexported.manifest_location.parent / "inputs/execution_request.json").read_text(encoding="utf-8")
                     )
-                    self.assertIn(str(Path(model["path"])), captured["protected_paths"])
+                    self.assertIn(
+                        str(Path(model["path"])),
+                        captured["capacity"]["source_references"][0]["protected_paths"],
+                    )

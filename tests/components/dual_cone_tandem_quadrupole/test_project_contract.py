@@ -140,8 +140,10 @@ if($null-ne$observation.usage){throw 'Unbudgeted observation created usage outpu
                     encoding="utf-8",
                 )
                 context = replace(context, stage_policy_path=policy)
+                from msplatform.storage import ArtifactStore
+                store = ArtifactStore(root / "store")
                 with self.assertRaisesRegex(RuntimeError, "actual owner boundary"):
-                    gas_flow.solve_axisymmetric_gas_flow(*input_paths(), context=context)
+                    gas_flow.solve_axisymmetric_gas_flow(*input_paths(), context=context, artifact_store=store)
         self.assertEqual(boundary.call_count, 1)
         self.assertEqual(boundary.call_args.kwargs["expected_operation_ids"], ("solve_gas_flow",))
         self.assertEqual(boundary.call_args.kwargs["committed_new_bytes"], 64 * 1024**2)
