@@ -524,6 +524,14 @@ Agent 8 的 `d9bb4061379a7ad1a8f15df61443a6fc1fb32a5b`／主线 `b46577f7` 将 M
 
 主线 CLOC 2.10 `bbfad30c→b46577f7`：total／production Python files -1、blank +19、code +35，comment及 tests 全部不变，unclassified=0；逐语言和过滤口径见 `prepared-boundaries-b46577f7-cloc.log`。Changed 首轮缺 `SIMION_LUA_EXE` 且1800秒中止，后续分片被阻断，不是通过证据；未运行商业 native。
 
+### C0 无消费者专用恢复体退役（主线整合候选）
+
+Agent 9 的 `c662d6a51af046eb1694b607e5fb0df214277793`／主线 `9adf924d` 删除 `execution.owner` 中 basis、固定 CPT additional-evidence、固定 trace 三类专用恢复及 dispatcher，共599行生产代码；复核仓内生产消费者为零，通用 `resume_finalization`、正常 Store stage 和只读历史证据未改。三份旧 API 专用测试随执行体删除，未作为降门槛手段。
+
+通用覆盖逐项保留：中断发布、活 writer、成功恢复及幂等，缺锁、active binding、失败原因，managed native 成功／失败恢复、来源保护和活动 binding。`test_artifact_store` 新增篡改载荷与 source/destination 双份歧义拒绝，并核原 failed 状态、原因和 publishing 状态不变；固定 run ID、CPT 哈希、旧 Base64 快照等仅属于被删协议的断言不移植。
+
+主线35项 Store／恢复组合回归 PASS／0 skip（87.141s），日志 `orphan-recovery-main.log`；Ruff、diff 和开发标准钩子 PASS。CLOC 2.10 `4eab149f→9adf924d`：total files -3、code -937；production code -571、tests code -366，unclassified=0，详见 `orphan-recovery-9adf924d-cloc.log`。Changed 未通过：环境预检修正后仍有未属于本切片的 mesh→integration 路由断言失败，未越界消红；无商业 native。
+
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 
 Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime dependency 无缺失目标；旧名负例和历史 reader 均有效。上述10处 PS 断链已在本工作树修复并复验。其余实际阻塞按真实调用保留如下，不转为文档豁免：
