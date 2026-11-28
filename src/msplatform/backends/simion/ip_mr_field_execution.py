@@ -340,7 +340,23 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
     basis_record=file_record(session.canonical_path(basis),'required_evidence');session.add_input('sampled_basis',basis_record)
     audit_path=owned(session.result_dir/'collision_audits.json','required_evidence');audit_path.parent.mkdir(parents=True,exist_ok=True)
     audit_path.write_text(json.dumps(audits,allow_nan=False,indent=2)+'\n',encoding='utf8')
-    records={key:plan['prepared_records'][key] for key in ('compiled_model','clock_authority','instrument_epoch')}
+    published_sources=dict(plan['prepared_records'])
+    for name,asset in collision_records.items():
+        if name==background_id:
+            continue
+        published_sources[name+'_witness']=asset['surface_witnesses']
+        if 'surface_state' in asset:
+            published_sources[name+'_surface_state']=asset['surface_state']
+    records={}
+    for name,original in published_sources.items():
+        target=owned(session.input_dir/'published_sources'/Path(original['path']).name,'required_evidence')
+        target.parent.mkdir(parents=True,exist_ok=True)
+        copied=freeze_file(Path(original['path']),target,retention_role='required_evidence')
+        copied.pop('source_path',None)
+        if any(copied[key]!=original[key] for key in ('bytes','sha256')):
+            raise ValueError('sampled published source copy differs: '+name)
+        session.add_input('published_'+name,copied)
+        records[name]=copied
     zero_control=file_record(session.canonical_path(iob.with_suffix('.fly2')),'required_evidence')
     records.update(sampled_basis=basis_record,collision_priority=policy_record,collision_iob_spec=spec_record,
                    zero_particle_format_control=zero_control,
@@ -348,9 +364,8 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
                    background=bg,workbench=iob_record)
     for name,asset in collision_records.items():
         if name!=background_id:
-            records[name+'_collision']=asset['pa'];records[name+'_witness']=asset['surface_witnesses']
+            records[name+'_collision']=asset['pa']
             if 'fractional_surface' in asset: records[name+'_surface']=asset['fractional_surface']
-            if 'surface_state' in asset: records[name+'_surface_state']=asset['surface_state']
     document=require_prepared_model(plan['model'])
     metadata=dict(backend='simion',field_status='available',source_status='not_requested',
         model_identity_sha256=document['model_identity_sha256'],clock=copy.deepcopy(document['drive']['clock']),
@@ -436,17 +451,25 @@ def prepare_reused_ip_mr_collisions(model_reference, *, scalar_field_basis, prio
 def execute_reused_ip_mr_collisions(session, *, model_reference, scalar_field_basis, priority_evidence, reuse_reference):
     """Publish an independently admitted basis using protected original collisions."""
     from .model_execution import _protected_source
+    from msplatform.execution.inputs import freeze_file
     from msplatform.io.manifest_records import file_record
     plan=prepare_reused_ip_mr_collisions(model_reference,scalar_field_basis=scalar_field_basis,
         priority_evidence=priority_evidence,reuse_reference=reuse_reference,
         output_directory=session.artifact_run_dir/'simion/collision')
     if session.expected_operation_ids != ():
         raise ValueError('collision reuse requires no native operations')
-    for ref in plan['source_references']:
-        _protected_source(session,ref['manifest_record'])
-    _protected_source(session,plan['prepared_source']['manifest'],required_paths=[record['path'] for record in plan['immutable_input_records']])
+    _protect_input_sources(session,plan)
     _protected_source(session,plan['collision_producer_reference']['manifest'],required_paths=[record['path'] for record in plan['collision_source_records'].values()])
-    records={key:plan['prepared_records'][key] for key in ('compiled_model','clock_authority','instrument_epoch')}
+    records={}
+    for key in ('compiled_model','clock_authority','instrument_epoch'):
+        original=plan['prepared_records'][key]
+        target=session.declare_file(session.input_dir/'prepared'/Path(original['path']).name,'required_evidence')
+        target.parent.mkdir(parents=True,exist_ok=True)
+        copied=freeze_file(Path(original['path']),target,retention_role='required_evidence')
+        copied.pop('source_path',None)
+        if any(copied[name]!=original[name] for name in ('bytes','sha256')):
+            raise ValueError('collision reuse prepared source copy differs: '+key)
+        records[key]=copied
     records.update(plan['collision_source_records'])
     for key,record in records.items():
         verify_record('collision reuse '+key,record);session.add_input('reuse_'+key,record)

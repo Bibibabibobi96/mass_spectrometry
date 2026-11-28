@@ -99,10 +99,14 @@ class SampledFieldExecutionTests(unittest.TestCase):
             from msplatform.backends.comsol.assembly_field_export import derive_world_scalar_support
             from msplatform.backends.simion.ip_mr_field_execution import prepare_ip_mr_field_inputs
             from msplatform.backends.simion.ip_mr_tracking_admission import admit_ip_mr_tracking_fields, protect_ip_mr_tracking_fields
-            from msplatform.execution.capacity_protection import load_capacity_protection_leases, path_is_protected
+            from msplatform.execution.capacity_protection import load_capacity_protection_leases
             context=selected['context'];policy=context.stage_policy_path
             from msplatform.storage import ArtifactStore
             store = ArtifactStore(Path(tmp)/'store')
+            def assert_store_claim(manifest_path):
+                asset_id = Path(manifest_path).resolve().relative_to(store.root).parts[3]
+                with store._db() as db:
+                    self.assertIsNotNone(db.execute('SELECT 1 FROM claims WHERE asset_id=?',(asset_id,)).fetchone())
             stage=json.loads(policy.read_text(encoding='utf8'));stage['stages']['export_assembly_world_scalar']={
                 'limits':dict(stage['stages']['track']['limits']),'artifact_retention':dict(selected['retention'])}
             policy.write_text(json.dumps(stage),encoding='utf8')
@@ -118,8 +122,7 @@ class SampledFieldExecutionTests(unittest.TestCase):
             self.assertTrue(any(Path(x['manifest_record']['path']).resolve()==original_path for x in derived_plan['source_references']))
             derived_ids=derived_plan['expected_operation_ids'];derived_observed=[];lease_checks=[]
             def check_derived_field(_operation):
-                view=load_capacity_protection_leases(context.workspace/'artifacts')
-                self.assertTrue(path_is_protected(original_path,view['protected_paths']));lease_checks.append('field')
+                assert_store_claim(derived.manifest_location);lease_checks.append('field')
             from msplatform.backends.simion import operations
             solve_policy=copy.deepcopy(stage['stages']['track'])
             solve_policy['limits']['transient_run_directory_bytes']=5*1024**3
@@ -169,7 +172,6 @@ class SampledFieldExecutionTests(unittest.TestCase):
                     priority_evidence=bad_evidence,reuse_reference=derived_fields.reference,
                     output_directory=Path(tmp)/'bad-priority-preflight')
             from msplatform.backends.simion import model_execution, operations
-            from msplatform.execution.capacity_ledger import load_capacity_ledger
             solve_stage=copy.deepcopy(stage['stages']['track'])
             solve_stage['limits']['reserved_run_payload_bytes']=solve_stage['limits']['transient_run_directory_bytes']
             stage['stages']['solve_fields']=solve_stage
@@ -179,8 +181,7 @@ class SampledFieldExecutionTests(unittest.TestCase):
             def observe_protected_source(session,manifest,**kwargs):
                 result=original_protected_source(session,manifest,**kwargs)
                 if Path(manifest['path']).resolve()==derived_fields.manifest_location.resolve():
-                    view=load_capacity_protection_leases(context.workspace/'artifacts')
-                    self.assertTrue(path_is_protected(derived_fields.manifest_location.resolve(),view['protected_paths']))
+                    assert_store_claim(derived_fields.manifest_location)
                     collision_lease.append(True)
                 return result
             public_selection=dict(selection,collision_priority_evidence=selected['priority_evidence'])
@@ -192,14 +193,12 @@ class SampledFieldExecutionTests(unittest.TestCase):
             completion=json.loads((reuse_run/'results/execution_completion.json').read_text(encoding='utf-8-sig'))
             self.assertEqual(completion['writer_completion']['operations'],[])
             self.assertEqual(completion['writer_completion']['resource_releases'],[])
-            ledger=load_capacity_ledger(context.workspace/'artifacts')
-            relative_run=reuse_run.relative_to(context.workspace/'artifacts').as_posix()
-            rows=[row for row in ledger['objects'] if row['path']==relative_run]
-            self.assertEqual(len(rows),1);self.assertEqual(rows[0]['status'],'ready')
+            asset_id=reuse_run.relative_to(store.root).parts[3]
+            self.assertEqual(store.asset_status(asset_id)['state'],'ready')
             logical=sum(path.stat().st_size for path in reuse_run.rglob('*') if path.is_file())
-            self.assertGreater(logical,0);self.assertGreater(rows[0]['bytes'],0)
+            self.assertGreater(logical,0)
             print('COLLISION_REUSE_PUBLIC_ACCOUNTING='+json.dumps({'logical_file_bytes':logical,
-                'ledger_bytes':rows[0]['bytes'],'native_operations':len(reuse_operations)},sort_keys=True),flush=True)
+                'store_state':'ready','native_operations':len(reuse_operations)},sort_keys=True),flush=True)
             self.assertEqual(reused.metadata['collision_producer_reference'],derived_fields.reference)
             for key in set(derived_fields.data_records)-{'sampled_basis','compiled_model','clock_authority','instrument_epoch'}:
                 self.assertEqual(reused.data_records[key],derived_fields.data_records[key])
@@ -258,17 +257,19 @@ class SampledFieldExecutionTests(unittest.TestCase):
             self.assertEqual(len(admission['basis']['bases']),17)
             self.assertTrue(any(Path(x['path']).resolve()==original_path for x in admission['source_manifests']))
             def check_tracking(session):
-                view=load_capacity_protection_leases(context.workspace/'artifacts')
-                self.assertTrue(path_is_protected(original_path,view['protected_paths']))
-                protect_ip_mr_tracking_fields(session,admission);lease_checks.append('track')
+                protect_ip_mr_tracking_fields(session,admission)
+                assert_store_claim(derived.manifest_location);lease_checks.append('track')
                 return dict(status='success',summary={},output_paths=[],required_output_paths=[],retention_preserve_paths=[],manifest_extra_fields={})
             unique={str(Path(x['path']).resolve()):x for x in admission['source_manifests']}
-            run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='test',software=[]),
-                run_id='20261114_000109__test__python__derived-track-protection',payload={'action':'sampled_protection'},
-                committed_new_bytes=16777216,commitment_inputs=[selected['budget']],retention=selected['retention'],
-                expected_operation_ids=(),operation_dependencies={},action=check_tracking,
-                action_record=file_record(Path(__file__),'required_evidence'),
-                source_references=[dict(manifest_record=x) for x in unique.values()],completion_api=no_particle_batch_completion_api)
+            from msplatform.execution.owner import standalone_native_store
+            with standalone_native_store(store,task_key='derived-track-protection',budget=16777216):
+                run_managed_stage(context,descriptor=dict(project='instrument_assembly',mode='test',software=[]),
+                    run_id='20261114_000109__test__python__derived-track-protection',payload={'action':'sampled_protection'},
+                    committed_new_bytes=16777216,commitment_inputs=[selected['budget']],retention=selected['retention'],
+                    expected_operation_ids=(),operation_dependencies={},action=check_tracking,
+                    action_record=file_record(Path(__file__),'required_evidence'),
+                    source_references=[dict(manifest_record=x) for x in unique.values()],completion_api=no_particle_batch_completion_api,
+                    artifact_store=store)
             self.assertEqual(lease_checks.count('field'),len(derived_ids));self.assertEqual(lease_checks.count('track'),1)
             self.assertEqual(preserved,{name:raw.data_path(name).read_bytes() for name in preserved})
             self.assertEqual(load_capacity_protection_leases(context.workspace/'artifacts')['audit'],[])

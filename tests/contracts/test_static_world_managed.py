@@ -139,30 +139,29 @@ class StaticWorldManagedTests(unittest.TestCase):
         with retained_on_failure() as directory, patch.dict(os.environ,private):
             os.environ['MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH']=str(Path(directory)/'private-host.sqlite3')
             context,_,_=make_context(Path(directory));policy=json.loads(context.stage_policy_path.read_text(encoding='utf-8'))
-            from msplatform.execution.owner import standalone_native_store
             from msplatform.storage import ArtifactStore
             store = ArtifactStore(Path(directory)/'store')
             for name in ('build_geometry','prepare_model','solve_fields'):
                 policy['stages'][name]=copy.deepcopy(policy['stages']['track'])
             policy['stages']['solve_fields']['limits']['reserved_run_payload_bytes']=1048576
             context.stage_policy_path.write_text(json.dumps(policy),encoding='utf-8')
-            with standalone_native_store(store,task_key='static-world-public-chain',budget=1024**3), patch.object(RunSession,'run_process',new=inert_process):
+            with patch.object(RunSession,'run_process',new=inert_process):
                 bad=copy.deepcopy(compiled);bad.frontend_geometry['source_snapshot']['components_source']['first']['width_mm']=9
                 with patch('msplatform.execution.owner.run_managed_stage') as blocked:
-                    with self.assertRaises(ValueError):operations.build_geometry(bad,context=context)
+                    with self.assertRaises(ValueError):operations.build_geometry(bad,context=context,artifact_store=store)
                     blocked.assert_not_called()
-                geometry=operations.build_geometry(compiled,context=context)
+                geometry=operations.build_geometry(compiled,context=context,artifact_store=store)
                 authored_drive=dict(groups=case.drive['groups'],clock=dict(phase_reference_instrument_time_us=0),clock_authority=dict(example_resource='instrument_clock_authority_v1.json'))
                 with patch('msplatform.execution.owner.run_managed_stage') as blocked:
-                    with self.assertRaises(ValueError):operations.prepare_model(geometry,drive=authored_drive,physics=dict(RF_PHYSICS,boundary_policy='grounded_pa_faces'),context=context)
+                    with self.assertRaises(ValueError):operations.prepare_model(geometry,drive=authored_drive,physics=dict(RF_PHYSICS,boundary_policy='grounded_pa_faces'),context=context,artifact_store=store)
                     bad_drive=copy.deepcopy(authored_drive);bad_drive['groups']['first']['body']['voltage_v']=True
-                    with self.assertRaises(ValueError):operations.prepare_model(geometry,drive=bad_drive,physics=RF_PHYSICS,context=context)
+                    with self.assertRaises(ValueError):operations.prepare_model(geometry,drive=bad_drive,physics=RF_PHYSICS,context=context,artifact_store=store)
                     blocked.assert_not_called()
-                model=operations.prepare_model(geometry,drive=authored_drive,physics=RF_PHYSICS,context=context)
+                model=operations.prepare_model(geometry,drive=authored_drive,physics=RF_PHYSICS,context=context,artifact_store=store)
                 document=json.loads(model.data_path('compiled_model').read_text(encoding='utf-8'))
                 readback=json.loads(model.data_path('drive_readback').read_text(encoding='utf-8'))
                 self.assertEqual(readback['fixture'],'INERT_ONLY');self.assertEqual(readback['groups'],document['native_drive_rows']);self.assertEqual(readback['clock'],document['drive']['clock'])
-                field=operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context)
+                field=operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context,artifact_store=store)
                 self.assertEqual(field.metadata['field_representation'],'producer_owned_static_world_standalone_operating_pa')
                 expected_binding=dict(operating='world_operating',surface_witnesses='world_surface_witnesses',surface_state='world_surface_state')
                 if not empty_surface:expected_binding['surface']='world_surface'
@@ -180,7 +179,7 @@ class StaticWorldManagedTests(unittest.TestCase):
                 operating_audit=json.loads(field.data_path('field_audit').read_text(encoding='utf-8'))
                 self.assertEqual((operating_audit['role'],operating_audit['status'],operating_audit['checked_domains']),('simion_static_operating_field_audit','success',['world']))
                 self.assertEqual(calls.count('refine_world'),1)
-                reused=operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context,reuse_fields=field)
+                reused=operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context,reuse_fields=field,artifact_store=store)
                 self.assertTrue(reused.metadata['fields_reused'])
                 self.assertEqual(reused.metadata['operating_producer_reference'],field.reference)
                 self.assertEqual({name:reused.data_records[name] for name in native_names},{name:field.data_records[name] for name in native_names})
@@ -189,7 +188,7 @@ class StaticWorldManagedTests(unittest.TestCase):
                 packet['clock']={key:document['drive']['clock'][key] for key in ('clock_epoch_id','authority_sha256')}
                 for row in packet['rows']:row['clock_epoch_id']=packet['clock']['clock_epoch_id']
                 for row in packet['mother']['records'].values():row['clock_epoch_id']=packet['clock']['clock_epoch_id']
-                trajectory=operations.track(reused,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context)
+                trajectory=operations.track(reused,packet,propagation=propagation,observations=dict(plane_observations=[]),numerics=numerics,context=context,artifact_store=store)
                 reopened=open_artifact(trajectory.reference,expected_kind='trajectory_result')
                 collection=json.loads(reopened.data_path('collection').read_text(encoding='utf-8'))
                 self.assertEqual([row['particle_id'] for row in collection['native_terminals']],[7,91])
@@ -205,7 +204,7 @@ class StaticWorldManagedTests(unittest.TestCase):
                 for name in tracking_names:self.assertTrue(tracking_guards[name].isdisjoint(family_paths),name)
 
                 fail_refine[0]=True
-                with self.assertRaisesRegex(ProcessExecutionError, '7'):operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context)
+                with self.assertRaisesRegex(ProcessExecutionError, '7'):operations.solve_fields(model,numerics=dict(refine_policy='vendor_default'),context=context,artifact_store=store)
             self.assertEqual(calls.count('refine_world'),2)
             paths=list(store.root.glob('assets/native_stage/*/*/runs/*/run_manifest.json'))
             manifests=[json.loads(path.read_text(encoding='utf-8')) for path in paths]

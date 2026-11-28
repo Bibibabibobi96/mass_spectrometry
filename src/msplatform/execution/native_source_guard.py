@@ -571,6 +571,8 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
             failed_source = product.get('metadata', {}).get('failed_source')
             scalar_original = product.get('metadata', {}).get('original_samples_reference')
             family_reference = product.get('metadata', {}).get('family_producer_reference')
+            operating_reference = product.get('metadata', {}).get('operating_producer_reference')
+            collision_reference = product.get('metadata', {}).get('collision_producer_reference')
             if (expected_kind == 'scalar_field_samples'
                     and product.get('metadata', {}).get('derivation') == 'offline_from_published_raw_samples'
                     and scalar_original is None):
@@ -649,6 +651,25 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                             or type(row['observation'].get('process_started_at_utc_ticks')) is not int
                             or row['observation']['process_started_at_utc_ticks'] <= 0 for row in receipts)):
                     raise ValueError('RF original family lacks successful Refine receipts')
+            if operating_reference is not None:
+                from msplatform.backends.simion.rf_field_execution import require_static_world_reuse
+                document = json.loads(Path(product['data']['compiled_model']['path']).read_text(encoding='utf-8-sig'))
+                _, producer, _ = require_static_world_reuse(reference,
+                    identity=product.get('metadata', {}).get('spatial_identity'), geometry=document['geometry']['frontend_geometry'])
+                stack.enter_context(guard_native_source(operating_reference, expected_kind='field_bundle',
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
+                borrowed.update({Path(producer.data_locations[name]).resolve(): (record['bytes'], str(record['sha256']).upper())
+                                 for name, record in producer.data_records.items()})
+            if collision_reference is not None:
+                if expected_kind != 'field_bundle':
+                    raise ValueError('collision producer is only valid for a field bundle')
+                from msplatform.backends.simion.ip_mr_tracking_admission import _verify_original_collision_producer
+                producer = stack.enter_context(guard_native_source(collision_reference, expected_kind='field_bundle',
+                    expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
+                reused = open_artifact(reference, expected_kind=expected_kind)
+                _verify_original_collision_producer(reused, producer.reference)
+                borrowed.update({Path(producer.data_locations[name]).resolve(): (record['bytes'], str(record['sha256']).upper())
+                                 for name, record in producer.data_records.items()})
             if origin_reference is not None:
                 origin = stack.enter_context(guard_native_source(origin_reference, expected_kind="field_bundle",
                     expected_artifact_root=expected_artifact_root, artifact_store=store, asset_ids=collected, _retain=False))
@@ -797,8 +818,9 @@ def guard_native_source(reference: Mapping[str, Any], *, expected_kind: str,
                     'manifest': artifact.data_records.get('geometry_manifest'), 'product_id': 'geometry'}
                 stack.enter_context(guard_native_source(linked, expected_kind='geometry_artifact',
                     expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected, _retain=False))
-            elif expected_kind == 'field_solution' and scope_name == 'single_stationary_workpoint':
-                linked = {'manifest': artifact.data_records.get('prepared_manifest'), 'product_id': 'model'}
+            elif (expected_kind == 'field_solution' and scope_name == 'single_stationary_workpoint'
+                    and artifact.data_records.get('prepared_manifest') is not None):
+                linked = {'manifest': artifact.data_records['prepared_manifest'], 'product_id': 'model'}
                 stack.enter_context(guard_native_source(linked, expected_kind='prepared_model',
                     expected_artifact_root=raw_root, artifact_store=store, asset_ids=collected, _retain=False))
         if asset_ids is not None:
