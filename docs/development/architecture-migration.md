@@ -452,7 +452,9 @@ Agent 1 的保留目录 discovery 为117/117 PASS（34.969s），0 skip。主 Ag
 
 已提交并普通 push `0ef1b487456a22011038ad8dd1ed5ed426773fd4`。CLOC 2.10 `90a9be59→0ef1b487` PASS：total、production、tests 的 files／blank／comment／code 全部 delta=0，unclassified=0；日志 `dependency-identities-0ef1b487-cloc.log` 保留逐语言和完整过滤口径。
 
-门禁存在性补充：静态解析 catalog 的所有 modules／SelectedTestModules／ChangedTestModules 路径时发现一个不存在的 paired-static 测试。已改到实际 `test_paired_accelerator_field_adapters.py`，删除不属于它的旧计时；该真实模块6/6 PASS（0.882s），全 catalog 当前缺失路径=0。此检查只证明文件存在和该模块通过，不代替逐用例路由／执行回执对账。
+门禁存在性补充：静态解析 catalog 的所有 modules／SelectedTestModules／ChangedTestModules 路径时发现一个不存在的 paired-static 测试。已改到实际 `test_paired_accelerator_field_adapters.py`，删除不属于它的旧计时；该真实模块6/6 PASS（0.882s），全 catalog 当前缺失路径=0。此检查只证明文件存在和该模块通过，不代替逐用例路由／执行回执对账。该路由提交 `1558ff905778549a34b0d86b75e2f74672780c85` 已普通 push；CLOC 2.10 `f85e8446→1558ff90` PASS：total／production 仅 JSON code -1，tests 不变，unclassified=0，详见 `paired-route-1558ff90-cloc.log`。
+
+另删除 `backends/simion/simion_component_pa_plan.py` 中未使用的旧 `PROJECT=projects/...` 常量；真实 planner 模块8/8 PASS（0.147s），日志 `simion-component-plan-identity.log`。未改变 PA 身份、尺寸、工作点或缓存语义。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 

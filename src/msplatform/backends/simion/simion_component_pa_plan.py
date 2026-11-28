@@ -23,7 +23,6 @@ from msplatform.backends.simion.tof_geometry import (
 )
 
 
-PROJECT = "projects/single_reflection_oa_tof_mass_analyzer"
 ROLE = "oatof_simion_component_pa_plan"
 COMPONENTS = {
     "accelerator": (
