@@ -394,7 +394,17 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 旧 `prepared_joint.ip_mr_handoff` 的连接校验、位姿转换和完整母群状态写出归 `assembly.ip_mr_handoff`；实测 IP／参考 MR 能量分布比较归 `analysis.mr_exit_energy`。共同 JSON／文件身份读取复用 `results.mr_reference`，没有复制第二套实现。版本化 matching schema 归 `contracts/schemas/ion_processor_matching_request.schema.json` 并通过安装资源定位；首次迁移暴露的全局 schema 注册缺 `$id` 已补稳定标识，字段和校验规则不变。原模块删除，无别名。
 
-handoff、能量比较、接口准备、场审计与7条新路径路由共47父测试全PASS（10.965s），0 skip；日志 `prepared-handoff-split-r2.log`。Ruff/diff PASS，无商业原生执行，不是 C 最终验收。本候选的确切提交 SHA 由包含本节的 Git 提交确定。至此 Prepared 只剩旧分析 admission／PowerShell owner，下一步切到现有 Store 后删除，不保留容器壳。
+handoff、能量比较、接口准备、场审计与7条新路径路由共47父测试全PASS（10.965s），0 skip；日志 `prepared-handoff-split-r2.log`。Ruff/diff PASS，无商业原生执行，不是 C 最终验收。本单元已提交并普通 push `7584e8f897802c1a988728bd47c090ffb28dcbf8`。至此 Prepared 只剩旧分析 admission／PowerShell owner，下一步切到现有 Store 后删除，不保留容器壳。
+
+CLOC 2.10 `d995a2e77c52406426d131286900ebccef0fdea4→7584e8f897802c1a988728bd47c090ffb28dcbf8` PASS；规范输出 `handoff-7584e8f8-cloc.log`，分类器 SHA-256 `d3abfc94e920066445561b696c76131b43eab9713a0cbcb9e2c1270ba7136952`，语言定义 SHA-256 `985e60f06bd8981c36966a0895cccfccd182fd625c79eb6ae94b65a12c5508a6`。下表为 files／blank／comment／code 的基线→结果（delta）；完整逐语言结果与过滤口径在原日志，unclassified=0。
+
+| 类别 | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| total | 2415→2416 (+1) | 36956→36971 (+15) | 45472→45473 (+1) | 627083→627115 (+32) |
+| production | 1417→1418 (+1) | 19574→19589 (+15) | 15583→15584 (+1) | 307425→307453 (+28) |
+| tests | 998→998 (+0) | 17382→17382 (+0) | 29889→29889 (+0) | 319658→319662 (+4) |
+
+非零代码变化为 total JSON +14、Python +18；production JSON +14、Python +14；tests Python +4。`WORKTREE_TRACKED_DIRTY_COUNT=0`，未跟踪产物不属于本提交。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
