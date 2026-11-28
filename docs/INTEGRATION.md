@@ -2798,72 +2798,13 @@ accelerator_interface 的准备入口与公共 tracing 入口分别解析一次�
 Standalone OA consumers now import canonical installed two-zone and bare three-zone renderers. Their existing full scientific-core package freeze includes the moved implementations; missing frozen code continues to fail instead of falling back to the active checkout. This is software geometry ownership, not new field or flight evidence.
 
 
-### Installed single-reflection preparation
+### 当前单反射原出生与追踪入口
 
-Request 11 supplies `numerics.geometry_build` and `numerics.detector_marker`
-explicitly, alongside the existing frontend numerical domains. Canonical TOF
-components contain physical geometry rather than SIMION build settings; preparation
-and downstream planning bind the selected numerical request without changing the
-source or frozen component. The existing backend compiler and physical detector
-checks remain authoritative. Missing numerical inputs, unknown settings, invalid
-steps and noninteger native targets are rejected before native execution.
+当前科学输入从公共 Recipe／`particle_release` 进入 `workflows.native_tracing`；几何、Program、事件和终态由 SIMION backend 的 `native_plans`、`tracking_program`、`tracking_execution`、`tracking_collection` 及 `results` 承担。记录型出生表保留原始 ID、完整母群、出生时钟和来源身份；恢复使用公共 execution／Store，不重新释放跨组件幸存者。
 
-The four focused numerical-request regressions passed through the public Changed
-selector. A stable 43-test batch also passed preparation, downstream planning,
-declared request versions and the recorded-birth managed-owner consumer with an
-inert native leaf. These checks do not establish ordinary installed request11
-acceptance, native field coverage or trajectory qualification. Existing request9/10
-records retain their declared interpretation; neither schema is rewritten.
+旧 `msplatform.workflows.single_reflection_flight` 的 prepare／collect／continuation／runtime 包及其私有 owner 已删除，不能由模块名或 PowerShell 别名启动。`results/historical_schemas/` 和历史请求字节仍是只读见证，不接回生产。现有 native 资格只以各实际运行的证据为准，不因公共入口存在而自动成立。
 
-`msplatform.workflows.single_reflection_flight.prepare.prepare(request_path, run)` owns the
-explicit-provider preparation, including request11's separate backend numerics.
-Its `python -m msplatform.workflows.single_reflection_flight.prepare --request ... --run ...`
-entry consumes the same request in an already managed `run/inputs` directory. It freezes and
-verifies author inputs, prepares GEM/field specifications, and projects the complete original
-birth/release or recorded timed source; it does not create a second run owner or execute a solver.
-The versioned schemas ship with that package. The root preparation/pulse/source and
-geometry/fields bridge files were retired with their active callers and frozen package selection.
-
-Pure recorded-state/producer adapters live in `msplatform.results`, without execution imports.
-SIMION source projection and native validators remain in the backend; pulse/discovery policy is
-part of the named workflow. The workflow explicitly supplies the existing retention classifier
-to neutral file-record I/O, preserving the previous input/output role policy. These ownership
-changes do not alter field reuse, original IDs/births/clock, mother population, state relaunch,
-recorded schema versions or native/qualification evidence. Actual acceptance remains separately
-reported; merely moving preparation does not imply that all SFI execution is already installed.
-
-The integrated preparation module passed 45 tests, including the large JSON input/producer
-retention regression. Ordinary wheel/sdist acceptance passed all five tests in 144.396 seconds;
-all 357 installed package members matched the accepted wheel byte-for-byte. The installed probe
-prepared recorded-birth, release-specification and recorded pre-pulse-state requests, checked
-their source/GEM bytes and rejected a missing workflow schema in a cold process. Both migrated
-schema files retain their original bytes and IDs. These checks did not run a native solver.
-The wider original consumer run is retained separately, including its fixture migration failures
-and targeted successor checks; it is not a complete Repository or performance acceptance.
-
-### Installed single-reflection collection
-
-The same collection functions and CLI now live in
-`msplatform.workflows.single_reflection_flight.collect`. They read explicit frozen
-preparation, workbench and native logs, preserve the complete original mother and
-clock, and publish the existing collection, pulse-decision and replay-comparison
-records. Native parsing remains in `msplatform.backends.simion.tracking_collection`;
-the retired census import alias has no production body. Manifest-bound inherited
-case authorization is a read-only result adapter, while continuation planning and
-native execution remain under their existing owners. This migration does not
-perform Fly, establish a native checkpoint, or grant scientific qualification.
-
-### Installed continuation planning and batching
-
-`msplatform.workflows.single_reflection_flight.continuation` now owns the existing
-SFI fixed-partition continuation adapter. It uses the same manifest-bound parent
-readers and common whole-unit recovery planner. Complete units are reused; an
-incomplete unit is replayed from its original start. This is neither native
-checkpoint restoration nor permission to change the original mother, births,
-absolute clock or numerical Program controls. Saved-default replay remains
-explicitly requested. The existing batching CLI and CSV/summary operations are
-installed at `msplatform.backends.simion.particle_batching`; their formats and
-ID/emission ordering are unchanged. These software moves perform no Fly.
+以下数字只描述已退役旧实现的当时软件结果，不是当前 SHA 验收：旧 preparation 曾通过45项测试；旧双发行探针曾通过5项（144.396s）；旧恢复／批处理聚焦链曾通过35项（116.570s），均未运行新的商业求解。当前迁移和覆盖对账见批次 C 唯一迁移记录。
 
 Root integration acceptance (2026-11-09): 35 focused tests passed in 116.570 s,
 and the five original ordinary-wheel/sdist-rebuilt-wheel tests passed in
@@ -2991,23 +2932,11 @@ existing owners. The old root planning module is retired with its actual consume
 PowerShell stage orchestration remains
 separate migration work; installed metadata planning is not native qualification.
 
-### Installed single-reflection runtime materialization
+### 当前原生运行物化
 
-`msplatform.workflows.single_reflection_flight.runtime` now owns the existing
-workbench/batch/control/dispatch/continuation materialization and internal CLI.
-The same public PowerShell owner invokes it; no solver, cache, recovery owner or
-scientific default is added. It uses the canonical Program renderer directly and
-preserves classified record I/O, original source/clock/mother, decisions and PA
-metadata/guard records. Native execution remains explicitly pending.
+当前运行由公共 Recipe／`workflows.native_tracing` 选择组件、场、原始母群和追踪合同，SIMION backend 负责 Program／IOB 与过程证据，公共 execution／Store 负责 owner、容量、恢复和发布。旧 `single_reflection_flight.runtime` 及其专用 PowerShell owner 已删除，不再是可用入口。
 
-The supplied `snapshot_root` is an authoritative frozen resource/data closure,
-not a checkout search path. Program Lua, IOB code and the path helper are consumed
-from that same closure; a missing helper cannot be supplemented from the active
-installation. The selected helper's exact identity is recorded. Ordinary SFI
-four/five-slot cases freeze only the selected canonical IOB container and existing
-builder/core. They no longer read or copy legacy large placeholder PA inputs.
-Downstream-field publication is installed separately. The existing PowerShell
-field/execute/run orchestration remains separate migration work.
+冻结资源／数据闭包仍是显式输入，不是 checkout 搜索路径；缺失 helper 或科学资源不能从活动安装或源码树补取。普通 SFI 四／五槽结构 IOB 保留各自 pose、网格和优先／占用检查。上述软件边界不授予原生飞行、场收敛或科学资格。
 
 
 ### Ordinary SFI structural bootstrap closure
@@ -3142,9 +3071,9 @@ native qualification are separate scopes.
 
 ### Retained recorded checkpoint analysis
 
-The shared RF/OA/TOF checkpoint adapter remains in
-`msplatform.workflows.single_reflection_flight.checkpoint_diagnostics`. It reads
-recorded data without launching a solver; this is not native qualification.
+The shared RF/OA/TOF checkpoint adapter belongs to
+`msplatform.analysis.flight_checkpoint_diagnostics`. It reads recorded data without
+launching a solver; the former workflow wrapper is removed. This is not native qualification.
 
 The installed single-reflection recorded-birth consumer accepts an explicit, complete saved FieldBundle and its prepared original-source manifest. It verifies the selected geometry, timed pulse and clock against the compiled model before public tracking; it records and freezes the producer authority for recovery. This software binding does not establish native flight or field qualification. The retained SFI component-level research scope is distinct from the withdrawn local frontend product.
 

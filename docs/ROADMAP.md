@@ -508,7 +508,7 @@ Repository/native acceptance and the 15-minute budget remain OPEN.
 GitHub Changed at `097cf39f` (run `43395020909`) and `5bcd9b58` (run `43405061295`)
 succeeded with Repository skipped; neither establishes local crash root cause or
 final Repository/native qualification.
-The [integration status](INTEGRATION.md#installed-single-reflection-preparation)
+The [integration status](INTEGRATION.md#当前单反射原出生与追踪入口)
 and project status pages own the detailed evidence. The latest complete software
 result is `b90ac498`; final combined P4 acceptance, the original 15-minute target
 and owner budgets remain OPEN. Pending/cancelled CI is not acceptance.

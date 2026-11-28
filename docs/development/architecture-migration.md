@@ -432,6 +432,14 @@ total 代码变化为 JSON -69、PowerShell -170、Python -354；production 为 
 
 已提交并普通 push `d5f6821ca8e8ee2ed4fbbffb4d31f09ee6e54117`。CLOC 2.10 `1b365703→d5f6821c` PASS：total 与 production 均 files/blank/comment 不变、code +7，tests 全项不变，unclassified=0；逐语言和过滤口径在 `mr-provider-binding-d5f6821c-cloc.log`。
 
+### C2 SFI 旧包初次整合与覆盖复审（WORKTREE，未闭合）
+
+Agent 1 的独立提交 `e96ddc4954353bff231e24f42a2604bd199af896` 删除旧 `workflows/single_reflection_flight` 的 `__init__`、prepare、collect、continuation、runtime，无别名或转发；主线普通 cherry-pick 为 `6b61442c58ffb4fb23df289e43c4141ab8b7d086`。源／clock 和 release 由公共 Recipe／particle_release 承接，实际 Program／tracking／结果归现有 backend／results。保留历史 schema、科学 ID 和只读证据。
+
+Agent 1 的保留目录 discovery 为117/117 PASS（34.969s），0 skip。主 Agent 将通用 dependency freezer 用例改到现有 Assembly consumer，以当前 backend 冻结导入、容量 lease 和缺模块负例替换旧 SFI producer 探针；完整 `tests.execution.test_dependencies` 20/20 PASS（177.016s），0 skip，日志 `sfi-integrated-dependencies.log`。门禁删除已不存在的模块、计时和旧路由，并加入当前 tracking／`test_single_reflection_iob_verifier.py`；现行 INTEGRATION 改用公共 Recipe／tracing，旧数字明确只属历史。
+
+独立 Agent 2 复审结论为 **request changes**：旧 producer 专属准备／固定分段测试可退役，新 IOB 的20项迁移有效；但仍有当前 `tracking_program` observer、`fields.py` 输入矩阵、真实 Lua field verifier、shared-time parser 和容量恢复负例被误删，外部 installed/platform 消费者亦待迁移。因此暂停 orphan production 删除，由 Agent 1 补回并迁移覆盖，Agent 3 处理外部消费者。当前不得把局部117项、依赖20项或旧测试数字称为 SFI／CA19 完成。未运行商业 native 或双发行最终验收。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

@@ -355,7 +355,7 @@ sdist-rebuilt environments passed selected joint/HS1/scalar consumers in 251.336
 guarded seconds; both contained 526 matching runtime files and denied source-tree
 reads. Full installed-parent and representative full MR native acceptance remain
 pending. The controlled N=1 native
-calibration and its limits are recorded in the [integration evidence](../../../../../docs/INTEGRATION.md#installed-single-reflection-preparation).
+calibration and its limits are recorded in the [integration evidence](../../../../../docs/INTEGRATION.md#当前单反射原出生与追踪入口).
 旧 `simion_candidate_reference.py`、`static_field_binding.py`、`mirror_geometry_parameters.py`、
 `analyzer_candidate_geometry.py` 已退役；所有活动消费者直接使用其新 owner，不保留转发。
 backend/component 均无 `projects.*` 或 `common.*` 依赖；

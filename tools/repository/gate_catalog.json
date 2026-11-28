@@ -982,20 +982,12 @@
           "reason": "installed_probe_support_changed"
         },
         {
-          "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
-          "reason": "sfi_public_entry_consumer_changed"
-        },
-        {
-          "exact": "src/msplatform/workflows/resources/single_reflection_flight.ps1",
-          "reason": "sfi_public_entry_consumer_changed"
-        },
-        {
           "exact": "src/msplatform/workflows/config/assembly_registry.json",
-          "reason": "sfi_public_entry_consumer_changed"
+          "reason": "assembly_execution_contract_changed"
         },
         {
           "exact": "src/msplatform/workflows/config/runtime_dependencies.json",
-          "reason": "sfi_public_entry_consumer_changed"
+          "reason": "assembly_execution_contract_changed"
         }
       ],
       "command": {
@@ -2254,17 +2246,14 @@
               {
                 "regex": "^src/msplatform/backends/simion/resources/(?:sfi_scalar_field|scalar_field_adapter)\\.lua$",
                 "reason": "sfi_scalar_runtime_changed"
-              },
-              {
-                "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
-                "reason": "sfi_scalar_recorded_birth_changed"
               }
             ],
             "modules": [
               "tests/contracts/test_sfi_scalar_binding.py",
               "tests/contracts/test_sfi_scalar_runtime.py",
               "tests/contracts/test_sfi_scalar_sheets.py",
-              "tests/contracts/test_sfi_scalar_tracking.py"
+              "tests/contracts/test_sfi_scalar_tracking.py",
+              "tests/contracts/test_sfi_recorded_birth_entry.py"
             ],
             "dependency_profile": "locked"
           },
@@ -2483,20 +2472,12 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
-                "reason": "sfi_public_entry_consumer_changed"
-              },
-              {
-                "exact": "src/msplatform/workflows/resources/single_reflection_flight.ps1",
-                "reason": "sfi_public_entry_consumer_changed"
-              },
-              {
                 "exact": "src/msplatform/workflows/config/assembly_registry.json",
-                "reason": "sfi_public_entry_consumer_changed"
+                "reason": "assembly_execution_contract_changed"
               },
               {
                 "exact": "src/msplatform/workflows/config/runtime_dependencies.json",
-                "reason": "sfi_public_entry_consumer_changed"
+                "reason": "assembly_execution_contract_changed"
               }
             ],
             "modules": [
@@ -3470,10 +3451,6 @@
           "reason": "canonical_handoff_changed"
         },
         {
-          "prefix": "src/msplatform/workflows/single_reflection_flight/",
-          "reason": "installed_single_reflection_workflow_changed"
-        },
-        {
           "exact": "src/msplatform/workflows/pulse_execution.py",
           "reason": "installed_recorded_pulse_workflow_changed"
         },
@@ -3609,20 +3586,13 @@
           "test_paired_inherited_lease": 2.490444,
           "test_historical_joint_publication": 31.054,
           "test_repository_bindings": 0.018886,
-          "test_saved_workbench_replay_policy": 1.434473,
-          "test_single_reflection_collection": 4.909472,
-          "test_single_reflection_continuation": 64.653259,
           "test_single_reflection_downstream_fields": 2.256505,
-          "test_single_reflection_field_stage": 220.790325,
           "test_single_reflection_fields": 2.593645,
           "test_single_reflection_geometry": 2.251395,
           "test_single_reflection_interface_fields": 0.000112,
           "test_single_reflection_owner_recovery": 17.124386,
-          "test_single_reflection_preparation": 22.658789,
           "test_single_reflection_program": 3.097224,
           "test_single_reflection_pulse": 0.363729,
-          "test_single_reflection_runtime": 8.812237,
-          "test_single_reflection_source_protection": 3.537608,
           "test_workflow_finalization_recovery": 49.072669
         }
       },
@@ -3747,18 +3717,6 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/single_reflection_flight/checkpoint_diagnostics.py",
-                "reason": "recorded_frontend_analysis_changed"
-              }
-            ],
-            "modules": [
-              "tests/workflows/single_reflection/test_single_reflection_checkpoint_diagnostics.py"
-            ],
-            "dependency_profile": "locked"
-          },
-          {
-            "matches": [
-              {
                 "exact": "src/msplatform/backends/simion/bare_frontend_geometry.py",
                 "reason": "installed_bare_frontend_geometry_changed"
               }
@@ -3772,50 +3730,25 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/backends/simion/field_plan.py",
-                "reason": "single_reflection_shared_field_plan_changed"
+                "exact": "src/msplatform/workflows/native_tracing.py",
+                "reason": "current_public_tracing_changed"
               },
               {
-                "exact": "src/msplatform/workflows/pulse_execution.py",
-                "reason": "recorded_pulse_workflow_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/frontend_fields.py",
-                "reason": "single_reflection_frontend_producer_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/downstream_fields.py",
-                "reason": "single_reflection_explicit_backend_numerics_changed"
-              },
-              {
-                "exact": "src/msplatform/workflows/single_reflection_flight/prepare.py",
-                "reason": "single_reflection_explicit_backend_numerics_changed"
-              },
-              {
-                "exact": "src/msplatform/contracts/schemas/single_reflection_request_v11.schema.json",
-                "reason": "single_reflection_explicit_backend_numerics_changed"
+                "regex": "^src/msplatform/backends/simion/(?:native_plans|tracking_execution|tracking_program|tracking_collection|downstream_fields_worker)\\.py$",
+                "reason": "current_tracking_backend_changed"
               }
             ],
             "modules": [
               "tests/execution/test_dependencies.py",
               "tests/execution/test_native_path_consumers.py",
-              "tests/workflows/frontend/test_saved_workbench_replay_policy.py",
-              "tests/workflows/single_reflection/test_single_reflection_collection.py",
-              "tests/workflows/single_reflection/test_single_reflection_continuation.py",
               "tests/workflows/single_reflection/test_single_reflection_downstream_fields.py",
-              "tests/workflows/single_reflection/test_single_reflection_field_stage.py",
               "tests/workflows/single_reflection/test_single_reflection_fields.py",
               "tests/workflows/single_reflection/test_single_reflection_geometry.py",
               "tests/workflows/single_reflection/test_single_reflection_interface_fields.py",
+              "tests/workflows/single_reflection/test_single_reflection_iob_verifier.py",
               "tests/workflows/single_reflection/test_single_reflection_owner_recovery.py",
-              "tests/workflows/single_reflection/test_single_reflection_preparation.py",
-              "tests/workflows/single_reflection/test_sfi_preparation_numerics.py",
               "tests/workflows/single_reflection/test_single_reflection_program.py",
               "tests/workflows/single_reflection/test_single_reflection_pulse.py",
-              "tests/workflows/single_reflection/test_single_reflection_request_versions.py",
-              "tests/workflows/single_reflection/test_single_reflection_runtime.py",
-              "tests/workflows/single_reflection/test_single_reflection_scientific_freeze.py",
-              "tests/workflows/single_reflection/test_single_reflection_source_protection.py",
               "tests/workflows/single_reflection/test_single_reflection_zero_gap.py"
             ],
             "dependency_profile": "locked"
@@ -3900,50 +3833,7 @@
             ],
             "dependency_profile": "locked"
           },
-          {
-            "matches": [
-              {
-                "exact": "src/msplatform/workflows/single_reflection_flight/recorded_birth.py",
-                "reason": "recorded_birth_sfi_consumer_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/sfi_scalar_binding.py",
-                "reason": "recorded_birth_sfi_scalar_admission_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/resources/sfi_scalar_field.lua",
-                "reason": "recorded_birth_sfi_scalar_runtime_changed"
-              },
-              {
-                "exact": "src/msplatform/workflows/single_reflection_flight/prepare.py",
-                "reason": "recorded_birth_sfi_consumer_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/operations.py",
-                "reason": "recorded_birth_sfi_consumer_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/tracking_execution.py",
-                "reason": "recorded_birth_sfi_consumer_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/tracking_program.py",
-                "reason": "recorded_birth_sfi_consumer_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/compiler.py",
-                "reason": "recorded_birth_sfi_consumer_changed"
-              },
-              {
-                "exact": "src/msplatform/backends/simion/model.py",
-                "reason": "recorded_birth_sfi_consumer_changed"
-              }
-            ],
-            "modules": [
-              "tests/workflows/single_reflection/test_single_reflection_recorded_birth_consumer.py"
-            ],
-            "dependency_profile": "locked"
-          },
+
           {
             "matches": [
               {

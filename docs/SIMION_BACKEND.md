@@ -940,4 +940,4 @@ describes the experimental helper's opposite operation order. The installed
 SIMION 2020 controlled rotated-anisotropic N=1 calibration reproduced its force
 error and verified the explicit chain-rule correction; this is a project
 conversion using the instance orientation API, not a claim of vendor endorsement.
-See the [integration evidence and limits](INTEGRATION.md#installed-single-reflection-preparation).
+See the [integration evidence and limits](INTEGRATION.md#当前单反射原出生与追踪入口).
