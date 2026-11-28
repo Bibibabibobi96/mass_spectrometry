@@ -516,6 +516,14 @@ Agent 6 的 `0d39f58095f2936d39848420c0864a3f5ff6bec2` 删除公共执行及当�
 
 主线 CLOC 2.10 `ebb40e8c→23a54dbf` PASS：total code -91、production -75、tests -16，files／blank／comment 不变，unclassified=0，逐语言和过滤口径见 `nonoa-grades-23a54dbf-cloc.log`。OA writer／guard 由 Agent 6 在独立后续工作树收口；无商业 native。
 
+### C2 Prepared 反向依赖退役（主线整合候选）
+
+Agent 8 的 `d9bb4061379a7ad1a8f15df61443a6fc1fb32a5b`／主线 `b46577f7` 将 MR 专属合同、能量和 centroid 组合迁到 `workflows.mr_design`，组件出口身份归 Assembly；纯轨迹比较留在 analysis，精确文件复核直接归 io。删除 `analysis.joint_analysis_contract` 和 `analysis.mr_exit_energy`，不保留别名；十个迁移函数以归一化 AST 核对函数体不变，科学数值、原始ID、冻结输入和只读历史语义未改。
+
+原47条 analysis／Assembly／results 反向依赖全部清除。主线完整 `test_scientific_core_boundaries` 16/16 PASS／0 skip（20.486s），日志 `prepared-boundaries-main.log`。作者直接消费者选择221项为217 PASS、2个既有证据 skip、1 failure、1 error；两例均来自已删除 `accelerator_interface` consumer 的既有 freezer 断链，在原基线同样复现，现由同一负责人续修，不记为已通过。Ruff、diff、文档 StructureOnly 和 CLOC 2.10 PASS。
+
+主线 CLOC 2.10 `bbfad30c→b46577f7`：total／production Python files -1、blank +19、code +35，comment及 tests 全部不变，unclassified=0；逐语言和过滤口径见 `prepared-boundaries-b46577f7-cloc.log`。Changed 首轮缺 `SIMION_LUA_EXE` 且1800秒中止，后续分片被阻断，不是通过证据；未运行商业 native。
+
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 
 Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime dependency 无缺失目标；旧名负例和历史 reader 均有效。上述10处 PS 断链已在本工作树修复并复验。其余实际阻塞按真实调用保留如下，不转为文档豁免：
