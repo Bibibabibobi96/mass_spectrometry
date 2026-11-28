@@ -545,10 +545,9 @@ recorded without replacing the original exception. This bounds that error path,
 not the synchronous stdin write or operating-system kill call, and does not
 establish the cause of the historical CI failure.
 
-`execution.resume_run(result_path, mode="finalization", context=context, completion_api=...)`接原owner的停止后收尾；
-调用方显式传入原操作的完成策略，execution不反向导入后端来猜测策略，
-只读核对原request／completion／容量权威后继续原发布，不回调科学动作。Result是可变运输文件，
-传入明确绝对路径；它不能通过删除自身hold字段或标complete解除原容量保护。
+停止后收尾分别由`ArtifactStore.recover_run_publication(run_id)`与`execution.owner.recover_managed_native_store_stage(store, stage, context=...)`承接父run和native stage；
+早期`execution.resume_run`转发层已删除，execution不反向导入后端猜测策略。恢复只读核对原request／completion／容量权威后继续原发布，不回调科学动作。
+Result是可变运输文件，传入明确绝对路径；它不能通过删除自身hold字段或标complete解除原容量保护。
 完整终态重复调用还校验原manifest／seal及lease实际释放，随后只读返回。
 不完整单元重跑用`track(..., recovery_reference=...)`的新运行身份，不能将其冒充收尾或native checkpoint。
 

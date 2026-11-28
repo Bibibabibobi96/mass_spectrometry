@@ -588,17 +588,33 @@ Agent 6 的 `6d4030b6974572d2e0df04abd464f8825a3accd6`／主线 `d7fd425d` 将 s
 
 主线 CLOC 2.10 `99684854→d7fd425d` PASS：total／production／tests code +189／+81／+108，files不变，unclassified=0；逐语言与过滤口径见 `oa-source-store-d7fd425d-cloc.log`。本任务临时测试对象已清理，原历史字节未改。
 
+### C3 `resume_run` 公开转发层退役（主线整合候选）
+
+Agent 17 的 `b9e0022b4a2e40b7e15e04797af0aa4fb74e68ae`／主线 `a638672f` 删除 `execution.recovery.resume_run` 和 `execution/__init__.py` 导出，保留 whole-unit replay 规划；不新增同名包装。`execution.owner.resume_finalization` 暂留至其余消费者完成迁移。
+
+测试改用真实 ArtifactStore：`recover_managed_native_store_stage` 覆盖原失败及保留策略、错误完成策略、零科学重放、控制／claim／reservation 释放和容量回收；`recover_run_publication` 覆盖缺件、篡改、writer 保护和幂等。`test_platform_api` 改验当前公开恢复 API 与参数负例，不再委派旧 `resume_finalization`。主线61项组合回归 PASS／0 skip（30.609s），日志 `resume-run-retirement-main.log`；Ruff、diff、提交钩子 PASS。`docs/ROADMAP.md` 与 `docs/REPOSITORY_OPERATIONS.md` 已改到当前 Store 恢复职责，未把旧调用写成现行入口。
+
+主线 CLOC 2.10 `aac31f5f→a638672f` PASS：total code +36、production -14、tests +50，files不变，unclassified=0；详见 `resume-run-a638672f-cloc.log`。未运行完整 Changed 或商业 native。
+
+### C3 MR native-condition 与 OA focus Store 接管（主线整合候选）
+
+Agent 13 的 `40ee9019d0e02287806915c982f5eafec1c88c16`／主线 `a575d91e` 删除 `run_native_candidate_condition.ps1`、`run_native_candidate_campaign.ps1` 及 OA focus 旧公开壳和私有 PA cache 事务。两个 execution profile 直接注册 Python CLI；`component_contract*.json` 只声明实际 owner、资源和 Store-stage action。action 不再是公开生命周期入口，未保留兼容转发或第二合同。
+
+真实 MR condition、K 作用域复用、campaign 首错停派、OA 四场对照与有界 Fast-Adjust、源／场／粒子身份、完整母群、历史只读、失败关闭及 writer／资源释放保持。作者新入口最小负例7/7、MR condition/campaign与 OA 相邻121/121、执行编译／Store controller／OA 合同62/62、公共 OA focus Store 8/8，均0 skip；主线171项组合回归 PASS／0 skip（482.760s），日志 `mr-condition-store-main.log`。Ruff、PS parser、严格JSON、文档和 diff PASS；未启动商业 native。
+
+主线 CLOC 2.10 `a638672f→a575d91e` PASS：total files +1、code +1086，production code +690、tests +396，unclassified=0；详见 `mr-condition-store-main-cloc.log`。`oa_mr.ps1` 与其他共享 runner 仍按各自在途迁移保留，既有旧根不由新 Store 接管或改写。
+
 ### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
 
 Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime dependency 无缺失目标；旧名负例和历史 reader 均有效。上述10处 PS 断链已在本工作树修复并复验。其余实际阻塞按真实调用保留如下，不转为文档豁免：
 
 | 优先级 | 当前活路径 | 实际替代与当前责任 |
 |---|---|---|
-| P0 | `execution.owner.run_managed_stage` 仍允许无 Store 并初始化旧 ledger；`artifact_capacity_maintenance`、`run_artifact_support.ps1` 仍调用旧维护／恢复；MR native-condition、OA focus 与 RF profiles 仍有旧 package writer；Wehnelt／standalone IP 已接 Store，主线复验分别在上述单元记录 | 现有 `standalone_native_store`、Store 分支、`ArtifactStore.collect/recover_run_publication`；需逐调用迁移后删除旧写入／GC／恢复分支，不新建第二生命周期 |
+| P0 | `execution.owner.run_managed_stage` 仍允许无 Store 并初始化旧 ledger；`artifact_capacity_maintenance`、`run_artifact_support.ps1` 仍调用旧维护／恢复；RF profiles 仍有旧 package writer；Wehnelt／standalone IP／MR condition／OA focus 已接 Store，主线复验分别在上述单元记录 | 现有 `standalone_native_store`、Store 分支、`ArtifactStore.collect/recover_run_publication`；需逐调用迁移后删除旧写入／GC／恢复分支，不新建第二生命周期 |
 | P1 | 非 OA 总等级 writer／guard 已在 `23a54dbf` 删除；OA 对应字段已在 `a4ee07a8` 删除，主线193个唯一用例已闭合 | 保留旧 manifest 的精确只读验证，不改写历史；完整门禁仍未闭合 |
 | P1 | registry 仍直挂特殊 `oa_mr.ps1`；旧 `accelerator_interface.ps1` 及中央 consumer 已删除 | 科学归 Assembly／MR owner，执行归公共 Store；连续飞行只能走公共原出生 tracing，prepare-only 不冒充飞行 |
 
-Agent 7 沿实际消费者复核的旧缺口正在逐链关闭：OA source comparison、COMSOL gas/tracing、SIMION split/grounded/dual-cone/operations 已在 `93e2ba0b`／`d7fd425d` 迁移，整合回归首错仍由 Agent 11 修复；standalone IP 已有主线160项 PASS。RF profiles、MR native-condition 和 `oa_mr.ps1` 仍有真实科学职责或在途迁移，公共 `msplatform run` 尚未覆盖这些组合，不能标历史或整链删除。退役顺序固定为：仅测试引用的三类专用恢复体（已删除）→Wehnelt 既有 Store API（已接管）→公开 Python 无 Store 消费者→特殊 PowerShell 科学链→公共旧回落／通用恢复→旧日常维护／GC。新 `ArtifactStore.collect` 只管理自己的新根，不借迁移清理既有旧研究根。
+Agent 7 沿实际消费者复核的旧缺口正在逐链关闭：OA source comparison、COMSOL gas/tracing、SIMION split/grounded/dual-cone/operations 已在 `93e2ba0b`／`d7fd425d` 迁移，整合回归首错仍由 Agent 11 修复；standalone IP 已有主线160项 PASS。MR native-condition／OA focus 已接 Store，RF profiles 与 `oa_mr.ps1` 仍有真实科学职责或在途迁移，公共 `msplatform run` 尚未覆盖这些组合，不能标历史或整链删除。退役顺序固定为：仅测试引用的三类专用恢复体（已删除）→Wehnelt 既有 Store API（已接管）→公开 Python 无 Store 消费者→特殊 PowerShell 科学链→公共旧回落／通用恢复→旧日常维护／GC。新 `ArtifactStore.collect` 只管理自己的新根，不借迁移清理既有旧研究根。
 
 上述未完成项直接阻止 CA07／CA12／CA13／CA14／CA19 与最终同 SHA 验收。当前分支仍只是中间候选；未运行完整 Repository、双发行或适用真实 native。
 
