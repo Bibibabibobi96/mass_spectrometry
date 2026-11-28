@@ -300,13 +300,15 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元提交并普通 push `cf3e398e`；CLOC 2.10 `14f34b06→cf3e398e` PASS：total code -3、production +0、tests -3，unclassified=0。逐语言和过滤口径在外部 `execution-compiler-cf3e398e-cloc.log`。
 
-### C2/C4 FullJoint 特殊总控退出（WORKTREE）
+### C2/C4 FullJoint 特殊总控退出（候选）
 
 `accelerator_interface.ps1` 删除 `FullJoint`、`ResumeFinalization`、`ResultPath` 及其 Prepared 恢复转发、`Invoke-JointOwnerStage` 和旧拒绝分支；保留现有 OA/IP 接口准备、显式 Python、冻结依赖、容量与发布链。`runtime_dependencies.json` 中 Prepared 执行脚本不再登记为 accelerator_interface 的依赖。历史 FullJoint 运行、原始记录与只读身份不改写；当前文档不再把该模式列为运行方式。
 
 旧 finalization 转发测试和只服务于该转发的 context 测试随实现删除；新增统一 PowerShell 参数边界的真实负例，传 `-FullJoint` 时在创建 owner/artifacts 前失败。接口与旧跨组件重释放套件13父测试全PASS（49.975s），新增 FullJoint 负例另1父测试PASS，均无 skip；日志 `fulljoint-retirement-interface.log` 与 `fulljoint-option-absent.log`。
 
 完整依赖套件20父测试首轮18通过／2 FAIL（169.141s）：accelerator closure 仍要求已脱钩的 Prepared 脚本，删除该过时断言后定向1父测试PASS；另一个失败是 SFI 仍用 `single_reflection_flight` consumer 冻结当前准备，不能靠删测试消除，列入下一条 SFI 实修。文档 StructureOnly、Ruff 与 diff-check PASS。本项不表示 Prepared 分析 owner、SFI 或 CA19 已全部退出。
+
+本单元已提交并普通 push `11188671`。CLOC 2.10 `569b66b9→11188671` PASS：total code -53、production -24、tests -29，unclassified=0；完整逐语言和过滤口径在外部 `fulljoint-11188671-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
