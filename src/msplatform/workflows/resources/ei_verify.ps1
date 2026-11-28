@@ -1,7 +1,5 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('Static', 'Candidate', 'Formal')]
-  [string]$Level = 'Static',
   [string]$PythonExe = '',
   [switch]$RuffHandledByParent
 )
@@ -57,9 +55,6 @@ try {
       }
     }
 
-    if ($Level -ne 'Static') {
-      throw "PROJECT_GATE=BLOCKED PROJECT=apertured_tube_electron_impact_ion_source LEVEL=$Level REASON=functional_gui_compute_and_particle_count_not_closed"
-    }
   } finally {
     Pop-Location
   }

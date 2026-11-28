@@ -1,7 +1,5 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('Static', 'Candidate', 'Formal')]
-  [string]$Level = 'Static',
   [string]$PythonExe = '',
   [switch]$RuffHandledByParent
 )
@@ -57,9 +55,6 @@ try {
       }
     }
 
-    if ($Level -ne 'Static') {
-      throw "PROJECT_GATE=BLOCKED PROJECT=transverse_helical_filament_wehnelt_electron_gun LEVEL=$Level REASON=functional_gui_compute_and_particle_count_not_closed"
-    }
   } finally {
     Pop-Location
   }

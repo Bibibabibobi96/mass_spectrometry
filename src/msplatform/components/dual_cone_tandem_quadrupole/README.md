@@ -46,7 +46,7 @@ and the existing Assembly/STEP exporter; see [CAD usage and profile limits](docs
 
 | 任务 | 入口 |
 |---|---|
-| 几何新鲜度 | `src/msplatform/workflows/resources/dual_cone_verify.ps1 -Level Static`（工作流资源向组件显式传 baseline/resolved 路径） |
+| 几何新鲜度 | `src/msplatform/workflows/resources/dual_cone_verify.ps1`（工作流资源向组件显式传 baseline/resolved 路径） |
 | 计算气流、导出和校验 | [COMSOL 实施说明](docs/COMSOL.md#运行) |
 | SIMION 阶段能力与准备 | [SIMION 实施说明](docs/SIMION.md#当前能力与验证边界) |
 | 规定均匀场对照／GEM smoke | [SIMION 实施说明](docs/SIMION.md) |

@@ -1,7 +1,5 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('Static', 'Candidate', 'Formal')]
-  [string]$Level = 'Static',
   [string]$PythonExe = '',
   [switch]$RuffHandledByParent
 )
@@ -109,9 +107,6 @@ try {
       }
     }
 
-    if ($Level -ne 'Static') {
-      throw "PROJECT_GATE=BLOCKED PROJECT=dual_cone_tandem_quadrupole LEVEL=$Level REASON=single_ion_uniform_gas_prototype_not_candidate_qualified"
-    }
   } finally {
     Pop-Location
   }

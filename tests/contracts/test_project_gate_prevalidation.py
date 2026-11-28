@@ -267,6 +267,15 @@ class ProjectGatePrevalidationTests(unittest.TestCase):
             self.assertEqual(dependency.read_bytes(), payload)
             self.assertEqual(list(lua_temporary.iterdir()), [])
 
+    def test_total_grade_level_is_rejected_before_any_project_work(self):
+        for project in RUFF_PROJECTS:
+            with self.subTest(project=project):
+                self.log.unlink(missing_ok=True)
+                result = self.run_gate(project, "-Level", "Candidate")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Level", result.stderr)
+                self.assertEqual(self.calls(), [])
+                self.assertNotIn("PROJECT_GATE=PASS", result.stdout)
 
 
 if __name__ == "__main__":
