@@ -444,11 +444,13 @@ Agent 1 的保留目录 discovery 为117/117 PASS（34.969s），0 skip。主 Ag
 
 另发现工作区顶层 `common/`、`projects/`、`integrations/` 是 Git 未跟踪的忽略残留，共1860个文件；其中1858个为 `__pycache__/pyc`，两个非缓存文件已在外部 `retired-root-noncache/` 保存字节、SHA-256和来源清单。common IOB 与当前包资源逐字节相同，projects 的 processed GEM 无消费者，integrations 无非缓存文件。三棵物理旧根已删除，路径检查全部 ABSENT；这属于工作树清理，不伪造 Git 删除记录。
 
-### C2 当前依赖身份的旧架构命名清退（WORKTREE）
+### C2 当前依赖身份的旧架构命名清退（候选）
 
 现行 `workflows/config/runtime_dependencies.json` 中以 common／projects／local_frontend 命名的当前 ID 全部改为实际 execution、Component、COMSOL／SIMION backend 身份，包括嵌在 accelerator 前缀中的配置和 IOB seed。对应 gate reason 的 `common_comsol`／`common_simion` 改为 `comsol_backend`／`simion_backend`。资源路径、consumer 集合、科学参数和哈希语义不变；不保留旧 ID 别名。
 
 `test_dependency_json_keys`、真实 provider 边界、完整 schema/资源冻结、当前 seed 闭包和公共 adapter owner 共6项 PASS（25.887s），0 skip；日志 `current-dependency-identity-renaming.log`。无 native；本项不是完整依赖或 CA19 验收。
+
+已提交并普通 push `0ef1b487456a22011038ad8dd1ed5ed426773fd4`。CLOC 2.10 `90a9be59→0ef1b487` PASS：total、production、tests 的 files／blank／comment／code 全部 delta=0，unclassified=0；日志 `dependency-identities-0ef1b487-cloc.log` 保留逐语言和完整过滤口径。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
