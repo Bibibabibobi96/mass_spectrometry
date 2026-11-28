@@ -572,6 +572,8 @@ Agent 11 的 `1ea529ae`／主线 `0dfbdf11` 修复前项四组真实失败：IP�
 
 后续 `17afca82` 关闭上述 IPMR 完整用例超时。周期堆栈把首处瓶颈定位到 `_protect_input_sources` 对每个不可变成员×每个来源×每个候选重复 `Path.resolve()`；同类嵌套也存在于通用 SIMION `_protected_source`。现分别预索引来源成员的路径／bytes／SHA 和 manifest 的 path→records，重复记录仍保留列表并拒绝，未改变来源、篡改、恢复或科学断言。完整 `test_ip_mr_sampled_field_execution` 1/1 PASS（514.952s），`test_simion_model_execution`＋`test_open_model_execution` 15/15 PASS（89.431s）；日志 `ipmr-indexed-sources-worktree-r9.log`、`model-source-index-worktree.log`。早期诊断钩子异常退出与手工停止不计通过。Ruff／diff PASS；CLOC 2.10 `c5a80178→17afca82` total／production code +4／+4、tests不变，unclassified=0，见 `ipmr-source-index-worktree-cloc.log`。未运行商业 native、完整门禁或双安装。
 
+`7ddde671` 补齐直接 tracking 消费者：公开操作只在实际存在复用碰撞生产者时保护对应 FieldBundle，不再把 `None` 送入 `guard_native_source`；测试显式使用 ArtifactStore，不改生产回退。`test_ip_mr_tracking_producer_admission` 2/2 PASS（306.580s），含无复用碰撞引用的完整公开跟踪与真实生成 Lua／进程边界；静态世界7项在前序组合运行全部通过。第一次组合回归的缺 Store ERROR 和第二次空引用 ERROR 均保留，未计为通过。日志 `ipmr-tracking-source-guard-worktree-r2.log`；CLOC 2.10 `cc0eab89→7ddde671` total／production／tests code +3／+1／+2，unclassified=0，见 `ipmr-tracking-source-guard-worktree-cloc.log`。无商业 native、完整门禁或双安装声明。
+
 ### C3 standalone IP Store 接管（主线整合候选）
 
 Agent 12 的 `7894fa04a90b1d7322a2be12bb104a50fd830069`／主线 `718af786` 将 execution profile 切到现有公共 `msplatform.cli ion-processor-native-functional run`，由新 workflow 组合显式 deployment、workspace、`standalone_native_store` 和 `run_managed_stage`。删除旧容量会话、New-RunPackage、Result writer、PowerShell 终态收尾及 `-ResumeFinalization`；`ip_functional.ps1` 只保留 Store stage 实际消费的原生科学资源，不再是独立 owner 或恢复入口。
