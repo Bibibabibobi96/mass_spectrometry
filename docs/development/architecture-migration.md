@@ -406,13 +406,23 @@ CLOC 2.10 `d995a2e77c52406426d131286900ebccef0fdea4→7584e8f897802c1a988728bd47
 
 非零代码变化为 total JSON +14、Python +18；production JSON +14、Python +14；tests Python +4。`WORKTREE_TRACKED_DIRTY_COUNT=0`，未跟踪产物不属于本提交。
 
-### C2 历史联合分析准入与 Store owner 收口（WORKTREE）
+### C2 历史联合分析准入与 Store owner 收口（候选）
 
 旧职责→新入口：历史 run／上游来源准入、完整原 ID／时钟／停写核对由 `workflows.historical_joint_analysis.publish_joint_analysis` 直接承担；外部 post-hoc 合同先取得写排除保护，再由公共 `freeze_file` 冻结到本次 Store run，分析器只接收该副本。发布、容量和失败恢复使用既有 `run_managed_stage`／Store，不再有第二套生命周期。
 
 实际删除 `workflows/prepared_joint/analysis_inputs.py`、`workflows/prepared_joint/__init__.py`、`workflows/resources/prepared_joint_execute.ps1` 和 `tests/test_prepared_joint_execute.py`；无别名或转发壳。有效 CLI／owner／等价性测试迁至 MR 分析 owner，准入正负例迁至 `tests/execution/test_historical_joint_publication.py`。runtime dependency 的 prepared consumer、旧脚本和当前旧名资源 ID 删除；历史 `mode=prepared_joint`、manifest 输入名与只读 continuation reader 不改写。负例覆盖错误 owner、未完成、未停 writer、缺件、篡改及缺观察预算，均在创建 Store 前拒绝且原字节不变。
 
 真实 Store 测试连续完成无显式合同和有显式合同两次发布；第二次删除原合同后，发布清单中的冻结副本仍逐字节一致。定向48父测试全PASS（121.636s），0 skip；日志 `prepared-retirement-targeted-final.log`。依赖键与 Changed 路由3项PASS，修正后的两个实际冻结消费者用例2项PASS（18.375s）；文档 StructureOnly PASS（321文件、0错误）。完整依赖模块首轮9项失败、第二轮剩2项 Prepared 路由／夹具失败及1项 SFI 旧 consumer；前两项已复验通过，SFI 由独立提交整合，不能据中间轮次称全模块或最终门禁通过。Ruff、JSON 和 diff 检查通过；安装探针语法 PASS，尚未重跑双发行离仓或商业 native。
+
+本单元已提交并普通 push `1db5b72615aa5de1924861c8dde82ba9406becf8`。CLOC 2.10 `f103032d255abd5a2a907e99117d1d01688075a3→1db5b72615aa5de1924861c8dde82ba9406becf8` PASS，日志 `prepared-retirement-1db5b726-cloc.log`；分类器／语言定义 SHA 与上单元相同，完整过滤口径见原日志，unclassified=0。
+
+| 类别 | files | blank | comment | code |
+|---|---:|---:|---:|---:|
+| total | 2416→2412 (-4) | 36971→36937 (-34) | 45473→45281 (-192) | 627115→626522 (-593) |
+| production | 1418→1415 (-3) | 19589→19572 (-17) | 15584→15574 (-10) | 307453→307147 (-306) |
+| tests | 998→997 (-1) | 17382→17365 (-17) | 29889→29707 (-182) | 319662→319375 (-287) |
+
+total 代码变化为 JSON -69、PowerShell -170、Python -354；production 为 JSON -69、PowerShell -170、Python -67；tests 仅 Python -287。`WORKTREE_TRACKED_DIRTY_COUNT=0`，未跟踪产物不计入。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
