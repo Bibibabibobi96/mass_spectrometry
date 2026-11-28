@@ -16,7 +16,7 @@ from msplatform.execution.retention import file_record
 from msplatform.io.manifest_records import require_completed_terminal_publication
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
-from msplatform.workflows.prepared_joint.preparation import verified_reference
+from msplatform.results.mr_reference import verified_reference
 from msplatform.workflows.mr_design import ip_prism_focus_diagnostics as focus
 from msplatform.workflows.mr_design import ip_prism_local_diagnostics as local
 

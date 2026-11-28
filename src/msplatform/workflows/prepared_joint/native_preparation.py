@@ -16,7 +16,7 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.io.manifest_records import record_path
 from msplatform.execution.retention import verify_record
 from msplatform.execution.retention import file_record
-from msplatform.workflows.prepared_joint.preparation import verified_reference
+from msplatform.results.mr_reference import verified_reference
 
 
 def _read(path: Path) -> dict[str, Any]:

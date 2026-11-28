@@ -28,7 +28,7 @@ from msplatform.execution import resource_profile
 from msplatform.backends.simion import particle_batching
 from msplatform.execution import simion_dispatch as resource_scheduler
 from msplatform.backends.simion.source import render_standard_beams
-from msplatform.workflows.prepared_joint.preparation import verified_reference
+from msplatform.results.mr_reference import verified_reference
 from msplatform.workflows.mr_design.ip_prism_local_geometry import prepare_geometry
 
 

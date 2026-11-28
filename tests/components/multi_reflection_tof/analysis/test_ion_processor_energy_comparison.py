@@ -35,7 +35,7 @@ class IonProcessorEnergyComparisonTests(unittest.TestCase):
                       "logs/native_two_prism_flight.log": self.log}
 
     def _compare(self) -> dict:
-        with patch("msplatform.workflows.prepared_joint.preparation.verified_reference",
+        with patch("msplatform.results.mr_reference.verified_reference",
                    side_effect=lambda run, name: self.paths[name]):
             return compare_measured_exit_energy(self.fixture.receipt_path, self.reference)
 

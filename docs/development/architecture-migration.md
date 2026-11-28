@@ -366,6 +366,12 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `bd0ed648`。CLOC 2.10 `22aab80c→bd0ed648` PASS：total、production、tests 的 code 均为0净变化，unclassified=0；完整逐语言和过滤口径在外部 `recorded-trial-bd0ed648-cloc.log`。
 
+### C2 Prepared 通用准备模块拆分（WORKTREE）
+
+旧 `prepared_joint.preparation` 的 manifest 绑定 MR 证据读取归 `results.mr_reference`；执行合同／受控预算校验归 `workflows.mr_design.execution_contract`，继续调用 `analysis.joint_analysis_contract` 与同 owner 的 bounded-resume 校验。原生准备、handoff、接口和 prism 研究消费者全部改用真实 owner；旧模块删除，无兼容导出。
+
+六组实际消费者共82父测试全PASS（112.939s），0 skip；日志 `prepared-preparation-owner.log`。新增两个新模块的 Changed 路由，分别验证6个直接消费者及 execution→downstream 的5个额外实际消费者，定向1父测试／2路径PASS；日志 `prepared-preparation-selection-r3.log`。Ruff/diff PASS；未执行商业 native。旧 `native_preparation`、`ip_mr_handoff` 和 `analysis_inputs` 仍待各自迁移，不以本次拆分宣称容器已退出。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

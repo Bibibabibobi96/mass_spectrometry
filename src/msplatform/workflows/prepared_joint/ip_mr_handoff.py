@@ -97,7 +97,7 @@ def _exit_distributions(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _reference_exit(reference_mr_run: Path) -> tuple[float, dict[str, Any], dict[str, Any]]:
     # Reuse the existing exact manifest projection; no PA payload is consumed.
-    from msplatform.workflows.prepared_joint.preparation import verified_reference
+    from msplatform.results.mr_reference import verified_reference
     from msplatform.analysis.mr_observations import parse_events
     provider_path = verified_reference(reference_mr_run, "simion/accelerator_provider_runtime_receipt.json")
     source_path = verified_reference(reference_mr_run, "simion/bunch_source_receipt.json")

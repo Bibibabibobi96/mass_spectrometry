@@ -10,8 +10,8 @@ from msplatform.execution.inputs import freeze_file
 from msplatform.execution.retention import file_record
 from msplatform.workflows.accelerator_interface.prepare import (
     CONFIG, ION_PROCESSOR, load_selection, verified_reference,
-    validate_execution_contract,
 )
+from msplatform.workflows.mr_design.execution_contract import validate_execution_contract
 
 
 class InterfacePreparationTests(unittest.TestCase):

@@ -2688,6 +2688,24 @@ ConvertTo-Json -InputObject @($results) -Depth 8|Set-Content -LiteralPath $Repor
                 self.assertFalse(selected["CompleteOwner"])
                 self.assertFalse(selected["OnlyTestModules"])
 
+    def test_mr_reference_and_execution_contract_select_actual_consumers(self) -> None:
+        direct = [MR + "/analysis/" + name + ".py" for name in (
+            "test_ip_prism_distance_study", "test_ip_prism_aperture_diagnostics",
+            "test_ion_processor_energy_comparison", "test_joint_flight_preparation",
+            "test_prepare_accelerator_interface", "test_recorded_joint_trial")]
+        controller_consumers = [MR + "/analysis/" + name + ".py" for name in (
+            "test_dual_stripe_l0_math", "test_fixed_grid_mirror_stripe_handoff",
+            "test_mirror_l0_l1_runner", "test_prism_runner_contract_matrix",
+            "test_simion_candidate_reference")]
+        paths = ["src/msplatform/results/mr_reference.py",
+                 "src/msplatform/workflows/mr_design/execution_contract.py"]
+        for path, selected in zip(paths, self.selections(REPO_ROOT,
+                [dict(stage="multi_reflection_tof_static", paths=[path]) for path in paths]), strict=True):
+            with self.subTest(path=path):
+                expected = direct + (controller_consumers if path.endswith("execution_contract.py") else [])
+                self.assertCountEqual(selected["Modules"], expected)
+                self.assertEqual(len(selected["Modules"]), len(set(selected["Modules"])))
+
 
 
     def test_neutral_ip_geometry_and_schedule_select_real_consumers(self) -> None:

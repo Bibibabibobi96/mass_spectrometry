@@ -11,9 +11,11 @@ from typing import Any
 from msplatform.execution.inputs import freeze_file
 from msplatform.execution.retention import verify_record
 from msplatform.io.manifest_records import verified_successful_run_reference
-from msplatform.workflows.prepared_joint.preparation import (
-    ION_PROCESSOR, PROJECT, verified_reference, validate_execution_contract,
-)
+from msplatform.results.mr_reference import verified_reference
+from msplatform.workflows.mr_design.execution_contract import validate_execution_contract
+
+PROJECT = "multi_reflection_tof"
+ION_PROCESSOR = "ion_processor"
 
 CONFIG = Path(str(files(f"msplatform.components.{PROJECT}"))).resolve() / "config"
 
