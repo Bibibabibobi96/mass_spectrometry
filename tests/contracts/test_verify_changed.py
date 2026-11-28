@@ -1417,8 +1417,8 @@ exit 0
             self.assertIn("rf_multipole_generated_publications", selected_stages)
 
 
-    def test_field_plan_dependency_uses_actual_selected_consumers_without_duplicates(self):
-        source = 'src/msplatform/backends/simion/field_plan.py'
+    def test_tracking_backend_dependency_uses_actual_selected_consumers_without_duplicates(self):
+        source = 'src/msplatform/backends/simion/native_plans.py'
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly')
         roots = ('tests/assembly', 'tests/workflows', 'tests/execution')
         full = {'.'.join(path.relative_to(REPO_ROOT).with_suffix('').parts)
@@ -1427,14 +1427,16 @@ exit 0
                     if (module.rsplit('.', 1)[-1].startswith('test_single_reflection_') and
                         not module.endswith('test_single_reflection_checkpoint_diagnostics')) or
                     module.rsplit('.', 1)[-1] in ('test_dependencies', 'test_native_path_consumers')}
-        cases = [(('-ChangedPath', source), expected)]
+        expected.add('tests.workflows.single_reflection.test_native_field_verifier')
+        source_expected = expected | {'tests.assembly.rf_oa_compiler.test_rf_oa_compiler'}
+        cases = [(('-ChangedPath', source), source_expected)]
         for parent, name in (
-                ('src/msplatform/workflows/', 'pulse_execution.py'),
-                ('src/msplatform/backends/simion/', 'downstream_fields.py'),
-                ('src/msplatform/contracts/schemas/', 'single_reflection_request_v11.schema.json')):
-            cases.append((('-ChangedPath', parent + name), expected))
+                ('src/msplatform/backends/simion/', 'tracking_execution.py'),
+                ('src/msplatform/backends/simion/', 'tracking_collection.py'),
+                ('src/msplatform/contracts/schemas/', 'component_geometry_interface.schema.json')):
+            cases.append((('-ChangedPath', parent + name), full if name.endswith('.schema.json') else expected))
         path = 'tests/assembly/oa_mr_execute/test_oa_mr_execute.py'
-        cases.append((('-ChangedPath', source, path), expected | {path[:-3].replace('/', '.')}))
+        cases.append((('-ChangedPath', source, path), source_expected | {path[:-3].replace('/', '.')}))
         retired = 'tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'
         self.assertFalse((REPO_ROOT / retired).exists())
         cases.append((('-ChangedPath', source, retired), full))
@@ -1443,7 +1445,7 @@ exit 0
         for arguments, wanted in cases:
             with self.subTest(arguments=arguments):
                 if arguments[0] == '-ChangedPath' and len(arguments) == 3:
-                    with tempfile.TemporaryDirectory(prefix='field_plan_mixed_') as directory:
+                    with tempfile.TemporaryDirectory(prefix='native_plan_mixed_') as directory:
                         request = Path(directory) / 'plan.json'
                         quote = lambda value: "'" + str(value).replace("'", "''") + "'"
                         selected = ','.join(quote(value) for value in arguments[1:])
@@ -1469,13 +1471,15 @@ exit 0
                 self.assertEqual(len(modules), len(set(modules)))
                 self.assertTrue(all(row['dependency_profile'] == route['dependency_profile'] for row in rows))
 
-    def test_field_plan_mapping_keeps_missing_unknown_and_renamed_source_conservative(self):
-        source = 'src/msplatform/backends/simion/field_plan.py'
+    def test_native_plan_mapping_keeps_missing_unknown_and_renamed_source_conservative(self):
+        source = 'src/msplatform/backends/simion/native_plans.py'
         route = next(row for row in self.routes if row['stage'] == 'instrument_assembly')
         dependency = next(row for row in route['test_selection']['dependencies']
-                          if any(match.get('exact') == source for match in row['matches']))
+                          if any(match.get('reason') == 'current_tracking_backend_changed'
+                                 for match in row['matches']))
         expected = set(dependency['modules'])
-        with tempfile.TemporaryDirectory(prefix='field_plan_selection_') as directory:
+        expected.add('tests/assembly/rf_oa_compiler/test_rf_oa_compiler.py')
+        with tempfile.TemporaryDirectory(prefix='native_plan_selection_') as directory:
             root = Path(directory)
             paths = {path.relative_to(REPO_ROOT).as_posix()
                      for test_root in ('tests/assembly', 'tests/workflows', 'tests/execution')

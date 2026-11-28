@@ -15,6 +15,75 @@ from .resources import native_resource_path, STRUCTURAL_SEEDS
 from .source import lua_value, render_restart_fly2
 
 
+def preflight_frontend_resources(design: dict, limits: dict, *, reused_member_ids: tuple[str, ...] | list[str] = ()) -> dict:
+    """Reject impossible direct-field budgets without predicting process peaks.
+
+    SIMION 2020 uses 8 bytes/node on disk and about 10 in RAM. Each numerical
+    domain publishes its declared common working fields. Parent Refine/export opens two
+    parent arrays; a patch boundary transfer opens parent plus patch, then
+    Refine/export opens two patch arrays. Published fields and construction scratch
+    determine the cold disk floor. Headers and process overhead are excluded.
+    """
+    kinds = [point['kind'] for point in (design.get('working_points') or [])]
+    expected_kinds = ['carrier_off', *[kind for kind in kinds if kind == 'rf_reference'],
+                      *(['pulse_delta'] if 'pulse_delta' in kinds else [])]
+    if (design.get("schema_version") != 3
+            or design.get("role") != "frontend_native_field_design"
+            or design.get("surface") != "none"
+            or kinds != expected_kinds):
+        raise ValueError("frontend resource preflight requires ordered OFF, RF and optional pulse fields")
+    field_count = len(design["working_points"])
+    members = [working_point_member_id(point) for point in design["working_points"]]
+    if len(members) != len(set(members)) or len(reused_member_ids) != len(set(reused_member_ids)) or not set(reused_member_ids) <= set(members):
+        raise ValueError("frontend reused members must be unique actual working members")
+    missing_count = len(set(members) - set(reused_member_ids))
+    domains = design.get("domains", [])
+    if ([row.get("domain_id") for row in domains] not in
+            (["parent"], ["parent", "entrance_refinement"])
+            or domains[0].get("boundary_policy") != "native_zero_neumann"
+            or (len(domains) == 2 and (domains[1].get("boundary_policy") != "parent_dirichlet"
+                or domains[1].get("parent_domain_id") != "parent"))):
+        raise ValueError("frontend resources require ordered parent and optional entrance refinement domains")
+    arrays = []
+    for domain in domains:
+        dimensions = [domain["dimensions"][axis] for axis in ("nx", "ny", "nz")]
+        if any(type(value) is not int or value < 2 for value in dimensions):
+            raise ValueError(f"{domain['domain_id']}: resource dimensions must be positive PA grid sizes")
+        nodes = math.prod(dimensions)
+        arrays.append(dict(domain_id=domain["domain_id"], nodes=nodes,
+                           disk_payload_bytes=nodes * 8, ram_bytes=nodes * 10))
+    parent_nodes = arrays[0]["nodes"]
+    patch_nodes = arrays[1]["nodes"] if len(arrays) == 2 else 0
+    total_nodes = parent_nodes + patch_nodes
+    disk_floor = 8 * missing_count * total_nodes
+    ram_floor = max(20 * parent_nodes, 10 * total_nodes, 20 * patch_nodes)
+    cache_peak = 0
+    preceding_nodes = 0
+    if missing_count:
+        for array in arrays:
+            cache_peak = max(cache_peak, 8 * (
+                missing_count * preceding_nodes + (missing_count + 2) * array["nodes"]))
+            preceding_nodes += array["nodes"]
+        cache_peak = max(cache_peak, disk_floor)
+    required = () if not missing_count else (
+        ("transient_run_directory_bytes", disk_floor),
+        ("process_tree_working_set_bytes", ram_floor),
+    )
+    for name, floor in required:
+        limit = limits[name]
+        if type(limit) is not int or limit <= floor:
+            raise ValueError(f"frontend mandatory PA lower bound {name}={floor} requires positive "
+                             f"headroom; budget={limit}. Headers, other payloads and process overhead "
+                             "are excluded; this is not a peak guarantee.")
+    return dict(domain_arrays=arrays, working_point_count=field_count, missing_working_member_count=missing_count, runtime_array_count=field_count * len(arrays),
+        mandatory_new_disk_payload_bytes_lower_bound=disk_floor,
+        construction_process_array_bytes_lower_bound=ram_floor,
+        flight_process_array_bytes_lower_bound=10 * field_count * total_nodes,
+        cache_miss_new_disk_payload_bytes_lower_bound=cache_peak,
+        scope="mandatory_array_lower_bounds_only__headers_other_payloads_and_process_overhead_excluded",
+        cache_policy="each_domain_publishes_only_common_standalone_fields__not_a_rebuild_decision")
+
+
 def plan_analytic_ground_carriers(model, *, boundary_conditions: Mapping, run_directory: Path, native_path_resource: Path) -> NativeStagePlan:
     """Plan private geometry regeneration and independently verified zero-ground PAs."""
     from .model import model_geometry, require_prepared_model

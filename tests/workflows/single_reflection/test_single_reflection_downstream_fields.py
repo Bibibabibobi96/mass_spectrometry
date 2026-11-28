@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from msplatform.backends.simion.downstream_fields import preflight_frontend_resources
+from msplatform.backends.simion.native_plans import preflight_frontend_resources
 
 ROOT = Path(__file__).resolve().parents[3]
 LUA = Path(shutil.which("lua") or shutil.which("lua5.1") or "C:/Program Files/SIMION-2020/lua.exe")

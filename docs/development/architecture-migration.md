@@ -444,6 +444,22 @@ Agent 1 的保留目录 discovery 为117/117 PASS（34.969s），0 skip。主 Ag
 
 另发现工作区顶层 `common/`、`projects/`、`integrations/` 是 Git 未跟踪的忽略残留，共1860个文件；其中1858个为 `__pycache__/pyc`，两个非缓存文件已在外部 `retired-root-noncache/` 保存字节、SHA-256和来源清单。common IOB 与当前包资源逐字节相同，projects 的 processed GEM 无消费者，integrations 无非缓存文件。三棵物理旧根已删除，路径检查全部 ABSENT；这属于工作树清理，不伪造 Git 删除记录。
 
+### C2 SFI 覆盖回补、外部消费者与 orphan 删除（WORKTREE）
+
+Agent 1 以 `319415b4c95f82eec17eed227f8448666fed7a7d` 补回实际 observer、field-design、真实 Lua verifier、shared-time parser 和 stopped-source 负例；主线 cherry-pick 为 `6acc9b6badd25d2bffdc4675b29f8ea360aed89b`。Agent 3 以 `ff56e70fe8465730af12065ee240f2c1126230c1` 迁移 installed/platform／field-workbench 等外部消费者，主线为 `6dc473b651575c2c0d75f6bba4237e1e2bf66dd7`。没有恢复旧 producer 包或容器。
+
+覆盖映射保留四个 Program observer、14个 field-design 父方法、5个真实 verifier／cache identity 方法、shared-time 三个正负例及 stopped-source 负例。主线 SFI discovery 140/140 PASS（51.846s），tracking／恢复9项 PASS（0.268s）；日志 `sfi-coverage-main-6acc9b6b.log`、`sfi-coverage-execution-6acc9b6b.log`。外部 API／workbench／recorded-birth／parser 48项 PASS（23.359s），日志 `sfi-external-consumers-main.log`。
+
+随后把仍在使用的 `preflight_frontend_resources` 原算法及数值依据迁到 `backends.simion.native_plans`，实际删除孤儿 `downstream_fields.py`、`frontend_fields.py`、`field_plan.py`、`workflows/pulse_execution.py`、`contracts/single_reflection_preparation.py` 和当前 contracts 下五份旧 request schema；`results/historical_schemas/`、历史请求 fixture 和 migration map 保持原字节。安装探针改用真实 Recipe→prepared model→`plan_solve_fields`，删除原 producer 依赖，并加入旧模块缺席断言。路由加入公共 recorded-birth 与新 `test_native_field_verifier.py`，修正 regex／exact 及真实附加消费者对账。
+
+最终该工作树 SFI 140/140 PASS（44.267s），外部及公共入口52/52 PASS（22.975s），日志 `sfi-orphan-retirement-main.log`、`sfi-orphan-external-main.log`；Ruff、安装探针语法和 diff PASS。依赖／路由24项首轮仅旧 `frontend_fields.py` 子案失败，改测实际 `field_validation.py` 后1项复验 PASS（4.095s），其余23项 PASS（207.308s）；日志 `sfi-orphan-dependencies-routing.log`、`sfi-current-field-route.log`。未执行商业 native 或双发行最终验收，不能据此标记 CA19。
+
+### C2 OA Candidate 重复别名首片（候选，整包未闭合）
+
+Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c22519aeafe7fb761d20806081eaf` 删除 compile／geometry／sync 中无独立职责的别名和包装，测试直接核 Component／backend 真 owner；没有新建 `oa_candidate_v2`，`oa_formal` 继续缺席。保留仍被真实消费者使用的文件绑定生成、局部研究、历史读取和原生执行能力，不把它们改标历史或 prepare-only 来退役。
+
+该定向范围58 PASS／1 FAIL／1 SKIP（7.295s），另有冻结隔离 PASS（15.873s）和3个 managed-PA 子案 PASS（167.234s）；失败为基线同样存在的 runtime-authority 刷新用例，skip 为显式历史快照缺席，均保留不消红。Ruff、AST 无旧符号导入和 diff PASS。CLOC 2.10 `0455d0fe→5c1eb131`：total code -24、production -21、tests -3，unclassified=0，完整结果在 `oa-candidate-5c1eb131-cloc.log`。整包 Recipe／Store 迁移、私有 owner 和总等级退出仍待后续，不是 OA 完成或 native 验收。
+
 ### C2 当前依赖身份的旧架构命名清退（候选）
 
 现行 `workflows/config/runtime_dependencies.json` 中以 common／projects／local_frontend 命名的当前 ID 全部改为实际 execution、Component、COMSOL／SIMION backend 身份，包括嵌在 accelerator 前缀中的配置和 IOB seed。对应 gate reason 的 `common_comsol`／`common_simion` 改为 `comsol_backend`／`simion_backend`。资源路径、consumer 集合、科学参数和哈希语义不变；不保留旧 ID 别名。

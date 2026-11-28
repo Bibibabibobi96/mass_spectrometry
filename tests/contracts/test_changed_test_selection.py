@@ -894,7 +894,7 @@ foreach($scope in @('Owner','Repository')){
 
     def test_single_reflection_workflow_changes_select_actual_owner_consumers(self) -> None:
         consumers = {
-            'src/msplatform/backends/simion/frontend_fields.py': 'tests/contracts/test_simion_field_workbench.py',
+            'src/msplatform/backends/simion/field_validation.py': 'tests/contracts/test_simion_field_workbench.py',
             'src/msplatform/backends/simion/tracking_execution.py': 'tests/contracts/test_simion_tracking_execution.py',
             'src/msplatform/workflows/native_tracing.py': 'tests/contracts/test_public_recorded_birth.py',
         }

@@ -351,7 +351,13 @@ with section_timing('b_native_preflight', sys.argv[2]):
             if error.name and name.startswith(error.name + '.'):
                 return True
             raise
-    assert installed_missing_module('msplatform.workflows.single_reflection_flight.recorded_birth')
+    assert installed_missing_module('msplatform.workflows.single_reflection_flight')
+    for retired_sfi_module in ('msplatform.workflows.pulse_execution',
+                               'msplatform.contracts.single_reflection_preparation',
+                               'msplatform.backends.simion.field_plan',
+                               'msplatform.backends.simion.frontend_fields',
+                               'msplatform.backends.simion.downstream_fields'):
+        assert installed_missing_module(retired_sfi_module), retired_sfi_module
     assert installed_missing_module('msplatform.workflows.prepared_joint')
     assert installed_missing_module('msplatform.workflows.prepared_joint.analysis_inputs')
     assert not (installed_purelib / 'msplatform/workflows/resources/prepared_joint_execute.ps1').exists()
@@ -2759,7 +2765,6 @@ from msplatform.workflows.native_tracing import (_realizations as sfi_realizatio
     preflight_native as sfi_preflight, compile_simion_model as sfi_compile_model)
 from msplatform.backends.simion.model import model_geometry as sfi_model_geometry
 from msplatform.backends.simion.native_plans import plan_solve_fields as sfi_plan_fields
-from msplatform.backends.simion import frontend_fields
 workflow_modes = []
 # Retired handoff producer is absent; the public original-birth track is covered below.
 assert installed_missing_module('msplatform.workflows.multipole_ip.prepare')
@@ -2981,7 +2986,8 @@ for case in fixture['single_reflection_workflow']:
     compiled = sfi_model_geometry(model)
     field_numerics = copy.deepcopy(recipe['study']['document']['numerics']['fields'])
     field_numerics.pop('downstream_convergence_v')
-    field_design = sfi_plan_fields(model, numerics=field_numerics)['field_design']
+    native_field_plan = sfi_plan_fields(model, numerics=field_numerics)
+    field_design = native_field_plan['field_design']
     for domain in field_design['domains']:
         domain['gem_sha256'] = domain['gem_sha256'].upper()
     (inputs/'frontend_field_design.json').write_text(json.dumps(field_design), encoding='utf-8')
@@ -2995,24 +3001,20 @@ for case in fixture['single_reflection_workflow']:
         provider_path.write_text(json.dumps(provider), encoding='utf-8')
     assert {path.name:hashlib.sha256(path.read_bytes()).hexdigest()
             for path in inputs.glob('*.gem')} == case['gem_sha256']
-    assert pathlib.Path(frontend_fields.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
-    (prepared_run/'run_config.json').write_text('{}',encoding='utf-8')
-    producer_stage=frontend_fields.prepare_stage(inputs,pathlib.Path(sys.executable),prepared_run)
-    producer_domain=frontend_fields.domain_members(producer_stage,0,[])
-    assert producer_domain['domain_id']=='parent' and producer_domain['members']
-    assert all(pathlib.Path(row['path']).is_relative_to(inputs)
-               for row in producer_stage['resources'].values())
+    assert pathlib.Path(sfi_plan_fields.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
+    assert field_design['domains'] and native_field_plan['ordered_members']
+    assert all(member['domain_id'] and member['member_id'] for member in native_field_plan['ordered_members'])
     assert not (prepared_run/'simion').exists()
     workflow_modes.append(case['kind'])
 assert workflow_modes == ['release_spec','recorded_birth']
-producer_path=pathlib.Path(frontend_fields.__file__)
+producer_path=pathlib.Path(sfi_plan_fields.__file__)
 producer_backup=producer_path.with_suffix('.absent')
 producer_path.rename(producer_backup)
 try:
     missing_producer=subprocess.run([sys.executable,'-I','-c',
-        'from msplatform.backends.simion import frontend_fields'],
+        'from msplatform.backends.simion import native_plans'],
         cwd=root,capture_output=True,timeout=30)
-    assert missing_producer.returncode!=0 and b'frontend_fields' in missing_producer.stderr
+    assert missing_producer.returncode!=0 and b'native_plans' in missing_producer.stderr
 finally:
     producer_backup.rename(producer_path)
 

@@ -54,7 +54,13 @@ class PublicRecipeEntryTests(unittest.TestCase):
             self.assertIsNotNone(importlib.util.find_spec(name), name)
         for name in ('msplatform.assembly.ip_mr_geometry',
                      'msplatform.workflows.prepared_joint',
-                     'msplatform.workflows.accelerator_interface.geometry'):
+                     'msplatform.workflows.accelerator_interface.geometry',
+                     'msplatform.workflows.single_reflection_flight',
+                     'msplatform.workflows.pulse_execution',
+                     'msplatform.contracts.single_reflection_preparation',
+                     'msplatform.backends.simion.field_plan',
+                     'msplatform.backends.simion.frontend_fields',
+                     'msplatform.backends.simion.downstream_fields'):
             self.assertIsNone(importlib.util.find_spec(name), name)
 
     def test_reference_implementation_does_not_export_generic_entry_points(self):

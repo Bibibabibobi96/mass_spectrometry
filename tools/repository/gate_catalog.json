@@ -2246,6 +2246,10 @@
               {
                 "regex": "^src/msplatform/backends/simion/resources/(?:sfi_scalar_field|scalar_field_adapter)\\.lua$",
                 "reason": "sfi_scalar_runtime_changed"
+              },
+              {
+                "regex": "^src/msplatform/(?:particle_release/authoring\\.py|workflows/native_tracing\\.py|backends/simion/compiler\\.py)$",
+                "reason": "current_public_recorded_birth_changed"
               }
             ],
             "modules": [
@@ -2253,7 +2257,8 @@
               "tests/contracts/test_sfi_scalar_runtime.py",
               "tests/contracts/test_sfi_scalar_sheets.py",
               "tests/contracts/test_sfi_scalar_tracking.py",
-              "tests/contracts/test_sfi_recorded_birth_entry.py"
+              "tests/contracts/test_sfi_recorded_birth_entry.py",
+              "tests/contracts/test_public_recorded_birth.py"
             ],
             "dependency_profile": "locked"
           },
@@ -3451,10 +3456,6 @@
           "reason": "canonical_handoff_changed"
         },
         {
-          "exact": "src/msplatform/workflows/pulse_execution.py",
-          "reason": "installed_recorded_pulse_workflow_changed"
-        },
-        {
           "regex": "^src/msplatform/results/(?:field_sources|single_reflection_source|single_reflection_continuation)\\.py$",
           "reason": "single_reflection_result_adapter_changed"
         },
@@ -3745,6 +3746,7 @@
               "tests/workflows/single_reflection/test_single_reflection_geometry.py",
               "tests/workflows/single_reflection/test_single_reflection_interface_fields.py",
               "tests/workflows/single_reflection/test_single_reflection_iob_verifier.py",
+              "tests/workflows/single_reflection/test_native_field_verifier.py",
               "tests/workflows/single_reflection/test_single_reflection_owner_recovery.py",
               "tests/workflows/single_reflection/test_single_reflection_program.py",
               "tests/workflows/single_reflection/test_single_reflection_pulse.py",
