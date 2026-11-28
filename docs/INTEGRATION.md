@@ -1303,11 +1303,11 @@ request 的 `verify_saved_workbench_replay` 只能为布尔，默认 false。解
 
 
 The retired historical owner accepted `-Request -ExecutionBudgetPath` and separate
-limited-stage switches. Its historical author format is documented by
-[request 10](../src/msplatform/contracts/schemas/single_reflection_request_v10.schema.json)。新链引用component3／plan5，
-由提供者独立确定实际前端域，再用binding2绑定该域的完整科学组；不以标签顺序定义组或角色。
-明确旧[request 9](../src/msplatform/contracts/schemas/single_reflection_request_v9.schema.json)保留其原plan3／native-view读取分支，
-没有新后端模块时仍可完成旧协议的软件准备。request引用冻结父plan、逐实例提供者、显式数值域与场来源。
+limited-stage switches. Its historical author format is preserved by the read-only
+[request 10](../src/msplatform/results/historical_schemas/flight_request_v10.schema.json) witness。当前公共 Recipe 引用实际 component 与组合计划，
+由提供者独立确定实际前端域，再用明确 binding 绑定该域的完整科学组；不以标签顺序定义组或角色。
+旧[request 9](../src/msplatform/results/historical_schemas/flight_request_v9.schema.json)见证保留原plan3／native-view身份；
+它只供历史读取，不再启动旧协议的软件准备或执行。历史 request 继续引用其冻结父plan、逐实例提供者、显式数值域与场来源。
 
 Recorded-birth admission is now available through
 `msplatform.particle_release.load_recorded_release`, without sampling or replacing the
