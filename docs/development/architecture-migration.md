@@ -560,6 +560,14 @@ Agent 11 的 `9c55486c2fc432c08809ff8e3174ba48bad3b117`／主线 `93e2ba0b` 将 
 
 主线 CLOC 2.10 `396d538e→93e2ba0b` PASS：total／production／tests code +584／+357／+227，files不变，blank +28／+14／+14，comment不变，unclassified=0；详见 `public-store-93e2ba0b-cloc.log`。无完整 Changed／Repository、双安装或 native 验收声明。
 
+### C3 公共 Store 整合回归修复（候选，部分待复验）
+
+Agent 11 的 `1ea529ae`／主线 `0dfbdf11` 修复前项四组真实失败：IP–MR按每个 manifest 的精确 path+bytes+SHA 分配 required records，合法共享记录可跨 manifest 引用，不再错交单一 manifest；gas-flow 补齐显式 environment 和 projected science／reader 身份；混合物种按当前 C1 registry 保留不同质量、电荷和ID；split 使用真实 member record manifest。native control 仅修正旧错误文案为实际 `native registration identity differs`，保护及恢复断言保持。
+
+作者完整通过范围：gas-flow7/7、split19/19、canonical4/4、native controls30/30、pressure-relaunch单例、平台／Store60/60；真实 derived plan319 records／38 sources 通过。主线87项组合回归 PASS／0 skip（682.718s），日志 `store-integration-fixes-main.log`。IPMR 完整用例在900秒超时，static-world 的 reused-field 外部 payload 保护另有两例失败，均明确未关闭；不将上述部分证据写成全部通过。串行时序与临时文件清理竞争未用修改生产逻辑掩盖。
+
+主线 CLOC 2.10 `1ce7d170→0dfbdf11` PASS：total／production／tests code +50／+41／+9，files不变，unclassified=0；详见 `store-integration-fixes-main-cloc.log`。无完整 Changed／Repository、双安装或商业 native。
+
 ### C3 standalone IP Store 接管（主线整合候选）
 
 Agent 12 的 `7894fa04a90b1d7322a2be12bb104a50fd830069`／主线 `718af786` 将 execution profile 切到现有公共 `msplatform.cli ion-processor-native-functional run`，由新 workflow 组合显式 deployment、workspace、`standalone_native_store` 和 `run_managed_stage`。删除旧容量会话、New-RunPackage、Result writer、PowerShell 终态收尾及 `-ResumeFinalization`；`ip_functional.ps1` 只保留 Store stage 实际消费的原生科学资源，不再是独立 owner 或恢复入口。
