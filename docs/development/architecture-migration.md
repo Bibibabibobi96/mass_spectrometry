@@ -342,11 +342,13 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `c72226ec`。CLOC 2.10 `e1ae73e4→c72226ec` PASS：total code +7、production +0、tests +7，unclassified=0；完整逐语言与过滤口径在外部 `fixed-grid-c72226ec-cloc.log`。
 
-### C2 downstream 工作点控制器退出 Prepared（WORKTREE）
+### C2 downstream 工作点控制器退出 Prepared（候选）
 
 旧 `prepared_joint.downstream_workpoint` 的有限状态控制器、实测观察评估、bounded step、checkpoint/恢复决策归 `workflows.mr_design.downstream_workpoint`，与同 owner 的 fixed-grid 审计和公共组件数学实现组合。真实 CLI、PowerShell、合同测试、当前文档与路由全部切换；旧模块删除，无转发。物理参数、终止理由、原始ID和恢复判据未改。
 
 控制器/恢复/历史准备共260父测试全PASS（423.856s），0 skip；独立历史 owner 负例PASS。真实原生消费者 PowerShell 链103父测试102通过／1既有历史资产 skip（87.686s）。日志为 `prepared-workpoint-owner-migration.log`、`prepared-workpoint-native-consumers.log`、`prepared-workpoint-admission-target.log`。Ruff/diff PASS；未执行商业 native。Prepared 的 trial/source/准备/admission 容器仍未全部退出。
+
+本单元已提交并普通 push `06514b6c`。CLOC 2.10 `a2a979b2→06514b6c` PASS：total、production、tests 的 code 均为0净变化，unclassified=0；逐语言与过滤口径在外部 `workpoint-06514b6c-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
