@@ -310,11 +310,13 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `11188671`。CLOC 2.10 `569b66b9→11188671` PASS：total code -53、production -24、tests -29，unclassified=0；完整逐语言和过滤口径在外部 `fulljoint-11188671-cloc.log`。
 
-### C2 SFI 脉冲职责去重（WORKTREE）
+### C2 SFI 脉冲职责去重（候选）
 
 旧 `single_reflection_flight/pulse.py` 实际混合三种职责：`select_discovery_pulse` 与 `_capture_bounds` 已由 `analysis.pulse_selection` 唯一承接，删除旧重复实现；`resolve_phase_flight` 原样迁到 `workflows.pulse_execution`，继续调用同一 `validate_native_flight`。runtime、collect、prepare 和对应测试改用真实 owner；未改变 discovery/full-instrument 分支、时钟、候选脉冲、几何或物理参数。
 
 脉冲、收集和准备共78父测试全PASS（72.595s），0 skip；日志 `sfi-pulse-migration.log`。runtime 54父测试中53通过，唯一 ERROR 仍是旧 `single_reflection_flight` consumer 无法冻结当前准备，不能归因于新函数，也不能删该测试；`test_cold_runtime_uses_actual_frozen_consumer_and_rejects_missing_inputs` 留待整条 SFI 准备迁移。新 owner 已加入 owner 与安装 Changed 路由，定向1父测试／2路径全PASS；日志 `sfi-pulse-selection.log`。Ruff/diff PASS，未运行商业 native。
+
+本单元已提交并普通 push `ae3ff03f`。CLOC 2.10 `9f53e231→ae3ff03f` PASS：total code -83、production -86、tests +3，unclassified=0；完整逐语言与过滤口径在外部 `sfi-pulse-ae3ff03f-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
