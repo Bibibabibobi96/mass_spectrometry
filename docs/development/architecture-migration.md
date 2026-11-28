@@ -482,6 +482,12 @@ Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c225
 
 `tests.contracts.test_project_gate_prevalidation` 新增三组件 `-Level Candidate` 在调用任何项目工作前拒绝且零调用的负例；完整模块6/6 PASS（33.124s），含真实 plain-Lua 子例，日志 `static-gate-level-retirement.log`。未改变模型、粒子数或科学资格，无商业 native。已提交并普通 push `049ec12071d9895fa81669901985392ebfccd56b`；CLOC 2.10 `c6416f78→049ec120` PASS：total code -6、production -15、tests +9，其余汇总项不变，unclassified=0，逐语言和过滤口径见 `static-gates-049ec120-cloc.log`。
 
+### C2 MR 打包冻结输入断链修复（WORKTREE）
+
+独立 Agent 5 对打包 PowerShell 的实际 `src/msplatform` 引用检查发现10个已删除 Prepared 目标。现分别改为 `workflows.oa_mr.prism_trial`、`components.multi_reflection_tof.prism_handoff` 和 `components.multi_reflection_tof.joint_mirror_stripe_l0`；影响 `oa_mr.ps1`、两个 segmented runner、dual-stripe seed 和 exact-K runner。只改真实来源路径，不改变科学参数、运行模式或 native 调用。
+
+`test_prism_runner_contract_matrix` 的实际 source-list／`Copy-VerifiedRunInput` 循环及其余合同5/5 PASS（3.544s），0 skip；日志 `mr-frozen-source-owner-fix.log`。旧 Prepared 路径在当前 workflow resources 零命中，diff PASS。无商业 native 或整体验收声明。
+
 ### C 活跃消费者对账（开工定位，未闭合）
 
 | 实际入口 → workflow/API | component/schema与科学输入 | 资产/进程owner与结果消费者 | C新路径/当前状态 |

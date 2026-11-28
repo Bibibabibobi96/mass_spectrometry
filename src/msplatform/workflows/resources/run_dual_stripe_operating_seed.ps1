@@ -136,7 +136,7 @@ try {
     'src\msplatform\components\multi_reflection_tof\fixed_grid_mirror_stripe_handoff.py',
     'src\msplatform\contracts\machine_contracts.py',
     'src\msplatform\contracts\drift_phase_contract.py',
-    'src\msplatform\workflows\prepared_joint\joint_mirror_stripe_l0.py',
+    'src\msplatform\components\multi_reflection_tof\joint_mirror_stripe_l0.py',
     'src\msplatform\components\multi_reflection_tof\mirror_candidate_receipt.py',
     'src\msplatform\workflows\mr_design\mirror_exact_k_operating_point.py',
     'src\msplatform\backends\simion\native_stripe_shape_adapter.py',
@@ -154,7 +154,7 @@ try {
     'src\msplatform\backends\simion\rectangular_accelerator.py',
     'src\msplatform\backends\simion\bare_three_zone_component.py',
     'src\msplatform\components\multi_reflection_tof\candidate_contract.py',
-    'src\msplatform\workflows\prepared_joint\prism_handoff.py',
+    'src\msplatform\components\multi_reflection_tof\prism_handoff.py',
     'src\msplatform\workflows\resources\run_dual_stripe_operating_seed.ps1',
     'src\msplatform\workflows\mr_design\__init__.py'
   )

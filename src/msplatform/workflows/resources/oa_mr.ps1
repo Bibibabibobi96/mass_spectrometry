@@ -537,7 +537,7 @@ try{
   $acceleratorProviderPlan=[string]$providerAccelerator.provider_plan.path
   $acceleratorResolvedCampaign=[string]$providerAccelerator.resolved_campaign.path
   $fixedMirrorStripeLoader=Join-Path $script:pythonRoot 'src\msplatform\components\multi_reflection_tof\fixed_mirror_stripe_operating_point.py'
-  $trialTool=Join-Path $script:pythonRoot 'src\msplatform\workflows\prepared_joint\prism_trial.py'
+  $trialTool=Join-Path $script:pythonRoot 'src\msplatform\workflows\oa_mr\prism_trial.py'
   $batchTool=Join-Path $script:pythonRoot 'src\msplatform\backends\simion\mrtof_batch_flight.py'
   $programSource=Join-Path $backendSimionRoot 'mrtof_candidate.lua'
   $waveformsSource=Join-Path $backendSimionRoot 'voltage_waveforms.lua'
