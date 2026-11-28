@@ -86,37 +86,52 @@ def split_example():
 class PlatformApiTests(unittest.TestCase):
     def test_recorded_sfi_births_reach_real_tracking_planner_without_sampling(self):
         import csv
+        from importlib.resources import files
         from msplatform.contracts.clock import ClockIdentity
+        from msplatform.io.manifest_records import file_record
         from msplatform.particle_release.authoring import load_recorded_release
-        from msplatform.backends.simion.model import project_resolved_drive, compile_prepared_model
+        from msplatform.particle_release.cylinder import CANONICAL_COLUMNS
         from msplatform.backends.simion.tracking_execution import plan_tracking_execution
-        from tests.workflows.single_reflection.test_single_reflection_preparation import scientific_preparation_fixture
-        from msplatform.workflows.single_reflection_flight.prepare import prepare
+        from msplatform.recipes import load_recipe
+        from msplatform.workflows.native_tracing import compile_simion_model
 
-        case, _, _, compiled = compile_example()
+        recipe_path = Path(__file__).resolve().parents[2] / 'src/msplatform/examples/rf_split_oatof_native_small_v1.toml'
+        recipe = load_recipe(recipe_path).to_dict()
+        request = recipe['study']['document']['release']
+        generated = particle_release_api.sample_release(request).to_dict()['realization']['generator_rows']
+        for row, particle_id in zip(generated, request['particle_ids'], strict=True):
+            row['particle_id'] = particle_id
         with tempfile.TemporaryDirectory() as directory:
-            request_path, run, request = scientific_preparation_fixture(Path(directory), recorded_birth=True)
-            prepared = prepare(request_path, run)
-            source_record = prepared['input_records']['particle_source']
-            with Path(source_record['path']).open(encoding='utf-8-sig', newline='') as stream:
+            root = Path(directory)
+            source_path = root / 'recorded_birth.csv'
+            with source_path.open('w', encoding='utf-8', newline='') as stream:
+                writer = csv.DictWriter(stream, fieldnames=CANONICAL_COLUMNS, extrasaction='ignore', lineterminator='\n')
+                writer.writeheader()
+                writer.writerows(generated)
+            source_record = file_record(source_path)
+            with source_path.open(encoding='utf-8-sig', newline='') as stream:
                 original = list(csv.DictReader(stream))
-            ids = [int(row['particle_id']) for row in original]
-            clock = ClockIdentity('instrument_clock_epoch_v1', request['source']['instrument_epoch']['sha256'])
-            clock_records = {name: prepared['input_records'][name] for name in ('clock_authority', 'instrument_epoch')}
+            ids = request['particle_ids']
+            clock = ClockIdentity(**request['clock'])
+            clock_records = {}
+            for name, resource in (('clock_authority', 'instrument_clock_authority_v1.json'),
+                                   ('instrument_epoch', 'instrument_epoch_v1.json')):
+                path = root / (name + '.json')
+                path.write_bytes(files('msplatform.examples').joinpath(resource).read_bytes())
+                clock_records[name] = file_record(path)
             with patch('msplatform.particle_release.authoring.generate_release_states', side_effect=AssertionError('resampled')):
-                packet = load_recorded_release(source_record, clock=clock, frame_id=request['source']['frame_id'],
-                    source_component_id=request['source']['instance_id'], species_id='explicit_fixture_species', species_kind='ion',
-                    relative_weights=None, instrument_origin_us=0., expected_particle_ids=ids)
-                selected = {name: compiled.components_resolved[name]
-                            for name in compiled.frontend_geometry['composition_plan']['scope']['instance_ids']}
-                drive = project_resolved_drive(compiled, selected, pulse=case.drive['pulse'],
-                    clock=dict(clock_epoch_id=clock.clock_epoch_id, authority_sha256=clock.authority_sha256,
-                               phase_reference_instrument_time_us=0.))
-                model = compile_prepared_model(compiled, selected, drive=drive, physics=case.physics)
+                packet = load_recorded_release(source_record, clock=clock,
+                    frame_id=request['release_spec']['frame_id'], source_component_id=request['source_component_id'],
+                    species_id=request['species_id'], species_kind=request['release_spec']['species']['species_kind'],
+                    relative_weights=request['relative_weights'], instrument_origin_us=request['instrument_origin_us'],
+                    expected_particle_ids=ids)
+                model = compile_simion_model(recipe)
                 plan = plan_tracking_execution(model, particles=packet, clock_records=clock_records,
                     propagation=dict(schema_version=1, scope='continuous_assembly',
                         end_policy=dict(maximum_particle_age_us=200.), consumed_plane_events=[], stop=None),
-                    observations=dict(plane_observations=[]),
+                    observations=dict(plane_observations=[dict(schema_version=2, observation_id='detector',
+                        source_instance_id=model.document['geometry']['frontend_geometry']['tof_instance_id'],
+                        surface_id='detector_active_face', max_records=len(ids))]),
                     numerics=dict(maximum_step_us=.001, trajectory_quality=17, rf_steps_per_period=80))
             self.assertEqual([row['particle_id'] for row in plan['rows']], ids)
             self.assertEqual(len(plan['source_provenance']['mother_records']), len(ids))
@@ -130,15 +145,16 @@ class PlatformApiTests(unittest.TestCase):
                     self.assertEqual(after['velocity_'+axis+'_m_s'], float(before['v'+axis+'_m_s']))
             self.assertEqual(plan['source_provenance']['recorded_birth_source']['record'], source_record)
             with self.assertRaisesRegex(ValueError, 'ordered mother IDs'):
-                load_recorded_release(source_record, clock=clock, frame_id=request['source']['frame_id'],
-                    source_component_id='multipole', species_id='explicit_fixture_species', species_kind='ion', relative_weights=None,
-                    instrument_origin_us=0., expected_particle_ids=list(reversed(ids)))
+                load_recorded_release(source_record, clock=clock, frame_id=request['release_spec']['frame_id'],
+                    source_component_id=request['source_component_id'], species_id=request['species_id'],
+                    species_kind=request['release_spec']['species']['species_kind'], relative_weights=None,
+                    instrument_origin_us=request['instrument_origin_us'], expected_particle_ids=list(reversed(ids)))
             altered = copy.deepcopy(packet)
             altered['rows'][0]['particle_birth_time_us'] += 1
             with self.assertRaisesRegex(ValueError, 'differs from its bound source'):
                 plan_tracking_execution(model, particles=altered, clock_records=clock_records,
                     propagation=plan['propagation'], observations=plan['observations'], numerics=plan['numerics'])
-            Path(source_record['path']).write_bytes(b'tampered')
+            source_path.write_bytes(b'tampered')
             with self.assertRaises(AssertionError):
                 plan_tracking_execution(model, particles=packet, clock_records=clock_records,
                     propagation=plan['propagation'], observations=plan['observations'], numerics=plan['numerics'])

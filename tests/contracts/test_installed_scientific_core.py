@@ -378,24 +378,19 @@ with section_timing('b_native_preflight', sys.argv[2]):
     assert importlib.util.find_spec('msplatform.backends.simion.mass_spectrum') is None
     for installed_name in ('msplatform.workflows.native_tracing','msplatform.workflows.mass_scan','msplatform.backends.simion.operations'):
         assert pathlib.Path(sys.modules[installed_name].__file__).resolve().is_relative_to(installed_purelib), installed_name
-    from msplatform.workflows.single_reflection_flight import continuation as installed_continuation
+    from msplatform.results import single_reflection_continuation as installed_continuation
     import inspect as installed_inspect
     assert pathlib.Path(installed_inspect.getfile(installed_continuation)).resolve().is_relative_to(installed_purelib)
-    installed_iob_core = installed_files('msplatform.backends.simion').joinpath('resources', 'iob_core.lua')
-    assert pathlib.Path(str(installed_iob_core)).resolve().is_relative_to(installed_purelib)
-    installed_core_text = installed_iob_core.read_text(encoding='utf-8')
-    installed_legacy_builder = installed_continuation.render_legacy_iob_builder(installed_core_text)
-    assert "local spec=dofile(assert(arg[1]" in installed_legacy_builder
-    installed_locator = '    local projected=spec.preserve_canonical_instances and path or native_path(path)\n'
-    assert installed_core_text.count(installed_locator) == 1
+    assert installed_continuation.parent_case_records({}, {}, {}) == {}
     try:
-        installed_continuation.render_legacy_iob_builder(installed_core_text.replace(
-            installed_locator, installed_locator + "    native_path('extra')\n"))
-    except ValueError:
-        pass
+        installed_continuation.parent_case_records({}, {},
+            {'case_id': 'unit_0001', 'continuation_source': {'action': 'reuse'}})
+    except ValueError as error:
+        assert 'frozen parent manifest' in str(error)
     else:
-        raise AssertionError('installed continuation accepted an unknown locator')
-    print('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', flush=True)
+        raise AssertionError('installed continuation reader accepted a missing frozen parent')
+    assert installed_missing_module('msplatform.workflows.single_reflection_flight.continuation')
+    print('INSTALLED_B_CONTINUATION=PASS results_reader=1 missing_parent_rejected=1', flush=True)
     print('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', flush=True)
 # B_NATIVE_PREFLIGHT_INSTALLED_END
 # HISTORICAL_MASS_ANALYSIS_INSTALLED_BEGIN
@@ -2758,8 +2753,13 @@ assert hashlib.sha256(rf_extraction_path.read_bytes()).hexdigest()==rf_extractio
 print('INSTALLED_RF_FINITE_EXTRACTION=PASS')
 # RF_FINITE_EXTRACTION_INSTALLED_END
 
-# Exercise the real installed workflow with three explicit outside-tree input bundles.
-from msplatform.workflows.single_reflection_flight import prepare as sfi_prepare
+# Exercise current public native Recipes and their direct backend owners.
+from msplatform.recipes import load_recipe as sfi_load_recipe
+from msplatform.workflows.native_tracing import (_realizations as sfi_realizations,
+    preflight_native as sfi_preflight, compile_simion_model as sfi_compile_model)
+from msplatform.backends.simion.model import model_geometry as sfi_model_geometry
+from msplatform.backends.simion.native_plans import plan_solve_fields as sfi_plan_fields
+from msplatform.backends.simion import frontend_fields
 workflow_modes = []
 # Retired handoff producer is absent; the public original-birth track is covered below.
 assert installed_missing_module('msplatform.workflows.multipole_ip.prepare')
@@ -2959,78 +2959,121 @@ with section_timing('registered_generic_geometry',sys.argv[2]):
 
 for case in fixture['single_reflection_workflow']:
     prepared_run = root / ('installed-sfi-' + case['kind'] + '-' + sys.argv[2])
-    (prepared_run/'inputs').mkdir(parents=True)
-    receipt = sfi_prepare.prepare(pathlib.Path(case['request']),prepared_run)
-    assert receipt['particle_count'] == case['particle_count']
-    projected = prepared_run/'inputs/projected_source.csv'
-    assert hashlib.sha256(projected.read_bytes()).hexdigest() == case['projected_sha256']
-    with projected.open(encoding='utf-8',newline='') as stream:
-        assert [row['particle_id'] for row in csv.DictReader(stream)] == case['particle_ids']
-    assert {path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in (prepared_run/'inputs').glob('*.gem')} == case['gem_sha256']
-    provenance = json.loads((prepared_run/'inputs/source_provenance.json').read_text(encoding='utf-8'))
-    assert {name:provenance[name] for name in case['provenance']} == case['provenance']
-    assert json.loads((prepared_run/'inputs/request.json').read_text(encoding='utf-8'))['schema_version'] == case['version']
-    from msplatform.workflows.single_reflection_flight import frontend_fields
+    inputs = prepared_run/'inputs'
+    inputs.mkdir(parents=True)
+    loaded = sfi_load_recipe(case['author'])
+    recipe = loaded.to_dict()
+    assert recipe['schema_version'] == case['version'] == 2
+    capability = sfi_preflight(recipe)
+    assert capability['implemented'] is True and capability['native_verified'] is False
+    frozen = prepared_run/'frozen'
+    frozen.mkdir()
+    for name, snapshot in recipe['resource_snapshots'].items():
+        (frozen/name).write_bytes(base64.b64decode(snapshot['bytes_base64'], validate=True))
+    packets = sfi_realizations(recipe['study']['document']['release'], resource_root=frozen)
+    assert len(packets) == 1
+    packet = packets[0].to_dict() if hasattr(packets[0], 'to_dict') else packets[0]
+    assert len(packet['rows']) == case['particle_count']
+    assert [row['particle_id'] for row in packet['rows']] == case['particle_ids']
+    assert {name:packet[name] for name in case['provenance']} == case['provenance']
+    model = sfi_compile_model(recipe)
+    assert model.document['model_identity_sha256'] == case['model_identity_sha256']
+    compiled = sfi_model_geometry(model)
+    field_numerics = copy.deepcopy(recipe['study']['document']['numerics']['fields'])
+    field_numerics.pop('downstream_convergence_v')
+    field_design = sfi_plan_fields(model, numerics=field_numerics)['field_design']
+    for domain in field_design['domains']:
+        domain['gem_sha256'] = domain['gem_sha256'].upper()
+    (inputs/'frontend_field_design.json').write_text(json.dumps(field_design), encoding='utf-8')
+    (inputs/'frontend_geometry.json').write_text(json.dumps(compiled.frontend_geometry), encoding='utf-8')
+    for name, text in compiled.frontend_gems.items():
+        filename = 'frontend' if name == 'parent' else 'frontend_entrance_refinement'
+        (inputs/(filename+'.gem')).write_text(text, encoding='utf-8', newline='\n')
+    for name, provider in model.document['components_resolved'].items():
+        provider_path = inputs/'components'/name/'resolved_design.json'
+        provider_path.parent.mkdir(parents=True)
+        provider_path.write_text(json.dumps(provider), encoding='utf-8')
+    assert {path.name:hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in inputs.glob('*.gem')} == case['gem_sha256']
     assert pathlib.Path(frontend_fields.__file__).resolve().is_relative_to(pathlib.Path(sysconfig.get_paths()['purelib']).resolve())
     (prepared_run/'run_config.json').write_text('{}',encoding='utf-8')
-    producer_stage=frontend_fields.prepare_stage(prepared_run/'inputs',pathlib.Path(sys.executable),prepared_run)
+    producer_stage=frontend_fields.prepare_stage(inputs,pathlib.Path(sys.executable),prepared_run)
     producer_domain=frontend_fields.domain_members(producer_stage,0,[])
     assert producer_domain['domain_id']=='parent' and producer_domain['members']
-    assert all(pathlib.Path(row['path']).is_relative_to(prepared_run/'inputs')
+    assert all(pathlib.Path(row['path']).is_relative_to(inputs)
                for row in producer_stage['resources'].values())
     assert not (prepared_run/'simion').exists()
-    assert hashlib.sha256(projected.read_bytes()).hexdigest()==case['projected_sha256']
     workflow_modes.append(case['kind'])
-assert workflow_modes == ['release_spec','recorded_pre_pulse_state']
+assert workflow_modes == ['release_spec','recorded_birth']
 producer_path=pathlib.Path(frontend_fields.__file__)
 producer_backup=producer_path.with_suffix('.absent')
 producer_path.rename(producer_backup)
 try:
     missing_producer=subprocess.run([sys.executable,'-I','-c',
-        'from msplatform.workflows.single_reflection_flight import frontend_fields'],
+        'from msplatform.backends.simion import frontend_fields'],
         cwd=root,capture_output=True,timeout=30)
     assert missing_producer.returncode!=0 and b'frontend_fields' in missing_producer.stderr
 finally:
     producer_backup.rename(producer_path)
 
-# Consume an explicit external native-log fixture through the actual installed CLI.
-import subprocess
+# Consume an explicit external native-log fixture through the installed collector.
 collection_case = fixture['single_reflection_collection']
-collection_output = pathlib.Path(collection_case['run'])/('installed-collection-'+sys.argv[2])
-collection_child = """import json,sys,pathlib,runpy,importlib.util,sysconfig
-blocked=[pathlib.Path(value).resolve() for value in json.loads(sys.argv.pop(1))]
-def reject_author_files(event,args):
-    if event=='open' and isinstance(args[0],(str,bytes)):
-        target=pathlib.Path(args[0]).resolve()
-        if any(target.is_relative_to(path) for path in blocked):raise AssertionError('author source read: '+str(target))
-sys.addaudithook(reject_author_files)
-spec=importlib.util.find_spec('msplatform.workflows.single_reflection_flight.collect')
-assert pathlib.Path(spec.origin).resolve().is_relative_to(pathlib.Path(sysconfig.get_path('purelib')).resolve())
-sys.argv=['collect',*sys.argv[1:]]
-runpy.run_module('msplatform.workflows.single_reflection_flight.collect',run_name='__main__')
-"""
-collected = subprocess.run([sys.executable,'-I','-c',collection_child,json.dumps([str(value) for value in blocked_source_roots]),
-    '--preparation',collection_case['preparation'],'--workbench',collection_case['workbench'],
-    '--run',collection_case['run'],'--log',collection_case['log'],'--output',str(collection_output)],
-    cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=60)
-assert collected.returncode == 0,collected.stdout+collected.stderr
-collection_receipt=json.loads(collected.stdout)
-actual_collection=json.loads((collection_output/'collection.json').read_text(encoding='utf-8'))
+from msplatform.backends.simion.tracking_collection import collect_tracking_logs
+collection_source_rows = {int(pid):row for pid,row in collection_case['source_rows'].items()}
+actual_collection = collect_tracking_logs([pathlib.Path(collection_case['log'])],
+    source_rows=collection_source_rows, source_provenance=collection_case['source_provenance'],
+    flight=collection_case['flight'], batches=collection_case['batches'])
 assert actual_collection == collection_case['expected']
-assert collection_receipt['output_records']['collection.json']['sha256'].upper() == hashlib.sha256((collection_output/'collection.json').read_bytes()).hexdigest().upper()
+collection_output = root/('installed-collection-'+sys.argv[2]+'.json')
+collection_output.write_text(json.dumps(actual_collection, allow_nan=False, sort_keys=True), encoding='utf-8')
+assert hashlib.sha256(collection_output.read_bytes()).hexdigest() == collection_case['collection_sha256']
+assert json.loads(collection_output.read_text(encoding='utf-8')) == collection_case['expected']
 assert actual_collection['native_complete'] is True and len(actual_collection['native_terminals']) == 100
-assert actual_collection['claim'] == 'canonical census only; no peak/bootstrap or physical qualification'
+assert actual_collection['census']['peak_or_bootstrap_computed'] is False
+assert actual_collection['census']['formal_gate_passed'] is False
+incomplete_log = root/('installed-collection-incomplete-'+sys.argv[2]+'.log')
+incomplete_log.write_text(pathlib.Path(collection_case['log']).read_text(encoding='utf-8').replace(
+    'status,Fly completed. 100 splats', 'status,Fly incomplete'), encoding='utf-8')
+try:
+    collect_tracking_logs([incomplete_log], source_rows=collection_source_rows,
+        source_provenance=collection_case['source_provenance'], flight=collection_case['flight'],
+        batches=collection_case['batches'])
+except ValueError as error:
+    assert 'completion sentinel' in str(error)
+else:
+    raise AssertionError('installed collector accepted missing native completion')
 
-# Plan whole-unit recovery from an explicit external predecessor; no native action.
-from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation
+# Reuse complete current tracking units from one explicit external predecessor.
+from msplatform.backends.simion.tracking_units import inspect_tracking_recovery, prepare_tracking_recovery
 from msplatform.backends.simion import particle_batching
 continuation_case=fixture['single_reflection_continuation'][int(sys.argv[2])]
-continuation=prepare_phase_continuation(continuation_case['preparation'],continuation_case['workbench'],pathlib.Path(continuation_case['run']),'baseline')
-assert continuation == continuation_case['expected']
-assert continuation['plan']['reusable_unit_count'] == 2 and continuation['plan']['replay_unit_count'] == 0
-assert len(continuation['source_record']['sha256']) == 64
-assert continuation_case['preparation']['default_replay_requested'] is False
-assert prepare_phase_continuation(continuation_case['preparation'],continuation_case['workbench'],pathlib.Path(continuation_case['run']),'default_replay') is None
+inspected=inspect_tracking_recovery(continuation_case['plan'],continuation_case['reference'])
+assert inspected['reused_unit_keys'] == ['unit_0001','unit_0002']
+_, continuation=prepare_tracking_recovery(continuation_case['plan'],continuation_case['reference'],
+    output_dir=root/('installed-recovery-'+sys.argv[2]))
+assert continuation['reusable_unit_count'] == 2 and continuation['replay_unit_count'] == 0
+assert [row['action'] for row in continuation['units']] == ['reuse','reuse']
+assert len(continuation['predecessor']['manifest_sha256']) == 64
+changed_plan=copy.deepcopy(continuation_case['plan'])
+changed_plan['numerics']['maximum_step_us'] *= 2
+try:
+    inspect_tracking_recovery(changed_plan,continuation_case['reference'])
+except ValueError as error:
+    assert 'applicability' in str(error)
+else:
+    raise AssertionError('installed tracking recovery accepted changed scientific inputs')
+tampered=pathlib.Path(inspected['index']['units'][0]['stdout_record']['path'])
+original=tampered.read_bytes()
+try:
+    tampered.write_bytes(original+b'tamper')
+    try:
+        inspect_tracking_recovery(continuation_case['plan'],continuation_case['reference'])
+    except (ValueError,AssertionError):
+        pass
+    else:
+        raise AssertionError('installed tracking recovery accepted tampered native evidence')
+finally:
+    tampered.write_bytes(original)
 batching_output=root/('installed-batch-plan-'+sys.argv[2]+'.json')
 batched=subprocess.run([sys.executable,'-I','-m','msplatform.backends.simion.particle_batching','--particle-count','100','--batch-count','3','--output',str(batching_output)],cwd=root,capture_output=True,text=True,encoding='utf-8',timeout=30)
 assert batched.returncode == 0,batched.stdout+batched.stderr
@@ -4178,18 +4221,17 @@ for label, missing_path, action in (
         except FileNotFoundError: missing_rejected.append(label)
         else: raise AssertionError('missing installed resource accepted: ' + label)
     finally: hidden_path.rename(missing_path)
-workflow_request = json.loads(pathlib.Path(fixture['single_reflection_workflow'][0]['request']).read_text(encoding='utf-8'))
-workflow_schema = {9: sfi_prepare.SCHEMA, 10: sfi_prepare.SCHEMA_V10, 11: sfi_prepare.SCHEMA_V11}[workflow_request['schema_version']]
+workflow_schema = machine_contracts.SCHEMA_DIR/'canonical_clock_authority.schema.json'
 hidden_workflow_schema = workflow_schema.with_name(workflow_schema.name+'.missing')
 workflow_schema.rename(hidden_workflow_schema)
 try:
     import subprocess
     failed = subprocess.run([sys.executable,'-I','-c',
-        "import json,sys;from pathlib import Path;from msplatform.contracts.single_reflection_preparation import validate_preparation_request;validate_preparation_request(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8')))",
-        fixture['single_reflection_workflow'][0]['request']], cwd=root,capture_output=True,timeout=30)
+        "import sys;from msplatform.recipes import load_recipe;load_recipe(sys.argv[1])",
+        fixture['single_reflection_workflow'][0]['author']], cwd=root,capture_output=True,timeout=30)
     failed_output = (failed.stdout+failed.stderr).decode('utf-8',errors='backslashreplace')
     assert failed.returncode != 0 and workflow_schema.name in failed_output, failed_output
-    missing_rejected.append('workflow_schema')
+    missing_rejected.append('native_recipe_clock_schema')
 finally: hidden_workflow_schema.rename(workflow_schema)
 schema_path = machine_contracts.SCHEMA_DIR/'multipole_design_request_v4.schema.json'
 hidden_schema = schema_path.with_name(schema_path.name+'.missing')
@@ -6467,43 +6509,73 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
             with self.subTest(records=records),self.assertRaisesRegex(ValueError,'canonical decimal key'):
                 decode(records)
 
+    @staticmethod
+    def _write_current_tracking_log(path: Path, rows: list[dict]) -> None:
+        lines = []
+        for ion, row in enumerate(rows, 1):
+            pid, birth = row['particle_id'], row['instrument_time_us']
+            state = ' '.join(f'{axis}_mm={row["position_"+axis+"_mm"]:.17g}' for axis in 'xyz')
+            state += ' '+' '.join(f'v{axis}_mm_per_us={row["velocity_"+axis+"_m_s"]/1000:.17g}' for axis in 'xyz')
+            xyz = ' '.join(f'{axis}={row["position_"+axis+"_mm"]:.17g}' for axis in 'xyz')
+            lines.extend((
+                f'TRACE: source_release ion={ion} particle_id={pid} instrument_time_us={birth:.17g} {state}',
+                f'TRACE: handoff_terminal_raw ion={ion} instance=3 instrument_time_us={birth+1:.17g} {state}',
+                f'TRACE: non_detector_splat ion={ion} instance=3 t={birth+1:.17g} {xyz} zmax=0',
+            ))
+        lines.append(f'status,Fly completed. {len(rows)} splats')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('\n'.join(lines)+'\n', encoding='utf-8')
+
     def single_reflection_continuation_probe_fixture(self) -> list[dict]:
-        from tests.workflows.single_reflection.test_single_reflection_continuation import SingleReflectionContinuationTests
-        from msplatform.workflows.single_reflection_flight.continuation import prepare_phase_continuation
+        from tests.contracts.test_simion_tracking_execution import TrackingExecutionPlanTests
+        from msplatform.backends.simion.tracking_units import prepare_tracking_recovery, tracking_applicability
+        from msplatform.io.manifest_records import file_record
+
         cases=[]
-        for _ in range(2):
-            case=SingleReflectionContinuationTests()
+        for arm in range(2):
+            temporary = tempfile.TemporaryDirectory(prefix='installed-current-recovery-fixture-')
+            self.addCleanup(temporary.cleanup)
+            root = Path(temporary.name)
+            case=TrackingExecutionPlanTests(methodName='runTest')
             case.setUp()
             self.addCleanup(case.doCleanups)
-            current=case._current_workbench()
-            # Freeze the fixture's actual projection dependency before publishing
-            # its predecessor; no installed action may read the author package.
-            projection=Path(current['batches'][0]['program_path_projection_record']['path'])
-            frozen_projection=case.workbench_fixture.root/'frozen-native-run-path.lua'
-            shutil.copyfile(projection,frozen_projection)
-            assert frozen_projection.read_bytes()==projection.read_bytes()
-            def bind_projection(value):
-                if isinstance(value,dict):
-                    if value.get('path')==str(projection) and 'sha256' in value:
-                        value['path']=str(frozen_projection)
-                    for child in value.values():bind_projection(child)
-                elif isinstance(value,list):
-                    for child in value:bind_projection(child)
-            bind_projection(current)
-            case._parent(current)
-            case.preparation['default_replay_requested']=False
-            request_path=Path(case.preparation['input_records']['request']['path'])
-            request=json.loads(request_path.read_text(encoding='utf-8'))
-            request['verify_saved_workbench_replay']=False
-            request_path.write_text(json.dumps(request),encoding='utf-8')
-            from msplatform.io.manifest_records import file_record
-            case.preparation['input_records']['request']=file_record(request_path)
-            expected=prepare_phase_continuation(case.preparation,current,case.run,'baseline')
-            # Remove only this fixture's just-created consumer planning outputs;
-            # the installed call must construct its own plan from the bound parent.
-            generated=case.run/'inputs/continuation'
-            shutil.rmtree(generated)
-            cases.append(dict(preparation=case.preparation,workbench=current,run=str(case.run),expected=expected))
+            plan=case.plan(unit_size=50)
+            units=[]
+            records=[]
+            for unit in plan['units']:
+                low,high=unit['source_row_range']
+                rows=plan['rows'][low-1:high]
+                stdout=root/'logs'/(unit['key']+'.stdout.log')
+                process=root/'logs'/(unit['key']+'.process.json')
+                self._write_current_tracking_log(stdout,rows)
+                process.write_text(json.dumps(dict(observation=dict(exit_code=0,root_process_id=17,
+                    root_process_started_at_utc_ticks=1),error=None,host_release=dict(inherited=False,
+                    token='installed-fixture',result=dict(status='released',token='installed-fixture'),error=None))),
+                    encoding='utf-8')
+                units.append(dict(key=unit['key'],source_row_range=unit['source_row_range'],
+                    expected_particle_ids=unit['expected_particle_ids'],complete=True,build_metadata={},
+                    stdout_record=file_record(stdout),process_record=file_record(process)))
+                records.extend((units[-1]['stdout_record'],units[-1]['process_record']))
+            frozen=root/'inputs/frozen.json'
+            frozen.parent.mkdir()
+            frozen.write_text('{}',encoding='utf-8')
+            immutable=file_record(frozen)
+            index=root/'logs/tracking_units.json'
+            index.write_text(json.dumps(dict(schema_version=1,role='simion_tracking_units',
+                applicability_sha256=tracking_applicability(plan),units=units,immutable_inputs=[immutable])),
+                encoding='utf-8')
+            config=root/'run_config.json'
+            config.write_text('{}',encoding='utf-8')
+            records.extend((immutable,file_record(index)))
+            manifest=root/'run_manifest.json'
+            manifest.write_text(json.dumps(dict(schema_version=2,role='simulation_run_manifest',
+                run_id='installed-current-recovery-'+str(arm),project='instrument_assembly',mode='inert',
+                status='success',inputs={},outputs=records,run_config=file_record(config))),encoding='utf-8')
+            reference=file_record(manifest)
+            inspected,replay=prepare_tracking_recovery(plan,reference,output_dir=root/'expected')
+            cases.append(dict(plan=plan,reference=reference,
+                reused_unit_keys=inspected['reused_unit_keys'],reusable_unit_count=replay['reusable_unit_count'],
+                replay_unit_count=replay['replay_unit_count']))
         return cases
 
     def recorded_joint_diagnostics_probe_fixture(self) -> list[dict]:
@@ -6529,17 +6601,26 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return result
 
     def single_reflection_collection_probe_fixture(self) -> dict:
-        from tests.workflows.single_reflection.test_single_reflection_collection import SingleReflectionCollectionTests
-        case = SingleReflectionCollectionTests()
+        from tests.contracts.test_simion_tracking_execution import TrackingExecutionPlanTests
+        from msplatform.backends.simion.tracking_collection import collect_tracking_logs
+
+        case = TrackingExecutionPlanTests(methodName='runTest')
         case.setUp()
         self.addCleanup(case.doCleanups)
-        from msplatform.workflows.single_reflection_flight.collect import collect_log
-        preparation = case.run/'collection-preparation.json'
-        workbench = case.run/'collection-workbench.json'
-        preparation.write_text(json.dumps(case.preparation),encoding='utf-8')
-        workbench.write_text(json.dumps(case.workbench),encoding='utf-8')
-        return dict(preparation=str(preparation),workbench=str(workbench),run=str(case.run),log=str(case.log),
-                    expected=collect_log(case.preparation,case.workbench,case.run,case.log))
+        plan = case.plan()
+        root = Path(tempfile.mkdtemp(prefix='installed-current-collection-fixture-'))
+        self.addCleanup(shutil.rmtree,root)
+        log = root/'native.log'
+        self._write_current_tracking_log(log,plan['rows'])
+        source_rows = {row['particle_id']:row for row in plan['rows']}
+        batches = [dict(source_row_range=[1,len(plan['rows'])],
+            expected_particle_ids=[row['particle_id'] for row in plan['rows']],build_metadata={})]
+        expected = collect_tracking_logs([log],source_rows=source_rows,
+            source_provenance=plan['source_provenance'],flight=plan['flight'],batches=batches)
+        payload = json.dumps(expected,allow_nan=False,sort_keys=True).encode('utf-8')
+        return dict(log=str(log),source_rows=source_rows,source_provenance=plan['source_provenance'],
+            flight=plan['flight'],batches=batches,expected=expected,
+            collection_sha256=hashlib.sha256(payload).hexdigest())
 
     def prepared_joint_admission_probe_fixture(self, root: Path) -> list[dict]:
         from tests.execution.test_historical_joint_publication import stopped_source_fixture
@@ -6576,38 +6657,59 @@ print("HOSTED_STDLIB_ALLOWED_AUTHOR_DENIED")
         return dict(manifest=file_record(manifest), product_id="gas_field")
 
     def single_reflection_workflow_probe_fixture(self, root: Path) -> list[dict]:
-        from msplatform.io.manifest_records import file_record
-        from tests.workflows.single_reflection.test_single_reflection_preparation import (
-            fixture, release_fixture, RecordedPrePulsePreparationTests, write_json,
-        )
-        from msplatform.workflows.single_reflection_flight.prepare import prepare
+        import base64
+        import csv
+        import re
+        from msplatform.particle_release import sample_release
+        from msplatform.particle_release.cylinder import CANONICAL_COLUMNS
+        from msplatform.recipes import load_recipe
+        from msplatform.workflows.native_tracing import _realizations, compile_simion_model
+        from msplatform.backends.simion.model import model_geometry
+
         cases = []
-        for kind in ('release_spec', 'recorded_pre_pulse_state'):
+        for kind in ('release_spec', 'recorded_birth'):
             case_root = root / ('workflow-input-' + kind)
-            case_root.mkdir()
-            if kind == 'release_spec':
-                request_path, baseline_run, request, _ = release_fixture(case_root)
-            else:
-                _, _, _, collection, decision, manifest = RecordedPrePulsePreparationTests()._winner(case_root)
-                consumer = case_root / 'consumer'
-                consumer.mkdir()
-                request_path, baseline_run, request = fixture(consumer)
-                request['source'] = dict(kind=kind, instance_id='oatof', frame_id='oatof_global',
-                    pre_pulse_collection=file_record(collection), pulse_decision=file_record(decision),
-                    producer_manifest=file_record(manifest),
-                    **{name:request['source'][name] for name in ('clock_authority','instrument_epoch')})
-                write_json(request_path, request)
-            receipt = prepare(request_path, baseline_run)
-            with (baseline_run/'inputs/projected_source.csv').open(encoding='utf-8',newline='') as stream:
-                import csv
-                rows = list(csv.DictReader(stream))
-            provenance = json.loads((baseline_run/'inputs/source_provenance.json').read_text(encoding='utf-8'))
-            cases.append(dict(kind=kind, request=str(request_path), version=request['schema_version'],
-                particle_count=receipt['particle_count'], particle_ids=[row['particle_id'] for row in rows],
-                projected_sha256=hashlib.sha256((baseline_run/'inputs/projected_source.csv').read_bytes()).hexdigest(),
-                gem_sha256={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in (baseline_run/'inputs').glob('*.gem')},
-                provenance={name:provenance[name] for name in ('source_kind','population_policy','clock_epoch_id',
-                    'state_time_semantics','original_mother_particle_count','continued_particle_ids','original_birth_times_us') if name in provenance}))
+            case_root.mkdir(parents=True)
+            name = 'oa_split_tof_native_small_v1'
+            source = REPO_ROOT/'src/msplatform/examples'
+            study = json.loads((source/(name+'.json')).read_bytes())
+            author_text = (source/(name+'.toml')).read_text(encoding='utf-8')
+            if kind == 'recorded_birth':
+                release = study['release']
+                generated = sample_release(release).to_dict()['realization']['generator_rows']
+                birth = case_root/'birth.csv'
+                with birth.open('w',encoding='utf-8',newline='') as stream:
+                    writer = csv.DictWriter(stream,fieldnames=CANONICAL_COLUMNS,extrasaction='ignore',lineterminator='\n')
+                    writer.writeheader();writer.writerows(generated)
+                payload = birth.read_bytes()
+                study['release'] = dict(schema_version=1,role='canonical_recorded_birth_request',
+                    source_record=dict(path='birth.csv',bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest().upper()),
+                    clock=release['clock'],instrument_origin_us=release['instrument_origin_us'],
+                    species_id=release['species_id'],species=release['release_spec']['species'],
+                    source_component_id=release['source_component_id'],frame_id=release['release_spec']['frame_id'],
+                    relative_weights=release['relative_weights'],particle_ids=[row['particle_id'] for row in generated])
+            content = json.dumps(study).encode('utf-8')
+            (case_root/(name+'.json')).write_bytes(content)
+            author_text = re.sub(r'(?m)^sha256 = "[a-fA-F0-9]{64}"',
+                'sha256 = "'+hashlib.sha256(content).hexdigest()+'"',author_text,count=1)
+            author = case_root/(name+'.toml')
+            author.write_text(author_text,encoding='utf-8')
+            recipe = load_recipe(author).to_dict()
+            frozen = case_root/'frozen'
+            frozen.mkdir()
+            for resource,snapshot in recipe['resource_snapshots'].items():
+                (frozen/resource).write_bytes(base64.b64decode(snapshot['bytes_base64'],validate=True))
+            packet = _realizations(recipe['study']['document']['release'],resource_root=frozen)[0]
+            document = packet.to_dict() if hasattr(packet,'to_dict') else packet
+            model = compile_simion_model(recipe)
+            compiled = model_geometry(model)
+            cases.append(dict(kind=kind,author=str(author),version=recipe['schema_version'],
+                particle_count=len(document['rows']),particle_ids=[row['particle_id'] for row in document['rows']],
+                model_identity_sha256=model.document['model_identity_sha256'],
+                gem_sha256={('frontend' if name == 'parent' else 'frontend_entrance_refinement')+'.gem':
+                            hashlib.sha256(text.encode('utf-8')).hexdigest()
+                            for name,text in compiled.frontend_gems.items()},
+                provenance={name:document[name] for name in ('role','state_kind','clock')}))
         return cases
 
     def mr_cad_parts_probe_fixture(self) -> dict:
@@ -7643,7 +7745,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                         self.assertIn('INSTALLED_HISTORICAL_MASS_ANALYSIS=PASS real_store=1 cold_read=1 source_unchanged=1 no_native=1', evidence)
                         self.assertIn('INSTALLED_HISTORICAL_FIELD_SWEEP=PASS cold_read=1 zero_hit=1 tamper_rejected=1 no_native=1', evidence)
                         self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', evidence)
-                        self.assertIn('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', evidence)
+                        self.assertIn('INSTALLED_B_CONTINUATION=PASS results_reader=1 missing_parent_rejected=1', evidence)
                         self.assertIn('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', evidence)
                         self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), recipe_bytes)
                         print('INSTALLED_REFERENCE_EVIDENCE=' + evidence.strip(), flush=True)
@@ -8079,7 +8181,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                 self.assertIn('INSTALLED_HISTORICAL_FIELD_SWEEP=PASS cold_read=1 zero_hit=1 tamper_rejected=1 no_native=1', result)
                 self.assertIn('MR_HISTORICAL_CAPTURE_INSTALLED=PASS frozen_bytes=1 read_only=1 no_source_producer=1', result)
                 self.assertIn('INSTALLED_B_NATIVE_PREFLIGHT=PASS schema2=1 split_oa_tof=1 rf_split=1 retired_execution=1 native_run=0', result)
-                self.assertIn('INSTALLED_B_CONTINUATION=PASS current_locator=1 unknown_rejected=1', result)
+                self.assertIn('INSTALLED_B_CONTINUATION=PASS results_reader=1 missing_parent_rejected=1', result)
                 self.assertIn('INSTALLED_B_MASS_SCAN=PASS source_batches=3,2 ids=1,2,3,4,5 charges=1,2 native_run=0', result)
                 self.assertEqual((root / 'installed_reference_uniform_e.toml').read_bytes(), reference_fixture_bytes)
                 self.assertIn('INSTALLED_RF_IP_TRACKING_OWNER=PASS native=INERT ids=7,91', result)
@@ -8115,7 +8217,7 @@ print('INSTALLED_REFERENCE_ORIGINS=PASS', flush=True)
                     'tests/contracts/test_support/terminal_evidence_fixture.py',
                     'tests/contracts/test_sfi_scalar_binding.py',
                     'tests/contracts/test_simion_tracking_execution.py',
-                    'tests/workflows/single_reflection/test_single_reflection_preparation.py',
+                    'tests/contracts/test_public_recorded_birth.py',
                     'tests/workflows/single_reflection/test_single_reflection_geometry.py',
                     'tests/contracts/test_support/installed_observation_probe.py',
                     'tests/contracts/test_support/rf_ip_inert_field.py',

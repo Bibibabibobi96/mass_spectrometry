@@ -313,15 +313,13 @@ def publish_sfi_fields(context, budget, retention, artifact):
 
 
 def make_fixture(root: Path, *, refinement_windows: bool = False):
-    """Construct same-example preparation, fields and registered scalar producers."""
+    """Construct current native-preflight, fields and registered scalar producers."""
     from importlib.resources import files
     from tests.contracts import test_simion_tracking_execution as tracking_test
-    from tests.workflows.single_reflection.test_single_reflection_preparation import fixture, write_json
-    from msplatform import assembly as assembly_api, components as component_api, examples as example_api
-    from msplatform.backends.simion import operations
     from msplatform.execution.owner import run_managed_stage
     from msplatform.io.manifest_records import file_record
-    from msplatform.workflows.single_reflection_flight.prepare import prepare
+    from msplatform.recipes import load_recipe
+    from msplatform.workflows.native_tracing import preflight_native
 
     root = Path(root).resolve()
     context, budget, retention = make_context(root)
@@ -329,74 +327,18 @@ def make_fixture(root: Path, *, refinement_windows: bool = False):
         raise ValueError("refinement_windows must be a boolean")
     scalar = registered_scalar_fixture(context, budget, retention)
     try:
-        case = example_api.load_example("rf_oatof_functional_v1")
-        parts = {key: component_api.resolve_component(value) for key, value in case.component_requests.items()}
-        assembly = assembly_api.assemble(case.recipe, parts)
-        compiled = operations.compile_geometry(assembly, numerics=case.geometry_numerics)
-        author_root = root / "preparation-author"
-        author_root.mkdir()
-        epoch_bytes = files("msplatform.examples").joinpath("instrument_epoch_v1.json").read_bytes()
-        # Reuse only the historical test scaffold; its legacy geometry helper
-        # cannot consume schema-4 rods. Replace its author records before prepare.
-        request_path, unused_run, request = fixture(author_root, epoch_bytes=epoch_bytes)
-        del unused_run
-        author = request_path.parent
-        import csv
-        import math
-        from msplatform.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-        from msplatform.components.rf_multipole.source_validation import validate_source
-        from msplatform.components.rf_multipole.interface_geometry import transport_observations
+        author = Path(str(files("msplatform.examples").joinpath("rf_split_oatof_native_small_v1.toml")))
+        recipe = load_recipe(author)
 
-        source = parts["multipole"].resolved_design
-        source_path = author / "source.csv"
-        with source_path.open(encoding="utf-8-sig", newline="") as stream:
-            reader = csv.DictReader(stream)
-            columns = reader.fieldnames
-            rows = list(reader)
-        speed = math.sqrt(2 * source["particle_source"]["energy_model"]["kinetic_energy_eV"] * ELEMENTARY_CHARGE_C / (100 * AMU_KG))
-        for row in rows:
-            row["z_mm"] = transport_observations(source)["release_plane_z_mm"]
-            row["vx_m_s"], row["vy_m_s"], row["vz_m_s"] = speed * 0.1, speed * 0.2, speed * math.sqrt(0.95)
-        with source_path.open("w", encoding="utf-8-sig", newline="") as stream:
-            writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\r\n")
-            writer.writeheader()
-            writer.writerows(rows)
-        write_json(author / "multipole.json", source)
-        write_json(author / "metadata.json", validate_source(source_path, source))
-        request["providers"]["instances"]["multipole"]["resolved_design"] = file_record(author / "multipole.json", recorded_path=Path("multipole.json"))
-        request["source"]["particle_source"] = file_record(source_path, recorded_path=Path("source.csv"))
-        request["source"]["metadata"] = file_record(author / "metadata.json", recorded_path=Path("metadata.json"))
-        request["source"]["frame_id"] = source["coordinate"]["coordinate_id"]
-        write_json(author / "oatof.json", parts["oatof"].resolved_design)
-        write_json(author / "parent_plan.json", assembly.composition_plan)
-        request["schema_version"] = 11
-        request["composition_plan"] = file_record(author / "parent_plan.json", recorded_path=Path("parent_plan.json"))
-        request["providers"]["instances"]["oatof"]["resolved_design"] = file_record(
-            author / "oatof.json", recorded_path=Path("oatof.json")
-        )
-        for instance, values in compiled.frontend_geometry["electrode_bindings"].items():
-            request["providers"]["instances"][instance]["electrode_bindings"] = values
-        request["numerics"]["frontend_domains"] = copy.deepcopy(case.field_numerics["frontend_domains"])
-        request["numerics"]["geometry_build"] = copy.deepcopy(case.geometry_numerics["geometry_build"])
-        request["numerics"]["detector_marker"] = copy.deepcopy(case.geometry_numerics["detector_marker"])
-        request["numerics"]["rf_reference_voltage_v"] = case.field_numerics["rf_reference_voltage_v"]
-        request["flight"] = copy.deepcopy(scalar.flight)
-        write_json(request_path, request)
-
-        def preparation_action(session):
-            receipt = prepare(request_path, session.run_dir)
-            records = {**receipt["input_records"], **receipt["outputs"]}
-            paths = []
-            for record in records.values():
-                path = Path(record["path"])
-                if path.is_file() and path.is_relative_to(session.run_dir):
-                    session.declare_file(path, record.get("retention_role", "required_evidence"))
-                    paths.append(path)
+        def preflight_action(session):
+            report = preflight_native(recipe.to_dict())
+            output = session.declare_file(session.input_dir / "native_preflight.json", "required_evidence")
+            output.write_text(json.dumps(report, allow_nan=False), encoding="utf-8")
             return dict(
                 status="success",
-                summary={"fixture": "inert_test_only"},
-                output_paths=paths,
-                required_output_paths=paths,
+                summary={"fixture": "inert_test_only", "native_verified": report["native_verified"]},
+                output_paths=[output],
+                required_output_paths=[output],
                 retention_preserve_paths=[],
                 manifest_extra_fields={},
             )
@@ -404,14 +346,14 @@ def make_fixture(root: Path, *, refinement_windows: bool = False):
         result = run_managed_stage(
             context,
             descriptor=dict(project="instrument_assembly", mode="test_fixture", software=[]),
-            run_id="20261114_000002__test__python__sfi-preparation",
-            payload={"action": "sfi_fixture_preparation"},
+            run_id="20261114_000002__test__python__sfi-native-preflight",
+            payload={"action": "native_preflight"},
             committed_new_bytes=16777216,
             commitment_inputs=[budget],
             retention=retention,
             expected_operation_ids=(),
             operation_dependencies={},
-            action=preparation_action,
+            action=preflight_action,
             action_record=file_record(Path(__file__), "required_evidence"),
         )
         tracking = tracking_test.TrackingExecutionPlanTests(methodName="runTest")

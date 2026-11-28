@@ -893,15 +893,17 @@ foreach($scope in @('Owner','Repository')){
         self.assertEqual(selected[-1]["Modules"], ["tests/simion/test_analyze_terminal_plane.py"])
 
     def test_single_reflection_workflow_changes_select_actual_owner_consumers(self) -> None:
-        paths = ('src/msplatform/backends/simion/frontend_fields.py',
-                 'src/msplatform/workflows/pulse_execution.py')
-        for path in paths:
+        consumers = {
+            'src/msplatform/backends/simion/frontend_fields.py': 'tests/contracts/test_simion_field_workbench.py',
+            'src/msplatform/backends/simion/tracking_execution.py': 'tests/contracts/test_simion_tracking_execution.py',
+            'src/msplatform/workflows/native_tracing.py': 'tests/contracts/test_public_recorded_birth.py',
+        }
+        for path, module in consumers.items():
             with self.subTest(path=path):
-                result, = self.selections(REPO_ROOT, [dict(stage='instrument_assembly', paths=[path])])
-                for module in ('test_single_reflection_field_stage',
-                               'test_dependencies', 'test_native_path_consumers'):
-                    expected_root = 'tests/workflows/single_reflection/' if module == 'test_single_reflection_field_stage' else 'tests/execution/'
-                    self.assertIn(expected_root + module + '.py', result['Modules'])
+                result, = self.selections(REPO_ROOT, [dict(stage='machine_contracts', paths=[path])])
+                self.assertIsNotNone(result)
+                self.assertIn(module, result['Modules'])
+                self.assertIn('tests/contracts/test_installed_scientific_core.py', result['Modules'])
                 self.assertEqual(result['Reason'], 'declared_owner_module_dependencies')
 
     def test_sfi_retired_entries_and_current_configs_have_distinct_selection(self) -> None:

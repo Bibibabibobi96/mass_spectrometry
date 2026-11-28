@@ -184,21 +184,19 @@ class ChangedGateContractTests(unittest.TestCase):
                 self.assertIn('machine_contracts', self.routed_stages(
                     'tests/contracts/test_support/installed_' + name + '_probe.py'))
 
-    def test_recorded_sfi_consumer_selects_its_source_and_installed_boundaries(self):
-        consumer = 'tests.workflows.single_reflection.test_single_reflection_recorded_birth_consumer'
-        for path in ('src/msplatform/workflows/single_reflection_flight/recorded_birth.py',
+    def test_public_recorded_birth_selects_current_sources_and_installed_boundaries(self):
+        consumer = 'tests.contracts.test_public_recorded_birth'
+        for path in ('src/msplatform/particle_release/authoring.py',
+                     'src/msplatform/workflows/native_tracing.py',
                      'src/msplatform/backends/simion/operations.py',
                      'src/msplatform/backends/simion/compiler.py'):
             with self.subTest(path=path):
                 request, _ = self.plan('-ChangedPath', path)
                 selected = [row for row in request['stages'] if row['selected']]
-                modules = {value for row in selected
-                           if row['name'].startswith('instrument_assembly')
-                           for value in row['command'].get('parameters', {}).get('SelectedTestModules', [])}
-                self.assertIn(consumer, modules)
                 common = {value.removesuffix('.py').replace('/', '.') for row in selected
                           if row['name'].startswith('machine_contracts')
                           for value in row['command'].get('arguments', [])[2:]}
+                self.assertIn(consumer, common)
                 self.assertIn('tests.contracts.test_installed_scientific_core', common)
 
     def test_recorded_birth_selects_the_actual_receivers(self):
@@ -1427,17 +1425,14 @@ exit 0
                 for root in roots for path in (REPO_ROOT / root).rglob('test_*.py')}
         expected = {module for module in full
                     if (module.rsplit('.', 1)[-1].startswith('test_single_reflection_') and
-                        not module.endswith(('test_single_reflection_checkpoint_diagnostics',
-                                             'test_single_reflection_recorded_birth_consumer'))) or
-                    module.rsplit('.', 1)[-1] in ('test_dependencies', 'test_native_path_consumers',
-                                                  'test_saved_workbench_replay_policy', 'test_sfi_preparation_numerics')}
+                        not module.endswith('test_single_reflection_checkpoint_diagnostics')) or
+                    module.rsplit('.', 1)[-1] in ('test_dependencies', 'test_native_path_consumers')}
         cases = [(('-ChangedPath', source), expected)]
         for parent, name in (
-                ('src/msplatform/workflows/single_reflection_flight/', 'prepare.py'),
+                ('src/msplatform/workflows/', 'pulse_execution.py'),
                 ('src/msplatform/backends/simion/', 'downstream_fields.py'),
                 ('src/msplatform/contracts/schemas/', 'single_reflection_request_v11.schema.json')):
-            selected = expected | ({'tests.workflows.single_reflection.test_single_reflection_recorded_birth_consumer'} if name == 'prepare.py' else set())
-            cases.append((('-ChangedPath', parent + name), selected))
+            cases.append((('-ChangedPath', parent + name), expected))
         path = 'tests/assembly/oa_mr_execute/test_oa_mr_execute.py'
         cases.append((('-ChangedPath', source, path), expected | {path[:-3].replace('/', '.')}))
         retired = 'tests/workflows/paired_accelerator/test_paired_accelerator_static_field_execute.py'
@@ -1497,10 +1492,10 @@ $route=(Get-Content {quote(ROUTE_TABLE)} -Raw|ConvertFrom-Json -Depth 64).routes
 $root={quote(root)};$source={quote(source)}
 $parameters=@{{Route=$route;KnownTestRoots=@('tests/assembly/','tests/workflows/','tests/execution/');RepoRoot=$root}}
 $result=@{{known=@((Get-GateChangedTests @parameters -ChangedPaths @($source)).Modules)}}
-$result.unknown=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @('src/msplatform/workflows/single_reflection_flight/future.py'))
+$result.unknown=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @('src/msplatform/workflows/future.py'))
 Remove-Item -LiteralPath (Join-Path $root $source)
 $result.deleted=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source))
-$result.renamed=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source,'src/msplatform/workflows/single_reflection_flight/renamed.py'))
+$result.renamed=$null-eq(Get-GateChangedTests @parameters -ChangedPaths @($source,'src/msplatform/workflows/renamed.py'))
 $result.full=@((Get-GateChangedTests @parameters -ChangedPaths @($source) -FullScope).Modules)
 $result|ConvertTo-Json -Compress
 """
@@ -1520,19 +1515,24 @@ $result|ConvertTo-Json -Compress
                      "src/msplatform/workflows/config/runtime_dependencies.json",
                      "tools/repository/verify_integration.ps1",
                      "src/msplatform/execution/resources/dependencies.ps1",
-                     "src/msplatform/workflows/single_reflection_flight/prepare.py",
-                     "src/msplatform/workflows/single_reflection_flight/plot_single_flight_spatial_six_panel.py"):
+                     "src/msplatform/workflows/native_tracing.py",
+                     "src/msplatform/backends/simion/tracking_collection.py"):
             with self.subTest(path=path):
                 expected = {"instrument_assembly"}
                 if path in {
                     "src/msplatform/workflows/config/runtime_dependencies.json",
-                    "src/msplatform/workflows/single_reflection_flight/prepare.py",
-                    "src/msplatform/workflows/single_reflection_flight/plot_single_flight_spatial_six_panel.py",
+                    "src/msplatform/workflows/native_tracing.py",
+                    "src/msplatform/backends/simion/tracking_collection.py",
                 }:
                     expected.add("machine_contracts")
                 elif path == "src/msplatform/execution/resources/dependencies.ps1":
                     expected.update(("machine_contracts", "host_resource_adapter_tests",
                                      "host_resource_scheduler_tests"))
+                if path == "src/msplatform/backends/simion/tracking_collection.py":
+                    expected.update(("simion_backend", "single_reflection_oa_tof_mass_analyzer_static",
+                        "rf_multipole_domain_tests", "rf_multipole_generated_publications",
+                        "rf_multipole_quadrupole_static", "rf_multipole_hexapole_static",
+                        "rf_multipole_octupole_static"))
                 self.assertEqual(set(self.routed_stages(path)), expected)
 
 

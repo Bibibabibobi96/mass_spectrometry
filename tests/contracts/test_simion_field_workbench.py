@@ -79,13 +79,15 @@ class FieldWorkbenchTests(unittest.TestCase):
                 self.assertEqual(repr(changed),repr(before))
 
     def test_original_probe_algorithms_are_single_canonical_implementations(self):
-        from msplatform.workflows.single_reflection_flight import runtime
+        import importlib.util
         from msplatform.backends.simion import field_validation
+        tree=ast.parse(Path(field_validation.__file__).read_text(encoding='utf-8'))
         for name in ('interface_field_probes','native_priority_occupancy_probes'):
-            self.assertIs(getattr(runtime,name),getattr(field_validation,name))
-        tree=ast.parse(Path(runtime.__file__).read_text(encoding='utf-8'))
-        self.assertFalse(any(isinstance(n,ast.FunctionDef) and n.name in
-            {'interface_field_probes','native_priority_occupancy_probes'} for n in tree.body))
+            function=getattr(field_validation,name)
+            self.assertEqual(function.__module__,'msplatform.backends.simion.field_validation')
+            definitions=[n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name]
+            self.assertEqual(len(definitions),1)
+        self.assertIsNone(importlib.util.find_spec('msplatform.workflows.single_reflection_flight'))
 
     @unittest.skipUnless(LUA.is_file(),'plain Lua interpreter unavailable')
     def test_actual_field_modes_preserve_solved_audits_without_source_or_program(self):
