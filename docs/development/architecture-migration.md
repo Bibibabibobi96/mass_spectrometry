@@ -566,7 +566,9 @@ Agent 11 的 `1ea529ae`／主线 `0dfbdf11` 修复前项四组真实失败：IP�
 
 作者完整通过范围：gas-flow7/7、split19/19、canonical4/4、native controls30/30、pressure-relaunch单例、平台／Store60/60；真实 derived plan319 records／38 sources 通过。主线87项组合回归 PASS／0 skip（682.718s），日志 `store-integration-fixes-main.log`。IPMR 完整用例在900秒超时，static-world 的 reused-field 外部 payload 保护另有两例失败，均明确未关闭；不将上述部分证据写成全部通过。串行时序与临时文件清理竞争未用修改生产逻辑掩盖。
 
-主线 CLOC 2.10 `1ce7d170→0dfbdf11` PASS：total／production／tests code +50／+41／+9，files不变，unclassified=0；详见 `store-integration-fixes-main-cloc.log`。无完整 Changed／Repository、双安装或商业 native。
+后续 `f0f85307`／主线 `ca59d716` 将 `operating_producer_reference` 纳入 `require_static_world_reuse` 的空间身份、资产闭包、receipts 和 audit，递归保护原 producer 全部记录；IPMR 补齐 Store prepared/surface 证据、真实 manifest-member 绑定和 collision producer 递归保护。static-world 作者2/2 PASS（343.880s），主线同模块2/2 PASS（352.867s），日志 `static-world-store-main.log`；IPMR derived/reuse 与 tracking 聚焦复验通过。IPMR 完整模块最新仍 `killed`／`stop_reason=Timed out`，不能记为通过或科学断言失败。
+
+前项 CLOC 2.10 `1ce7d170→0dfbdf11` PASS：total／production／tests code +50／+41／+9，files不变，unclassified=0，详见 `store-integration-fixes-main-cloc.log`。后续单元 CLOC 2.10 `a50d805a→ca59d716` PASS：total／production code +45、tests不变，files／blank／comment不变，unclassified=0；详见 `static-ipmr-f0f85307-cloc.log`。无完整 Changed／Repository、双安装或商业 native。
 
 ### C3 standalone IP Store 接管（主线整合候选）
 
