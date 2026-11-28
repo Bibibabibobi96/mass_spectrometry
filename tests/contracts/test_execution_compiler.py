@@ -73,6 +73,14 @@ class ExecutionCompilerTests(unittest.TestCase):
             "evidence_contract_path": self.binding_file('evidence.json'),
         }
 
+    def ion_processor_bindings(self):
+        root = Path(self.binding_directory.name)
+        for name in ("workspace", "artifact_root"):
+            (root/name).mkdir(exist_ok=True)
+        return {"workspace": str(root/"workspace"),
+                "execution_environment": self.binding_file("execution_environment.json"),
+                "environment_profile": "fixture", "artifact_root": str(root/"artifact_root")}
+
     def ion_processor_request(self):
         request = self.approved_functional_rf_request()
         request["target"] = {
@@ -223,7 +231,6 @@ class ExecutionCompilerTests(unittest.TestCase):
         for project, profile_id in (
             ("multi_reflection_tof", "native_condition"),
             ("orthogonal_accelerator", "component_focus"),
-            ("ion_processor", "native_functional"),
         ):
             document = load_json(resolve_project_root(project)/"config/execution_profiles.json")
             profile = next(item for item in document["profiles"] if item["profile_id"] == profile_id)
@@ -830,18 +837,29 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
                     self.assertFalse(any(step["step_id"] == "static_gate" for step in result["commands"]))
             self.assertEqual(count, 11)
 
-    def test_ion_processor_existing_functional_runner_is_discoverable_without_budget_bindings(self):
-        result = self.compile_request(self.ion_processor_request())
+    def test_ion_processor_functional_runner_requires_explicit_store_and_deployment(self):
+        missing = self.compile_request(self.ion_processor_request())
+        self.assertEqual(missing["status"], "NEEDS_RUNTIME_INPUTS")
+        self.assertFalse(missing["safe_to_execute"])
+        for name in ("workspace", "execution_environment", "environment_profile", "artifact_root"):
+            self.assertIn(name, " ".join(missing["blockers"]))
+        result = self.compile_request(self.ion_processor_request(), self.ion_processor_bindings())
         self.assertEqual(result["status"], "EXECUTION_READY")
         self.assertEqual(result["profile_id"], "native_functional")
         self.assertEqual([item["step_id"] for item in result["commands"]], ["native_run"])
         command = result["commands"][0]
-        self.assertTrue(any(value.replace("\\", "/").endswith("/msplatform/workflows/resources/ip_functional.ps1")
-                            for value in command["argv"]))
-        self.assertEqual(command["argv"][command["argv"].index("-RepositoryRoot") + 1], str(REPO_ROOT))
-        self.assertEqual(command["argv"][command["argv"].index("-RunId") + 1], command["run_id"])
-        self.assertEqual(command["argv"][command["argv"].index("-SourceProfile")+1], "functional")
-        self.assertEqual(command["argv"][command["argv"].index("-PythonExe") + 1], result["python_executable"])
+        self.assertEqual(command["shell"], "python")
+        self.assertEqual(command["argv"][:3],
+                         [result["python_executable"], "-m", "msplatform.cli"])
+        arguments = command["arguments"]
+        self.assertEqual(arguments[:2], ["ion-processor-native-functional", "run"])
+        self.assertEqual(arguments[arguments.index("--run-id") + 1], command["run_id"])
+        self.assertEqual(arguments[arguments.index("--source-profile")+1], "functional")
+        for option, binding in (("--workspace", "workspace"),
+                                ("--execution-environment", "execution_environment"),
+                                ("--environment-profile", "environment_profile"),
+                                ("--artifact-root", "artifact_root")):
+            self.assertEqual(arguments[arguments.index(option) + 1], self.ion_processor_bindings()[binding])
         self.assertTrue(any("Prototype" in message for message in result["limitations"]))
 
     def test_ion_processor_profile_rejects_unregistered_physics_and_higher_qualification(self):
@@ -952,7 +970,7 @@ Invoke-CompiledExecutionPlan -PlanPath $Plan -RepoRoot $Repository
 
     def test_profiles_without_runtime_resolver_do_not_load_project_code(self):
         with patch("tools.repository.compile_execution_plan.importlib.import_module") as loader:
-            result = self.compile_request(self.ion_processor_request())
+            result = self.compile_request(self.ion_processor_request(), self.ion_processor_bindings())
             self.assertEqual(result["status"], "EXECUTION_READY")
             request = load_json(HERE / "fixtures" / "oa_tof_500da_r30000.example.json")
             self.assertEqual(self.compile_request(request)["status"], "NEEDS_IMPLEMENTATION")

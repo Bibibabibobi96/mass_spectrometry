@@ -110,8 +110,9 @@ Pull与LP shield的狭缝是实体cutout，狭缝几何本身不是独立单位�
 
 ## 执行与验收边界
 
-生产入口为`src/msplatform/workflows/resources/ip_functional.ps1`薄委托，准备与分析由`msplatform.workflows.ion_processor.functional`承担；
-`src/msplatform/workflows/resources/ip_verify.ps1`执行轻量unittest。从仓库根使用项目入口，先验证输入和计划，再启动真实SIMION。
+生产入口为`python -m msplatform.cli ion-processor-native-functional run`，科学准备与分析继续由现有`msplatform.workflows.ion_processor.functional`承担；
+`ip_functional.ps1`仅是Store stage调用的原生科学资源。`src/msplatform/workflows/resources/ip_verify.ps1`执行轻量unittest。
+注册profile先验证输入、显式deployment和ArtifactStore，再启动真实SIMION。
 不得通过旧oaTOF或多极杆入口偷偷覆盖科学参数。终态发布run_config、summary和manifest，
 保留canonical粒子事件、必要日志与轻量图。
 
@@ -137,7 +138,8 @@ GUI预留只覆盖准备；用户手动Fly的稠密轨迹增长另计。两种�
 新运行不再消费已封存的旧raw PA族：从冻结GEM在本次私有run执行gem2pa和Refine，保留fractional `.pa-surf`。
 所有IOB保存结束后，保护完整原生族，worker只作内存Fast Adjust；飞行后逐成员核对身份并保存回执。
 此路线不把已发布缓存复制改名为新构建，不使用surface=none导出来丢弃fractional几何。
-运行器必须复用公共`New-RunPackage`、capacity session、host lease和`Invoke-ResourceBudgetedProcess`。
+运行器必须复用公共`standalone_native_store`、`run_managed_stage`、host lease和受管进程／批次实现；
+新run只进入调用者显式选择的ArtifactStore，不再建立旧capacity session或第二份PowerShell终态。
 不增加项目私有memory硬限，内存准入仍由公共主机policy负责。
 
 `solver_timeout_s=1800`冻结为本轮求解预算记录；现有公共resource runner未据此主动硬终止，
@@ -278,7 +280,7 @@ SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推�
 
 ## 自动分批与单工作台重放
 
-同几何纯调压使用 `ip_functional.ps1 -ConfigurationDirectory <完整配置目录> -NativeFieldRun <已封存来源run>`。
+同几何纯调压使用 `msplatform.cli ion-processor-native-functional run --configuration-directory <完整配置目录> --native-field-run <已封存来源run>`，并提供注册profile要求的deployment、workspace和`--artifact-root`。
 原生 Refine 已建立15个可调电极的单位响应；`runtime.lua`的`segment.fast_adjust`每次按冻结
 `native_drive.voltages`写入全部`adj_elect`，包含RF、抬升、脉冲和E10／E11相对偏置。
 电势按单位响应线性叠加，轨迹、碰撞与束团状态仍需每组重新计算。
@@ -286,14 +288,14 @@ SIMION的`adjustable`具有独立作用域；不能用普通Lua全局赋值推�
 路径／字节／SHA；不一致失败关闭。成功后引用只读来源，runner跳过GEM／Refine，飞行前后保护并核验原生场族。
 改变实体、网格或求场设置则重新建场；GUI独立工作台的准备与手动验收继续使用其原合同。
 
-`ip_functional.ps1 -ConfigurationDirectory <directory>`支持MR匹配候选的完整科学／数值配置目录；
+`msplatform.cli ion-processor-native-functional run --configuration-directory <directory>`支持MR匹配候选的完整科学／数值配置目录；
 未指定时仍消费本项目`config/`。显式目录要求自身包含坐标合同，冻结全部实际消费配置及可选的
 `component_matching_derivation.json`，不回退到封存基线拼接缺项。准备、资源调度、求场与自动诊断复用原入口。
 候选目录仅是求解输入，不表示已经求场或完成出口匹配。
 
-外层主机`flight`租约只管理整项重任务的准入；粒子worker并发由公共
-`common.simion.resource_scheduler`、`msplatform.backends.simion.particle_batching`及
-`Invoke-ResourceBudgetedProcesses`决定。未知资源身份先保留首正式批，观测峰值后重规划；
+Store组合进程只持有普通`workflow`阶段租约；实际Refine/Fly仍由原host重阶段准入，避免嵌套重复占用heavy grant。
+粒子worker并发由公共`msplatform.execution.simion_dispatch`、`msplatform.backends.simion.particle_batching`及
+既有SIMION批次owner决定。未知资源身份先保留首正式批，观测峰值后重规划；
 不在项目固定并发路数或以PA磁盘大小代替进程峰值。
 观测后的准备或调度错误会停止新worker启动，但不会中止仍健康的首正式worker；运行器等待其自然终态，
 保留其原生日志和输出后才将本次运行发布为失败。
@@ -402,8 +404,8 @@ See [current gas-input scope](PROJECT.md#v84-canonical-prescribed-gas--hs1-softw
 for region/unit/callback guarantees and software-only acceptance limits. This does not
 add a new native launcher, implicit Refine/Fly, or boundary-resolved integration policy.
 
-The installed `ip_functional.ps1` launcher resolves the explicit research project root
-before reading `runtime_registry.json`, `runtime_profiles.json` and the selected
-configuration directory. Its production-source regression and the two affected modules
+The installed `msplatform.cli` composition root resolves the explicit research project
+and Store deployment before its `ip_functional.ps1` science resource reads `runtime_profiles.json`
+and the selected configuration directory. Its production-source regression and the two affected modules
 passed 67 tests with one existing environment skip; this verifies configuration
 resolution before native admission, not an actual SIMION launcher or flight.

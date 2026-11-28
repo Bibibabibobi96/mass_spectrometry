@@ -205,6 +205,49 @@ def _run_wehnelt_build_only(args) -> int:
     return 0
 
 
+def _run_ion_processor_native(args) -> int:
+    """Compose standalone IP science, deployment and Store recovery."""
+    from msplatform.execution.context import load_environment
+    from msplatform.storage import ArtifactStore
+    from msplatform.workflows.ion_processor import native_functional
+
+    if args.artifact_root is None:
+        raise ValueError("IP execution requires --artifact-root")
+    store = ArtifactStore(args.artifact_root.absolute())
+    if args.ip_action == "recover-publication":
+        if not args.store_run_id:
+            raise ValueError("IP publication recovery requires --store-run-id")
+        result = native_functional.recover_native_publication(
+            artifact_store=store, store_run_id=args.store_run_id)
+    else:
+        if args.execution_environment is None or args.workspace is None or not args.environment_profile:
+            raise ValueError("IP execution requires --execution-environment, --environment-profile and --workspace")
+        context = load_environment(args.execution_environment.absolute(),
+            workspace=args.workspace.absolute(), profile=args.environment_profile)
+        if args.ip_action == "recover-stage":
+            if not args.native_stage_asset_id:
+                raise ValueError("IP stage recovery requires --native-stage-asset-id")
+            result = native_functional.recover_native_stage(artifact_store=store,
+                native_stage_asset_id=args.native_stage_asset_id, context=context)
+        else:
+            if not args.run_id:
+                raise ValueError("IP execution requires --run-id")
+            try:
+                result = native_functional.run_native_functional(context=context, artifact_store=store,
+                    run_id=args.run_id, source_profile=args.source_profile,
+                    configuration_directory=args.configuration_directory,
+                    native_field_run=args.native_field_run,
+                    continuation_manifest=args.continuation_predecessor_manifest,
+                    injected_source=args.injected_source)
+            except (ValueError, OSError, RuntimeError, KeyError) as error:
+                import sys
+                for note in getattr(error, "__notes__", ()):
+                    print(note, file=sys.stderr)
+                raise
+    print(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2, default=str))
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the single installed CLI and its actual capability subcommands."""
     parser = argparse.ArgumentParser(prog="msplatform")
@@ -215,6 +258,21 @@ def _build_parser() -> argparse.ArgumentParser:
     wehnelt.add_argument("--environment-profile", required=True)
     wehnelt.add_argument("--workspace", type=Path, required=True)
     wehnelt.add_argument("--artifact-root", type=Path, required=True)
+    ion_processor = commands.add_parser("ion-processor-native-functional",
+        help="run or recover the standalone IP native functional Store stage")
+    ion_processor.add_argument("ip_action", choices=("run", "recover-stage", "recover-publication"))
+    ion_processor.add_argument("--run-id")
+    ion_processor.add_argument("--source-profile", choices=("functional", "exploration"), default="functional")
+    ion_processor.add_argument("--configuration-directory", type=Path)
+    ion_processor.add_argument("--native-field-run", type=Path)
+    ion_processor.add_argument("--continuation-predecessor-manifest", type=Path)
+    ion_processor.add_argument("--injected-source", type=Path)
+    ion_processor.add_argument("--execution-environment", type=Path)
+    ion_processor.add_argument("--environment-profile")
+    ion_processor.add_argument("--workspace", type=Path)
+    ion_processor.add_argument("--artifact-root", type=Path)
+    ion_processor.add_argument("--store-run-id")
+    ion_processor.add_argument("--native-stage-asset-id")
     validate = commands.add_parser("validate", help="resolve SI inputs and check supported capabilities")
     validate.add_argument("recipe")
     validate.add_argument("--artifact-root", help="Store holding explicitly referenced native evidence")
@@ -251,6 +309,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "wehnelt-build-only":
             return _run_wehnelt_build_only(args)
+        if args.command == "ion-processor-native-functional":
+            return _run_ion_processor_native(args)
         if args.command == "rf-stationary":
             return _run_rf_stationary(args)
         if args.command == "rf-filter-research":

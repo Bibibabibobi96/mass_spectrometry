@@ -1,5 +1,23 @@
 # 双压力区矩形射频离子处理器项目状态
 
+## C 生命周期切片：standalone IP Store
+
+`native_functional`现编译到既有`python -m msplatform.cli ion-processor-native-functional run`，显式消费
+execution environment、profile、workspace和ArtifactStore。`native_functional.py`只组合公共
+`standalone_native_store`与`run_managed_stage`；独立IP的prepare、正式首批观测、分批、原始ID、时钟、
+recovery planning及analyze仍由原科学实现执行。`ip_functional.ps1`仅保留这些原生科学步骤和源guard，
+不再建立容量会话、`New-RunPackage`、PowerShell owner、旧Result或独立收尾。
+
+Store父run与native stage分别保留其实际身份；科学run ID仍绑定原生stage。恢复只调用
+`recover_managed_native_store_stage`或`recover_run_publication`，不重放prepare、分析、Refine或Fly。
+旧`-ResumeFinalization`及旧组件run根不是新生产路径；历史封存run仍按原manifest只读消费。
+本轮仅做软件与inert进程验证，不启动真实SIMION，不新增原生飞行、GUI或科学资格。
+定向64项IP guard/批次/恢复/配置测试、43项功能消费者（1项既有Lua环境跳过）、45项执行编译器及
+7项原生路径/公共恢复消费者均通过；另有injected-source绝对路径、写锁、篡改和缺件回归通过。
+真实Store夹具覆盖成功、失败、发布中断、活writer拒绝和幂等恢复；这些不是原生或科学资格。
+Changed的卫生、文本、文档、开发标准和Ruff阶段通过；三个大型合同组仍被未修改的OA/SIMION迁移夹具
+Store-scope及错误文本问题阻断，因此本轮不声明Changed或全仓安装验收通过。
+
 IP functional and GUI-replay Python consumers now share the explicit run-root context for both
 installed source (`src` plus root) and frozen closures. Direct `PYTHONPATH` assignment and checkout
 working-directory fallback are absent from those launchers; native path environments, recovery,
@@ -81,8 +99,8 @@ HS1截面仍为未标定示例值。原解析规定电场已退役，活动生�
 
 ### 原批分区恢复
 
-`src/msplatform/workflows/resources/ip_functional.ps1 -ContinuationPredecessorManifestPath <原manifest> -RunId <新run>`
-保持前驱完整批次分区和原ID；已完成（包括已归档）的单元由manifest引用，缺失完整单元重做。
+`python -m msplatform.cli ion-processor-native-functional run --continuation-predecessor-manifest <原manifest> --run-id <新run>`
+连同注册profile要求的显式deployment、workspace和`--artifact-root`保持前驱完整批次分区和原ID；已完成（包括已归档）的单元由manifest引用，缺失完整单元重做。
 公共scheduler按实际最大缺失单元选择同身份画像；画像不足时先执行该原单元观测，保留其实际进程，
 再按实测CPU、内存和现有互斥策略派发剩余单元，不再强制单路恢复。未知writer仍保守处理，
 健康worker自然结束；该恢复不是原生积分checkpoint，不改变前驱终态。
@@ -341,18 +359,19 @@ IP批次请求可在提供已验证场身份及冻结程序后计算，计算过
 显式场与部分恢复同时指定时，只在实际adopt前获取一次最终来源保护，不重复获取同一终态发布锁；全批复用不进入该adopt分支。
 summary与stdout报告失败阶段、原因、恢复动作、稳定结果路径和阶段／总耗时；summary计时截止结果观察，
 stdout的最终owner总耗时另含发布及资源释放。未知写者保留保护并要求先确认其完成，不能直接重试。
-正常IP收尾使用公共PowerShell owner：冻结request、实际进程／host完成事实和小Result后，由公共机制执行
-保留、终态发布与容量封存。Result默认持久放在`scratch/workflow_results/<run_id>/result.json`；
-原入口`ip_functional.ps1 -RunId <id> -ResumeFinalization [-ResultPath <原Result>]`只重放收尾，
-不准备源／场／IOB、不重飞、不修改父run。发布前失败与已发布终态后的seal失败均保留原事实；重复恢复
-不重写已发布summary/manifest。未知writer仍拒绝收尾，原始科学异常与收尾次错分别保留。
+正常IP收尾由Store stage的既有`run_managed_stage`执行：冻结request、实际进程／host完成事实和保留记录，
+随后seal native stage并由外层`standalone_native_store`发布父run。发布中断沿
+`msplatform.cli ion-processor-native-functional recover-publication --store-run-id <id> --artifact-root <store>`重放；已终止且证据完整的stage沿
+`recover-stage --native-stage-asset-id <id>`恢复，deployment参数仍显式提供。两者均不准备源／场／IOB、
+不重飞、不修改前驱。活writer、active binding、缺件或篡改失败关闭；ready重读与重复恢复保持幂等。
+未知writer不进入终态，原始科学异常与收尾次错分别保留。
 `msplatform.backends.simion.ip_exit.load_component_source`验证封存的IP来源与结果；科学门限失败、诊断失败与写入状态未知分别记录，
 未知写入者不发布终态或显式释放受保护资源。
 原生准备命令与IOB模板构建同样以公共观察器的实际退出事实决定停写；退出未知时保留PA句柄、资源和容量保护，原始异常不被收尾覆盖。
 
 ## 普通执行计划与新场身份
 
-`native_functional`只调用原`ip_functional.ps1`，不每次先跑整套软件回归；编译结果以`ConfigurationDirectory`运输同一冻结功能源、科学／数值／接受配置。action=run不等于已完成原生或科学通过。
+`native_functional`只调用现有`msplatform.cli ion-processor-native-functional run`组合根，不每次先跑整套软件回归；编译结果以`--configuration-directory`运输同一冻结功能源、科学／数值／接受配置，并以显式bindings选择deployment与Store。action=run不等于已完成原生或科学通过。
 新PA在writer确认停止及必要flush后，由公共immutable guard在持续防写句柄内建立一次身份；内部prepare-dispatch、模板及收尾复用同一活guard，不重复全文读取。保护中断或未知writer不放行；外部已发布家族仍核对manifest期望身份，不能用新场投影覆盖。
 
 ## 机器能力与解析输入
@@ -396,9 +415,9 @@ canonical状态保留原reason：接受为transmitted、明确逃逸／电极损
 
 ### 运行根与冻结原生路径
 
-正式`ip_functional.ps1`在启动时解析并冻结公共四根，持久身份使用`artifact_run_dir`；
-实际Python与SIMION准备／批次调用沿同一Package的`Get-RunNativeExecutionContext`选择执行表示，
-同步运输cwd、argv、环境及Lua内的种子／场／IOB引用。主机库保持原身份，恢复读取原Result的run位置。
+正式`msplatform.cli ion-processor-native-functional run`在准入前选择显式ExecutionContext与Store，原生stage持久身份使用`artifact_run_dir`；
+实际Python与SIMION准备／批次调用沿同一Store stage的`Get-RunNativeExecutionContext`选择执行表示，
+同步运输cwd、argv、环境及Lua内的种子／场／IOB引用。主机库保持原身份，恢复只读取Store登记位置。
 `functional.prepare`冻结实际动态资源、所选配置和官方seed/placeholder；新解释器可仅凭该源码闭包
 重新准备同一GEM与源，不从今日活动默认配置补输入。公共持续只读guard的一次身份记录直接交dispatch，
 原分区／原ID恢复、未知writer保守处理和科学接受条件不变。
@@ -414,7 +433,7 @@ PA 在 builder 前取得持续防写 guard；保护前可写、保护中拒写�
 该11³ PA仅验证 IOB／pose／路径与保存机制，0 Refine、0 Fly，不代表完整IP场、N=100功能或科学资格。
 
 
-### 已有CLI恢复的解释器运输
+### 迁移前CLI恢复的解释器运输证据
 
 IP原CLI沿公共workspace路径约定优先消费SIMULATION_PYTHON_EXE，未显式提供时保留仓库.venv默认。选定后准入及后续Python消费者使用同一解释器；无效显式路径仍由公共路径检查拒绝，不静默回退。GitHub system Python环境无需伪造仓库.venv即可按原CLI恢复publication／seal收尾，unknown writer仍保留保护；生产容量底线与科学输入不变。
 

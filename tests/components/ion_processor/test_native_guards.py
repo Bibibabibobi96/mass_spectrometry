@@ -107,10 +107,8 @@ $errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[r
 if($errors.Count){throw ($errors|Out-String)}
 $preparation=$ast.Find({param($a)$a-is[Management.Automation.Language.ForEachStatementAst]-and$a.Extent.Text-match'ION_PROCESSOR_STAGE='},$true)
 $template=$ast.Find({param($a)$a-is[Management.Automation.Language.IfStatementAst]-and$a.Clauses[0].Item1.Extent.Text-eq'$iobPreparation.requires_vendor_templates'-and$a.Extent.Text-match'batch_iob_template_resource_usage.json'},$true)
-$owner=$ast.Find({param($a)$a-is[Management.Automation.Language.TryStatementAst]-and$a.Body.Extent.Text-match'Enter-ArtifactWorkflowCapacitySession'},$true)
+$owner=$ast.Find({param($a)$a-is[Management.Automation.Language.TryStatementAst]-and$a.Finally-and$a.Finally.Extent.Text-match'ion_processor_observation_error'},$true)
 if($null-eq$preparation-or$null-eq$template-or$null-eq$owner.Finally){throw 'production preparation/template/owner boundary missing'}
-$failedOperation=$ast.Find({param($a)$a-is[Management.Automation.Language.FunctionDefinitionAst]-and$a.Name-eq'Add-IonProcessorFailedOperation'},$true)
-Invoke-Expression $failedOperation.Extent.Text
 function Get-HostResourceBudget {param($Role,$Stage) @{}}
 function Update-HostResourceStage {param($Lease,$Stage,$Budget,$RetainedMemoryBytes) $Lease}
 function Set-IonProcessorRunStage {param($Context,$Stage)}
@@ -308,7 +306,7 @@ if($null-ne$summary.failure_stage-or$summary.recovery_action-ne'none'){throw 'su
                 cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_owner_preserves_primary_error_when_finalization_also_fails(self) -> None:
+    def test_owner_preserves_primary_error_when_observation_also_fails(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell 7 required")
@@ -319,11 +317,11 @@ $ErrorActionPreference='Stop';$errors=$null
 . (Join-Path $Repo 'src/msplatform/execution/resources/run_artifact_support.ps1')
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
-$node=$ast.Find({param($a)$a-is[Management.Automation.Language.TryStatementAst]-and$null-ne$a.Finally-and$a.Finally.Extent.Text-match'ion_processor_finalization_error'},$true)
+$node=$ast.Find({param($a)$a-is[Management.Automation.Language.TryStatementAst]-and$null-ne$a.Finally-and$a.Finally.Extent.Text-match'ion_processor_observation_error'},$true)
 if($null-eq$node){throw 'owner finalization missing'}
 $body=$node.Finally.Extent.Text; $body=$body.Substring(1,$body.Length-2)
 function Set-IonProcessorRunStage {param($Context,$Stage)}
-function Set-IonProcessorRunObservation {param($Summary,$Context,$Run,$NativeCompleted,$WritersStopped,$FailureStage,$FailureReason)}
+function Set-IonProcessorRunObservation {param($Summary,$Context,$Run,$NativeCompleted,$WritersStopped,$FailureStage,$FailureReason) throw 'finalization sentinel'}
 $runObservation=@{stage='finalization';timer=[Diagnostics.Stopwatch]::StartNew()};$failureStage='';$failureReason=''
 $configPath=Join-Path $Root 'run_config.json';Set-Content $configPath '{"inputs":{}}'
 $summaryPath=Join-Path $Root 'summary.json';Set-Content $summaryPath '{"status":"failed"}'
@@ -333,13 +331,12 @@ $continuationReadGuards=@{streams=@()};$continuationFieldGuards=@{records=@();ma
 $savedPythonPath=$env:PYTHONPATH;$python='fixture';$repoRoot=$Root
 $pathEnvironmentNames=@('PYTHONPATH');$savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 function Write-RunJson {param($Path,$Value) $Value|ConvertTo-Json -Depth 32|Set-Content $Path}
-function Complete-RunArtifactPowerShellOwner {throw 'finalization sentinel'}
 $caught=$null;Push-Location $Root
 try {
  try {throw 'original science sentinel'} catch {$primaryRunFailure=$_;throw} finally {& ([scriptblock]::Create($body))}
 }catch{$caught=$_}
 if($caught.Exception.Message-ne'original science sentinel'){throw 'primary error was replaced'}
-if($caught.Exception.Data['ion_processor_finalization_error']-notmatch'finalization sentinel'){throw 'secondary error was not retained'}
+if($caught.Exception.Data['ion_processor_observation_error']-notmatch'finalization sentinel'){throw 'secondary error was not retained'}
 ''', encoding="utf-8")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO/"src/msplatform/workflows/resources/ip_functional.ps1"), directory, str(REPO)],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -700,16 +697,16 @@ if($ast.Extent.Text-notmatch '-OnProcessCompleted \$checkpoint'){throw 'checkpoi
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_continuation_projects_ancestry_before_capacity_and_rechecks_after(self) -> None:
+    def test_continuation_projects_ancestry_before_store_stage_and_rechecks_after(self) -> None:
         script = (REPO / "src/msplatform/workflows/resources/ip_functional.ps1").read_text(encoding="utf-8")
         first = script.index("continuation_protection_paths;print")
-        capacity = script.index("$capacity=Enter-ArtifactWorkflowCapacitySession")
+        stage = script.index("$package=[pscustomobject]")
         second = script.index("continuation_protection_paths;print", first + 1)
         continuation = script.index("$lease=Invoke-IonProcessorCompletedContinuation")
-        self.assertLess(first, capacity)
-        self.assertLess(capacity, second)
+        self.assertLess(first, stage)
+        self.assertLess(stage, second)
         self.assertLess(second, continuation)
-        self.assertIn("continuation ancestry changed after capacity admission", script)
+        self.assertIn("continuation ancestry changed after Store admission", script)
 
     def test_completed_continuation_uses_only_analysis_lease_and_no_native_process(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -788,7 +785,7 @@ $package=@{summary=$SummaryPath;native_path_preparation=@{calls=0;elapsed_second
 try {Invoke-Expression $text.Substring($start,$end-$start);throw 'negative exit was accepted'} catch {
  if($_.Exception.Message-notmatch'Analysis or required diagnostics incomplete'){throw}
 }
-if(-not$finished-or$runSucceeded){throw 'negative completion state differs'}
+if(-not$finished){throw 'negative completion state differs'}
 ''', encoding="utf-8")
             result = subprocess.run([pwsh, "-NoProfile", "-File", str(script), str(REPO / "src/msplatform/workflows/resources/ip_functional.ps1"), str(summary)],
                                     cwd=REPO, timeout=30, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -814,7 +811,7 @@ $savedPathEnvironment=Save-RunEnvironment -Names $pathEnvironmentNames
 $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($Runner,[ref]$null,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
-$node=$ast.Find({param($a)$a-is[Management.Automation.Language.TryStatementAst]-and$a.Body.Extent.Text-match'Enter-ArtifactWorkflowCapacitySession'},$true)
+$node=$ast.Find({param($a)$a-is[Management.Automation.Language.TryStatementAst]-and$a.Finally-and$a.Finally.Extent.Text-match'ion_processor_observation_error'},$true)
 if($null-eq$node-or$null-eq$node.Finally){throw 'missing owner finally'}
 function Exit-HostExecutionLease {throw 'host release was called'}
 function Exit-ArtifactWorkflowCapacitySession {throw 'capacity release was called'}

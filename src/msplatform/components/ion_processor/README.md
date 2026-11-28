@@ -12,8 +12,8 @@
 - 执行输入：[numerics](config/numerics.json)、[公共执行登记](config/execution_profiles.json)、[内部运行预算](config/runtime_profiles.json)、[项目身份](config/project.json)。
 - 仓库规则：[根入口](../../../../README.md)。
 
-生产入口为[`msplatform/workflows/resources/ip_functional.ps1`](../../workflows/resources/ip_functional.ps1)；
-[`msplatform.workflows.ion_processor.functional`](../../workflows/ion_processor/functional.py)负责运行准备与命令分派，实际分析和诊断由
+注册生产入口为`python -m msplatform.cli ion-processor-native-functional run`，由公共execution profile提供显式deployment与ArtifactStore；
+[`msplatform.workflows.ion_processor.functional`](../../workflows/ion_processor/functional.py)继续负责运行准备与命令分派，实际分析和诊断由
 [`msplatform.workflows.ion_processor`](../../workflows/ion_processor/analysis.py)承担。
 按任务查[执行与验收边界](docs/SIMION.md#执行与验收边界)、
 [原生场复用与分批](docs/SIMION.md#自动分批与单工作台重放)或[GUI准备](docs/SIMION.md#gui准备与批处理区别)。
@@ -21,8 +21,8 @@
 该门禁通过公共计时runner即时报告失败及逐测试耗时，保持完整测试发现范围。
 
 公共规划的`native_functional`只支持固定524 Da／+1功能源及capture/extraction fraction指标，证据请求限`plan`。
-普通研究通过`ip_functional.ps1`执行实际输入、资源及资产准入；源码修改另做相称软件验证，
-不接受设计变量、真实上游状态或私有预算的隐式绑定；
+普通研究通过同一`msplatform.cli ion-processor-native-functional run`消费实际输入、资源及显式Store；`workflows/resources/ip_functional.ps1`只是其受管原生科学资源，不再是独立owner或恢复入口。
+源码修改另做相称软件验证，不接受设计变量、真实上游状态或私有预算的隐式绑定；
 完整配置边界见[公共执行登记](config/execution_profiles.json)，科学资格仍按PROJECT判断。
 
 ## 所有权

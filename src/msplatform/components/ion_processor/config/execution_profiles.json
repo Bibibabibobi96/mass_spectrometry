@@ -28,25 +28,36 @@
         "validation_report",
         "interface_state"
       ],
-      "required_bindings": [],
+      "required_bindings": [
+        "workspace",
+        "execution_environment",
+        "environment_profile",
+        "artifact_root"
+      ],
       "steps": [
         {
           "step_id": "native_run",
           "kind": "run",
-          "shell": "powershell",
-          "entrypoint": "src/msplatform/workflows/resources/ip_functional.ps1",
+          "shell": "python",
+          "entrypoint": "src/msplatform/cli.py",
           "run_id_template": "{timestamp}__sim__simion__ion-processor-native-functional",
           "arguments": [
-            "-RunId",
+            "ion-processor-native-functional",
+            "run",
+            "--run-id",
             "{native_run_id}",
-            "-RepositoryRoot",
-            "{repository_root}",
-            "-PythonExe",
-            "{python_exe}",
-            "-SourceProfile",
+            "--source-profile",
             "functional",
-            "-ConfigurationDirectory",
-            "{resolved_configuration_directory}"
+            "--configuration-directory",
+            "{resolved_configuration_directory}",
+            "--execution-environment",
+            "{execution_environment}",
+            "--environment-profile",
+            "{environment_profile}",
+            "--workspace",
+            "{workspace}",
+            "--artifact-root",
+            "{artifact_root}"
           ]
         }
       ],
@@ -54,9 +65,14 @@
         "Fixed existing native-electrode functional evaluation; no optimization or request-specific physical parameter synthesis.",
         "Only the canonical 524 Da/+1 functional source and project configuration are registered; custom configuration, exploration, upstream admission and GUI replay remain project workflows.",
         "Prototype engineering execution only: no Static, Candidate or Formal scientific qualification is granted, and measured acceptance may fail.",
-        "Retention and resource declarations are owned by config/runtime_profiles.json; live worker scheduling remains repository-owned."
+        "Retention and resource declarations are owned by config/runtime_profiles.json; live worker scheduling remains repository-owned and new runs require an explicit ArtifactStore and execution environment."
       ],
-      "binding_types": {},
+      "binding_types": {
+        "workspace": "directory",
+        "execution_environment": "file",
+        "environment_profile": "string",
+        "artifact_root": "directory"
+      },
       "fixed_inputs": {
         "baseline": "config/baseline.json",
         "numerics": "config/numerics.json",
