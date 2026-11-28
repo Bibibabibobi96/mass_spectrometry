@@ -482,11 +482,23 @@ Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c225
 
 `tests.contracts.test_project_gate_prevalidation` 新增三组件 `-Level Candidate` 在调用任何项目工作前拒绝且零调用的负例；完整模块6/6 PASS（33.124s），含真实 plain-Lua 子例，日志 `static-gate-level-retirement.log`。未改变模型、粒子数或科学资格，无商业 native。已提交并普通 push `049ec12071d9895fa81669901985392ebfccd56b`；CLOC 2.10 `c6416f78→049ec120` PASS：total code -6、production -15、tests +9，其余汇总项不变，unclassified=0，逐语言和过滤口径见 `static-gates-049ec120-cloc.log`。
 
-### C2 MR 打包冻结输入断链修复（WORKTREE）
+### C2 MR 打包冻结输入断链修复（候选）
 
 独立 Agent 5 对打包 PowerShell 的实际 `src/msplatform` 引用检查发现10个已删除 Prepared 目标。现分别改为 `workflows.oa_mr.prism_trial`、`components.multi_reflection_tof.prism_handoff` 和 `components.multi_reflection_tof.joint_mirror_stripe_l0`；影响 `oa_mr.ps1`、两个 segmented runner、dual-stripe seed 和 exact-K runner。只改真实来源路径，不改变科学参数、运行模式或 native 调用。
 
-`test_prism_runner_contract_matrix` 的实际 source-list／`Copy-VerifiedRunInput` 循环及其余合同5/5 PASS（3.544s），0 skip；日志 `mr-frozen-source-owner-fix.log`。旧 Prepared 路径在当前 workflow resources 零命中，diff PASS。无商业 native 或整体验收声明。
+`test_prism_runner_contract_matrix` 的实际 source-list／`Copy-VerifiedRunInput` 循环及其余合同5/5 PASS（3.544s），0 skip；日志 `mr-frozen-source-owner-fix.log`。旧 Prepared 路径在当前 workflow resources 零命中，diff PASS。无商业 native 或整体验收声明。本单元已提交并普通 push `7c4972d3ee0139336179621fb1df3de83bb3d7ed`；CLOC 2.10 `0e144205→7c4972d3` PASS，total／production／tests 的 files／blank／comment／code 全部 delta=0，unclassified=0，详见 `mr-source-7c4972d3-cloc.log`。
+
+### C0 最终剩余 owner 独立审计（WORKTREE，未闭合）
+
+Agent 5 确认当前 Python 测试无 Prepared／SFI 活 import，runtime dependency 无缺失目标；旧名负例和历史 reader 均有效。上述10处 PS 断链已在本工作树修复并复验。其余实际阻塞按真实调用保留如下，不转为文档豁免：
+
+| 优先级 | 当前活路径 | 实际替代与当前责任 |
+|---|---|---|
+| P0 | `execution.owner.run_managed_stage` 仍允许无 Store 并初始化旧 ledger；`artifact_capacity_maintenance`、`run_artifact_support.ps1` 仍调用旧维护／恢复；MR native-condition、standalone IP、Wehnelt、OA focus 与 RF profiles 仍有旧 package writer | 现有 `standalone_native_store`、Store 分支、`ArtifactStore.collect/recover_run_publication`；需逐调用迁移后删除旧写入／GC／恢复分支，不新建第二生命周期 |
+| P1 | 新 `execution.owner`／`manifest_publication` 仍写 `formal_gate_passed`／`formal_eligible`；retirement 仍读总等级；OA focus 和 OA Candidate 仍有 candidate/promotion 状态 | Agent 6 负责公共执行与非 OA 字段，Agent 4 负责 OA；保留旧 manifest 的精确只读验证，不改写历史 |
+| P1 | registry 仍直挂特殊 `oa_mr.ps1`；`accelerator_interface.ps1` 仍拥有 prepare-only 的私有 package/capacity/finalization | 科学归 Assembly／MR owner，执行归公共 Store；连续飞行只能走公共原出生 tracing，prepare-only 不冒充飞行 |
+
+上述未完成项直接阻止 CA07／CA12／CA13／CA14／CA19 与最终同 SHA 验收。当前分支仍只是中间候选；未运行完整 Repository、双发行或适用真实 native。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
