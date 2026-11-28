@@ -462,6 +462,8 @@ Agent 4 的 `5c1eb131f312e4b0a2391671c7052cac7720e044`／主线 `c44cc1d2d18c225
 
 该定向范围58 PASS／1 FAIL／1 SKIP（7.295s），另有冻结隔离 PASS（15.873s）和3个 managed-PA 子案 PASS（167.234s）；失败为基线同样存在的 runtime-authority 刷新用例，skip 为显式历史快照缺席，均保留不消红。Ruff、AST 无旧符号导入和 diff PASS。CLOC 2.10 `0455d0fe→5c1eb131`：total code -24、production -21、tests -3，unclassified=0，完整结果在 `oa-candidate-5c1eb131-cloc.log`。整包 Recipe／Store 迁移、私有 owner 和总等级退出仍待后续，不是 OA 完成或 native 验收。
 
+后续 `2facabb8ad8f03c7e3c26605e33b994634bf8c18`／主线 `84bd38dcaaa7de95bf2921abb092c32e7b12e63a` 修正漂移夹具：退役 campaign 的保持旧字节行为不变，活动 authority 漂移改用实际授权 campaign。`truncation_diagnostics` 直接使用 `results.single_reflection_particle_table.read_particle_table`，跨求解器 PowerShell 直接调用 `reference_analysis_core`；`reference_analysis` 的其余真实消费者仍保留并待迁。作者范围125项 PASS／0 skip（51.995s），主线相关模块108/108 PASS（39.976s），日志 `oa-analysis-owner-main.log`；Ruff、PowerShell parser 和 diff PASS。其 CLOC 2.10 为 total/tests code +2、production不变、unclassified=0，详见 `oa-candidate-2facabb8-cloc.log`。无商业 native。
+
 ### C2 当前依赖身份的旧架构命名清退（候选）
 
 现行 `workflows/config/runtime_dependencies.json` 中以 common／projects／local_frontend 命名的当前 ID 全部改为实际 execution、Component、COMSOL／SIMION backend 身份，包括嵌在 accelerator 前缀中的配置和 IOB seed。对应 gate reason 的 `common_comsol`／`common_simion` 改为 `comsol_backend`／`simion_backend`。资源路径、consumer 集合、科学参数和哈希语义不变；不保留旧 ID 别名。
