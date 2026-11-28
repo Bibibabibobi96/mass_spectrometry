@@ -106,6 +106,20 @@ def resolved_birth_species(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
     rows = packet.get("rows") if isinstance(packet, Mapping) else None
     if not isinstance(rows, list) or not rows:
         raise ValueError("species registry requires a nonempty original-birth cohort")
+    declared_registry = packet.get("species")
+    if declared_registry is not None:
+        if not isinstance(declared_registry, list) or not declared_registry:
+            raise ValueError("explicit species registry must be a nonempty list")
+        registry = [validate_species(record) for record in declared_registry]
+        by_id = {record["species_id"]: record for record in registry}
+        if len(by_id) != len(registry):
+            raise ValueError("species registry IDs must be unique")
+        for row in rows:
+            selected = by_id.get(row["species_id"])
+            if (selected is None or row["charge_state"] != selected["charge_state"]
+                    or row["mass_amu"] != selected["mass_kg"] / AMU_KG):
+                raise ValueError("birth row differs from its declared species registry")
+        return registry
     first = rows[0]
     if packet.get("role") == "canonical_release_realization":
         realization = packet.get("realization")

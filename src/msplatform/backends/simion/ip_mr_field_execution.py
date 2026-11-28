@@ -144,6 +144,40 @@ def prepare_ip_mr_field_inputs(model_reference: Mapping[str, Any], *, scalar_fie
         immutable_input_records=list(unique_guards.values()))
 
 
+def _protect_input_sources(session: Any, plan: Mapping[str, Any]) -> None:
+    from .model_execution import _protected_source
+
+    references = [plan['prepared_source']['manifest']]
+    references.extend(row['manifest_record'] for row in plan['source_references'])
+    sources = {}
+    for record in references:
+        path = record_path(record).resolve(strict=True)
+        if path not in sources:
+            sources[path] = (record, json.loads(path.read_text(encoding='utf-8-sig')))
+    required_by_source = {path: [] for path in sources}
+    for record in plan['immutable_input_records']:
+        selected_path = Path(record['path']).resolve()
+        matches = []
+        for path, (_, document) in sources.items():
+            bound = [*document.get('inputs', {}).values(), *document.get('outputs', [])]
+            if path == selected_path:
+                continue
+            if any(isinstance(candidate, Mapping)
+                   and record_path(candidate, base_dir=path.parent).resolve() == selected_path
+                   and candidate.get('bytes') == record['bytes']
+                   and str(candidate.get('sha256', '')).upper() == str(record['sha256']).upper()
+                   for candidate in bound):
+                matches.append(path)
+        if not matches and any(path == selected_path for path in sources):
+            continue
+        if not matches:
+            raise ValueError('sampled source member has no authenticated producer')
+        for path in matches:
+            required_by_source[path].append(record['path'])
+    for path, (record, _) in sources.items():
+        _protected_source(session, record, required_paths=required_by_source[path])
+
+
 def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
         scalar_field_basis: Mapping[str, Any], priority_evidence: Mapping[str, Mapping[str, Any]],
         limits: Mapping[str, Any], allow_asynchronous_io: bool | None = None) -> dict[str, Any]:
@@ -159,7 +193,6 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
     from .ip_mr_collision_lineage import collision_conversion_result
     from .ip_mr_collision_priority import project_ip_mr_collision_iob
     from .model import require_prepared_model
-    from .model_execution import _protected_source
     from .native_io import apply_native_io_mode
     from .resources import native_resource_path, structural_seed_path
     from .source import lua_value
@@ -174,10 +207,7 @@ def execute_ip_mr_sampled_fields(session, *, model_reference: Mapping[str, Any],
         +['background_build','background_verify','collision_iob_build','collision_iob_verify'])
     if session.expected_operation_ids!=ids:
         raise ValueError('sampled field action differs from admitted operations')
-    for ref in plan['source_references']:
-        _protected_source(session,ref['manifest_record'])
-    _protected_source(session,plan['prepared_source']['manifest'],
-                      required_paths=[record['path'] for record in plan['immutable_input_records']])
+    _protect_input_sources(session, plan)
     session.add_inputs(('sampled_source_'+str(index),record)
                        for index,record in enumerate(plan['immutable_input_records'],1))
     priority_evidence={name:dict(record,retention_role='required_evidence')

@@ -18,15 +18,35 @@ from tests.components.dual_cone_tandem_quadrupole.test_gas_flow_contract import 
 def input_paths():
     return tuple(
         (PROJECT_ROOT / "config" / name).resolve()
-        for name in ("baseline.json", "resolved_geometry.json", "gas_flow_science.json", "comsol_solver_numerics.json")
+        for name in ("baseline.json", "resolved_geometry.json", "gas_flow_science.json", "comsol_solver_numerics.json", "gas_environment.json")
     )
+
+
+def write_reader_sources(root):
+    request = gas_flow.resolve_gas_flow_request(*input_paths())
+    inputs = {}
+    for key, name in (
+        ("gas_flow_science", "gas_flow_science.json"),
+        ("comsol_solver_numerics", "comsol_solver_numerics.json"),
+        ("resolved_geometry", "resolved_geometry.json"),
+    ):
+        target = root / name
+        if key == "gas_flow_science":
+            target.write_text(json.dumps(request["projected_science"], ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+                              encoding="utf-8", newline="\n")
+        else:
+            target.write_bytes((PROJECT_ROOT / "config" / name).read_bytes())
+        inputs[key] = file_record(target, "required_evidence")
+    csv_path, metadata_path = _write_fixture(root, science_path=root / "gas_flow_science.json")
+    return inputs, csv_path, metadata_path
 
 
 class GasFlowTests(unittest.TestCase):
     def test_request_uses_only_explicit_gas_contracts_and_original_freshness(self):
         request = gas_flow.resolve_gas_flow_request(*input_paths())
         self.assertEqual(request["claim_scope"], "prototype_axisymmetric_empty_enclosure_gas_flow")
-        self.assertEqual(set(request["inputs"]), {"baseline", "geometry", "science", "numerics"})
+        self.assertEqual(set(request["inputs"]), {"baseline", "geometry", "science", "numerics", "environment",
+                                                  "species_data", "constants_data", "transport_data"})
         with tempfile.TemporaryDirectory() as directory:
             changed = Path(directory) / "geometry.json"
             changed.write_bytes(input_paths()[1].read_bytes() + b" ")
@@ -86,7 +106,7 @@ class GasFlowTests(unittest.TestCase):
             self.assertEqual(args[args.index("-WorkingDirectory") + 1], str(session.run_dir))
             task = Path(args[args.index("-TaskScript") + 1]).read_text(encoding="utf-8")
             self.assertNotIn("getenv", task)
-            for name in ("science", "numerics", "geometry"):
+            for name in ("science_resolved", "numerics", "geometry"):
                 self.assertIn(str(session.input_dir / (name + ".json")), task)
             product = result["manifest_extra_fields"]["products"]["gas_field"]
             self.assertEqual(product["kind"], "gas_field")
@@ -195,19 +215,10 @@ class GasFieldReaderTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            csv_path, metadata_path = _write_fixture(root)
+            inputs, csv_path, metadata_path = write_reader_sources(root)
             metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
             metadata['solution_summary']['mass_balance_relative_error'] = 1.0
             metadata_path.write_text(json.dumps(metadata), encoding='utf-8')
-            inputs = {}
-            for key, name in (
-                ('gas_flow_science', 'gas_flow_science.json'),
-                ('comsol_solver_numerics', 'comsol_solver_numerics.json'),
-                ('resolved_geometry', 'resolved_geometry.json'),
-            ):
-                target = root / name
-                target.write_bytes((PROJECT_ROOT / 'config' / name).read_bytes())
-                inputs[key] = file_record(target, 'required_evidence')
             location = root / 'run_manifest.json'
             location.write_text(json.dumps(dict(
                 schema_version=2, role='simulation_run_manifest', project=gas_flow.PROJECT,
@@ -228,16 +239,7 @@ class GasFieldReaderTests(unittest.TestCase):
         for scenario in ("valid", "missing_original", "tampered_csv", "unknown_version"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                csv_path, metadata_path = _write_fixture(root)
-                inputs = {}
-                for key, name in (
-                    ("gas_flow_science", "gas_flow_science.json"),
-                    ("comsol_solver_numerics", "comsol_solver_numerics.json"),
-                    ("resolved_geometry", "resolved_geometry.json"),
-                ):
-                    target = root / name
-                    target.write_bytes((PROJECT_ROOT / "config" / name).read_bytes())
-                    inputs[key] = file_record(target, "required_evidence")
+                inputs, csv_path, metadata_path = write_reader_sources(root)
                 absent = root / "retired_model.mph"
                 model_record = dict(
                     path=str(absent),
@@ -320,7 +322,7 @@ class GasFlowCapabilityTests(unittest.TestCase):
         from msplatform.capabilities import capabilities
 
         paths = input_paths()
-        arguments = dict(zip(("baseline_path", "geometry_path", "science_path", "numerics_path"), paths))
+        arguments = dict(zip(("baseline_path", "geometry_path", "science_path", "numerics_path", "environment_path"), paths))
         result = capabilities(dict(schema_version=1, operation="solve_axisymmetric_gas_flow", arguments=arguments))
         self.assertEqual(result["contract_status"], "accepted")
         self.assertEqual(result["validator"], "msplatform.backends.comsol.gas_flow.resolve_gas_flow_request")
@@ -424,7 +426,8 @@ class GasFlowOwnerTests(unittest.TestCase):
                     )
                     if failure:
                         raise ProcessExecutionError("inert export failed after MPH save", receipt)
-                    _write_fixture(native)
+                    _write_fixture(native, science_path=run / "inputs/science_resolved.json",
+                                   numerics_path=run / "inputs/numerics.json", geometry_path=run / "inputs/geometry.json")
                     if author_change:
                         paths[2].write_text("{}", encoding="utf-8")
                     Path(value("-ReportPath")).write_text("STATUS=PASS", encoding="utf-8")

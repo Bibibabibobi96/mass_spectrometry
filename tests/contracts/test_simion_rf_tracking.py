@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from msplatform.assembly.handoff import HandoffMother,HandoffClock,HandoffResult
 from msplatform.contracts.clock import ClockIdentity
-from msplatform.contracts.particle_physics import kinetic_energy_ev,mass_to_charge_th
+from msplatform.contracts.particle_physics import AMU_KG,ELEMENTARY_CHARGE_C,kinetic_energy_ev,mass_to_charge_th
 from tests.contracts.test_simion_rf_prepared_model import rf_inputs
 from tests.contracts.test_component_particle_state import valid_row
 from tests.contracts.test_simion_prepared_model import LUA
@@ -38,8 +38,11 @@ def rf_tracking_case():
             species_id="species_"+str(pid),mass_amu=mass,charge_state=charge,mass_to_charge_Th=mass_to_charge_th(mass,charge),particle_weight=weight,
             phase_reference_id=None,phase_rad=None,kinetic_energy_eV=kinetic_energy_ev(mass,*[row['velocity_'+a+'_m_s'] for a in 'xyz']))
         rows.append(row);records[pid]=dict(row,source_component_entry_time_us=1.25)
+    species=[dict(species_id=row['species_id'],species_kind='ion',mass_kg=row['mass_amu']*AMU_KG,
+                  charge_state=row['charge_state'],charge_c=row['charge_state']*ELEMENTARY_CHARGE_C) for row in rows]
     packet=dict(schema_version=1,role='canonical_release_realization',state_kind='source_birth',rows=rows,
-        mother=dict(records=records,fates=[dict(particle_id=pid,category="released") for pid in records]),clock=clock,realization=dict(spec=dict(particle_count=2)))
+        mother=dict(records=records,fates=[dict(particle_id=pid,category="released") for pid in records]),clock=clock,
+        species=species,realization=dict(spec=dict(particle_count=2)))
     clocks={key:dict(path='C:/pure-test/'+key+'.json',exists=True,bytes=32,
         sha256=clock['authority_sha256'] if key=='instrument_epoch' else 'A'*64) for key in ['clock_authority','instrument_epoch']}
     propagation=dict(schema_version=1,scope='continuous_assembly',end_policy=dict(maximum_particle_age_us=5.),consumed_plane_events=[],stop=None,

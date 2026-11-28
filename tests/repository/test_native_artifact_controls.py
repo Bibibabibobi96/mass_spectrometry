@@ -1337,7 +1337,7 @@ class NativeArtifactControlsTests(unittest.TestCase):
             issues = self.store.native_recovery_issues()
             self.assertEqual(len(issues), 1)
             self.assertEqual(issues[0]["binding_id"], binding_id)
-            self.assertIn("registration and release receipts differ", issues[0]["reason"].lower())
+            self.assertIn("native registration identity differs", issues[0]["reason"].lower())
             self.assertEqual(self.store.collect(100)["released_bytes"], 0)
             worker_file.write_bytes(original)
             self.assertEqual(self.store.recover_interrupted_runs(), [run_id])

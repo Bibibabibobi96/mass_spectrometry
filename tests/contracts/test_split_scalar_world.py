@@ -215,6 +215,7 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
         from unittest.mock import patch
         import sys
         from pathlib import Path
+        import json
         from msplatform.backends import simion
         from msplatform.backends.simion.model_execution import _protected_source
         from msplatform.io.manifest_records import file_record
@@ -232,8 +233,12 @@ class SplitScalarWorldTests(SplitScalarBindingTests):
                                                          'ground_source_reference':origin})
         roots=[];records=[]
         for name in ('original_failed','original_prepared'):
-            root=self.helper.root/name;root.mkdir();path=root/'run_manifest.json';path.write_text(name,encoding='utf8')
-            (root/'member.dat').write_text('protected',encoding='utf8')
+            root=self.helper.root/name;root.mkdir();path=root/'run_manifest.json'
+            member=root/'member.dat';member.write_text('protected',encoding='utf8')
+            document=dict(schema_version=2,role='simulation_run_manifest',run_id=name,project='instrument_assembly',
+                mode='fields_only',status='success',inputs={},outputs=[file_record(member,'required_evidence')])
+            path.write_text(json.dumps(document),encoding='utf8')
+            (root/'.run_terminal_publication.lock').touch()
             roots.append(root);records.append(file_record(path,'required_evidence'))
         context=SimpleNamespace(tools={'simion':Path(sys.executable)},workspace=self.helper.root,
                                 execution_root=self.helper.root/'exec')

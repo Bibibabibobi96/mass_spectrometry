@@ -92,7 +92,7 @@ class SampledFieldExecutionTests(unittest.TestCase):
                 value=original_prepare(*args,**kwargs);value['immutable_input_records'].append(outside_record);return value
             observed.clear()
             with patch.object(subject,'prepare_ip_mr_field_inputs',side_effect=inject),fixture.inert_native_leaf(observed):
-                with self.assertRaisesRegex(ValueError,'no active owner protection'):launch('20261114_000106__test__python__collision-unprotected')
+                with self.assertRaisesRegex(ValueError,'no authenticated producer'):launch('20261114_000106__test__python__collision-unprotected')
             self.assertEqual(observed,[])
 
             # Reuse the same already-published 17 samples for the derived carrier.
