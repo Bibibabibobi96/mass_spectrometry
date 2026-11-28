@@ -318,11 +318,13 @@ IP fixture 现从唯一 `gas_environment` 和 baseline 生成规范原生视图�
 
 本单元已提交并普通 push `ae3ff03f`。CLOC 2.10 `9f53e231→ae3ff03f` PASS：total code -83、production -86、tests +3，unclassified=0；完整逐语言与过滤口径在外部 `sfi-pulse-ae3ff03f-cloc.log`。
 
-### C2 SFI 场证据与请求合同迁移（WORKTREE）
+### C2 SFI 场证据与请求合同迁移（候选）
 
 旧职责→新 owner：`field_evidence`、`field_plan`、`frontend_fields`、`downstream_fields` 分别迁至同名 `backends.simion` 模块，继续负责原生资产证据、场规划、成员生产和命令适配；请求版本校验归 `contracts.single_reflection_preparation`，五份版本化 schema 迁至 `contracts/schemas/single_reflection_request_v*.json`。原旧包四个场模块及私有校验器删除，调用、测试、当前文档和 Changed 路径同步；schema `$id` 和冻结历史记录不改写。迁移中发现的 downstream→workflow 反向导入已切到合同 owner，没有以保留旧依赖消错。
 
 场规划/生产/准备100父测试中99通过（86.409s）；唯一 `test_plain_lua_audit_reads_real_properties_and_rejects_bad_grid` FAIL 为 `response_paths=None`。在前一提交 `d7aeafed` 的独立工作树上同例以相同方式FAIL（1.969s），确认不是本次路径迁移引入；原失败保留，不据此宣称全绿。请求版本5父测试中4项纯合同PASS，唯一 freezer ERROR 仍是旧 consumer 不存在；完整依赖20父测试19通过，唯一 FAIL 同为旧 consumer。Changed 三个计划/缺失/更名用例全PASS（27.432s）。日志为 `sfi-field-backend-migration-r2.log`、`sfi-request-contracts.log`、`sfi-field-backend-dependencies-utf8.log`、`sfi-plain-lua-base-d7aeafed.log`、`sfi-field-backend-verify-changed-r4.log`。文档/Ruff/diff PASS；未运行商业 native。
+
+本单元已提交并普通 push `206c760c`。CLOC 2.10 `d7aeafed→206c760c` PASS：total code +15、production +12、tests +3，unclassified=0；逐语言和过滤口径在外部 `sfi-fields-206c760c-cloc.log`。
 
 ### C 活跃消费者对账（开工定位，未闭合）
 
