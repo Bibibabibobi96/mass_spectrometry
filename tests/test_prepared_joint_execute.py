@@ -536,7 +536,7 @@ if($ast.ParamBlock.Parameters.Name.VariablePath.UserPath-contains'PreparedJointW
 
 
     def test_prepared_child_rejects_old_or_wrong_owner(self):
-        from msplatform.workflows.prepared_joint.downstream_workpoint import load_prepared_centroid_trial
+        from msplatform.workflows.mr_design.downstream_workpoint import load_prepared_centroid_trial
         with tempfile.TemporaryDirectory() as directory:
             manifest = Path(directory) / "run_manifest.json"
             for owner, mode in (("multi_reflection_tof", "two_prism_joint_measured_trial"),

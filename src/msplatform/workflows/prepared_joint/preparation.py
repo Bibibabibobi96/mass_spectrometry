@@ -60,7 +60,7 @@ def validate_execution_contract(reference: dict[str, Any], contract: dict[str, A
     if scientific != expected:
         if not allow_controller_budget:
             raise ValueError("Finalization contract changes more than the selected trajectory step")
-        from msplatform.workflows.prepared_joint.downstream_workpoint import assert_bounded_controller_resume
+        from msplatform.workflows.mr_design.downstream_workpoint import assert_bounded_controller_resume
         budget = assert_bounded_controller_resume(expected, scientific, None, budget_only=True)
     return dict(reference_profile=changes["reference_profile"], selected_profile=changes["selected_profile"],
                 numerical_change=changes["numerical_change"], execution_budget_change=budget,

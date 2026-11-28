@@ -77,10 +77,10 @@ Write-Output 'FROZEN_ANALYSIS_INVOKER=PASS'
 
 
     def test_staged_adapter_reuses_json_phase_space_and_rejects_changed_evidence(self):
-        from msplatform.workflows.prepared_joint.downstream_workpoint import (
+        from msplatform.workflows.mr_design.downstream_workpoint import (
             materialize_prepared_staged_adapter,
         )
-        module="msplatform.workflows.prepared_joint.downstream_workpoint"
+        module="msplatform.workflows.mr_design.downstream_workpoint"
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); authority=root/"authority.json";authority.write_text('{}')
             state=dict(position_mm=(.1,-2.,33.),velocity_mm_per_us=(.01,1.4,40.))
@@ -143,7 +143,7 @@ Write-Output 'FROZEN_ANALYSIS_INVOKER=PASS'
 
     def test_explicit_slow_turn_reanchor_preserves_spent_budget_and_rejects_other_changes(self):
         import copy
-        from msplatform.workflows.prepared_joint.downstream_workpoint import reanchor_prepared_target
+        from msplatform.workflows.mr_design.downstream_workpoint import reanchor_prepared_target
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);old=root/"old.json";new=root/"new.json"
             original=dict(target_slow_turn_y_mm=360,energy=4359.32,source="same")
@@ -155,7 +155,7 @@ Write-Output 'FROZEN_ANALYSIS_INVOKER=PASS'
             state=dict(stage="stripe_preclosure",candidate_count=16,flight_count=51,columns={"0":"old"},
                        attempts=[1],history=["keep"],prism_model_manifest="old",prediction_assessment={})
             saved=copy.deepcopy(state)
-            module="msplatform.workflows.prepared_joint.downstream_workpoint"
+            module="msplatform.workflows.mr_design.downstream_workpoint"
             with patch(module+".load_prepared_centroid_trial",return_value=trial):
                 reset=reanchor_prepared_target(state,anchor_manifest=old,target_path=new,contract_path=old,previous_target_path=old)
                 self.assertEqual((reset["candidate_count"],reset["flight_count"]),(16,51))

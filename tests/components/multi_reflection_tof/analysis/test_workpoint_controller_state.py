@@ -616,7 +616,7 @@ class ControllerStateTests(unittest.TestCase):
             self.assertIn("writes only to stdout", failed.stderr)
             self.assertFalse(destination.exists())
         old = command.copy()
-        old[4] = "msplatform.workflows.prepared_joint.downstream_workpoint"
+        old[4] = "msplatform.workflows.mr_design.downstream_workpoint"
         failed = subprocess.run(old, input=json.dumps(request), cwd=PROJECT.parents[3],
                                 capture_output=True, text=True, encoding="utf-8", timeout=30)
         self.assertEqual(failed.returncode, 2)

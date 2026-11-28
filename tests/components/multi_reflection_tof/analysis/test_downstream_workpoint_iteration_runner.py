@@ -601,7 +601,7 @@ $topology=Get-InterruptedSOnlyTopologyRecoveryDecision -History @{decisions=@()}
 
     def test_prediction_decision_file_transport_handles_large_inputs_and_rejects_damage(self):
         from tests.components.multi_reflection_tof.analysis.test_downstream_workpoint_iteration import DownstreamWorkpointIterationTests
-        from msplatform.workflows.prepared_joint.downstream_workpoint import _stripe_stage_record, assess_staged_prediction
+        from msplatform.workflows.mr_design.downstream_workpoint import _stripe_stage_record, assess_staged_prediction
         import copy
         fixture_case=DownstreamWorkpointIterationTests()
         baseline,current,_,contract,_=fixture_case.stripe_preclosure_fixtures()
@@ -635,7 +635,7 @@ function Invoke-TestPython {
   $text=[IO.File]::ReadAllText($inputPath).Replace(('x'*200000),('y'+('x'*199999)))
   [IO.File]::WriteAllText($inputPath,$text,[Text.UTF8Encoding]::new($false))
  }
- $prefix='import json;from pathlib import Path;import msplatform.workflows.prepared_joint.downstream_workpoint as m;m._load_stage_trial=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"))'
+ $prefix='import json;from pathlib import Path;import msplatform.workflows.mr_design.downstream_workpoint as m;m._load_stage_trial=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig"))'
  $Arguments[1]=$prefix+';'+$Arguments[1]
  & $RealPython @Arguments
 }

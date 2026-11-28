@@ -13,7 +13,7 @@ from unittest.mock import patch
 import numpy as np
 
 from msplatform.components.multi_reflection_tof import workpoint_math
-from msplatform.workflows.prepared_joint.downstream_workpoint import (
+from msplatform.workflows.mr_design.downstream_workpoint import (
     _print_iteration_summary,
     _observation_record,
     _load_stage_trial,
@@ -40,7 +40,7 @@ from msplatform.workflows.prepared_joint.downstream_workpoint import (
 class DownstreamWorkpointIterationTests(unittest.TestCase):
 
     def test_staged_quality_uses_original_tolerances_and_missing_evidence_is_unmeasured(self):
-        from msplatform.workflows.prepared_joint.downstream_workpoint import _stripe_stage_record
+        from msplatform.workflows.mr_design.downstream_workpoint import _stripe_stage_record
         baseline, sample, _, contract, _ = self.stripe_preclosure_fixtures()
         record = _stripe_stage_record(sample, contract["downstream_fixed_grid_workpoint_profile"])
         sample["voltages_v"] = record["voltages_v"]
@@ -73,7 +73,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
                         resolved_numerics=numerics)
         saved = copy.deepcopy(decision)
         policy = dict(prediction_error_fraction_of_acceptance_tolerance=.1)
-        module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+        module = "msplatform.workflows.mr_design.downstream_workpoint"
         with patch(module+".resolve_numerics", side_effect=AssertionError("must consume frozen plan")):
             assessment = assess_staged_prediction(decision, baseline, baseline, contract, policy)
             self.assertEqual(assessment["status"], "trusted")
@@ -91,11 +91,11 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
             resolver.assert_called_once_with(contract, baseline)
 
     def test_staged_quality_predicts_executed_p_and_s_half_steps_and_rejects_wrong_direction(self):
-        from msplatform.workflows.prepared_joint.downstream_workpoint import _stripe_stage_record, ACCEPTANCE_NAMES
+        from msplatform.workflows.mr_design.downstream_workpoint import _stripe_stage_record, ACCEPTANCE_NAMES
         baseline, sample, _, contract, _ = self.stripe_preclosure_fixtures()
         template = _stripe_stage_record(sample, contract["downstream_fixed_grid_workpoint_profile"])
         policy = dict(prediction_error_fraction_of_acceptance_tolerance=.1, path="sealed-quality.json")
-        module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+        module = "msplatform.workflows.mr_design.downstream_workpoint"
         for prism in (False, True):
             names = ACCEPTANCE_NAMES[:2] if prism else RESIDUAL_NAMES
             base = np.asarray([.1, .001] if prism else [.1, .001, -.05, -.47])
@@ -377,7 +377,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
             argv = ["stage", "--control-stage", "stripe_preclosure", "--child-manifest", str(paths[0]),
                     "--s1-child-manifest", str(paths[1]), "--p1-child-manifest", str(paths[2]),
                     "--p2-child-manifest", str(paths[3]), "--contract", str(root/"contract.json"), "--output", str(output)]
-            module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+            module = "msplatform.workflows.mr_design.downstream_workpoint"
             with patch("sys.argv", argv), patch(module+"._load", return_value=contract), \
                     patch(module+"._load_stage_trial", side_effect=lambda path, _replay: trials[path]), \
                     patch(module+".resolve_numerics", return_value=numerics):
@@ -434,7 +434,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
 
     def test_prism_policy_cli_does_not_change_contract_or_stripe(self):
         baseline, p1, p2, contract, numerics = self.prism_preclosure_fixtures()
-        module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+        module = "msplatform.workflows.mr_design.downstream_workpoint"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             c, p, out = root / "contract.json", root / "policy.json", root / "decision.json"
@@ -459,7 +459,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
 
     def test_legacy_stage_loader_derives_sealed_015_016_signatures_without_rewriting(self):
         from msplatform.execution.retention import file_record
-        module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+        module = "msplatform.workflows.mr_design.downstream_workpoint"
         baseline = self.stripe_preclosure_fixtures()[0]
         with tempfile.TemporaryDirectory() as directory:
             for index, left, right, direction, slow_time, slow_y, slow_z, left_vy, right_vy in (
@@ -510,7 +510,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
 
     def test_registered_replay_overlays_only_stage_evidence_for_anchor_and_s1(self):
         from msplatform.execution.retention import file_record
-        module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+        module = "msplatform.workflows.mr_design.downstream_workpoint"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             def save(name, value):
@@ -891,7 +891,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
             contract_path.write_text(json.dumps(contract), encoding="utf-8")
             argv = ["stage", "--control-stage", "stripe_preclosure", "--child-manifest", str(path / "trial.json"),
                     "--contract", str(contract_path), "--output", str(output)]
-            module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+            module = "msplatform.workflows.mr_design.downstream_workpoint"
             with patch("sys.argv", argv), patch(module + "._load_stage_trial", return_value=baseline), \
                     patch(module + ".resolve_numerics", return_value=numerics), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(main(), 0)
@@ -910,7 +910,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
             contract_path.write_text(json.dumps(contract), encoding="utf-8")
             argv = ["stage", "--control-stage", "stripe_preclosure", "--child-manifest", str(path / "trial.json"),
                     "--s1-child-manifest", str(path / "s1.json"), "--contract", str(contract_path), "--output", str(output)]
-            module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+            module = "msplatform.workflows.mr_design.downstream_workpoint"
             with patch("sys.argv", argv), patch(module + "._load_stage_trial", side_effect=[baseline, s1]), \
                     patch(module + ".resolve_numerics", return_value=numerics), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(main(), 0)
@@ -1026,9 +1026,9 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
 
     def test_prior_p_loader_requires_sealed_success_and_matching_contract(self):
         from msplatform.execution.retention import file_record
-        from msplatform.workflows.prepared_joint.downstream_workpoint import _load_prior_prism_decision
+        from msplatform.workflows.mr_design.downstream_workpoint import _load_prior_prism_decision
         baseline, _, prior, contract, _ = self.transported_prism_fixtures()
-        module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+        module = "msplatform.workflows.mr_design.downstream_workpoint"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             anchor, contract_path, decision_path = root / "anchor.json", root / "contract.json", root / "decision.json"
@@ -1052,7 +1052,7 @@ class DownstreamWorkpointIterationTests(unittest.TestCase):
 
     def test_prism_transport_cli_consumes_registered_model_and_current_point(self):
         baseline, current, prior, contract, numerics = self.transported_prism_fixtures()
-        module = "msplatform.workflows.prepared_joint.downstream_workpoint"
+        module = "msplatform.workflows.mr_design.downstream_workpoint"
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             contract_path, output = root / "contract.json", root / "decision.json"

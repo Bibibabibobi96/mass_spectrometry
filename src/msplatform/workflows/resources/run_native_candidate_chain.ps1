@@ -1127,7 +1127,7 @@ try{
     $PrismControllerPolicyPath=Copy-VerifiedRunInput -Source (Resolve-Path -LiteralPath $PrismControllerPolicyPath).Path `
       -Destination (Join-Path $package.input_dir 'prism_controller_policy.json')
     Invoke-ProjectPython -Arguments @('-c',
-      'import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))',
+      'import sys; from pathlib import Path; from msplatform.workflows.mr_design.downstream_workpoint import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))',
       $PrismControllerPolicyPath)
     $config.inputs.prism_controller_policy=$PrismControllerPolicyPath
   }
@@ -1196,7 +1196,7 @@ try{
   if($handoff.status-ne'within_tolerance'){
     $handoffPath=Join-Path $package.result_dir 'qualified_workpoint_handoff.json'
     Invoke-ProjectPython -Arguments @(
-      '-m','msplatform.workflows.prepared_joint.downstream_workpoint',
+      '-m','msplatform.workflows.mr_design.downstream_workpoint',
       '--select-best-physical-workpoint','--history',(Join-Path $workpointRun 'results\iteration_history.json'),
       '--output',$handoffPath
     )

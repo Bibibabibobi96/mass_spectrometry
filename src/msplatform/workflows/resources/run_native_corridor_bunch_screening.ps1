@@ -306,7 +306,7 @@ try{
     $history=Get-VerifiedManifestOutput -ManifestPath $workpointManifest -Name 'iteration_history.json'
     $handoff=Join-Path $package.input_dir 'qualified_workpoint_handoff.json'
     Invoke-ProjectPython -Arguments @(
-      '-m','msplatform.workflows.prepared_joint.downstream_workpoint',
+      '-m','msplatform.workflows.mr_design.downstream_workpoint',
       '--select-best-physical-workpoint','--history',$history,'--output',$handoff
     )
     $handoffData=Get-Content -LiteralPath $handoff -Raw|ConvertFrom-Json -AsHashtable

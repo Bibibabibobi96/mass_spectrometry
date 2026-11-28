@@ -1000,7 +1000,7 @@ $selected=Get-GateChangedTests -Route $route -RepoRoot $PWD.Path -KnownTestRoots
                 "test_workpoint_controller_state", "test_downstream_workpoint_iteration_runner",
                 "test_simion_candidate_reference", "test_mirror_l0_l1_runner", "test_dual_stripe_l0_math",
                 "test_fixed_grid_mirror_stripe_handoff", "test_prism_runner_contract_matrix")),
-            ("src/msplatform/workflows/prepared_joint/downstream_workpoint.py", ("test_downstream_workpoint_iteration",
+            ("src/msplatform/workflows/mr_design/downstream_workpoint.py", ("test_downstream_workpoint_iteration",
              "test_downstream_workpoint_checkpoint", "test_downstream_workpoint_iteration_runner")),
             ("src/msplatform/workflows/resources/run_downstream_workpoint_iteration.ps1",
              ("test_downstream_workpoint_iteration_runner", "test_static_workpoint_iteration", "test_prism_runner_contract_matrix")),

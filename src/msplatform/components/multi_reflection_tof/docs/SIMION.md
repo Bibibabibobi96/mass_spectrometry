@@ -473,7 +473,7 @@ native Candidate 链的受控焦点对及回退区间只供导数，不混入正
 
 ### 控制器职责与普通S恢复策略
 
-[downstream_workpoint_iteration.py](../../../../../src/msplatform/workflows/prepared_joint/downstream_workpoint.py)拥有物理残差、模型和有界提议；
+[downstream_workpoint_iteration.py](../../../../../src/msplatform/workflows/mr_design/downstream_workpoint.py)拥有物理残差、模型和有界提议；
 [workpoint_controller.py](../../../../../src/msplatform/workflows/mr_design/workpoint_controller.py)统一计算电压档位、候选接受／回退、
 档位复位及局部模型恢复状态转移。PowerShell负责身份验证、实际执行、冻结输入与检查点发布，不复制这些决策公式。
 `Complete-StagedTrial`及其决策／provider核验helper显式接收Context；合同、目标、proposal、handoff、

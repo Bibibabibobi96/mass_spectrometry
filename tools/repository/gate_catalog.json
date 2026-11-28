@@ -4568,7 +4568,7 @@
           {
             "matches": [
               {
-                "exact": "src/msplatform/workflows/prepared_joint/downstream_workpoint.py",
+                "exact": "src/msplatform/workflows/mr_design/downstream_workpoint.py",
                 "reason": "mr_workpoint_actual_consumers"
               }
             ],

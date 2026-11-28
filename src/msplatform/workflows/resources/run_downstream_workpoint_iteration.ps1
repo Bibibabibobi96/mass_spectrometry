@@ -172,7 +172,7 @@ function New-InitialGroupedWorkpointDecision {
   $baselineObservation = Get-ManifestOutputPath -ManifestPath $baselineManifest -FileName 'two_prism_trial_observation.json'
   $baselineMaterialization = Get-ManifestOutputPath -ManifestPath $baselineManifest -FileName 'two_prism_trial_materialization.json'
   & {
-    & $python -I -B -m msplatform.workflows.prepared_joint.downstream_workpoint `
+    & $python -I -B -m msplatform.workflows.mr_design.downstream_workpoint `
       --prior $ProposalPath --observation $baselineObservation --materialization $baselineMaterialization `
       --child-manifest $baselineManifest --contract $ContractPath --history $HistoryPath --iteration 1 --output $OutputPath
     if ($LASTEXITCODE -ne 0) { throw 'Initial grouped workpoint decision failed.' }
@@ -695,7 +695,7 @@ function Invoke-PreclosureDecision {
     if($Columns.Contains([string]$entry[0])){$arguments+=@($entry[1],[string]$Columns[[string]$entry[0]])}
   }
   & {
-    & $python -I -B -m msplatform.workflows.prepared_joint.downstream_workpoint @arguments | Out-Host
+    & $python -I -B -m msplatform.workflows.mr_design.downstream_workpoint @arguments | Out-Host
     if($LASTEXITCODE-ne0){throw 'Stage preclosure decision failed.'}
   }
   return Get-Content -LiteralPath $OutputPath -Raw|ConvertFrom-Json -AsHashtable
@@ -939,7 +939,7 @@ function Complete-StagedTrial {
   $materialization=Get-Content -LiteralPath (Get-ManifestOutputPath -ManifestPath $child -FileName 'two_prism_trial_materialization.json') -Raw|ConvertFrom-Json
   $actual=@($materialization.stripe_biases_v)+@($materialization.prism_voltages_v)
   if($actual.Count-ne4-or@((0..3)|Where-Object{-not[double]::IsFinite([double]$actual[$_])-or[double]$actual[$_]-ne[double]$Pending.voltages_v[$_]}).Count){throw 'Pending stage child voltages differ from the persisted trial.'}
-  $identityCode="import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import _load_stage_trial; a=_load_stage_trial(Path(sys.argv[1])); c=_load_stage_trial(Path(sys.argv[2])); assert a['frozen_problem']==c['frozen_problem'], 'Pending stage child frozen problem differs'"
+  $identityCode="import sys; from pathlib import Path; from msplatform.workflows.mr_design.downstream_workpoint import _load_stage_trial; a=_load_stage_trial(Path(sys.argv[1])); c=_load_stage_trial(Path(sys.argv[2])); assert a['frozen_problem']==c['frozen_problem'], 'Pending stage child frozen problem differs'"
   $predictionAssessment=@{status='unmeasured';reason='no_quality_authority_or_prediction'}
   if($ControllerPolicyPath){
     # Full measured geometry in a decision can exceed Windows argv limits.
@@ -948,7 +948,7 @@ function Complete-StagedTrial {
     Write-RunJson -Path $predictionInput -Depth 100 -Value $Pending.decision
     $predictionBytes=(Get-Item -LiteralPath $predictionInput).Length
     $predictionSha=(Get-FileHash -LiteralPath $predictionInput -Algorithm SHA256).Hash
-    $identityCode+="; import json; from msplatform.execution.retention import verify_record; verify_record('staged prediction input',dict(path=sys.argv[3],bytes=int(sys.argv[6]),sha256=sys.argv[7])); from msplatform.workflows.prepared_joint.downstream_workpoint import assess_staged_prediction,resolve_prism_controller_policy; print(json.dumps(assess_staged_prediction(json.loads(Path(sys.argv[3]).read_text(encoding='utf-8-sig')),a,c,json.loads(Path(sys.argv[4]).read_text(encoding='utf-8-sig')),resolve_prism_controller_policy(Path(sys.argv[5])))))"
+    $identityCode+="; import json; from msplatform.execution.retention import verify_record; verify_record('staged prediction input',dict(path=sys.argv[3],bytes=int(sys.argv[6]),sha256=sys.argv[7])); from msplatform.workflows.mr_design.downstream_workpoint import assess_staged_prediction,resolve_prism_controller_policy; print(json.dumps(assess_staged_prediction(json.loads(Path(sys.argv[3]).read_text(encoding='utf-8-sig')),a,c,json.loads(Path(sys.argv[4]).read_text(encoding='utf-8-sig')),resolve_prism_controller_policy(Path(sys.argv[5])))))"
   }
   $identityArguments=@('-c',$identityCode,([string]$Pending.anchor_manifest),$child)
   if($ControllerPolicyPath){$identityArguments+=@($predictionInput,$frozenContract,$ControllerPolicyPath,([string]$predictionBytes),$predictionSha)}
@@ -1382,7 +1382,7 @@ function Invoke-SLocalModelRecovery {
   $modelPath=Join-Path (Split-Path -Parent $StatePath) 'iteration_local_s_model.json'
   Push-Location -LiteralPath $repoRoot
   try{
-    & $python -I -B -m msplatform.workflows.prepared_joint.downstream_workpoint `
+    & $python -I -B -m msplatform.workflows.mr_design.downstream_workpoint `
       --prior $frozenProposal --contract $frozenContract --refresh-history $historyPath --refresh-anchor-observation $anchorEvidence.observation `
       --refresh-anchor-materialization $anchorEvidence.materialization --refresh-s1-observation $s1.observation_path `
       --refresh-s1-materialization $s1.materialization_path --refresh-s2-observation $s2.observation_path `
@@ -1453,7 +1453,7 @@ function New-RecoveredSFirstCandidate {
   $anchorEvidence=$Recovery.accepted_anchor.evidence
   Push-Location -LiteralPath $repoRoot
   try {
-    & $python -I -B -m msplatform.workflows.prepared_joint.downstream_workpoint `
+    & $python -I -B -m msplatform.workflows.mr_design.downstream_workpoint `
       --prior $frozenProposal --observation ([string]$anchorEvidence.observation) `
       --materialization ([string]$anchorEvidence.materialization) `
       --child-manifest ([string]$anchorEvidence.child_manifest) --contract $frozenContract `
@@ -1634,7 +1634,7 @@ try {
   if($PrismControllerPolicyPath){
     $frozenPrismControllerPolicyPath=Copy-VerifiedRunInput -Source $PrismControllerPolicyPath -Destination (Join-Path $package.input_dir 'prism_controller_policy.json')
     & {
-      & $python -I -B -c 'import sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))' $frozenPrismControllerPolicyPath
+      & $python -I -B -c 'import sys; from pathlib import Path; from msplatform.workflows.mr_design.downstream_workpoint import resolve_prism_controller_policy; resolve_prism_controller_policy(Path(sys.argv[1]))' $frozenPrismControllerPolicyPath
       if($LASTEXITCODE-ne0){throw 'Prism controller policy is invalid.'}
     }
   }
@@ -1834,7 +1834,7 @@ try {
     if($ContinuationRunManifest){$bootstrap.transport_seed_attempts=$transportSeedAttempts}
     if($resumeBootstrapPath){
       # Consume historical state without duplicating the sealed child field trees.
-      $stateCode='import json,sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import compact_saved_iteration_state; print(json.dumps(compact_saved_iteration_state(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig")))))'
+      $stateCode='import json,sys; from pathlib import Path; from msplatform.workflows.mr_design.downstream_workpoint import compact_saved_iteration_state; print(json.dumps(compact_saved_iteration_state(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig")))))'
       $priorBootstrap=& {
         $output=((& $python -I -B -c $stateCode $resumeBootstrapPath)-join"`n")
         if($LASTEXITCODE-ne0){throw 'Saved workpoint state could not be read.'}
@@ -1938,7 +1938,7 @@ try {
         if(-not$oldPath-or-not$pair[1]){throw 'Stage replay source, contract or stage replay evidence differs.'}
         if((Get-FileHash $oldPath -Algorithm SHA256).Hash-ne(Get-FileHash $pair[1] -Algorithm SHA256).Hash){
           if($pair[0]-ne'contract'){throw 'Stage replay source, contract or stage replay evidence differs.'}
-          $controllerResumeCode='import json,sys; from pathlib import Path; from msplatform.workflows.prepared_joint.downstream_workpoint import assert_bounded_controller_resume; read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig")); print(json.dumps(assert_bounded_controller_resume(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])["stage_state"])))'
+          $controllerResumeCode='import json,sys; from pathlib import Path; from msplatform.workflows.mr_design.downstream_workpoint import assert_bounded_controller_resume; read=lambda p:json.loads(Path(p).read_text(encoding="utf-8-sig")); print(json.dumps(assert_bounded_controller_resume(read(sys.argv[1]),read(sys.argv[2]),read(sys.argv[3])["stage_state"])))'
           $resumeChanges=& {
             $value=((& $python -I -B -c $controllerResumeCode $oldPath $pair[1] $resumeBootstrapPath)-join"`n")
             if($LASTEXITCODE-ne0){throw 'Stage replay controller change is outside the bounded resume scope.'}
@@ -2249,7 +2249,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Child flight manifest projection is invalid: $childManifest" }
     $cacheBindingPath = Join-Path $package.result_dir ('iteration_{0:D2}_cache_binding.json' -f $iteration)
     $cacheBindingArguments = @(
-      '-m','msplatform.workflows.prepared_joint.downstream_workpoint',
+      '-m','msplatform.workflows.mr_design.downstream_workpoint',
       '--cache-identity',$cacheIdentity,
       '--cache-protection-renewal',$childProtectionPath,
       '--output',$cacheBindingPath
@@ -2305,7 +2305,7 @@ try {
     $failureStage = "decide_iteration_$iteration"
     Push-Location -LiteralPath $repoRoot
     try {
-      & $python -I -B -m msplatform.workflows.prepared_joint.downstream_workpoint `
+      & $python -I -B -m msplatform.workflows.mr_design.downstream_workpoint `
         --prior $frozenProposal --observation $observation --materialization $materialization `
         --child-manifest $childManifest --contract $frozenContract --history $historyPath --iteration $iteration --output $decisionPath
       if ($LASTEXITCODE -ne 0) { throw "Iteration controller failed at iteration $iteration." }
@@ -2400,7 +2400,7 @@ try {
   if($staticFieldMode-and$terminalDecision.terminal_reason-eq'success'){
     $bestPhysicalHandoffPath=Join-Path $package.result_dir 'best_physical_workpoint_handoff.json'
     & {
-      & $python -I -B -m msplatform.workflows.prepared_joint.downstream_workpoint `
+      & $python -I -B -m msplatform.workflows.mr_design.downstream_workpoint `
         --select-best-physical-workpoint --history $historyPath --output $bestPhysicalHandoffPath | Out-Host
       if($LASTEXITCODE-ne0){throw 'Could not select the complete static physical workpoint.'}
     }
@@ -2418,7 +2418,7 @@ try {
     $bestPhysicalHandoffPath=Join-Path $package.result_dir 'best_physical_workpoint_handoff.json'
     Push-Location -LiteralPath $repoRoot
     try {
-      & $python -I -B -m msplatform.workflows.prepared_joint.downstream_workpoint `
+      & $python -I -B -m msplatform.workflows.mr_design.downstream_workpoint `
         --select-best-physical-workpoint --history $historyPath --output $bestPhysicalHandoffPath | Out-Host
       if($LASTEXITCODE-ne0){throw 'Could not select the best complete physical workpoint for downstream screening.'}
     } finally { Pop-Location }

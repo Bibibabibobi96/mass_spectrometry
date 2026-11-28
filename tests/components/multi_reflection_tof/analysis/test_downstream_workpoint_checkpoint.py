@@ -10,7 +10,7 @@ from pathlib import Path
 from msplatform.workflows.mr_design.downstream_workpoint_checkpoint import (
     reconstruct_checkpoint,
 )
-from msplatform.workflows.prepared_joint.downstream_workpoint import (
+from msplatform.workflows.mr_design.downstream_workpoint import (
     decide_iteration,
 )
 

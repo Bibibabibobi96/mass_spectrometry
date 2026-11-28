@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from msplatform.workflows.prepared_joint.downstream_workpoint import (
+from msplatform.workflows.mr_design.downstream_workpoint import (
     decide_iteration,
     assert_trial_matches_jacobian,
     resolve_operating_cache_binding,
