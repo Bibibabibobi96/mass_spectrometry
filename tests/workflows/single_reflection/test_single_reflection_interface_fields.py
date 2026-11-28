@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-from tests.workflows.single_reflection import test_single_reflection_runtime as support
+from tests.workflows.single_reflection import test_single_reflection_iob_verifier as support
 from msplatform.backends.simion.field_validation import interface_field_probes
 
 

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import csv
 import json
 from pathlib import Path
 import tempfile
@@ -12,7 +11,6 @@ from msplatform.execution.retention import file_record
 from msplatform.assembly.resolve_assembly import compile_assembly_layout
 from tests.workflows.single_reflection.test_single_reflection_geometry import candidate_300mm_fixture, reframe_parent
 from msplatform.backends.simion.geometry import compile_frontend_geometry
-from msplatform.workflows.single_reflection_flight.prepare import prepare
 from msplatform.components.rf_multipole.design_request_files import compile_design_request
 from msplatform.components.rf_multipole.assembly_interface import build_assembly_interface
 from msplatform.components.rf_multipole.electrode_topology import build_electrode_topology
@@ -98,47 +96,6 @@ def direct_inputs(root, sources, *, oa_gap=0., rf_gap=0.):
     return oatof, dict(composition_plan=compile_assembly_layout(recipe, interfaces),
         accelerator_variant="three_zone_square", numerical_domains=dict(parent=domain),
         electrode_bindings=maps, provider_inputs=records)
-
-
-def direct_request(root, sources):
-    oatof, options = direct_inputs(root / "author", sources)
-    author = root / "author"
-    plan = author / "plan.json"
-    write_json(plan, options["composition_plan"])
-    epoch = author / "epoch.json"
-    write_json(epoch, dict(instrument_time_us=0.))
-    clock = author / "clock.json"
-    write_json(clock, dict(schema_version=1, role="canonical_clock_authority",
-        clock_epoch_id="instrument_clock_epoch_v1", instrument_time_unit="us",
-        canonical_time_basis="instrument_epoch_absolute_time",
-        authority=dict(path="inputs/instrument_epoch.json", sha256=file_record(epoch)["sha256"], field="instrument_time_us"),
-        solver_local_time_basis="elapsed_time_from_zero_us",
-        adapter_materialization="instrument_time_us_equals_authority_epoch_plus_solver_elapsed_once",
-        handoff_policy="preserve_instrument_time_us_and_clock_epoch_id", legacy_new_campaign_allowed=False))
-    release = author / "release.json"
-    write_json(release, dict(schema_version=2, role="repository_particle_release", frame_id="oatof_global",
-        particle_count=100, mother_particle_count=100, common_time_of_birth_s=42.125e-6,
-        geometry=dict(shape="cylinder", center_mm=[3.5,1.25,
-            oatof["accelerator_topology"]["planes_global_z_mm"]["repeller"]+2.75],
-            axis="z", radius_mm=.05, height_mm=.1), species=dict(species_kind="ion", mass_amu=524., charge_state=1),
-        sampling=dict(strategy="center_first_halton_cylinder_v1",
-            kinetic_energy=dict(center_ev=2., full_width_ev=.2), nominal_direction=[1.,2.,3.], angular_full_width_deg=5.)))
-    domains = copy.deepcopy(options["numerical_domains"])
-    domains["parent"]["refine_convergence_v"] = dict(carrier_off=.001, rf_reference=.002, pulse_delta=.003)
-    request = dict(schema_version=10, role="instrument_assembly_single_reflection_preparation_request",
-        pulse_voltage_policy_id="all_accelerator_electrodes_zero_before_pulse_v1",
-        numerics=dict(boundary_policy="native_zero_neumann", rf_reference_voltage_v=10000., frontend_domains=domains),
-        composition_plan=file_record(plan), providers=dict(instances={
-            name: dict(resolved_design=record, electrode_bindings=options["electrode_bindings"][name],
-                **(dict(geometry=dict(accelerator_variant="three_zone_square")) if name=="oatof" else {}))
-            for name, record in options["provider_inputs"].items()}),
-        source=dict(kind="release_spec", instance_id="oatof", release_spec=file_record(release),
-                    clock_authority=file_record(clock), instrument_epoch=file_record(epoch)))
-    path = author / "request.json"
-    write_json(path, request)
-    run = root / "run"
-    (run / "inputs").mkdir(parents=True)
-    return path, run
 
 
 class DirectZeroGapTests(unittest.TestCase):
@@ -248,25 +205,6 @@ class DirectZeroGapTests(unittest.TestCase):
                 else: changed_sources["multipole"]["segmentation"]["segmented_rod_array"]["schema_version"] = 1
                 with self.subTest(kind=kind), self.assertRaises(ValueError):
                     compile_frontend_geometry(changed_sources, oatof, **changed)
-
-    def test_actual_public_prepare_positive_and_negative_keep_full_birth_population(self):
-        for shell in (True, False):
-            with self.subTest(shell=shell), tempfile.TemporaryDirectory() as directory:
-                path, run = direct_request(Path(directory), {"multipole":direct_source(shell=shell)})
-                before = {p:p.read_bytes() for p in path.parent.rglob("*") if p.is_file()}
-                if shell:
-                    receipt = prepare(path, run)
-                    self.assertEqual(receipt["particle_count"], 100)
-                    with (run/"inputs/projected_source.csv").open(encoding="utf-8-sig", newline="") as stream:
-                        rows = list(csv.DictReader(stream))
-                    self.assertEqual(len(rows), 100)
-                    self.assertEqual({float(r["instrument_time_us"]) for r in rows}, {42.125})
-                else:
-                    with self.assertRaisesRegex(ValueError, "contact"):
-                        prepare(path, run)
-                    self.assertFalse((run/"inputs/projected_source.csv").exists())
-                self.assertEqual({p:p.read_bytes() for p in before}, before)
-
 
 if __name__ == "__main__":
     unittest.main()

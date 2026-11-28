@@ -251,6 +251,17 @@ def scientific_inputs(sources, oatof, root, *, local=False, legacy_inputs=None):
         provider_inputs={key:records[key] for key in selected}), legacy
 
 
+def rename_recipe_instances(recipe):
+    names = {"multipole": "guide_a", "oatof": "tof_b"}
+    for instance in recipe["instances"]:
+        instance["instance_id"] = names[instance["instance_id"]]
+    recipe["instances"].reverse()
+    for endpoint in ("upstream", "downstream"):
+        row = recipe["connections"][0][endpoint]
+        row["instance_id"] = names[row["instance_id"]]
+    return names
+
+
 class ScientificFrontendGeometryTests(unittest.TestCase):
     def test_legacy_plan_does_not_load_the_scientific_backend_adapter(self):
         import builtins
@@ -337,7 +348,6 @@ class SingleReflectionGeometryTests(unittest.TestCase):
         return gems['parent'], geometry
 
     def test_renamed_and_reordered_instances_preserve_bodies_and_reject_other_topology(self):
-        from tests.workflows.single_reflection.test_single_reflection_preparation import rename_recipe_instances
         gem, original = self.compile()
         plan=self.kw['composition_plan']
         names = rename_recipe_instances(plan['recipe'])
@@ -370,11 +380,9 @@ class SingleReflectionGeometryTests(unittest.TestCase):
             with self.subTest(failure=failure),self.assertRaises(ValueError): self.compile()
 
     def test_local_oatof_removes_only_native_multipole_body_without_remapping(self):
-        from tests.workflows.single_reflection.test_single_reflection_fields import multipole_source
         self.source = multipole_source('octupole')
         with tempfile.TemporaryDirectory() as directory:
             self.kw, _ = scientific_inputs({'multipole': self.source}, self.oatof, Path(directory))
-        from tests.workflows.single_reflection.test_single_reflection_preparation import rename_recipe_instances
         plan=self.kw['composition_plan']
         names=rename_recipe_instances(plan['recipe'])
         plan['components']={names[key]:value for key,value in plan['components'].items()}
